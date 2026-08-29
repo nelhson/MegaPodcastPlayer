@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import md.borisveriga.bpodcat.core.wearprotocol.NowPlayingSnapshot
 import md.borisveriga.bpodcat.core.wearprotocol.WearCommand
 import md.borisveriga.bpodcat.wear.data.PhoneLink

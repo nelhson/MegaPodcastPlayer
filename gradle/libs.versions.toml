@@ -50,6 +50,12 @@ turbine = "1.2.1"
 mockk = "1.14.11"
 robolectric = "4.16.1"
 
+# --- Static analysis -------------------------------------------------------
+# detekt 1.x embeds a Kotlin compiler whose IntelliJ core cannot parse a JDK 25 version string, and
+# this build's daemon runs on JDK 25 (see gradle/gradle-daemon-jvm.properties). 2.0.0-alpha is the
+# only line that runs here. It is an alpha: pin it exactly and re-check on every bump.
+detekt = "2.0.0-alpha.6"
+
 [libraries]
 # --- AndroidX core ---------------------------------------------------------
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
@@ -150,6 +156,8 @@ android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", ver
 kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 compose-gradlePlugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
 ksp-gradlePlugin = { group = "com.google.devtools.ksp", name = "symbol-processing-gradle-plugin", version.ref = "ksp" }
+detekt-formatting = { group = "dev.detekt", name = "detekt-rules-ktlint-wrapper", version.ref = "detekt" }
+detekt-gradlePlugin = { group = "dev.detekt", name = "detekt-gradle-plugin", version.ref = "detekt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -159,6 +167,7 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
 
 # BPodcat convention plugins, implemented in build-logic/convention.
 bpodcat-android-application = { id = "bpodcat.android.application" }
@@ -170,3 +179,4 @@ bpodcat-android-feature = { id = "bpodcat.android.feature" }
 bpodcat-android-hilt = { id = "bpodcat.android.hilt" }
 bpodcat-android-room = { id = "bpodcat.android.room" }
 bpodcat-jvm-library = { id = "bpodcat.jvm.library" }
+bpodcat-detekt = { id = "bpodcat.detekt" }

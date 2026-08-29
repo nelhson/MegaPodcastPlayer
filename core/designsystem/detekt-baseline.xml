@@ -1,0 +1,7 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BlankLineBetweenWhenConditions:Theme.kt:when { dynamicColor &amp;&amp; Build.VERSION.SDK_INT &gt;= Build.VERSION_CODES.S -&gt; if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context) darkTheme -&gt; DarkColors else -&gt; LightColors }</ID>
+  </CurrentIssues>
+</SmellBaseline>

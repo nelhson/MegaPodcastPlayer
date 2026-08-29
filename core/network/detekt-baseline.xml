@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BlankLineBetweenWhenConditions:RssParser.kt:FeedHandler$when { name == "guid" -&gt; itemGuid = value.ifEmpty { null } name == "title" -&gt; itemTitle = value.ifEmpty { null } name == "description" || (name == "summary" &amp;&amp; uri == NS_ITUNES) -&gt; if (itemDescription.isNullOrEmpty()) itemDescription = value name == "encoded" &amp;&amp; uri == NS_CONTENT -&gt; itemContentEncoded = value.ifEmpty { null } name == "duration" &amp;&amp; uri == NS_ITUNES -&gt; itemDuration = value.ifEmpty { null } name == "pubDate" -&gt; itemPubDate = value.ifEmpty { null } name == "item" -&gt; { finishItem() inItem = false } }</ID>
+    <ID>BlankLineBetweenWhenConditions:YouTubeAtomParser.kt:PlaylistHandler$when { name == "videoId" &amp;&amp; uri == NS_YOUTUBE -&gt; entryVideoId = value.ifEmpty { null } name == "id" &amp;&amp; uri == NS_ATOM -&gt; entryId = value.ifEmpty { null } name == "title" &amp;&amp; uri == NS_MEDIA -&gt; entryMediaTitle = value.ifEmpty { null } name == "title" &amp;&amp; uri == NS_ATOM -&gt; entryTitle = value.ifEmpty { null } name == "description" &amp;&amp; uri == NS_MEDIA -&gt; entryDescription = value.ifEmpty { null } // &lt;updated&gt; also exists but tracks edits, not publication, and would reorder the // list every time a publisher fixed a typo. name == "published" &amp;&amp; uri == NS_ATOM -&gt; entryPublished = value.ifEmpty { null } name == "entry" -&gt; { finishEntry() inEntry = false } }</ID>
+    <ID>CyclomaticComplexMethod:RssParser.kt:FeedHandler$override fun endElement</ID>
+    <ID>CyclomaticComplexMethod:YouTubeAtomParser.kt:PlaylistHandler$override fun endElement</ID>
+    <ID>ImportOrdering:FeedRemoteDataSource.kt:import javax.inject.Inject import javax.inject.Singleton import kotlinx.coroutines.CoroutineDispatcher import kotlinx.coroutines.withContext import md.borisveriga.bpodcat.core.common.di.BPodcatDispatcher import md.borisveriga.bpodcat.core.common.di.Dispatcher import md.borisveriga.bpodcat.core.model.PodcastSource</ID>
+    <ID>ImportOrdering:ItunesRemoteDataSource.kt:import javax.inject.Inject import javax.inject.Singleton import md.borisveriga.bpodcat.core.model.PodcastSearchResult</ID>
+    <ID>ImportOrdering:NetworkModule.kt:import android.content.Context import dagger.Module import dagger.Provides import dagger.hilt.InstallIn import dagger.hilt.android.qualifiers.ApplicationContext import dagger.hilt.components.SingletonComponent import java.io.File import java.util.concurrent.TimeUnit import javax.inject.Qualifier import javax.inject.Singleton import kotlinx.serialization.json.Json import md.borisveriga.bpodcat.core.network.BuildConfig import md.borisveriga.bpodcat.core.network.itunes.ItunesApi import md.borisveriga.bpodcat.core.network.rss.FeedApi import okhttp3.Cache import okhttp3.MediaType.Companion.toMediaType import okhttp3.OkHttpClient import okhttp3.logging.HttpLoggingInterceptor import retrofit2.Retrofit import retrofit2.converter.kotlinx.serialization.asConverterFactory</ID>
+    <ID>ImportOrdering:RssParser.kt:import java.io.InputStream import java.time.Instant import javax.inject.Inject import javax.inject.Singleton import javax.xml.parsers.SAXParserFactory import org.xml.sax.Attributes import org.xml.sax.InputSource import org.xml.sax.SAXException import org.xml.sax.helpers.DefaultHandler</ID>
+    <ID>ImportOrdering:RssParserTest.kt:import java.time.Instant import org.junit.Assert.assertEquals import org.junit.Assert.assertNotNull import org.junit.Assert.assertNull import org.junit.Assert.assertTrue import org.junit.Assert.fail import org.junit.Test</ID>
+    <ID>ImportOrdering:YouTubeAtomParser.kt:import java.io.InputStream import javax.inject.Inject import javax.inject.Singleton import javax.xml.parsers.SAXParserFactory import md.borisveriga.bpodcat.core.model.youTubeAudioSentinel import md.borisveriga.bpodcat.core.model.youTubeThumbnailUrl import org.xml.sax.Attributes import org.xml.sax.InputSource import org.xml.sax.SAXException import org.xml.sax.helpers.DefaultHandler</ID>
+    <ID>ImportOrdering:YouTubeAtomParserTest.kt:import java.time.Instant import org.junit.Assert.assertEquals import org.junit.Assert.assertNull import org.junit.Assert.assertTrue import org.junit.Assert.fail import org.junit.Test</ID>
+    <ID>MagicNumber:NetworkModule.kt:NetworkModule$15</ID>
+    <ID>MagicNumber:NetworkModule.kt:NetworkModule$30</ID>
+    <ID>MagicNumber:RssParser.kt:1000</ID>
+    <ID>MagicNumber:RssParser.kt:3</ID>
+    <ID>MagicNumber:RssParser.kt:60</ID>
+    <ID>ReturnCount:RssParser.kt:internal fun parseItunesDurationMs: Long?</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:RssParserTest.kt:RssParserTest$@Test fun `rejects a youtube atom feed`</ID>
+  </CurrentIssues>
+</SmellBaseline>

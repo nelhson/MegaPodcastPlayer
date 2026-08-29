@@ -17,3 +17,9 @@ local.properties
 # Module build outputs (multi-module project)
 build/
 .kotlin/
+
+# Signing material. Never commit the release key or its passwords: a leaked key means
+# rotating it and re-signing every installed APK.
+keystore.properties
+*.jks
+*.keystore

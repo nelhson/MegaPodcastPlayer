@@ -15,6 +15,7 @@ import md.borisveriga.bpodcat.core.media.PlaybackConnection
 import md.borisveriga.bpodcat.core.media.PlaybackState
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.PlaybackSettings
+import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule

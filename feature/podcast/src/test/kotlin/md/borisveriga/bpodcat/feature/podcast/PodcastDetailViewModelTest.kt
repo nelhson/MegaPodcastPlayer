@@ -18,6 +18,7 @@ import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
+import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule

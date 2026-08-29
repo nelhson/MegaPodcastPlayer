@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BlankLineBetweenWhenConditions:WatchPlayerScreen.kt:when (link) { PhoneLink.CHECKING -&gt; "One moment." PhoneLink.APP_NOT_INSTALLED -&gt; "Install BPodcat on your phone to control it from here." else -&gt; "Bring your phone closer, or turn Bluetooth back on." }</ID>
+    <ID>ImportOrdering:PhonePlayerClient.kt:import android.net.Uri import android.os.SystemClock import com.google.android.gms.wearable.CapabilityClient import com.google.android.gms.wearable.DataClient import com.google.android.gms.wearable.DataEvent import com.google.android.gms.wearable.DataItem import com.google.android.gms.wearable.DataMapItem import com.google.android.gms.wearable.MessageClient import com.google.android.gms.wearable.NodeClient import com.google.android.gms.wearable.PutDataRequest import javax.inject.Inject import javax.inject.Singleton import kotlinx.coroutines.channels.awaitClose import kotlinx.coroutines.delay import kotlinx.coroutines.flow.Flow import kotlinx.coroutines.flow.callbackFlow import kotlinx.coroutines.isActive import kotlinx.coroutines.launch import kotlinx.coroutines.tasks.await import md.borisveriga.bpodcat.core.wearprotocol.NowPlayingSnapshot import md.borisveriga.bpodcat.core.wearprotocol.WearCommand import md.borisveriga.bpodcat.core.wearprotocol.WearMessages import md.borisveriga.bpodcat.core.wearprotocol.WearPaths</ID>
+    <ID>ImportOrdering:WatchPlayerViewModel.kt:import android.os.SystemClock import androidx.lifecycle.ViewModel import androidx.lifecycle.viewModelScope import dagger.hilt.android.lifecycle.HiltViewModel import javax.inject.Inject import kotlinx.coroutines.currentCoroutineContext import kotlinx.coroutines.delay import kotlinx.coroutines.flow.MutableStateFlow import kotlinx.coroutines.flow.SharingStarted import kotlinx.coroutines.flow.StateFlow import kotlinx.coroutines.flow.combine import kotlinx.coroutines.flow.flow import kotlinx.coroutines.flow.onStart import kotlinx.coroutines.flow.stateIn import kotlinx.coroutines.isActive import kotlinx.coroutines.launch import md.borisveriga.bpodcat.core.wearprotocol.WearCommand import md.borisveriga.bpodcat.wear.data.PhoneLink import md.borisveriga.bpodcat.wear.data.PhonePlayerClient</ID>
+    <ID>MagicNumber:WatchPlayerScreen.kt:10_000L</ID>
+    <ID>MagicNumber:WatchPlayerScreen.kt:30_000L</ID>
+    <ID>MagicNumber:WatchPlayerScreen.kt:5_000L</ID>
+  </CurrentIssues>
+</SmellBaseline>

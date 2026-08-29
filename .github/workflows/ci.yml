@@ -1,0 +1,72 @@
+# Continuous integration for BPodcat.
+#
+# One job, because the build is small enough that the fan-out cost of separate jobs (each paying
+# for its own checkout, JDK and Gradle cache restore) outweighs the parallelism. Split it when the
+# wall-clock time stops being acceptable.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Lets a maintainer re-run CI without pushing an empty commit.
+  workflow_dispatch:
+
+concurrency:
+  # A new push to the same branch supersedes the run in flight.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # The Gradle daemon runs on 25 (see gradle/gradle-daemon-jvm.properties); Gradle
+          # provisions that itself through the foojay resolver, so this is only the launcher JVM.
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Only the default branch writes the remote cache; PRs read it. Otherwise a PR could
+          # poison the cache for everyone.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          validate-wrappers: true
+
+      - name: Static analysis
+        # First, because it is the fastest signal and needs no Android build.
+        run: ./gradlew detekt --continue
+
+      - name: Assemble
+        run: ./gradlew assembleDebug
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest test --continue
+
+      - name: Android Lint
+        run: ./gradlew lintDebug --continue
+
+      - name: Upload reports
+        # Reports are the whole point of a failed run, so publish them either way.
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            **/build/reports/detekt/**
+            **/build/reports/lint-results-*.html
+            **/build/reports/tests/**
+          retention-days: 14
+          if-no-files-found: ignore

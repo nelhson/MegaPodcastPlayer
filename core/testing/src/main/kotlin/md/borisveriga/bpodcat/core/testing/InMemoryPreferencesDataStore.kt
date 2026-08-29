@@ -1,4 +1,4 @@
-package md.borisveriga.bpodcat.core.datastore
+package md.borisveriga.bpodcat.core.testing
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -13,9 +13,9 @@ import kotlinx.coroutines.sync.withLock
  *
  * DataStore's file storage writes to a `.tmp` sibling and atomically renames it over the target.
  * On Windows that rename fails whenever the target already exists, so the real file-backed store
- * cannot survive a second write in a JVM unit test on this machine. What the tests here actually
- * care about — defaults, clamping and clearing — lives in
- * [UserPreferencesDataSource]'s mapping, not in serialisation, so an in-memory store loses nothing.
+ * cannot survive a second write in a JVM unit test on that platform. What the tests actually care
+ * about — defaults, clamping and clearing — lives in the mapping layer above DataStore, not in
+ * serialisation, so an in-memory store loses nothing.
  *
  * Writes are serialised through a [Mutex], mirroring DataStore's own guarantee that transforms run
  * one at a time.

@@ -1,4 +1,4 @@
-package md.borisveriga.bpodcat.feature.downloads
+package md.borisveriga.bpodcat.core.testing
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi

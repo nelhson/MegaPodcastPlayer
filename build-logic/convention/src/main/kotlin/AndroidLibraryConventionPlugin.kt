@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.LibraryExtension
+import md.borisveriga.bpodcat.buildlogic.addSharedTestingModule
 import md.borisveriga.bpodcat.buildlogic.configureAndroidCommon
 import md.borisveriga.bpodcat.buildlogic.libs
 import org.gradle.api.Plugin
@@ -14,6 +15,7 @@ import org.gradle.kotlin.dsl.dependencies
 class AndroidLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("com.android.library")
+        pluginManager.apply("bpodcat.detekt")
 
         extensions.configure<LibraryExtension> {
             configureAndroidCommon(this)
@@ -22,6 +24,8 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
             }
         }
+
+        addSharedTestingModule()
 
         dependencies {
             add("androidTestImplementation", libs.findLibrary("androidx-test-junit").get())

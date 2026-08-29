@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>BlankLineBetweenWhenConditions:LibraryScreen.kt:when (message) { is LibraryMessage.Removed -&gt; "Removed ${message.title}" is LibraryMessage.RefreshFinished -&gt; with(message.summary) { when { failedTitles.isNotEmpty() &amp;&amp; newEpisodeCount &gt; 0 -&gt; "$newEpisodeCount new episodes · ${failedTitles.size} feeds failed" failedTitles.isNotEmpty() -&gt; "Couldn't refresh ${failedTitles.joinToString()}" newEpisodeCount &gt; 0 -&gt; "$newEpisodeCount new episodes" else -&gt; "No new episodes" } } }</ID>
+    <ID>BlankLineBetweenWhenConditions:LibraryScreen.kt:when { failedTitles.isNotEmpty() &amp;&amp; newEpisodeCount &gt; 0 -&gt; "$newEpisodeCount new episodes · ${failedTitles.size} feeds failed" failedTitles.isNotEmpty() -&gt; "Couldn't refresh ${failedTitles.joinToString()}" newEpisodeCount &gt; 0 -&gt; "$newEpisodeCount new episodes" else -&gt; "No new episodes" }</ID>
+    <ID>ImportOrdering:LibraryViewModel.kt:import androidx.lifecycle.ViewModel import androidx.lifecycle.viewModelScope import dagger.hilt.android.lifecycle.HiltViewModel import javax.inject.Inject import kotlinx.coroutines.flow.MutableStateFlow import kotlinx.coroutines.flow.SharingStarted import kotlinx.coroutines.flow.StateFlow import kotlinx.coroutines.flow.combine import kotlinx.coroutines.flow.stateIn import kotlinx.coroutines.launch import md.borisveriga.bpodcat.core.data.repository.PodcastRepository import md.borisveriga.bpodcat.core.data.repository.RefreshSummary import md.borisveriga.bpodcat.core.model.PodcastWithCounts</ID>
+  </CurrentIssues>
+</SmellBaseline>

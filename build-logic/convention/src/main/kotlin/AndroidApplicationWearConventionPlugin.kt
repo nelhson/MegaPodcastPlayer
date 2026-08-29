@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.ApplicationExtension
+import md.borisveriga.bpodcat.buildlogic.addSharedTestingModule
 import md.borisveriga.bpodcat.buildlogic.configureAndroidCommon
 import md.borisveriga.bpodcat.buildlogic.configureSharedSigning
 import md.borisveriga.bpodcat.buildlogic.configureWearCompose
@@ -21,6 +22,8 @@ import org.gradle.kotlin.dsl.dependencies
 class AndroidApplicationWearConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("com.android.application")
+        pluginManager.apply("bpodcat.detekt")
+        addSharedTestingModule()
 
         extensions.configure<ApplicationExtension> {
             configureAndroidCommon(this)

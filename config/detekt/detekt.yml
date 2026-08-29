@@ -1,0 +1,161 @@
+# BPodcat's detekt configuration.
+#
+# `buildUponDefaultConfig` is on in the convention plugin, so this file records only deltas from
+# detekt's shipped defaults; anything not mentioned keeps its default. Every override below exists
+# for a stated reason — please add one when you add a rule.
+#
+# Property names follow detekt 2.x (`allowedLines`, `allowedComplexity`, …), not the 1.x
+# `threshold` spellings.
+
+console-reports:
+  active: true
+
+complexity:
+  LongMethod:
+    active: true
+    # Composables legitimately run long: a screen is one declarative expression. The limit is
+    # generous enough not to fight that, but still catches a ViewModel doing too much.
+    allowedLines: 90
+    ignoreAnnotated: ['Composable']
+  LongParameterList:
+    active: true
+    allowedFunctionParameters: 8
+    allowedConstructorParameters: 12
+    # Compose state hoisting means a stateless screen takes one parameter per callback, and
+    # `@Inject` constructors take one per collaborator. Neither is a smell here.
+    ignoreAnnotated: ['Composable', 'Inject', 'Provides']
+    ignoreDefaultParameters: true
+    ignoreDataClasses: true
+  TooManyFunctions:
+    active: true
+    allowedFunctionsPerFile: 30
+    allowedFunctionsPerClass: 25
+    allowedFunctionsPerInterface: 25
+    ignoreAnnotatedFunctions: ['Composable']
+    ignorePrivate: true
+  CyclomaticComplexMethod:
+    active: true
+    allowedComplexity: 20
+  NestedBlockDepth:
+    active: true
+    allowedDepth: 5
+
+exceptions:
+  # These two are the rules that guard C-1: `catch (e: Exception)` and `runCatching` both swallow
+  # CancellationException, which silently breaks structured concurrency in suspending code.
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - ArrayIndexOutOfBoundsException
+      - Error
+      - Exception
+      - IndexOutOfBoundsException
+      - RuntimeException
+      - Throwable
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
+  SwallowedException:
+    active: true
+    ignoredExceptionTypes:
+      - InterruptedException
+      - MalformedURLException
+      - NumberFormatException
+      - ParseException
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
+  TooGenericExceptionThrown:
+    active: true
+  ThrowingNewInstanceOfSameException:
+    active: true
+
+style:
+  MaxLineLength:
+    active: true
+    maxLineLength: 120
+  ForbiddenComment:
+    active: true
+    # A marker in committed code is a promise nobody is tracking. Open an issue instead.
+    comments:
+      - reason: 'Track the work somewhere it will be seen, not in a comment.'
+        value: 'TODO:'
+      - reason: 'Track the work somewhere it will be seen, not in a comment.'
+        value: 'FIXME:'
+      - reason: 'Track the work somewhere it will be seen, not in a comment.'
+        value: 'STOPSHIP:'
+      - reason: 'Explain the trade-off in prose rather than labelling it a hack.'
+        value: 'HACK:'
+  MagicNumber:
+    active: true
+    # Compose layouts are full of dp/sp literals that gain nothing from a named constant.
+    ignoreNumbers: ['-1', '0', '1', '2', '100']
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreLocalVariableDeclaration: true
+    ignoreAnnotated: ['Composable', 'Preview']
+  ReturnCount:
+    active: true
+    max: 4
+  ThrowsCount:
+    active: true
+    max: 3
+  UnusedPrivateFunction:
+    active: true
+    ignoreAnnotated: ['Preview']
+  UnusedPrivateProperty:
+    active: true
+  UnusedPrivateClass:
+    active: true
+  UnusedImport:
+    active: true
+  WildcardImport:
+    active: true
+
+naming:
+  FunctionNaming:
+    active: true
+    # Composables are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][_A-Z0-9]*'
+    propertyPattern: '[a-z][A-Za-z0-9]*'
+
+coroutines:
+  # `GlobalScope` and blocking calls inside suspend functions are exactly the failure modes this
+  # codebase is being cleaned up for.
+  GlobalCoroutineUsage:
+    active: true
+  RedundantSuspendModifier:
+    active: true
+  SleepInsteadOfDelay:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+
+performance:
+  SpreadOperator:
+    active: true
+
+potential-bugs:
+  # `!!` is banned outright; there is none in production code today and it should stay that way.
+  UnsafeCallOnNullableType:
+    active: true
+  UnsafeCast:
+    active: true
+  # Reformatting user-visible text must be explicit about locale, or Turkish dotless `i` bites.
+  ImplicitDefaultLocale:
+    active: true
+
+# --- ktlint wrapper -------------------------------------------------------------------------
+# detekt 2 activates the ktlint-derived formatting rules by default. Most are welcome; the three
+# below are switched off deliberately.
+ktlint:
+  # Would rewrite every multi-parameter signature in the repo to its own wrapping preference. The
+  # existing style is consistent and readable; churning ~200 signatures to satisfy an experimental
+  # rule buys nothing and destroys `git blame`.
+  FunctionSignature:
+    active: false
+  ClassSignature:
+    active: false
+  # Rejects a KDoc block that documents the *file* rather than a declaration. File-level docs are a
+  # deliberate convention here, so this rule is wrong for this codebase.
+  Kdoc:
+    active: false

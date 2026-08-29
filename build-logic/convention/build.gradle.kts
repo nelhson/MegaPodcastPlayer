@@ -16,6 +16,7 @@ dependencies {
     compileOnly(libs.kotlin.gradlePlugin)
     compileOnly(libs.compose.gradlePlugin)
     compileOnly(libs.ksp.gradlePlugin)
+    compileOnly(libs.detekt.gradlePlugin)
 }
 
 gradlePlugin {
@@ -55,6 +56,10 @@ gradlePlugin {
         register("jvmLibrary") {
             id = "bpodcat.jvm.library"
             implementationClass = "JvmLibraryConventionPlugin"
+        }
+        register("detekt") {
+            id = "bpodcat.detekt"
+            implementationClass = "DetektConventionPlugin"
         }
     }
 }

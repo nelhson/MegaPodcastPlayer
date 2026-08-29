@@ -1,18 +1,11 @@
 package md.borisveriga.bpodcat.core.data.repository
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.mockk
 import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.database.BPodcatDatabase
@@ -20,6 +13,7 @@ import md.borisveriga.bpodcat.core.database.model.EpisodeEntity
 import md.borisveriga.bpodcat.core.database.model.PodcastEntity
 import md.borisveriga.bpodcat.core.datastore.UserPreferencesDataSource
 import md.borisveriga.bpodcat.core.media.download.EpisodeDownloader
+import md.borisveriga.bpodcat.core.testing.InMemoryPreferencesDataStore
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -81,7 +75,7 @@ class DefaultPlaybackRepositoryTest {
             BPodcatDatabase::class.java,
         ).allowMainThreadQueries().build()
 
-        preferences = UserPreferencesDataSource(InMemoryPreferences())
+        preferences = UserPreferencesDataSource(InMemoryPreferencesDataStore())
         repository = DefaultPlaybackRepository(
             queueDao = database.queueDao(),
             episodeDao = database.episodeDao(),
@@ -218,25 +212,5 @@ class DefaultPlaybackRepositoryTest {
         repository.setSpeed(1.5f)
 
         assertEquals(1.5f, repository.observePlaybackSettings().first().speed, 0.001f)
-    }
-
-    /**
-     * An in-memory preferences store.
-     *
-     * DataStore's file backend renames a temp file over the target on every write, which Windows
-     * refuses once the target exists, so a file-backed store cannot survive a second write in a JVM
-     * unit test here.
-     */
-    private class InMemoryPreferences : DataStore<Preferences> {
-        private val state = MutableStateFlow(emptyPreferences())
-        private val writeLock = Mutex()
-
-        override val data: Flow<Preferences> = state
-
-        override suspend fun updateData(
-            transform: suspend (t: Preferences) -> Preferences,
-        ): Preferences = writeLock.withLock {
-            transform(state.value).also { state.value = it }
-        }
     }
 }

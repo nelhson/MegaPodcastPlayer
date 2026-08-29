@@ -53,6 +53,9 @@ include(":core:media")
 include(":core:data")
 include(":core:designsystem")
 
+// Core: shared unit-test utilities, on every Android module's test classpath.
+include(":core:testing")
+
 // Features
 include(":feature:library")
 include(":feature:downloads")
