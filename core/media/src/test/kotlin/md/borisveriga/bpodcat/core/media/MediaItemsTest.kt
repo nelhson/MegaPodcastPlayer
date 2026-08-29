@@ -4,8 +4,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import java.time.Instant
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.youTubeAudioSentinel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -47,7 +50,7 @@ class MediaItemsTest {
     @Test
     fun `the media id is the episode id, not the audio url`() {
         // Publishers move audio without changing the episode; every write back keys off the id.
-        val item = playable(episode()).toMediaItem()
+        val item = checkNotNull(playable(episode()).toMediaItemOrNull())
 
         assertEquals("episode-1", item.mediaId)
         assertEquals("episode-1", item.episodeId)
@@ -56,7 +59,7 @@ class MediaItemsTest {
 
     @Test
     fun `metadata carries the episode title and the show as artist`() {
-        val metadata = playable(episode()).toMediaItem().mediaMetadata
+        val metadata = checkNotNull(playable(episode()).toMediaItemOrNull()).mediaMetadata
 
         assertEquals("Podlodka #400", metadata.title)
         assertEquals("Podlodka Podcast", metadata.artist)
@@ -71,7 +74,7 @@ class MediaItemsTest {
         assertEquals("https://art/episode.jpg", playable.artworkUrl)
         assertEquals(
             "https://art/episode.jpg",
-            playable.toMediaItem().mediaMetadata.artworkUri?.toString(),
+            checkNotNull(playable.toMediaItemOrNull()).mediaMetadata.artworkUri?.toString(),
         )
     }
 
@@ -81,7 +84,7 @@ class MediaItemsTest {
 
         assertEquals(
             "https://art/show.jpg",
-            playable.toMediaItem().mediaMetadata.artworkUri?.toString(),
+            checkNotNull(playable.toMediaItemOrNull()).mediaMetadata.artworkUri?.toString(),
         )
     }
 
@@ -89,11 +92,55 @@ class MediaItemsTest {
     fun `an episode with no artwork anywhere maps to no artwork uri`() {
         val playable = playable(episode(artworkUrl = null), showArtworkUrl = null)
 
-        assertNull(playable.toMediaItem().mediaMetadata.artworkUri)
+        assertNull(checkNotNull(playable.toMediaItemOrNull()).mediaMetadata.artworkUri)
     }
 
     @Test
     fun `the placeholder empty media item reports no episode`() {
         assertNull(MediaItem.EMPTY.episodeId)
+    }
+
+    @Test
+    fun `an episode whose audio url is not http never becomes a media item`() {
+        // Defence in depth behind the parser guard: a row written before the allowlist shipped, or
+        // one the migration has not swept yet, must still never reach the player. Each scheme here
+        // is one DefaultDataSource.Factory resolves.
+        val hostile = listOf(
+            "file:///data/data/md.borisveriga.bpodcat/databases/bpodcat.db",
+            "content://com.other.app.provider/secret",
+            "asset:///bundled.mp3",
+            "rtmp://stream.example.com/live",
+        )
+
+        for (url in hostile) {
+            val playable = playable(episode().copy(audioUrl = url))
+
+            assertNull("$url should not be playable", playable.toMediaItemOrNull())
+            assertFalse(playable.hasPlayableAudio)
+        }
+    }
+
+    @Test
+    fun `the youtube sentinel is still playable`() {
+        // The sentinel is minted internally and intercepted before Media3 resolves it, so the
+        // allowlist must not mistake it for a hostile scheme.
+        val playable = playable(episode().copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8")))
+
+        assertTrue(playable.hasPlayableAudio)
+        assertEquals(
+            "youtube://video/niTJ2221aS8",
+            checkNotNull(playable.toMediaItemOrNull()).localConfiguration?.uri?.toString(),
+        )
+    }
+
+    @Test
+    fun `hostile artwork is dropped without dropping the episode`() {
+        // Artwork resolves through Coil, which knows file: and content: too. Losing the image costs
+        // a glyph; losing the episode would cost the user something they asked for.
+        val playable = playable(episode(artworkUrl = "content://com.other.app/pictures/1"))
+        val item = checkNotNull(playable.toMediaItemOrNull())
+
+        assertNull(item.mediaMetadata.artworkUri)
+        assertEquals("episode-1", item.mediaId)
     }
 }

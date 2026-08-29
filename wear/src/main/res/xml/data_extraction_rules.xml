@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    The watch app persists nothing of its own — no database, no DataStore, no preferences. Every
+    piece of state it shows arrives from the phone over the Data Layer and is re-delivered on
+    connect, so there is nothing here worth carrying to another watch.
+
+    android:allowBackup="false" already switches off cloud backup, but device-to-device transfer on
+    Android 12+ is governed by this file rather than by that attribute, which is why it exists.
+    Excluding the root domain in both sections says the same thing twice on purpose: whichever
+    mechanism runs, it copies nothing.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+    </device-transfer>
+</data-extraction-rules>

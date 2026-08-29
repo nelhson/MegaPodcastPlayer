@@ -28,6 +28,33 @@ private const val SENTINEL_PREFIX = "youtube://video/"
 private const val PLAYLIST_FEED_PREFIX = "https://www.youtube.com/feeds/videos.xml?playlist_id="
 
 /**
+ * The alphabet a YouTube video id is drawn from.
+ *
+ * Video ids are base64url: eleven characters of `A-Za-z0-9_-`. The *character set* is the part that
+ * matters for safety — the id arrives from a remote Atom feed and is concatenated into a URI, used
+ * as a Media3 cache key and handed to the extractor, so a `/`, a `?`, a `.` or a space in it would
+ * change the meaning of every one of those. The *length* is left loose deliberately: eleven has held
+ * for two decades but is not a documented guarantee, and rejecting a longer id would silently drop
+ * every video in a playlist rather than fail visibly.
+ */
+private const val MAX_VIDEO_ID_LENGTH = 64
+
+/**
+ * Whether [videoId] is a well-formed YouTube video id.
+ *
+ * Applied where an id first arrives from a feed ([md.borisveriga.bpodcat.core.network] parses
+ * `yt:videoId` out of untrusted XML) rather than at every use, so that a malformed id never becomes
+ * a sentinel, a cache key or an extractor argument. See [MAX_VIDEO_ID_LENGTH] for why this checks
+ * the alphabet strictly and the length loosely.
+ *
+ * @param videoId the candidate id, exactly as the feed supplied it.
+ */
+fun isYouTubeVideoId(videoId: String): Boolean =
+    videoId.isNotEmpty() &&
+        videoId.length <= MAX_VIDEO_ID_LENGTH &&
+        videoId.all { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '_' || it == '-' }
+
+/**
  * Builds the durable stand-in for a video's audio.
  *
  * A real `googlevideo.com` URL is never stored: it expires within hours and is bound to the IP that

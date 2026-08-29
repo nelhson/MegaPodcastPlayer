@@ -8,9 +8,15 @@
     <!-- Keeps playback controls reachable from the watch face via an OngoingActivity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      No backup: the watch app is a remote control and persists nothing of its own — no database, no
+      DataStore, no preferences. Everything it shows arrives from the phone over the Data Layer. An
+      empty backup is not harmful, but declaring the truth is better than leaving the template on.
+    -->
     <application
         android:name=".WearApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

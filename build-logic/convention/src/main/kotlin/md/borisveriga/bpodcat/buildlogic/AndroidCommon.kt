@@ -116,8 +116,24 @@ private val SELF_EXCLUDED_FROM_SHARED_TESTING = setOf(":core:testing", ":core:mo
  *
  * The Wearable Data Layer only delivers messages between apps that share an application ID **and**
  * a signing certificate, so both APKs must be signed with the same key. If `keystore.properties`
- * exists at the repository root it is used for release builds; otherwise release builds fall back to
- * the debug key so that a sideload-only workflow keeps working out of the box.
+ * exists at the repository root it is used for release builds.
+ *
+ * ## Why a missing keystore fails the build
+ *
+ * This used to fall back to the debug key, which was convenient and unsafe. The debug key is a
+ * world-known Android SDK artifact, so a release APK signed with it is trivially re-signable by
+ * anyone — and, because the Data Layer routes purely on *package name plus certificate*, any app
+ * anyone builds with the debug key and the `md.borisveriga.bpodcat` application ID could send
+ * `WearCommand`s to a real installation and read back its `NowPlayingSnapshot`, which carries
+ * episode titles, show titles and the whole queue.
+ *
+ * So the fallback is now opt-in and loud: pass `-PallowDebugSigningForRelease=true` to get the old
+ * behaviour for a local sideload. Without it, a release build with no keystore fails at
+ * *execution* time with an actionable message rather than at configuration time, so that
+ * `./gradlew build`, `lint` and IDE sync keep working on a machine that has no signing material —
+ * which is every CI machine and every fresh clone.
+ *
+ * @see ALLOW_DEBUG_SIGNING_FLAG
  */
 internal fun Project.configureSharedSigning(extension: ApplicationExtension) {
     val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -127,6 +143,9 @@ internal fun Project.configureSharedSigning(extension: ApplicationExtension) {
         }
     }
     val hasReleaseKeystore = keystoreProperties.getProperty("storeFile") != null
+    val allowDebugSigning = providers.gradleProperty(ALLOW_DEBUG_SIGNING_FLAG)
+        .map { it.toBoolean() }
+        .getOrElse(false)
 
     extension.apply {
         if (hasReleaseKeystore) {
@@ -138,11 +157,61 @@ internal fun Project.configureSharedSigning(extension: ApplicationExtension) {
             }
         }
         buildTypes.named("release") {
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            signingConfig = when {
+                hasReleaseKeystore -> signingConfigs.getByName("release")
+                allowDebugSigning -> signingConfigs.getByName("debug")
+                // Left null on purpose: AGP then produces an *unsigned* release APK rather than a
+                // debug-signed one, so even if the guard below were somehow bypassed the output
+                // could not be installed as if it were genuine.
+                else -> null
             }
         }
     }
+
+    if (!hasReleaseKeystore && !allowDebugSigning) {
+        failReleasePackagingWithoutAKeystore()
+    }
 }
+
+/**
+ * Makes every release packaging task in this project fail with an explanation.
+ *
+ * Matched by name (`package…Release`, `assemble…Release`, `bundle…Release`) rather than by task
+ * type, because AGP's packaging task classes are internal. The check runs in a `doFirst` so that
+ * merely *configuring* these tasks — which `./gradlew tasks`, IDE sync and the configuration cache
+ * all do — stays free of it.
+ */
+private fun Project.failReleasePackagingWithoutAKeystore() {
+    tasks.configureEach {
+        val isReleasePackaging = RELEASE_PACKAGING_PREFIXES.any { name.startsWith(it) } &&
+            name.endsWith("Release")
+        if (!isReleasePackaging) return@configureEach
+
+        doFirst {
+            error(
+                """
+                No signing key for the release build.
+
+                Create keystore.properties at the repository root with storeFile, storePassword,
+                keyAlias and keyPassword (it is git-ignored, along with *.jks and *.keystore).
+
+                To sideload a debug-signed release build instead, pass:
+                    -P$ALLOW_DEBUG_SIGNING_FLAG=true
+
+                Never do that for anything you distribute: the debug key is public, and the watch
+                pairing trusts any app that shares this application ID and certificate.
+                """.trimIndent(),
+            )
+        }
+    }
+}
+
+/** Task name prefixes that produce an installable or distributable release artifact. */
+private val RELEASE_PACKAGING_PREFIXES = listOf("package", "assemble", "bundle")
+
+/**
+ * Gradle property that re-enables signing release builds with the debug key.
+ *
+ * For local sideloading only; see [configureSharedSigning] for why it is not the default.
+ */
+private const val ALLOW_DEBUG_SIGNING_FLAG = "allowDebugSigningForRelease"

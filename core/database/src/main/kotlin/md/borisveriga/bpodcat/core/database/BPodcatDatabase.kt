@@ -22,7 +22,7 @@ import md.borisveriga.bpodcat.core.database.model.QueueEntryEntity
         EpisodeEntity::class,
         QueueEntryEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(BPodcatTypeConverters::class)

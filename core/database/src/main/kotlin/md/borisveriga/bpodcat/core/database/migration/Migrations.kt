@@ -29,3 +29,48 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
         connection.execSQL("ALTER TABLE podcasts ADD COLUMN source TEXT NOT NULL DEFAULT 'RSS'")
     }
 }
+
+/**
+ * Deletes episodes whose `audio_url` is not one the player may resolve.
+ *
+ * The scheme allowlist (`isPlayableMediaUrl` in `:core:model`) landed with the parsers that write
+ * this table, but a library populated before it existed can still hold a `file:` or `content:` URL
+ * that a hostile feed published. Those rows are not repairable — there is no correct audio URL to
+ * put back — so they are removed.
+ *
+ * The `queue` entries are deleted explicitly rather than left to the `ON DELETE CASCADE` on
+ * `queue.episode_id`. Room runs migrations with `PRAGMA foreign_keys = OFF` — it has to, because the
+ * usual table-rebuild migration would otherwise cascade away every child row — so inside a migration
+ * a cascade that works perfectly at runtime silently does nothing, and the deleted episodes would
+ * leave queue rows the player could never resolve.
+ *
+ * Purely a data migration: the schema of version 3 is identical to version 2, and the version bump
+ * exists only so that the sweep runs exactly once per install rather than on every open.
+ *
+ * ## Keeping this in step with the Kotlin guard
+ *
+ * The predicate is duplicated here in SQL because Room migrations cannot call Kotlin. It is the
+ * looser of the two on purpose — it keeps every `http`/`https`/sentinel row and deletes everything
+ * else, so it can never delete a row `isPlayableMediaUrl` would accept. It does keep a few rows that
+ * the Kotlin guard would reject (an over-long URL, one containing whitespace, a sentinel with a
+ * malformed video id); `toMediaItemOrNull` refuses those at the point of use, which is why that
+ * second gate exists.
+ *
+ * `LIKE` is ASCII-case-insensitive in SQLite by default, which matches the case-insensitive scheme
+ * comparison in Kotlin. None of the patterns contain `_` or `%`, so no escaping is needed.
+ */
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            """
+            DELETE FROM episodes
+            WHERE audio_url NOT LIKE 'http://%'
+              AND audio_url NOT LIKE 'https://%'
+              AND audio_url NOT LIKE 'youtube://video/%'
+            """.trimIndent(),
+        )
+        // Stated as "anything with no episode" rather than by repeating the URL predicate, so it
+        // stays correct no matter what the statement above deletes.
+        connection.execSQL("DELETE FROM queue WHERE episode_id NOT IN (SELECT id FROM episodes)")
+    }
+}

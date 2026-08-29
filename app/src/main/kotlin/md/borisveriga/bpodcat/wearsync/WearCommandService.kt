@@ -18,6 +18,7 @@ import md.borisveriga.bpodcat.core.wearprotocol.WearPaths
  * been opened in days.
  *
  * @property executor applies the command to the player.
+ * @property senderVerifier decides whether the sending node is one this phone is paired with.
  * @property publisher started here as well as from the application class, because this service may
  *   be what brought the process up.
  * @property scope application scope: [onMessageReceived] must return promptly, and the work it
@@ -28,6 +29,9 @@ class WearCommandService : WearableListenerService() {
 
     @Inject
     internal lateinit var executor: WearCommandExecutor
+
+    @Inject
+    internal lateinit var senderVerifier: WearSenderVerifier
 
     @Inject
     internal lateinit var publisher: NowPlayingPublisher
@@ -47,7 +51,15 @@ class WearCommandService : WearableListenerService() {
         // A payload this build cannot parse comes from a newer watch app; ignoring it is the whole
         // of the compatibility policy, and is preferable to crashing a Play Services callback.
         val command = WearMessages.decodeCommand(messageEvent.data) ?: return
+        val sourceNodeId = messageEvent.sourceNodeId
 
-        scope.launch { executor.execute(command) }
+        scope.launch {
+            // Checked here rather than in onMessageReceived itself because reading the node list
+            // suspends, and this callback must return promptly. Verifying before executing — not
+            // after — is the point: an unverified command never reaches the player.
+            if (senderVerifier.isTrusted(sourceNodeId)) {
+                executor.execute(command)
+            }
+        }
     }
 }

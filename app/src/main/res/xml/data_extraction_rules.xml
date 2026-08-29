@@ -1,19 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+    What leaves the device when the user backs up to the cloud or moves to a new phone.
+
+    The policy is "restore the library, not the bytes": everything that represents a decision the
+    user made is backed up, and everything that is large or that only makes sense on the device that
+    produced it is left behind.
+
+    Stated as exclusions rather than inclusions on purpose. With no <include>, the platform backs up
+    the app's files, databases and shared preferences by default, so anything added later — a new
+    Room table, another DataStore — is protected without anyone remembering to come back here. The
+    two exclusions below are the things that would actively be wrong to carry over.
+
+    Not listed because the platform already excludes them: cacheDir (Coil's image_cache and OkHttp's
+    http cache both live there) and no_backup/.
+
+    Backed up, deliberately:
+      - databases/bpodcat.db — subscriptions, episodes, listening positions and the queue. This is
+        the whole point; it is small and it is not recoverable from anywhere else.
+      - files/datastore/bpodcat_preferences.preferences_pb — playback speed, skip intervals,
+        auto-download settings. Small, and every value in it is a choice the user made.
+
+    There is no backup_rules.xml counterpart: `android:fullBackupContent` applies only to API 30 and
+    below, and minSdk is 34.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
+        <!--
+            The downloaded audio: gigabytes, and re-downloadable from the feed. Sending it to cloud
+            backup would blow through the per-app quota and take the rest of the backup with it.
         -->
+        <exclude domain="file" path="episode_downloads" />
+        <!--
+            Media3's own index of what is downloaded and cached. It must not travel without the
+            audio files above, or the restored app shows episodes as downloaded that are not on
+            disk. Media3 rebuilds it from the (empty) cache directory on first use.
+        -->
+        <exclude domain="database" path="exoplayer_internal.db" />
+        <exclude domain="database" path="exoplayer_internal.db-wal" />
+        <exclude domain="database" path="exoplayer_internal.db-shm" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <!-- Same reasoning as above; a direct transfer is size-limited too, and the index would be
+             just as wrong without the files it indexes. -->
+        <exclude domain="file" path="episode_downloads" />
+        <exclude domain="database" path="exoplayer_internal.db" />
+        <exclude domain="database" path="exoplayer_internal.db-wal" />
+        <exclude domain="database" path="exoplayer_internal.db-shm" />
     </device-transfer>
-    -->
 </data-extraction-rules>

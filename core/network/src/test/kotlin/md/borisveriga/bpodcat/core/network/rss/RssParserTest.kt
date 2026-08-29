@@ -163,4 +163,79 @@ class RssParserTest {
             assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("<channel>"))
         }
     }
+
+    @Test
+    fun `drops items whose enclosure is not an http url`() {
+        // The headline security case: an <enclosure> is untrusted, and a Media3 DefaultDataSource
+        // resolves far more than HTTP. An item whose only enclosure fails the allowlist has no
+        // audio at all, so it is dropped exactly as an item with no enclosure would be.
+        val channel = parser.parse(
+            feedWithEnclosures(
+                "file:///data/data/md.borisveriga.bpodcat/databases/bpodcat.db",
+                "content://com.other.app.provider/secret",
+                "asset:///bundled.mp3",
+                "rawresource:///2131165184",
+                "rtmp://stream.example.com/live",
+                "javascript:alert(1)",
+            ).byteInputStream(),
+        )
+
+        assertEquals(emptyList<String>(), channel.items.map { it.audioUrl })
+    }
+
+    @Test
+    fun `keeps http items alongside rejected ones`() {
+        // A hostile item must cost the feed that item, not the show.
+        val channel = parser.parse(
+            feedWithEnclosures(
+                "file:///etc/hosts",
+                "https://cdn.example.com/good.mp3",
+            ).byteInputStream(),
+        )
+
+        assertEquals(listOf("https://cdn.example.com/good.mp3"), channel.items.map { it.audioUrl })
+    }
+
+    @Test
+    fun `drops artwork whose url is not an http url`() {
+        // Artwork goes to the image loader, which resolves file: and content: too. Unlike audio,
+        // losing it costs a glyph rather than the item, so the item itself survives.
+        val channel = parser.parse(
+            """
+            <?xml version="1.0"?>
+            <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+              <channel>
+                <title>Hostile</title>
+                <itunes:image href="file:///sdcard/DCIM/private.jpg"/>
+                <image><url>content://com.other.app/pictures/1</url></image>
+                <item>
+                  <title>One</title>
+                  <itunes:image href="content://com.other.app/pictures/2"/>
+                  <enclosure url="https://cdn.example.com/one.mp3" type="audio/mpeg"/>
+                </item>
+              </channel>
+            </rss>
+            """.trimIndent().byteInputStream(),
+        )
+
+        assertNull(channel.artworkUrl)
+        assertEquals(1, channel.items.size)
+        assertNull(channel.items.first().artworkUrl)
+    }
+
+    /**
+     * Builds a minimal feed with one `<item>` per [urls] entry, each carrying that enclosure URL.
+     *
+     * Assembled by concatenation rather than as one indented raw string: `trimIndent` measures the
+     * *interpolated* text, so an unindented `$items` would leave the XML declaration indented, and
+     * a declaration that is not the first thing in the document is a parse error.
+     */
+    private fun feedWithEnclosures(vararg urls: String): String {
+        val items = urls.joinToString(separator = "") { url ->
+            "<item><title>Item</title>" +
+                "<enclosure url=\"$url\" type=\"audio/mpeg\"/></item>"
+        }
+        return "<?xml version=\"1.0\"?>" +
+            "<rss version=\"2.0\"><channel><title>Hostile</title>$items</channel></rss>"
+    }
 }

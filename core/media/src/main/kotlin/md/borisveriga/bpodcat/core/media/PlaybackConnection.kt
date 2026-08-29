@@ -122,8 +122,9 @@ class PlaybackConnection @Inject constructor(
         if (existingIndex != null) {
             player.seekTo(existingIndex, startPositionMs)
         } else {
+            val item = episode.toMediaItemOrNull() ?: return@onController
             val insertAt = if (player.mediaItemCount == 0) 0 else player.currentMediaItemIndex + 1
-            player.addMediaItem(insertAt, episode.toMediaItem())
+            player.addMediaItem(insertAt, item)
             player.seekTo(insertAt, startPositionMs)
         }
         player.prepare()
@@ -147,13 +148,23 @@ class PlaybackConnection @Inject constructor(
         startPositionMs: Long = 0L,
         playWhenReady: Boolean = true,
     ) = onController { player ->
-        if (episodes.isEmpty()) {
+        // An episode whose audio URL fails the scheme allowlist is dropped rather than played;
+        // see [toMediaItemOrNull]. The start index is then re-resolved by episode id so that a
+        // dropped entry ahead of it does not shift the user onto the wrong episode.
+        val playable = episodes.filter { it.hasPlayableAudio }
+        if (playable.isEmpty()) {
             player.clearMediaItems()
             return@onController
         }
+        // coerceIn first, so an out-of-range index from stale persisted state still lands on a real
+        // episode — the behaviour before the filter existed — and only then is translated by id.
+        val startEpisodeId = episodes[startIndex.coerceIn(episodes.indices)].episode.id
+        val resolvedIndex = playable.indexOfFirst { it.episode.id == startEpisodeId }
+            .takeIf { it >= 0 }
+            ?: 0
         player.setMediaItems(
-            episodes.map { it.toMediaItem() },
-            startIndex.coerceIn(episodes.indices),
+            playable.mapNotNull { it.toMediaItemOrNull() },
+            resolvedIndex,
             startPositionMs.coerceAtLeast(0L),
         )
         player.prepare()
@@ -163,16 +174,17 @@ class PlaybackConnection @Inject constructor(
     /** Appends [episode] to the end of the queue without disturbing what is playing. */
     suspend fun addToQueue(episode: PlayableEpisode) = onController { player ->
         if (player.indexOfEpisode(episode.episode.id) != null) return@onController
-        player.addMediaItem(episode.toMediaItem())
+        player.addMediaItem(episode.toMediaItemOrNull() ?: return@onController)
         // A queue added to while the player is empty should be ready to play on the first tap.
         if (player.mediaItemCount == 1) player.prepare()
     }
 
     /** Plays [episode] immediately after the current one, ahead of everything else queued. */
     suspend fun playNext(episode: PlayableEpisode) = onController { player ->
+        val item = episode.toMediaItemOrNull() ?: return@onController
         player.indexOfEpisode(episode.episode.id)?.let(player::removeMediaItem)
         val insertAt = (player.currentMediaItemIndex + 1).coerceAtMost(player.mediaItemCount)
-        player.addMediaItem(insertAt, episode.toMediaItem())
+        player.addMediaItem(insertAt, item)
         if (player.mediaItemCount == 1) player.prepare()
     }
 

@@ -45,6 +45,10 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
           validate-wrappers: true
 
+      # Dependency verification (gradle/verification-metadata.xml) is enforced by every command
+      # below: an artifact whose checksum is unknown fails the build rather than being used. When
+      # that happens on a dependency bump, the fix is documented in docs/DEPENDENCY_VERIFICATION.md
+      # — the verification report is published with the other reports at the end of this job.
       - name: Static analysis
         # First, because it is the fastest signal and needs no Android build.
         run: ./gradlew detekt --continue
@@ -68,5 +72,6 @@ jobs:
             **/build/reports/detekt/**
             **/build/reports/lint-results-*.html
             **/build/reports/tests/**
+            build/reports/dependency-verification/**
           retention-days: 14
           if-no-files-found: ignore

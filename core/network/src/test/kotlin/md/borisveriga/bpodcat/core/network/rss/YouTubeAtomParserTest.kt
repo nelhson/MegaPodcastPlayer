@@ -142,4 +142,46 @@ class YouTubeAtomParserTest {
             // Expected: a private or deleted playlist looks exactly like this from here.
         }
     }
+
+    @Test
+    fun `drops entries whose video id is malformed`() {
+        // The id is remote text that ends up concatenated into the audio sentinel, used as the
+        // Media3 cache key and passed to the extractor. A `/`, a `?` or a space in it would change
+        // the meaning of all three, so the entry is dropped rather than sanitised.
+        val channel = parser.parse(
+            """
+            <?xml version="1.0"?>
+            <feed xmlns="http://www.w3.org/2005/Atom"
+                  xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+              <title>Hostile playlist</title>
+              <entry><title>Traversal</title><yt:videoId>../../../etc/hosts</yt:videoId></entry>
+              <entry><title>Query</title><yt:videoId>abc?a=b</yt:videoId></entry>
+              <entry><title>Space</title><yt:videoId>abc def</yt:videoId></entry>
+              <entry><title>Good</title><yt:videoId>niTJ2221aS8</yt:videoId></entry>
+            </feed>
+            """.trimIndent().byteInputStream(),
+        )
+
+        assertEquals(listOf("Good"), channel.items.map { it.title })
+        assertEquals("youtube://video/niTJ2221aS8", channel.items.first().audioUrl)
+    }
+
+    @Test
+    fun `a malformed first entry does not become the show artwork`() {
+        // firstVideoId is the only artwork source the playlist feed offers, so a rejected entry
+        // must not reach it either.
+        val channel = parser.parse(
+            """
+            <?xml version="1.0"?>
+            <feed xmlns="http://www.w3.org/2005/Atom"
+                  xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+              <title>Hostile playlist</title>
+              <entry><title>Bad</title><yt:videoId>../../evil</yt:videoId></entry>
+              <entry><title>Good</title><yt:videoId>niTJ2221aS8</yt:videoId></entry>
+            </feed>
+            """.trimIndent().byteInputStream(),
+        )
+
+        assertEquals("https://i.ytimg.com/vi/niTJ2221aS8/mqdefault.jpg", channel.artworkUrl)
+    }
 }

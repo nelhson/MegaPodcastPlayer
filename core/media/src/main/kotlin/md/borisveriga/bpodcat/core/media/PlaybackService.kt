@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.core.media
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Process
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -107,7 +108,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(PlaybackPersistenceListener(player))
 
         mediaSession = MediaSession.Builder(this, player)
-            .setCallback(ResumptionCallback())
+            .setCallback(SessionCallback())
             .apply { sessionActivityIntent()?.let(::setSessionActivity) }
             .build()
 
@@ -240,10 +241,48 @@ class PlaybackService : MediaSessionService() {
     }
 
     /**
-     * Answers the system's request to resume playback without the app being open — the headset play
-     * button, or the Android 13+ media resumption tile.
+     * The session's policy: who may connect, and what to hand them on resumption.
+     *
+     * @see onConnect
+     * @see onPlaybackResumption
      */
-    private inner class ResumptionCallback : MediaSession.Callback {
+    private inner class SessionCallback : MediaSession.Callback {
+
+        /**
+         * Decides which controllers may bind the session.
+         *
+         * The service is `exported="true"` because Media3 requires it, so without this override any
+         * app on the device could connect, read episode and show titles out of the metadata, and
+         * drive playback. The default `MediaSession.Callback.onConnect` accepts everyone.
+         *
+         * Accepted, with the full command set:
+         *  - this app's own UID — the UI, and the media button receiver that ships inside it;
+         *  - [Process.SYSTEM_UID] — the notification shade, the lock screen and the media
+         *    resumption tile, all of which are system UI;
+         *  - the packages in [TRUSTED_CONTROLLER_PACKAGES].
+         *
+         * Everyone else is rejected outright rather than connected with an empty command set: a
+         * connected controller can still read `MediaMetadata`, and the metadata is half of what
+         * there is to protect here.
+         *
+         * If a legitimate integration ever stops working — a car head unit, a launcher's media
+         * widget — the fix is to add its package to that list, having checked what it is.
+         */
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val isTrusted = controller.uid == Process.myUid() ||
+                controller.uid == Process.SYSTEM_UID ||
+                controller.packageName == packageName ||
+                controller.packageName in TRUSTED_CONTROLLER_PACKAGES
+
+            if (!isTrusted) {
+                Log.i(TAG, "Refused a media session connection from ${controller.packageName}")
+                return MediaSession.ConnectionResult.reject()
+            }
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+        }
 
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
@@ -253,10 +292,12 @@ class PlaybackService : MediaSessionService() {
             val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
             serviceScope.launch {
                 try {
-                    val queue = queueSource.resumableQueue()
+                    // mapNotNull, not map: an episode whose stored audio URL fails the scheme
+                    // allowlist is dropped from the resumed queue rather than handed to the player.
+                    val queue = queueSource.resumableQueue().filter { it.hasPlayableAudio }
                     future.set(
                         MediaSession.MediaItemsWithStartPosition(
-                            queue.map { it.toMediaItem() },
+                            queue.mapNotNull { it.toMediaItemOrNull() },
                             /* startIndex = */ 0,
                             // Resume where the user stopped, not at the top of the episode.
                             /* startPositionMs = */ queue.firstOrNull()?.episode?.positionMs ?: 0L,
@@ -275,6 +316,25 @@ class PlaybackService : MediaSessionService() {
 
     private companion object {
         const val TAG = "PlaybackService"
+
+        /**
+         * Packages allowed to control playback despite running as another app.
+         *
+         * Each entry is a first-party surface a user reasonably expects to drive a podcast player
+         * from, and each is here because rejecting it would break a feature rather than close a
+         * hole. Deliberately short: anything not on it, and not this app or the system, is refused.
+         */
+        val TRUSTED_CONTROLLER_PACKAGES = setOf(
+            // Android Auto's projected UI.
+            "com.google.android.projection.gearhead",
+            // Assistant ("play my podcast"), which connects as the search app.
+            "com.google.android.googlequicksearchbox",
+            // The Wear OS companion, which is what puts media controls on a paired watch. Distinct
+            // from BPodcat's own watch app: that one talks over the Data Layer, not a MediaSession.
+            "com.google.android.wearable.app",
+            // The Bluetooth stack's AVRCP bridge, i.e. the buttons on a car stereo or headset.
+            "com.android.bluetooth",
+        )
 
         /** How often the position is written while playing. */
         const val POSITION_SAVE_INTERVAL_MS = 5_000L

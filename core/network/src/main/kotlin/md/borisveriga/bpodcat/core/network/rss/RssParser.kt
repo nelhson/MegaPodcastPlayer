@@ -5,6 +5,7 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.xml.parsers.SAXParserFactory
+import md.borisveriga.bpodcat.core.model.isPlayableMediaUrl
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.SAXException
@@ -132,7 +133,7 @@ private class FeedHandler : DefaultHandler() {
 
             name == "image" && uri == NS_ITUNES -> {
                 // <itunes:image href="..."/> — the preferred artwork at both channel and item level.
-                val href = attributes?.getValue("href")
+                val href = attributes?.getValue("href")?.takeIf(::isPlayableMediaUrl)
                 if (href != null) {
                     if (inItem) itemArtwork = href else channelArtwork = href
                 }
@@ -143,8 +144,14 @@ private class FeedHandler : DefaultHandler() {
             name == "enclosure" && inItem -> {
                 val type = attributes?.getValue("type").orEmpty()
                 val url = attributes?.getValue("url")
-                // Feeds occasionally attach images or PDFs; only audio enclosures are playable.
-                if (url != null && (type.isEmpty() || type.startsWith("audio"))) {
+                // Feeds occasionally attach images or PDFs; only audio enclosures are playable, and
+                // a missing type is common enough on hand-rolled feeds to be treated as audio.
+                val isAudio = type.isEmpty() || type.startsWith("audio")
+                // The scheme check is the primary gate keeping `file:`/`content:` URLs out of the
+                // database and therefore out of the media stack — see [isPlayableMediaUrl]. An
+                // enclosure that fails it leaves itemAudioUrl null, so finishItem drops the whole
+                // item, which is the same treatment an item with no enclosure at all gets.
+                if (url != null && isAudio && isPlayableMediaUrl(url)) {
                     itemAudioUrl = url
                     itemAudioLength = attributes.getValue("length")?.toLongOrNull()?.takeIf { it > 0L }
                 }
@@ -183,7 +190,7 @@ private class FeedHandler : DefaultHandler() {
             name == "description" -> if (channelDescription == null) channelDescription = value.ifEmpty { null }
             name == "author" && uri == NS_ITUNES -> if (channelAuthor == null) channelAuthor = value.ifEmpty { null }
             name == "managingEditor" -> if (channelAuthor == null) channelAuthor = value.ifEmpty { null }
-            name == "url" && inChannelImage -> channelImageUrl = value.ifEmpty { null }
+            name == "url" && inChannelImage -> channelImageUrl = value.takeIf(::isPlayableMediaUrl)
             name == "image" -> inChannelImage = false
         }
     }

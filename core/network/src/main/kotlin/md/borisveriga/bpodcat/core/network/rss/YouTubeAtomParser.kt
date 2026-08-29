@@ -4,6 +4,7 @@ import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.xml.parsers.SAXParserFactory
+import md.borisveriga.bpodcat.core.model.isYouTubeVideoId
 import md.borisveriga.bpodcat.core.model.youTubeAudioSentinel
 import md.borisveriga.bpodcat.core.model.youTubeThumbnailUrl
 import org.xml.sax.Attributes
@@ -194,12 +195,16 @@ private class PlaylistHandler : DefaultHandler() {
     /**
      * Commits the entry currently being read.
      *
-     * An entry with no `yt:videoId` is dropped silently — the analogue of [RssParser] dropping an
-     * item with no audio enclosure. Without a video id there is nothing to resolve audio from, so
-     * such an entry could never be played.
+     * An entry with no `yt:videoId` — or with one that is not a well-formed id — is dropped
+     * silently, the analogue of [RssParser] dropping an item with no audio enclosure. Without a
+     * usable video id there is nothing to resolve audio from, so such an entry could never be
+     * played.
      */
     private fun finishEntry() {
-        val videoId = entryVideoId ?: return
+        // The id is remote, untrusted text that goes on to be concatenated into the audio sentinel,
+        // used as the Media3 cache key and handed to the extractor. A malformed one is dropped here
+        // rather than sanitised, so that exactly one shape of id exists below this line.
+        val videoId = entryVideoId?.takeIf(::isYouTubeVideoId) ?: return
         if (firstVideoId == null) firstVideoId = videoId
 
         items += FeedItem(
