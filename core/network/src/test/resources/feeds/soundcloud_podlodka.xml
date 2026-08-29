@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     version="2.0">
+  <channel>
+    <title>Podlodka Podcast</title>
+    <link>https://soundcloud.com/podlodka</link>
+    <description>Еженедельное шоу о разработке и людях в IT.</description>
+    <itunes:author>Егор Толстой, Стас Цыганов, Екатерина Петрова и Евгений Кателла</itunes:author>
+    <itunes:image href="https://i1.sndcdn.com/avatars-000/original.jpg"/>
+    <image>
+      <url>https://i1.sndcdn.com/avatars-000/legacy.jpg</url>
+      <title>Podlodka Podcast</title>
+    </image>
+    <item>
+      <title>Podlodka #400 – Мультиплатформа</title>
+      <description>Обсуждаем KMP и его будущее.</description>
+      <content:encoded><![CDATA[<p>Обсуждаем <b>KMP</b> и его будущее.</p>]]></content:encoded>
+      <guid isPermaLink="false">tag:soundcloud,2010:tracks/1111111</guid>
+      <pubDate>Mon, 24 Aug 2026 06:00:00 +0000</pubDate>
+      <itunes:duration>01:23:45</itunes:duration>
+      <itunes:image href="https://i1.sndcdn.com/artworks-400.jpg"/>
+      <enclosure url="https://feeds.soundcloud.com/stream/1111111-podlodka-400.mp3"
+                 length="120586240" type="audio/mpeg"/>
+    </item>
+    <item>
+      <title>Podlodka #399 – Наблюдаемость</title>
+      <description>Метрики, логи, трейсы.</description>
+      <guid isPermaLink="false">tag:soundcloud,2010:tracks/2222222</guid>
+      <pubDate>Mon, 17 Aug 2026 06:00:00 +0000</pubDate>
+      <itunes:duration>4980</itunes:duration>
+      <enclosure url="https://feeds.soundcloud.com/stream/2222222-podlodka-399.mp3"
+                 length="99614720" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Name of the notification channel that carries episode download progress. -->
+    <string name="download_notification_channel_name">Episode downloads</string>
+    <!-- Explains the channel in the system's notification settings. -->
+    <string name="download_notification_channel_description">Progress while episodes are being saved for offline listening</string>
+    <!-- Shown on the download progress notification while downloads are running. -->
+    <string name="downloading_episodes">Downloading episodes</string>
+</resources>

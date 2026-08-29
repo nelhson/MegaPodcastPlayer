@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?playlist_id=PLBQmLCA6V3Nc_Z_LpUguOnbjrgt9LqlG0"/>
+ <id>yt:playlist:PLBQmLCA6V3Nc_Z_LpUguOnbjrgt9LqlG0</id>
+ <yt:playlistId>PLBQmLCA6V3Nc_Z_LpUguOnbjrgt9LqlG0</yt:playlistId>
+ <yt:channelId>UCNOOCgef5RwhHm1mS6lhZuQ</yt:channelId>
+ <title>Generic</title>
+ <author>
+  <name>Boris Veriga</name>
+  <uri>https://www.youtube.com/channel/UCNOOCgef5RwhHm1mS6lhZuQ</uri>
+ </author>
+ <published>2023-11-18T00:18:06+00:00</published>
+ <entry>
+  <id>yt:video:niTJ2221aS8</id>
+  <yt:videoId>niTJ2221aS8</yt:videoId>
+  <yt:channelId>UCnbGR1mOt2ER3glUovq1C6w</yt:channelId>
+  <title>Оправдан ли запрет на соцсети для детей?</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=niTJ2221aS8"/>
+  <author>
+   <name>Ирина Якутенко</name>
+   <uri>https://www.youtube.com/channel/UCnbGR1mOt2ER3glUovq1C6w</uri>
+  </author>
+  <published>2026-08-26T18:24:30+00:00</published>
+  <updated>2026-08-27T14:35:38+00:00</updated>
+  <media:group>
+   <media:title>Оправдан ли запрет на соцсети для детей?</media:title>
+   <media:content url="https://www.youtube.com/v/niTJ2221aS8?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i3.ytimg.com/vi/niTJ2221aS8/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Продолжение разговора о том, как социальные сети влияют на детей и их развитие и что с этим можно поделать. На
+
+Вторая строка описания.</media:description>
+   <media:community>
+    <media:starRating count="947" average="5.00" min="1" max="5"/>
+    <media:statistics views="27143"/>
+   </media:community>
+  </media:group>
+ </entry>
+<entry>
+  <id>yt:video:Eplxom-e1C4</id>
+  <yt:channelId>UCJuotEzekRzmMEQdADcdJ8w</yt:channelId>
+  <title>Мой воркфлоу агентного программирования: параллельные сессии и пулреквесты в опенсорс</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=Eplxom-e1C4"/>
+  <author>
+   <name>Организованное программирование | Кирилл Мокевнин</name>
+   <uri>https://www.youtube.com/channel/UCJuotEzekRzmMEQdADcdJ8w</uri>
+  </author>
+  <published>2026-08-23T15:40:35+00:00</published>
+  <updated>2026-08-24T07:29:36+00:00</updated>
+  <media:group>
+   <media:title>Мой воркфлоу агентного программирования: параллельные сессии и пулреквесты в опенсорс</media:title>
+   <media:content url="https://www.youtube.com/v/Eplxom-e1C4?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i2.ytimg.com/vi/Eplxom-e1C4/hqdefault.jpg" width="480" height="360"/>
+   <media:description>🔹 Присоединяйся к курсу «ИИ для разработчиков» https://ru.hexlet.io/programs/ai-for-developers?utm_source=yout
+
+Вторая строка описания.</media:description>
+   <media:community>
+    <media:starRating count="345" average="5.00" min="1" max="5"/>
+    <media:statistics views="21384"/>
+   </media:community>
+  </media:group>
+ </entry>
+<entry>
+  <id>yt:video:aHsi-OHI_i8</id>
+  <yt:videoId>aHsi-OHI_i8</yt:videoId>
+  <yt:channelId>UCQsdoxsb3kqgwUrRSnoqJaw</yt:channelId>
+  <title>КАК пройти Систем Дизайн на 30,000$? Гайд по Систем Дизайн с @vladimir_balun_programming</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=aHsi-OHI_i8"/>
+  <author>
+   <name>You look like a geek</name>
+   <uri>https://www.youtube.com/channel/UCQsdoxsb3kqgwUrRSnoqJaw</uri>
+  </author>
+  <published>2026-08-26T11:12:18+00:00</published>
+  <updated>2026-08-26T11:26:16+00:00</updated>
+ </entry>
+</feed>

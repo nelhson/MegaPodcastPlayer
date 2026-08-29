@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!--
+            Declared here rather than in :app so that the module that owns the player also owns its
+            manifest entry. The name must be fully qualified: a leading dot in a library manifest
+            resolves against the *application's* package, not this module's.
+
+            exported="true" is required by Media3: the media button receiver, Android Auto and the
+            system's media resumption UI all reach the session from outside the app.
+        -->
+        <service
+            android:name="md.borisveriga.bpodcat.core.media.PlaybackService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <!--
+                Only the session action. `android.media.browse.MediaBrowserService` belongs to a
+                MediaLibraryService; advertising it here would invite Android Auto to bind a browser
+                this service does not implement.
+            -->
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+
+        <!--
+            The download service. Unlike the playback service this is never bound to and never
+            reached from outside the app: Media3 starts it with explicit intents that EpisodeDownloader
+            sends, so it stays unexported.
+
+            dataSync is the right foreground type for "fetching files the user asked for"; media
+            playback would be a lie and Android 14+ rejects a mismatched type at startForeground().
+        -->
+        <service
+            android:name="md.borisveriga.bpodcat.core.media.download.EpisodeDownloadService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!--
+            PlatformScheduler's JobService, which is how a download interrupted by a reboot or by a
+            lost Wi-Fi connection gets restarted. Declared here because the scheduler is created in
+            EpisodeDownloadService; the BIND_JOB_SERVICE permission is required by the platform.
+        -->
+        <service
+            android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+    </application>
+
+</manifest>

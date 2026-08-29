@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>Бреслав и Ложечкин</title>
+    <description>Разговоры про менеджмент.</description>
+    <managingEditor>hello@example.com (Breslav &amp; Lozhechkin)</managingEditor>
+    <item>
+      <!-- No <guid>: the enclosure URL has to stand in as the identity. -->
+      <title>Выпуск без guid</title>
+      <description>Описание выпуска.</description>
+      <pubDate>2 Mar 2026 09:15:00 +0300</pubDate>
+      <enclosure url="https://cdn.example.com/episodes/no-guid.mp3" length="0" type="audio/mpeg"/>
+    </item>
+    <item>
+      <!-- No duration and an unparseable date: both must degrade to null, not drop the item. -->
+      <title>Выпуск без длительности</title>
+      <description>Ещё описание.</description>
+      <pubDate>вчера вечером</pubDate>
+      <itunes:duration>not-a-duration</itunes:duration>
+      <enclosure url="https://cdn.example.com/episodes/no-duration.mp3" type="audio/mpeg"/>
+    </item>
+    <item>
+      <!-- No enclosure at all: an announcement, not an episode. Must be skipped. -->
+      <title>Просто анонс</title>
+      <description>Мы вернёмся в сентябре.</description>
+      <guid>announcement-1</guid>
+      <pubDate>Tue, 03 Mar 2026 10:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <!-- A non-audio enclosure must also be skipped. -->
+      <title>Транскрипт</title>
+      <guid>transcript-1</guid>
+      <enclosure url="https://cdn.example.com/episodes/transcript.pdf" type="application/pdf"/>
+    </item>
+    <item>
+      <title>Короткий выпуск</title>
+      <description>MM:SS duration.</description>
+      <guid>short-1</guid>
+      <pubDate>Wed, 04 Mar 2026 10:00:00 GMT</pubDate>
+      <itunes:duration>12:30</itunes:duration>
+      <enclosure url="https://cdn.example.com/episodes/short.mp3" length="9000000" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>
