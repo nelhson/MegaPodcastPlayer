@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.core.youtube
 
+import java.io.IOException
 import java.net.HttpURLConnection
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -144,6 +145,38 @@ class OkHttpNewPipeDownloaderTest {
         val response = downloader.execute(Request.newBuilder().get(url("/start")).build())
 
         assertTrue(response.latestUrl(), response.latestUrl().endsWith("/final"))
+    }
+
+    @Test
+    fun `refuses a body larger than the cap instead of buffering it`() {
+        // The extractor runs in the player's process and this bridge buffers the whole body into a
+        // String, so an oversized response from a host nobody here controls is an OOM that takes
+        // playback down with it. Refusing it is the cheap half of that trade.
+        server.enqueue(
+            MockResponse.Builder()
+                .code(HttpURLConnection.HTTP_OK)
+                .body("x".repeat(3 * 1024 * 1024))
+                .build(),
+        )
+
+        try {
+            downloader.execute(Request.newBuilder().get(url()).build())
+            fail("Expected an IOException for an oversized body")
+        } catch (expected: IOException) {
+            assertTrue(expected.message, expected.message.orEmpty().contains("exceeded"))
+        }
+    }
+
+    @Test
+    fun `accepts a body comfortably under the cap`() {
+        // Guards the other side of the boundary: real InnerTube payloads run to a few hundred
+        // kilobytes, and the cap must not start rejecting them.
+        val body = "y".repeat(512 * 1024)
+        server.enqueue(MockResponse.Builder().code(HttpURLConnection.HTTP_OK).body(body).build())
+
+        val response = downloader.execute(Request.newBuilder().get(url()).build())
+
+        assertEquals(body.length, response.responseBody().length)
     }
 
     @Test

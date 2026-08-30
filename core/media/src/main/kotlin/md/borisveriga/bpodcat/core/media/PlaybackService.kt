@@ -27,9 +27,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import md.borisveriga.bpodcat.core.common.di.ApplicationScope
+import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.datastore.UserPreferencesDataSource
 import md.borisveriga.bpodcat.core.media.di.PlaybackDataSource
+import md.borisveriga.bpodcat.core.model.PlaybackSettings
 
 /**
  * The foreground service that owns the one and only [ExoPlayer] instance.
@@ -65,6 +67,14 @@ class PlaybackService : MediaSessionService() {
     lateinit var userPreferences: UserPreferencesDataSource
 
     /**
+     * Outlives the service, and is therefore the only scope that can carry the final position
+     * write in [onDestroy] — [serviceScope] is cancelled there by definition.
+     */
+    @Inject
+    @ApplicationScope
+    lateinit var applicationScope: CoroutineScope
+
+    /**
      * Scope for progress writes.
      *
      * Runs on the main dispatcher because every callback that feeds it already arrives on the
@@ -76,11 +86,6 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-
-        // The player must exist synchronously — Media3 hands the session a Player during onCreate —
-        // and the persisted speed and skip intervals are part of building it. This is one small
-        // DataStore read of a file the OS has usually already paged in.
-        val settings = runBlocking { userPreferences.playbackSettings.first() }
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
@@ -98,12 +103,12 @@ class PlaybackService : MediaSessionService() {
             // Streaming needs the radio to stay up while the screen is off.
             .setWakeMode(C.WAKE_MODE_NETWORK)
             // These drive the *notification's* skip buttons. The in-app buttons seek explicitly
-            // through PlaybackConnection, so a changed interval takes effect there immediately and
-            // here the next time the service starts.
-            .setSeekForwardIncrementMs(settings.skipForwardMs)
-            .setSeekBackIncrementMs(settings.skipBackMs)
+            // through PlaybackConnection, so a changed interval takes effect there immediately.
+            // Built with the defaults and corrected by [applyPersistedSettings] below: Media3 hands
+            // the session a Player during onCreate, so construction cannot wait on disk.
+            .setSeekForwardIncrementMs(PlaybackSettings.DEFAULT_SKIP_FORWARD_MS)
+            .setSeekBackIncrementMs(PlaybackSettings.DEFAULT_SKIP_BACK_MS)
             .build()
-            .apply { setPlaybackSpeed(settings.speed) }
 
         player.addListener(PlaybackPersistenceListener(player))
 
@@ -113,6 +118,28 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         startPositionTicker(player)
+        applyPersistedSettings(player)
+    }
+
+    /**
+     * Applies the user's stored speed and skip intervals to an already-built player.
+     *
+     * Deliberately asynchronous. Blocking `onCreate` on a DataStore read is harmless on the happy
+     * path and dangerous on the one that matters: the service is most often recreated *under memory
+     * pressure*, which is exactly when a cold DataStore read has to go to disk and can reach the ANR
+     * window. All three values are settable after construction, so the only consequence of waiting
+     * is that the notification's skip buttons use [PlaybackSettings]' defaults for the few
+     * milliseconds before the read lands — and nothing can be playing yet at that point.
+     *
+     * @param player the player built in [onCreate].
+     */
+    private fun applyPersistedSettings(player: ExoPlayer) {
+        serviceScope.launch {
+            val settings = userPreferences.playbackSettings.first()
+            player.setPlaybackSpeed(settings.speed)
+            player.setSeekForwardIncrementMs(settings.skipForwardMs)
+            player.setSeekBackIncrementMs(settings.skipBackMs)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -133,9 +160,13 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         mediaSession?.run {
-            // One last flush. Deliberately blocking: [serviceScope] is cancelled immediately below,
-            // so a launched coroutine would never get to run.
-            runBlocking { savePosition(player) }
+            // One last flush, in two halves. The reading is synchronous because the player is
+            // released on the very next line; the *write* is handed to [applicationScope], which
+            // outlives the service. Blocking here instead would put disk IO on the main thread
+            // during system-initiated shutdown — the moment disk contention is at its worst.
+            readPosition(player)?.let { position ->
+                applicationScope.launch { position.recordInto(progressRecorder) }
+            }
             player.release()
             release()
         }
@@ -162,12 +193,25 @@ class PlaybackService : MediaSessionService() {
 
     /** Writes the loaded episode's position, if an episode is loaded at all. */
     private suspend fun savePosition(player: Player) {
-        val episodeId = player.currentMediaItem?.episodeId ?: return
-        progressRecorder.recordPosition(
+        readPosition(player)?.recordInto(progressRecorder)
+    }
+
+    /**
+     * Takes a position reading off the player, without writing it.
+     *
+     * Split out of [savePosition] so that [onDestroy] can read *before* releasing the player and
+     * write afterwards, on a scope that survives the service.
+     *
+     * @param player the player to read.
+     * @return null when no episode is loaded, which is not an error.
+     */
+    private fun readPosition(player: Player): PositionReading? {
+        val episodeId = player.currentMediaItem?.episodeId ?: return null
+        return PositionReading(
             episodeId = episodeId,
             positionMs = player.currentPosition.coerceAtLeast(0L),
-            // Feeds routinely misreport itunes:duration, so prefer what the decoder measured — but
-            // only once it knows.
+            // Feeds routinely misreport itunes:duration, so prefer what the decoder measured —
+            // but only once it knows.
             durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L },
         )
     }
@@ -290,27 +334,51 @@ class PlaybackService : MediaSessionService() {
             isForPlayback: Boolean,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
-            serviceScope.launch {
-                try {
+            val job = serviceScope.launch {
+                suspendRunCatching {
                     // mapNotNull, not map: an episode whose stored audio URL fails the scheme
                     // allowlist is dropped from the resumed queue rather than handed to the player.
                     val queue = queueSource.resumableQueue().filter { it.hasPlayableAudio }
-                    future.set(
-                        MediaSession.MediaItemsWithStartPosition(
-                            queue.mapNotNull { it.toMediaItemOrNull() },
-                            /* startIndex = */ 0,
-                            // Resume where the user stopped, not at the top of the episode.
-                            /* startPositionMs = */ queue.firstOrNull()?.episode?.positionMs ?: 0L,
-                        ),
+                    MediaSession.MediaItemsWithStartPosition(
+                        queue.mapNotNull { it.toMediaItemOrNull() },
+                        /* startIndex = */ 0,
+                        // Resume where the user stopped, not at the top of the episode.
+                        /* startPositionMs = */ queue.firstOrNull()?.episode?.positionMs ?: 0L,
                     )
-                } catch (e: Exception) {
+                }.onSuccess { items -> future.set(items) }.onFailure { error ->
                     // Media3 turns a failed future into "nothing to resume", which is the right
                     // outcome when the database cannot be read.
-                    Log.w(TAG, "Could not rebuild the queue for playback resumption", e)
-                    future.setException(e)
+                    Log.w(TAG, "Could not rebuild the queue for playback resumption", error)
+                    future.setException(error)
                 }
             }
+            // Cancellation propagates out of the block above now that it is no longer swallowed, so
+            // the service dying mid-read must not leave Media3 awaiting a future forever. This is a
+            // no-op on a future that has already been set.
+            job.invokeOnCompletion { future.cancel(/* mayInterruptIfRunning = */ false) }
             return future
+        }
+    }
+
+    /**
+     * One position reading, detached from the player it came from.
+     *
+     * @property episodeId the episode the position belongs to.
+     * @property positionMs how far into it playback had reached.
+     * @property durationMs the decoder's measured duration, or null before it knows one.
+     */
+    private data class PositionReading(
+        val episodeId: String,
+        val positionMs: Long,
+        val durationMs: Long?,
+    ) {
+        /** Writes this reading through [recorder]. */
+        suspend fun recordInto(recorder: PlaybackProgressRecorder) {
+            recorder.recordPosition(
+                episodeId = episodeId,
+                positionMs = positionMs,
+                durationMs = durationMs,
+            )
         }
     }
 

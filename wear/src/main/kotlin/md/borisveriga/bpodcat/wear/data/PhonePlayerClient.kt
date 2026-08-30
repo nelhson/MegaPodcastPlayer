@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.wearprotocol.NowPlayingSnapshot
 import md.borisveriga.bpodcat.core.wearprotocol.WearCommand
 import md.borisveriga.bpodcat.core.wearprotocol.WearMessages
@@ -105,7 +106,13 @@ class PhonePlayerClient @Inject constructor(
      * Both listened for and polled. The capability listener fires promptly when the phone app
      * appears or disappears, but not in every case that matters — a phone carried out of Bluetooth
      * range does not always announce itself — and a remote control that keeps claiming to be
-     * connected while nothing works is worse than one that takes [LINK_POLL_INTERVAL_MS] to notice.
+     * connected while nothing works is worse than one that takes a poll interval to notice.
+     *
+     * The poll interval backs off. This flow is collected for as long as a screen is up, and on a
+     * watch a fixed ten-second wake-up is a measurable battery cost for a check that almost never
+     * changes its answer. The first [EAGER_POLL_COUNT] polls run at [EAGER_POLL_INTERVAL_MS], which
+     * covers the case that matters — the user has just raised their wrist and the listener has not
+     * caught up yet — and every poll after that runs at [IDLE_POLL_INTERVAL_MS].
      */
     val phoneLink: Flow<PhoneLink> = callbackFlow {
         val listener = CapabilityClient.OnCapabilityChangedListener {
@@ -114,9 +121,11 @@ class PhonePlayerClient @Inject constructor(
         capabilityClient.addListener(listener, WearPaths.PHONE_CAPABILITY)
 
         val poller = launch {
+            var completedPolls = 0
             while (isActive) {
                 send(currentLink())
-                delay(LINK_POLL_INTERVAL_MS)
+                completedPolls++
+                delay(linkPollDelayMs(completedPolls))
             }
         }
 
@@ -141,7 +150,7 @@ class PhonePlayerClient @Inject constructor(
         // one is actually playing, and the other one ignores a command about an episode it has not
         // loaded anyway.
         return nodeIds.count { nodeId ->
-            runCatching {
+            suspendRunCatching {
                 messageClient.sendMessage(nodeId, WearPaths.COMMAND, payload).await()
             }.isSuccess
         } > 0
@@ -151,7 +160,9 @@ class PhonePlayerClient @Inject constructor(
     private suspend fun currentLink(): PhoneLink {
         if (capablePhoneNodeIds().isNotEmpty()) return PhoneLink.CONNECTED
 
-        val connected = runCatching { nodeClient.connectedNodes.await() }.getOrNull().orEmpty()
+        val connected = suspendRunCatching { nodeClient.connectedNodes.await() }
+            .getOrNull()
+            .orEmpty()
         return if (connected.isEmpty()) PhoneLink.DISCONNECTED else PhoneLink.APP_NOT_INSTALLED
     }
 
@@ -163,11 +174,11 @@ class PhonePlayerClient @Inject constructor(
      * handle the path is harmless, and beats refusing to work at all.
      */
     private suspend fun phoneNodeIds(): List<String> = capablePhoneNodeIds().ifEmpty {
-        runCatching { nodeClient.connectedNodes.await() }.getOrNull().orEmpty().map { it.id }
+        suspendRunCatching { nodeClient.connectedNodes.await() }.getOrNull().orEmpty().map { it.id }
     }
 
     /** Ids of reachable nodes that advertise the phone app's capability. */
-    private suspend fun capablePhoneNodeIds(): List<String> = runCatching {
+    private suspend fun capablePhoneNodeIds(): List<String> = suspendRunCatching {
         capabilityClient
             .getCapability(WearPaths.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
             .await()
@@ -182,7 +193,7 @@ class PhonePlayerClient @Inject constructor(
      * replicated to the watch when the phone published it, and stays readable with the phone
      * asleep, out of range or switched off.
      */
-    private suspend fun readCachedSnapshot(): ReceivedSnapshot? = runCatching {
+    private suspend fun readCachedSnapshot(): ReceivedSnapshot? = suspendRunCatching {
         val buffer = dataClient.getDataItems(nowPlayingUri).await()
         try {
             buffer.firstNotNullOfOrNull(::decode)
@@ -207,8 +218,40 @@ class PhonePlayerClient @Inject constructor(
     private companion object {
         /** Data Layer wildcard authority: match the item whichever node published it. */
         const val ANY_NODE = "*"
-
-        /** How often the link is re-checked while the screen is up. */
-        const val LINK_POLL_INTERVAL_MS = 10_000L
     }
 }
+
+/**
+ * How often the link is re-checked just after a screen starts collecting.
+ *
+ * Short, because this is the window in which the capability listener is most likely to be behind
+ * reality: the watch has just woken and Play Services may not have re-established the connection.
+ */
+internal const val EAGER_POLL_INTERVAL_MS = 10_000L
+
+/** How many polls run at [EAGER_POLL_INTERVAL_MS] before backing off — the first minute of a screen. */
+internal const val EAGER_POLL_COUNT = 6
+
+/**
+ * How often the link is re-checked thereafter.
+ *
+ * The capability listener covers every transition it can see; this only exists to catch the one it
+ * cannot — a phone carried out of range without announcing it — and once a minute is often enough
+ * for that on a device where every wake-up costs battery.
+ */
+internal const val IDLE_POLL_INTERVAL_MS = 60_000L
+
+/**
+ * How long to wait before re-checking the phone link.
+ *
+ * Extracted from [PhonePlayerClient.phoneLink] so the policy can be asserted without standing up
+ * four Play Services clients. The flow is collected for as long as a screen is up, so a fixed
+ * ten-second wake-up would be a permanent battery cost for a check that almost never changes its
+ * answer; the eager phase exists only to cover the moment the user raises their wrist and the
+ * capability listener has not caught up yet.
+ *
+ * @param completedPolls how many polls this collection has already performed.
+ * @return the delay before the next one.
+ */
+internal fun linkPollDelayMs(completedPolls: Int): Long =
+    if (completedPolls < EAGER_POLL_COUNT) EAGER_POLL_INTERVAL_MS else IDLE_POLL_INTERVAL_MS

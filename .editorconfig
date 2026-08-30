@@ -18,6 +18,10 @@ ij_kotlin_allow_trailing_comma = true
 ij_kotlin_allow_trailing_comma_on_call_site = true
 ij_kotlin_name_count_to_use_star_import = 2147483647
 ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
+# Kotlin's official style groups nothing: imports are one lexicographic block. ktlint's default
+# layout is IntelliJ's Java-flavoured one (java/javax/kotlin and aliases pushed to the end), which
+# no file in this repo follows, so without this every file with an import fails `detekt`.
+ij_kotlin_imports_layout = *
 
 [*.{xml,yml,yaml,toml,json}]
 indent_size = 2

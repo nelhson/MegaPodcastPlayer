@@ -1,10 +1,10 @@
 package md.borisveriga.bpodcat.core.testing
 
+import java.time.Instant
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSource
-import java.time.Instant
 
 /**
  * Fixture builders for the `:core:model` types.

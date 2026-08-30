@@ -9,8 +9,10 @@ import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.database.BPodcatDatabase
@@ -303,6 +305,48 @@ class OfflineFirstPodcastRepositoryTest {
         assertEquals(listOf("Podlodka Podcast"), summary.failedTitles)
         assertEquals(1, summary.refreshedCount)
         assertEquals(1, summary.newEpisodeCount)
+    }
+
+    @Test
+    fun `cancelling a refresh run stops it instead of finishing the library`() = runTest {
+        // Two shows, so that "the rest of the run" exists to be stopped.
+        val otherFeedUrl = "https://example.com/other.rss"
+        coEvery { itunes.lookup(any()) } returns appleResult
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
+        repository.addFromInput("1209828744")
+        coEvery { feeds.fetch(otherFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(
+                channel(feedItem("z")).copy(title = "Радио-Т"),
+                etag = null,
+                lastModified = null,
+            )
+        repository.addFromInput(otherFeedUrl)
+
+        // Whichever show the run reaches first blocks forever; the run is cancelled while it waits.
+        val firstFetchStarted = CompletableDeferred<Unit>()
+        val neverAnswers = CompletableDeferred<FeedFetchResult>()
+        val refreshFetches = mutableListOf<String>()
+        coEvery { feeds.fetch(any(), any(), any()) } coAnswers {
+            refreshFetches += firstArg<String>()
+            firstFetchStarted.complete(Unit)
+            neverAnswers.await()
+        }
+
+        val job = launch { repository.refreshAll(onlyAutoRefreshable = false) }
+        firstFetchStarted.await()
+        job.cancel()
+        job.join()
+
+        // The point of the test. `catch (e: Exception)` around the loop body caught the
+        // CancellationException, logged it as "this feed failed" and carried on to the second show
+        // — so cancelling a library refresh did not actually stop it fetching.
+        assertEquals(
+            "A cancelled refresh must not keep fetching the remaining feeds",
+            1,
+            refreshFetches.size,
+        )
+        assertTrue(job.isCancelled)
     }
 
     @Test

@@ -159,3 +159,15 @@ ktlint:
   # deliberate convention here, so this rule is wrong for this codebase.
   Kdoc:
     active: false
+  # ktlint defaults to IntelliJ's Java-flavoured layout, which pushes `java`, `javax`, `kotlin` and
+  # aliases to the end. Kotlin's official style groups nothing, which is what every file here does,
+  # so the rule stays on and is simply told the right layout. `.editorconfig` carries the matching
+  # `ij_kotlin_imports_layout` so the IDE agrees; detekt does not read it, hence both.
+  ImportOrdering:
+    active: true
+    layout: '*'
+  # Forbids `foo(/* handleAudioFocus = */ true)`. Naming a positional argument in a comment is the
+  # only way to label one on the Java and Media3 APIs this app calls, it is used consistently
+  # throughout, and it is precisely the sort of comment worth keeping.
+  CommentWrapping:
+    active: false

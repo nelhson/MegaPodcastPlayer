@@ -3,8 +3,6 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>BlankLineBetweenWhenConditions:Formatters.kt:when { // A feed with a slightly-future timestamp is common; treat it as "just published". daysAgo &lt; 0L -&gt; "Today" daysAgo == 0L -&gt; "Today" daysAgo == 1L -&gt; "Yesterday" daysAgo &lt; 7L -&gt; "$daysAgo days ago" date.year == today.year -&gt; date.format(SHORT_DATE) else -&gt; date.format(LONG_DATE) }</ID>
-    <ID>ImportOrdering:CoroutinesModule.kt:import dagger.Module import dagger.Provides import dagger.hilt.InstallIn import dagger.hilt.components.SingletonComponent import javax.inject.Singleton import kotlinx.coroutines.CoroutineDispatcher import kotlinx.coroutines.CoroutineScope import kotlinx.coroutines.Dispatchers import kotlinx.coroutines.SupervisorJob</ID>
-    <ID>ImportOrdering:FormattersTest.kt:import java.time.Instant import java.time.ZoneOffset import org.junit.Assert.assertEquals import org.junit.Assert.assertNull import org.junit.Test</ID>
     <ID>MagicNumber:Formatters.kt:1000</ID>
     <ID>MagicNumber:Formatters.kt:7L</ID>
     <ID>MagicNumber:PlainText.kt:0x10FFFF</ID>

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import md.borisveriga.bpodcat.core.common.di.BPodcatDispatcher
 import md.borisveriga.bpodcat.core.common.di.Dispatcher
+import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.media.di.DownloadCache
 
 /**
@@ -153,7 +154,7 @@ class EpisodeDownloader @Inject constructor(
      * right.
      */
     suspend fun currentStatuses(): List<EpisodeDownloadStatus> = withContext(ioDispatcher) {
-        runCatching {
+        suspendRunCatching {
             downloadManager.downloadIndex.getDownloads().use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) {
@@ -176,7 +177,7 @@ class EpisodeDownloader @Inject constructor(
      * thing actually taking up the user's storage — partial downloads and all.
      */
     suspend fun downloadedBytes(): Long = withContext(ioDispatcher) {
-        runCatching { cache.cacheSpace }.getOrElse { 0L }
+        suspendRunCatching { cache.cacheSpace }.getOrElse { 0L }
     }
 
     /**

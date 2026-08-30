@@ -11,16 +11,17 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import md.borisveriga.bpodcat.core.common.di.BPodcatDispatcher
 import md.borisveriga.bpodcat.core.common.di.Dispatcher
+import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.data.mapper.asEpisodeEntity
 import md.borisveriga.bpodcat.core.data.mapper.asPodcastEntity
 import md.borisveriga.bpodcat.core.database.dao.EpisodeDao
 import md.borisveriga.bpodcat.core.database.dao.PodcastDao
 import md.borisveriga.bpodcat.core.database.model.PodcastEntity
 import md.borisveriga.bpodcat.core.database.model.asExternalModel
-import md.borisveriga.bpodcat.core.model.PodcastLinkParser
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastLink
+import md.borisveriga.bpodcat.core.model.PodcastLinkParser
 import md.borisveriga.bpodcat.core.model.PodcastSearchResult
 import md.borisveriga.bpodcat.core.model.PodcastSource
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
@@ -69,7 +70,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
     override suspend fun search(term: String): Result<List<PodcastSearchResult>> =
         withContext(ioDispatcher) {
-            runCatching { itunes.search(term) }
+            suspendRunCatching { itunes.search(term) }
         }
 
     override suspend fun addFromInput(input: String): AddPodcastResult = withContext(ioDispatcher) {
@@ -145,13 +146,14 @@ class OfflineFirstPodcastRepository @Inject constructor(
             return@withContext AddPodcastResult.AlreadyInLibrary(existing.asExternalModel())
         }
 
-        val fetched = try {
-            feeds.fetch(feedUrl, source = source)
-        } catch (e: Exception) {
-            // The user only sees a short snackbar; keep the stack trace where it can be read.
-            Log.w(TAG, "Failed to add feed $feedUrl", e)
-            return@withContext AddPodcastResult.Failed(e)
-        }
+        // suspendRunCatching, not try/catch: a cancelled add must unwind rather than be reported
+        // to the user as a failed one and then keep writing rows.
+        val fetched = suspendRunCatching { feeds.fetch(feedUrl, source = source) }
+            .getOrElse { error ->
+                // The user only sees a short snackbar; keep the stack trace where it can be read.
+                Log.w(TAG, "Failed to add feed $feedUrl", error)
+                return@withContext AddPodcastResult.Failed(error)
+            }
 
         // A brand-new feed can never answer 304, but the type forces us to be explicit.
         val channel = when (fetched) {
@@ -189,7 +191,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
     override suspend fun refresh(podcastId: String): Result<Int> = withContext(ioDispatcher) {
         val podcast = podcastDao.getById(podcastId)
             ?: return@withContext Result.failure(NoSuchElementException("Unknown podcast $podcastId"))
-        runCatching { refreshOne(podcast) }
+        suspendRunCatching { refreshOne(podcast) }
     }
 
     override suspend fun refreshAll(onlyAutoRefreshable: Boolean): RefreshSummary =
@@ -206,15 +208,18 @@ class OfflineFirstPodcastRepository @Inject constructor(
             val failed = mutableListOf<String>()
 
             for (podcast in podcasts) {
-                try {
-                    val discovered = refreshOne(podcast)
-                    if (discovered == NOT_MODIFIED) notModified++ else refreshed++
-                    if (discovered > 0) newEpisodes += discovered
-                } catch (e: Exception) {
-                    // One unreachable host must not abort the whole run.
-                    Log.w(TAG, "Refresh failed for ${podcast.feedUrl}", e)
-                    failed += podcast.title
-                }
+                // One unreachable host must not abort the whole run — but a cancelled run must
+                // stop here rather than work through every remaining feed. suspendRunCatching is
+                // what keeps those two apart.
+                suspendRunCatching { refreshOne(podcast) }
+                    .onSuccess { discovered ->
+                        if (discovered == NOT_MODIFIED) notModified++ else refreshed++
+                        if (discovered > 0) newEpisodes += discovered
+                    }
+                    .onFailure { error ->
+                        Log.w(TAG, "Refresh failed for ${podcast.feedUrl}", error)
+                        failed += podcast.title
+                    }
             }
 
             RefreshSummary(

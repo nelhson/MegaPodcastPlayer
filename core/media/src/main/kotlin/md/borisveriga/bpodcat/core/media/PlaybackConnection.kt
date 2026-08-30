@@ -9,6 +9,8 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutionException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -29,6 +31,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import md.borisveriga.bpodcat.core.common.di.ApplicationScope
+import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.model.PlaybackSettings
 
 /**
@@ -66,13 +69,13 @@ class PlaybackConnection @Inject constructor(
      * navigating from the mini player to the full player must not tear the connection down.
      */
     val playbackState: StateFlow<PlaybackState> = callbackFlow {
-        val mediaController = try {
-            controller()
-        } catch (e: Exception) {
-            // No service means no playback, but the UI must still render — as idle, not as a crash.
-            send(PlaybackState(isConnected = false, errorMessage = e.message))
-            return@callbackFlow
-        }
+        val mediaController = suspendRunCatching { controller() }
+            .getOrElse { error ->
+                // No service means no playback, but the UI must still render — as idle, not as a
+                // crash. A cancelled collector is not a failure and never reaches here.
+                send(PlaybackState(isConnected = false, errorMessage = error.message))
+                return@callbackFlow
+            }
 
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
@@ -297,7 +300,7 @@ class PlaybackConnection @Inject constructor(
      * reached, which reads as "nothing is playing" and is the right answer in that case.
      */
     suspend fun currentState(): PlaybackState = withContext(Dispatchers.Main.immediate) {
-        runCatching { controller().snapshot(commandErrors.value) }.getOrElse { PlaybackState() }
+        suspendRunCatching { controller().snapshot(commandErrors.value) }.getOrElse { PlaybackState() }
     }
 
     /**
@@ -307,11 +310,8 @@ class PlaybackConnection @Inject constructor(
      * killed, say) must not take down the caller's view model.
      */
     private suspend fun onController(block: (MediaController) -> Unit) {
-        try {
-            withContext(Dispatchers.Main.immediate) { block(controller()) }
-        } catch (e: Exception) {
-            commandErrors.value = e.message ?: e::class.simpleName
-        }
+        suspendRunCatching { withContext(Dispatchers.Main.immediate) { block(controller()) } }
+            .onFailure { error -> commandErrors.value = error.message ?: error::class.simpleName }
     }
 
     /**
@@ -378,16 +378,24 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
 /**
  * Suspends until a [ListenableFuture] completes.
  *
- * Media3 hands back Guava futures; this is the two-line bridge to coroutines that avoids pulling in
+ * Media3 hands back Guava futures; this is the short bridge to coroutines that avoids pulling in
  * `kotlinx-coroutines-guava` for one call site.
+ *
+ * The two failures [java.util.concurrent.Future.get] can report are kept apart deliberately. A
+ * future that *failed* wraps the real cause in an [ExecutionException], and the caller wants the
+ * cause — `PlaybackConnection` puts its message in front of the user. A future that was
+ * *cancelled* is not a failure at all: it must cancel the waiting coroutine, not resume it with an
+ * exception that would then be reported as a broken player.
  */
 private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { continuation ->
     addListener(
         {
             try {
                 continuation.resume(get())
-            } catch (e: Exception) {
-                continuation.resumeWithException(e)
+            } catch (cancellation: CancellationException) {
+                continuation.cancel(cancellation)
+            } catch (failure: ExecutionException) {
+                continuation.resumeWithException(failure.cause ?: failure)
             }
         },
         // The listener only completes a continuation, so hopping threads would be pure overhead.

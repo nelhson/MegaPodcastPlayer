@@ -18,6 +18,9 @@ android {
 dependencies {
     // Only the pure-Kotlin contract is shared: no Room, no Retrofit, no phone-side code.
     implementation(projects.core.wearprotocol)
+    // For `suspendRunCatching` and the dispatcher qualifiers. Brings `:core:model` with it, which
+    // is plain Kotlin data classes; still no storage, no networking and no phone-side code.
+    implementation(projects.core.common)
 
     implementation(libs.androidx.core.ktx)
     // The transport controls reuse the same numbered skip glyphs as the phone's player, so the two

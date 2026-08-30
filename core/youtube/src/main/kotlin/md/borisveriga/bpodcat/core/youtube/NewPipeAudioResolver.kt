@@ -6,6 +6,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import md.borisveriga.bpodcat.core.network.di.BPodcatOkHttp
 import okhttp3.OkHttpClient
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
@@ -24,7 +25,6 @@ import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
-import md.borisveriga.bpodcat.core.network.di.BPodcatOkHttp
 
 /**
  * Initialises NewPipe exactly once per process.

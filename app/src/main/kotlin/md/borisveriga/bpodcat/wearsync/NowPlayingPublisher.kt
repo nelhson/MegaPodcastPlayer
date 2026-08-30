@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import md.borisveriga.bpodcat.core.common.di.ApplicationScope
+import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.data.repository.PlaybackRepository
 import md.borisveriga.bpodcat.core.media.PlaybackConnection
 import md.borisveriga.bpodcat.core.wearprotocol.NowPlayingSnapshot
@@ -154,7 +155,7 @@ internal class NowPlayingPublisher @Inject constructor(
             dataMap.putByteArray(WearPaths.PAYLOAD_KEY, WearMessages.encodeSnapshot(snapshot))
         }.asPutDataRequest().setUrgent()
 
-        val sent = runCatching { dataClient.putDataItem(request).await() }.isSuccess
+        val sent = suspendRunCatching { dataClient.putDataItem(request).await() }.isSuccess
         // Only a delivered snapshot may become the baseline: recording a failed one would suppress
         // the next publish as a duplicate and leave the watch showing stale state indefinitely.
         if (sent) lastPublished = PublishedSnapshot(snapshot, clock.millis())

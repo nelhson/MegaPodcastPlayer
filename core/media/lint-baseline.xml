@@ -554,7 +554,7 @@
         errorLine2="                                 ~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="44"
+            line="45"
             column="34"/>
     </issue>
 
@@ -565,7 +565,7 @@
         errorLine2="                                      ~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="45"
+            line="46"
             column="39"/>
     </issue>
 
@@ -576,7 +576,7 @@
         errorLine2="            ~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="58"
+            line="59"
             column="13"/>
     </issue>
 
@@ -587,7 +587,7 @@
         errorLine2="                         ~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="59"
+            line="60"
             column="26"/>
     </issue>
 
@@ -598,7 +598,7 @@
         errorLine2="                                 ~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="60"
+            line="61"
             column="34"/>
     </issue>
 
@@ -609,7 +609,7 @@
         errorLine2="                          ~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="61"
+            line="62"
             column="27"/>
     </issue>
 
@@ -620,7 +620,7 @@
         errorLine2="                         ~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="67"
+            line="68"
             column="26"/>
     </issue>
 
@@ -631,7 +631,7 @@
         errorLine2="                                 ~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="68"
+            line="69"
             column="34"/>
     </issue>
 
@@ -642,7 +642,7 @@
         errorLine2="                          ~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="69"
+            line="70"
             column="27"/>
     </issue>
 
@@ -653,7 +653,7 @@
         errorLine2="                                                                     ~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="71"
+            line="72"
             column="70"/>
     </issue>
 
@@ -664,7 +664,7 @@
         errorLine2="                                                                             ~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="71"
+            line="72"
             column="78"/>
     </issue>
 
@@ -675,7 +675,7 @@
         errorLine2="                        ~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="74"
+            line="75"
             column="25"/>
     </issue>
 
@@ -686,7 +686,7 @@
         errorLine2="                                     ~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="75"
+            line="76"
             column="38"/>
     </issue>
 
@@ -697,7 +697,7 @@
         errorLine2="            ~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="96"
+            line="97"
             column="13"/>
     </issue>
 
@@ -708,7 +708,7 @@
         errorLine2="                                      ~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="96"
+            line="97"
             column="39"/>
     </issue>
 
@@ -719,7 +719,7 @@
         errorLine2="                                                                           ~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="96"
+            line="97"
             column="76"/>
     </issue>
 
@@ -730,7 +730,7 @@
         errorLine2="                            ~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="98"
+            line="99"
             column="29"/>
     </issue>
 
@@ -741,7 +741,7 @@
         errorLine2="                            ~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="114"
+            line="115"
             column="29"/>
     </issue>
 
@@ -752,7 +752,7 @@
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="126"
+            line="127"
             column="29"/>
     </issue>
 
@@ -763,7 +763,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="142"
+            line="143"
             column="13"/>
     </issue>
 
@@ -774,7 +774,7 @@
         errorLine2="                            ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="142"
+            line="143"
             column="29"/>
     </issue>
 
@@ -785,7 +785,7 @@
         errorLine2="                                           ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="142"
+            line="143"
             column="44"/>
     </issue>
 
@@ -796,7 +796,7 @@
         errorLine2="                                                ~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="143"
+            line="144"
             column="49"/>
     </issue>
 
@@ -807,7 +807,7 @@
         errorLine2="                                                                                    ~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="143"
+            line="144"
             column="85"/>
     </issue>
 
@@ -818,7 +818,7 @@
         errorLine2="                            ~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="157"
+            line="158"
             column="29"/>
     </issue>
 
@@ -829,7 +829,7 @@
         errorLine2="                                          ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="157"
+            line="158"
             column="43"/>
     </issue>
 
@@ -840,7 +840,7 @@
         errorLine2="                                                               ~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="157"
+            line="158"
             column="64"/>
     </issue>
 
@@ -851,7 +851,7 @@
         errorLine2="                                  ~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="159"
+            line="160"
             column="35"/>
     </issue>
 
@@ -862,19 +862,19 @@
         errorLine2="                                   ~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="160"
+            line="161"
             column="36"/>
     </issue>
 
     <issue
         id="UnsafeOptInUsageError"
         message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="        runCatching { cache.cacheSpace }.getOrElse { 0L }"
-        errorLine2="                            ~~~~~~~~~~">
+        errorLine1="        suspendRunCatching { cache.cacheSpace }.getOrElse { 0L }"
+        errorLine2="                                   ~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="179"
-            column="29"/>
+            line="180"
+            column="36"/>
     </issue>
 
     <issue
@@ -884,8 +884,30 @@
         errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="86"
+            line="91"
             column="36"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            player.setSeekForwardIncrementMs(settings.skipForwardMs)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
+            line="140"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            player.setSeekBackIncrementMs(settings.skipBackMs)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
+            line="141"
+            column="20"/>
     </issue>
 
     <issue
@@ -895,7 +917,7 @@
         errorLine2="                                         ~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="212"
+            line="256"
             column="42"/>
     </issue>
 
@@ -906,7 +928,7 @@
         errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="284"
+            line="328"
             column="50"/>
     </issue>
 
@@ -917,7 +939,7 @@
         errorLine2="                                                                                ~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="284"
+            line="328"
             column="81"/>
     </issue>
 
@@ -928,7 +950,7 @@
         errorLine2="                     ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="287"
+            line="331"
             column="22"/>
     </issue>
 
@@ -939,19 +961,30 @@
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="291"
+            line="335"
             column="29"/>
     </issue>
 
     <issue
         id="UnsafeOptInUsageError"
         message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="                        MediaSession.MediaItemsWithStartPosition("
-        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                    MediaSession.MediaItemsWithStartPosition("
+        errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="299"
-            column="38"/>
+            line="342"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                }.onSuccess { items -> future.set(items) }.onFailure { error ->"
+        errorLine2="                              ~~~~~">
+        <location
+            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
+            line="348"
+            column="31"/>
     </issue>
 
     <issue

@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.core.youtube
 
+import java.io.IOException
 import okhttp3.OkHttpClient
 import okhttp3.Request as OkHttpRequest
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -38,7 +39,7 @@ internal class OkHttpNewPipeDownloader(private val client: OkHttpClient) : Downl
      *   and these are small JSON and HTML documents.
      * @throws ReCaptchaException on HTTP 429, which is what the extractor's callers watch for to
      *   report rate limiting rather than a generic failure.
-     * @throws java.io.IOException on network failure.
+     * @throws IOException on network failure, or if the body exceeds [MAX_BODY_BYTES].
      */
     override fun execute(request: Request): Response {
         val url = request.url()
@@ -66,11 +67,20 @@ internal class OkHttpNewPipeDownloader(private val client: OkHttpClient) : Downl
                 throw ReCaptchaException("reCaptcha challenge requested", url)
             }
 
+            // Bounded rather than `body.string()`. These bodies come from a host nobody here
+            // controls, they are buffered whole into a String, and the extractor runs in the same
+            // process as the player — so an oversized or endless response is an OOM that kills
+            // playback. peekBody reads at most the cap; anything longer is refused cleanly.
+            val responseBody = response.peekBody(MAX_BODY_BYTES)
+            if (responseBody.contentLength() >= MAX_BODY_BYTES) {
+                throw IOException("Extractor response from $url exceeded $MAX_BODY_BYTES bytes")
+            }
+
             return Response(
                 response.code,
                 response.message,
                 response.headers.toMultimap(),
-                response.body.string(),
+                responseBody.string(),
                 // OkHttp has already followed redirects, so this is where the bytes came from.
                 // The extractor uses it to resolve relative URLs it finds in the body.
                 response.request.url.toString(),
@@ -80,5 +90,14 @@ internal class OkHttpNewPipeDownloader(private val client: OkHttpClient) : Downl
 
     private companion object {
         const val HTTP_TOO_MANY_REQUESTS = 429
+
+        /**
+         * The largest extractor response this bridge will buffer.
+         *
+         * YouTube's watch pages and InnerTube JSON run to a few hundred kilobytes; 2 MB is
+         * generous enough that a legitimate response never trips it, and small enough that a
+         * hostile or broken one cannot exhaust the heap.
+         */
+        const val MAX_BODY_BYTES = 2L * 1024 * 1024
     }
 }
