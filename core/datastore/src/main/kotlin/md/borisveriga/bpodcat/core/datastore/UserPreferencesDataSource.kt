@@ -13,6 +13,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import md.borisveriga.bpodcat.core.model.DownloadSettings
+import md.borisveriga.bpodcat.core.model.LibraryLayout
 import md.borisveriga.bpodcat.core.model.PlaybackSettings
 
 /**
@@ -59,6 +60,19 @@ class UserPreferencesDataSource @Inject constructor(
                 ).coerceAtLeast(DownloadSettings.KEEP_ALL),
             deleteAfterPlaying = preferences[Keys.DELETE_AFTER_PLAYING] ?: true,
         )
+    }
+
+    /**
+     * Observes how the library screen draws its shows.
+     *
+     * An unrecognised value falls back to the default rather than throwing: the stored string is
+     * an enum name, and a build that offered a third layout would otherwise crash this one on
+     * start-up.
+     */
+    val libraryLayout: Flow<LibraryLayout> = dataStore.data.map { preferences ->
+        preferences[Keys.LIBRARY_LAYOUT]
+            ?.let { name -> LibraryLayout.entries.firstOrNull { it.name == name } }
+            ?: LibraryLayout.DEFAULT
     }
 
     /**
@@ -126,6 +140,16 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Records which layout the library screen is showing.
+     *
+     * @param layout the chosen layout; stored by name so the file stays readable and a reordered
+     *   enum cannot silently change what an existing install shows.
+     */
+    suspend fun setLibraryLayout(layout: LibraryLayout) {
+        dataStore.edit { it[Keys.LIBRARY_LAYOUT] = layout.name }
+    }
+
+    /**
      * Records which episode the player is on.
      *
      * @param episodeId the episode, or null once the player is stopped and the queue is empty.
@@ -151,6 +175,7 @@ class UserPreferencesDataSource @Inject constructor(
         val UNMETERED_ONLY = booleanPreferencesKey("download_unmetered_only")
         val KEEP_LIMIT = intPreferencesKey("download_keep_limit_per_podcast")
         val DELETE_AFTER_PLAYING = booleanPreferencesKey("delete_after_playing")
+        val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
     }
 
     private companion object {

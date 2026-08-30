@@ -106,3 +106,29 @@ fun formatPosition(positionMs: Long): String {
         String.format(Locale.US, "%d:%02d", minutes, seconds)
     }
 }
+
+/**
+ * Formats a playback rate as `1x`, `1.5x` or `1.75x`.
+ *
+ * Trailing zeros are trimmed: `1x` reads as a setting, `1.00x` reads as a measurement.
+ *
+ * The digits use [Locale.US] rather than the device locale, deliberately: these captions sit in
+ * fixed-width controls, and a comma decimal separator on one screen next to a point on another is
+ * how the same speed comes to look like two different settings.
+ *
+ * There were three copies of this before it lived here — the player's, the settings screen's and
+ * the watch's — and they did not agree: one rounded before formatting and one did not, so 1.005
+ * came out as `1.01x` in one place and `1x` in another.
+ *
+ * @param speed the playback rate.
+ * @return e.g. `1x`, `1.5x`, `1.75x`.
+ */
+fun formatSpeed(speed: Float): String {
+    val digits = String.format(Locale.US, "%.2f", speed)
+        .trimEnd('0')
+        .trimEnd('.')
+    return digits + SPEED_SUFFIX
+}
+
+/** The multiplier mark after a playback rate; not translated, like `x` in `1.5x`. */
+private const val SPEED_SUFFIX = "x"

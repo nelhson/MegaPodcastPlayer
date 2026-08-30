@@ -23,17 +23,3 @@ internal fun formatPlaybackTime(millis: Long): String {
         String.format(Locale.US, "%d:%02d", minutes, seconds)
     }
 }
-
-/**
- * Formats a playback speed as `1x`, `1.5x` or `1.75x`.
- *
- * Trailing zeros are trimmed: `1x` reads as a setting, `1.00x` reads as a measurement.
- *
- * @param speed the playback rate.
- */
-internal fun formatSpeed(speed: Float): String {
-    val digits = String.format(Locale.US, "%.2f", speed)
-        .trimEnd('0')
-        .trimEnd('.')
-    return digits + "x"
-}

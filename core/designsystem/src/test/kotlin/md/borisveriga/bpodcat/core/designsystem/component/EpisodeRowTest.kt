@@ -1,9 +1,17 @@
 package md.borisveriga.bpodcat.core.designsystem.component
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import org.junit.Assert.assertEquals
@@ -127,5 +135,59 @@ class EpisodeRowTest {
 
         // Now-playing outranks the progress announcement: it is the more useful fact.
         composeTestRule.assertRowState("Current", "Now playing")
+    }
+
+    @Test
+    fun `reports a long press, and offers it as a named action a gesture cannot reach`() {
+        var longPresses = 0
+        composeTestRule.setContent {
+            BPodcatTheme {
+                EpisodeRow(
+                    title = "Hold me",
+                    onClick = {},
+                    onLongClick = { longPresses++ },
+                    longClickLabel = "Select",
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Hold me").performTouchInput { longClick() }
+        assertEquals(1, longPresses)
+
+        // The label is what a TalkBack user is offered in place of the gesture, so an unlabelled
+        // long press is a selection they cannot start.
+        composeTestRule.onNodeWithText("Hold me").assert(
+            SemanticsMatcher("has a labelled long-press action") { node ->
+                node.config.getOrNull(SemanticsActions.OnLongClick)?.label == "Select"
+            },
+        )
+    }
+
+    @Test
+    fun `a selected row says so`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                EpisodeRow(title = "Picked", isSelected = true, onClick = {})
+            }
+        }
+
+        composeTestRule.onNodeWithText("Picked").assert(isSelected())
+    }
+
+    @Test
+    fun `a row outside a selection does not announce itself as unselected`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                EpisodeRow(title = "Ordinary", onClick = {})
+            }
+        }
+
+        // `isNotSelected()` would also match a row carrying `selected = false`, which is exactly
+        // the noise this avoids: the property must be absent, not present and false.
+        composeTestRule.onNodeWithText("Ordinary").assert(
+            SemanticsMatcher("carries no selection state") { node ->
+                node.config.getOrNull(SemanticsProperties.Selected) == null
+            },
+        )
     }
 }

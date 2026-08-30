@@ -1,55 +1,56 @@
 package md.borisveriga.bpodcat.feature.search
 
 import android.content.res.Resources
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import md.borisveriga.bpodcat.core.data.repository.AddPodcastResult
-import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
-import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
+import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.PodcastSearchResult
 import md.borisveriga.bpodcat.core.model.PodcastSource
@@ -61,6 +62,8 @@ import md.borisveriga.bpodcat.core.model.PodcastSource
  *   navigate straight to it.
  * @param onBack invoked when the user leaves without adding anything.
  * @param modifier layout modifier.
+ * @param pasteFromClipboard true when the screen was opened by "Paste a link", in which case
+ *   whatever is on the clipboard is put in the field for the user to check before adding.
  * @param viewModel injected by Hilt.
  */
 @Composable
@@ -68,9 +71,27 @@ fun SearchRoute(
     onPodcastAdded: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    pasteFromClipboard: Boolean = false,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboard.current
+
+    // Once, on arrival, and only when the user chose the paste route: reading the clipboard shows a
+    // system toast, so it must be something they asked for rather than something every visit does.
+    // The text is put in the field rather than added straight away — pasting the wrong thing is
+    // easy, and one look at it is cheaper than removing a show afterwards.
+    LaunchedEffect(pasteFromClipboard) {
+        if (!pasteFromClipboard) return@LaunchedEffect
+        val pasted = clipboard.getClipEntry()
+            ?.clipData
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.text
+            ?.toString()
+            ?.trim()
+        if (!pasted.isNullOrEmpty()) viewModel.onQueryChange(pasted)
+    }
 
     SearchScreen(
         uiState = uiState,
@@ -87,9 +108,13 @@ fun SearchRoute(
 /**
  * Stateless add/search screen.
  *
+ * The field is a Material [SearchBar] rather than a labelled text field under a title bar: this
+ * screen is nothing but a search, so the search affordance is the screen's own chrome — which also
+ * removes the second row of vertical space the old title bar spent saying so in words.
+ *
  * @param uiState what to render.
  * @param onQueryChange keystroke handler.
- * @param onAddLink handler for the "Add this link" button.
+ * @param onAddLink handler for the "add this link" card.
  * @param onAddResult handler for adding a search result.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param onPodcastAdded called with the new show's id after a successful add.
@@ -114,6 +139,11 @@ fun SearchScreen(
     // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
     // change invalidates the read.
     val resources = LocalResources.current
+    val focusRequester = remember { FocusRequester() }
+
+    // The screen exists to be typed into, and it is always reached by a deliberate tap, so it opens
+    // ready for the first keystroke rather than making the user tap the field they just asked for.
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -130,18 +160,44 @@ fun SearchScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(text = stringResource(R.string.search_title)) },
-                // Search is reached from the library's add button rather than a tab, so it
-                // needs the back affordance every pushed screen has.
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.search_back),
-                        )
-                    }
+            SearchBar(
+                inputField = {
+                    SearchBarDefaults.InputField(
+                        query = uiState.query,
+                        onQueryChange = onQueryChange,
+                        onSearch = { keyboard?.hide() },
+                        expanded = false,
+                        onExpandedChange = { },
+                        modifier = Modifier.focusRequester(focusRequester),
+                        placeholder = { Text(text = stringResource(R.string.search_field_label)) },
+                        leadingIcon = {
+                            // The back arrow lives in the bar itself: with no title row left, this
+                            // is the only chrome the screen has, and a pushed screen still needs a
+                            // way out that does not depend on the system gesture.
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = stringResource(R.string.search_back),
+                                )
+                            }
+                        },
+                        trailingIcon = {
+                            if (uiState.query.isNotEmpty()) {
+                                IconButton(onClick = { onQueryChange("") }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Clear,
+                                        contentDescription = stringResource(R.string.search_clear),
+                                    )
+                                }
+                            }
+                        },
+                    )
                 },
+                // Never expanded: the results belong to the screen, not to an overlay that would
+                // cover the very field being typed into on a phone-sized window.
+                expanded = false,
+                onExpandedChange = { },
+                content = { },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -149,67 +205,25 @@ fun SearchScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .imePadding(),
         ) {
-            OutlinedTextField(
-                value = uiState.query,
-                onValueChange = onQueryChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text(text = stringResource(R.string.search_field_label)) },
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (uiState.query.isNotEmpty()) {
-                        IconButton(onClick = { onQueryChange("") }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Clear,
-                                contentDescription = stringResource(R.string.search_clear),
-                            )
-                        }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-            )
-
             if (uiState.isLink) {
-                Button(
-                    onClick = {
+                LinkCard(
+                    isYouTube = uiState.isYouTubeLink,
+                    isAdding = uiState.addingId != null,
+                    onAdd = {
                         keyboard?.hide()
                         onAddLink()
                     },
-                    enabled = uiState.addingId == null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                ) {
-                    if (uiState.addingId != null) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                    } else {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Text(
-                            // Naming the source is the clearest possible confirmation that the app
-                            // recognised what was pasted, before any network call is made.
-                            text = stringResource(
-                                if (uiState.isYouTubeLink) {
-                                    R.string.search_add_youtube_playlist
-                                } else {
-                                    R.string.search_add_link
-                                },
-                            ),
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
+                )
             }
 
             when {
                 uiState.isSearching -> Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(BPodcatTheme.spacing.xl),
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     CircularProgressIndicator()
@@ -243,6 +257,76 @@ fun SearchScreen(
 }
 
 /**
+ * The "this is a link, add it" card.
+ *
+ * A card at the top of the results rather than a button wedged under the field: recognising a
+ * pasted link is the app noticing something, and it should look like an offer rather than like a
+ * control that was always there.
+ *
+ * @param isYouTube whether the link is a YouTube playlist, which changes only the wording.
+ * @param isAdding true while an add is in flight; the button becomes a spinner.
+ * @param onAdd invoked when the card's button is pressed.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun LinkCard(
+    isYouTube: Boolean,
+    isAdding: Boolean,
+    onAdd: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = BPodcatTheme.spacing.screenHorizontal,
+                vertical = BPodcatTheme.spacing.sm,
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(BPodcatTheme.spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.md),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm),
+            ) {
+                Icon(imageVector = Icons.Rounded.Link, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.search_link_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            Button(
+                onClick = onAdd,
+                enabled = !isAdding,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (isAdding) {
+                    CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE))
+                } else {
+                    Text(
+                        // Naming the source is the clearest possible confirmation that the app
+                        // recognised what was pasted, before any network call is made.
+                        text = stringResource(
+                            if (isYouTube) {
+                                R.string.search_add_youtube_playlist
+                            } else {
+                                R.string.search_add_link
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * One Apple search result.
  *
  * @param result the show.
@@ -261,55 +345,34 @@ private fun SearchResultRow(
     // than failing after the tap.
     val addable = !result.feedUrl.isNullOrBlank()
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(enabled = addable && !isAdding, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        PodcastArtwork(url = result.artworkUrl, size = ArtworkSize.Row)
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = result.title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = result.author,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = if (addable) {
-                    listOfNotNull(
-                        result.episodeCount?.let {
-                            pluralStringResource(R.plurals.search_episode_count, it, it)
-                        },
-                        result.genres.firstOrNull(),
-                    ).joinToString(stringResource(R.string.search_result_separator))
-                } else {
-                    stringResource(R.string.search_result_exclusive)
+    ShowRow(
+        title = result.title,
+        modifier = modifier,
+        author = result.author,
+        metadata = if (addable) {
+            listOfNotNull(
+                result.episodeCount?.let {
+                    pluralStringResource(R.plurals.search_episode_count, it, it)
                 },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+                result.genres.firstOrNull(),
+            ).joinToString(stringResource(R.string.search_result_separator))
+        } else {
+            stringResource(R.string.search_result_exclusive)
+        },
+        artworkUrl = result.artworkUrl,
+        onClick = onClick,
+        enabled = addable && !isAdding,
+        trailing = {
+            when {
+                isAdding -> CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE))
 
-        when {
-            isAdding -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
-
-            addable -> Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = stringResource(R.string.search_add_result, result.title),
-            )
-        }
-    }
+                addable -> Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.search_add_result, result.title),
+                )
+            }
+        },
+    )
 }
 
 /**
@@ -366,6 +429,9 @@ private fun AddPodcastResult.toUserText(resources: Resources): String = when (th
     )
 }
 
+/** The spinner that replaces an add control while its request is in flight. */
+private val SPINNER_SIZE = 20.dp
+
 @Preview
 @Composable
 private fun SearchScreenPreview() {
@@ -393,6 +459,25 @@ private fun SearchScreenPreview() {
                         genres = emptyList(),
                     ),
                 ),
+            ),
+            onQueryChange = {},
+            onAddLink = {},
+            onAddResult = {},
+            onMessageShown = {},
+            onPodcastAdded = {},
+            onBack = {},
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun SearchScreenLinkPreview() {
+    BPodcatTheme {
+        SearchScreen(
+            uiState = SearchUiState(
+                query = "https://podcasts.apple.com/podcast/id1209828744",
+                isLink = true,
             ),
             onQueryChange = {},
             onAddLink = {},

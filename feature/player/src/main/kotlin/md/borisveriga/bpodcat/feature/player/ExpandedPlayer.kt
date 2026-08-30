@@ -41,8 +41,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import java.util.Locale
 import md.borisveriga.bpodcat.core.common.format.formatPosition
+import md.borisveriga.bpodcat.core.common.format.formatSpeed
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.media.PlaybackState
 import md.borisveriga.bpodcat.core.model.PlaybackSettings
@@ -337,31 +337,6 @@ private fun UpNextLink(
     }
 }
 
-/**
- * Formats a playback rate for the speed button.
- *
- * Whole rates lose their decimal — `2x`, not `2.0x` — because that is how every podcast app writes
- * it and how people say it. Fractional ones lose only their trailing zero, so 1.5 reads as `1.5x`
- * rather than `1.50x`.
- *
- * The digits are formatted in [Locale.US] rather than the device locale, deliberately: the button
- * is a fixed-width control and a comma decimal separator would not match the `SPEED_STEPS` a user
- * sees in Settings.
- *
- * @param speed the playback rate.
- * @return the button caption.
- */
-@Composable
-private fun formatSpeed(speed: Float): String {
-    val rounded = Math.round(speed * PERCENT) / PERCENT
-    val digits = if (rounded % 1f == 0f) {
-        String.format(Locale.US, "%.0f", rounded)
-    } else {
-        String.format(Locale.US, "%.2f", rounded).trimEnd('0').trimEnd('.')
-    }
-    return stringResource(R.string.player_speed_format, digits)
-}
-
 /** Height of the sheet's own header strip, which the body has to leave room for. */
 internal val expandedHeaderHeight: Dp = 56.dp
 
@@ -380,4 +355,3 @@ private val PlayGlyphSize: Dp = 36.dp
 private val BufferingGlyphSize: Dp = 28.dp
 
 /** Two decimal places, as a divisor; the speed button never shows more than that. */
-private const val PERCENT = 100f

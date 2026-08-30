@@ -9,10 +9,13 @@ import java.time.Duration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.data.repository.NewEpisode
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.data.repository.RefreshSummary
+import md.borisveriga.bpodcat.core.data.repository.UiPreferencesRepository
+import md.borisveriga.bpodcat.core.model.LibraryLayout
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
 import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import md.borisveriga.bpodcat.core.testing.testPodcast
@@ -41,7 +44,10 @@ class LibraryViewModelTest {
 
     private val library = MutableStateFlow(emptyList<PodcastWithCounts>())
 
+    private val layout = MutableStateFlow(LibraryLayout.DEFAULT)
+
     private lateinit var repository: PodcastRepository
+    private lateinit var uiPreferences: UiPreferencesRepository
     private lateinit var viewModel: LibraryViewModel
 
     private fun withCounts(
@@ -58,7 +64,9 @@ class LibraryViewModelTest {
     fun setUp() {
         repository = mockk(relaxed = true)
         every { repository.observeLibrary() } returns library
-        viewModel = LibraryViewModel(repository)
+        uiPreferences = mockk(relaxed = true)
+        every { uiPreferences.observeLibraryLayout() } returns layout
+        viewModel = LibraryViewModel(repository, uiPreferences)
     }
 
     @Test
@@ -270,5 +278,23 @@ class LibraryViewModelTest {
         }
 
         coVerify(exactly = 1) { repository.refreshAll(any(), any()) }
+    }
+
+    @Test
+    fun `the stored layout reaches the state`() = runTest {
+        layout.value = LibraryLayout.LIST
+
+        viewModel.uiState.test {
+            assertEquals(LibraryLayout.LIST, awaitItem().layout)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `choosing a layout stores it rather than keeping it in the composition`() = runTest {
+        viewModel.setLayout(LibraryLayout.LIST)
+        runCurrent()
+
+        coVerify { uiPreferences.setLibraryLayout(LibraryLayout.LIST) }
     }
 }

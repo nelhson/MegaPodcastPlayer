@@ -77,6 +77,7 @@ class DownloadsViewModelTest {
         episodePlayer = mockk(relaxed = true)
         every { downloadRepository.observeDownloads() } returns downloads
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
+        coEvery { downloadRepository.freeBytes() } returns FREE_BYTES
         viewModel = DownloadsViewModel(downloadRepository, episodePlayer)
     }
 
@@ -316,4 +317,70 @@ class DownloadsViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `free space is read once on arrival rather than on every list emission`() = runTest {
+        downloads.value = listOf(download("a"))
+
+        viewModel.uiState.test {
+            assertEquals(FREE_BYTES, awaitItem().freeBytes)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Twice, not five times: once from `init`, and the list emitting again — which a running
+        // transfer does several times a second — must not cost a disk stat each time.
+        coVerify(exactly = 1) { downloadRepository.freeBytes() }
+    }
+
+    @Test
+    fun `removing a selection deletes exactly what was picked`() = runTest {
+        downloads.value = listOf(download("a"), download("b"), download("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.removeSelected(setOf("a", "c"))
+
+            coVerify { downloadRepository.removeDownload("a") }
+            coVerify { downloadRepository.removeDownload("c") }
+            coVerify(exactly = 0) { downloadRepository.removeDownload("b") }
+            coVerify(exactly = 0) { downloadRepository.removeAllDownloads() }
+            assertEquals(DownloadsMessage.RemovedAll(2), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `selecting everything is the sweep, not one cancellation per episode`() = runTest {
+        downloads.value = listOf(download("a"), download("b"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.removeSelected(setOf("a", "b"))
+
+            coVerify { downloadRepository.removeAllDownloads() }
+            coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
+            assertEquals(DownloadsMessage.RemovedAll(2), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an empty selection does nothing at all`() = runTest {
+        downloads.value = listOf(download("a"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.removeSelected(emptySet())
+
+            coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
+            coVerify(exactly = 0) { downloadRepository.removeAllDownloads() }
+            expectNoEvents()
+        }
+    }
 }
+
+/** A plausible amount of free space; the figure only has to be recognisable in an assertion. */
+private const val FREE_BYTES = 12_000_000_000L

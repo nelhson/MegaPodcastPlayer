@@ -1,47 +1,58 @@
 package md.borisveriga.bpodcat.feature.downloads
 
 import android.content.res.Resources
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -52,10 +63,12 @@ import md.borisveriga.bpodcat.core.common.format.formatBytes
 import md.borisveriga.bpodcat.core.common.format.formatDuration
 import md.borisveriga.bpodcat.core.common.format.formatPublishedDate
 import md.borisveriga.bpodcat.core.common.format.formatRemaining
-import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
+import md.borisveriga.bpodcat.core.designsystem.component.DownloadButton
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
+import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
-import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
+import md.borisveriga.bpodcat.core.designsystem.component.SelectionToolbar
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -87,7 +100,7 @@ fun DownloadsRoute(
         onEpisodeQueue = viewModel::addToQueue,
         onEpisodeRetry = viewModel::retry,
         onEpisodeRemove = viewModel::remove,
-        onRemoveAll = viewModel::removeAll,
+        onRemoveSelected = viewModel::removeSelected,
         onBrowseLibrary = onBrowseLibrary,
         onMessageShown = viewModel::onMessageShown,
         modifier = modifier,
@@ -104,7 +117,7 @@ fun DownloadsRoute(
  * @param onEpisodeRetry retry handler for a failed download.
  * @param onEpisodeRemove delete-this-download handler; cancels the transfer when it has not
  *   finished.
- * @param onRemoveAll delete-everything handler; the screen confirms before calling it.
+ * @param onRemoveSelected delete-these-downloads handler; the screen confirms first.
  * @param onBrowseLibrary empty-state action handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -117,7 +130,7 @@ fun DownloadsScreen(
     onEpisodeQueue: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
     onEpisodeRemove: (String) -> Unit,
-    onRemoveAll: () -> Unit,
+    onRemoveSelected: (Set<String>) -> Unit,
     onBrowseLibrary: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -128,8 +141,16 @@ fun DownloadsScreen(
     // change invalidates the read.
     val resources = LocalResources.current
     val now = remember { Instant.now() }
-    // Saveable so the confirmation does not vanish when the Fold 7 is opened mid-decision.
-    var confirmingRemoveAll by rememberSaveable { mutableStateOf(false) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Saveable so neither the selection nor the confirmation vanishes when the Fold 7 is opened
+    // mid-decision.
+    var selection by rememberSaveable(saver = selectionSaver) { mutableStateOf(emptySet<String>()) }
+    var confirmingRemoval by rememberSaveable { mutableStateOf(false) }
+
+    // Rows can leave the list under the selection — a transfer finishing does not change an id, but
+    // a keep-limit sweep can remove one — so the selection is pruned to what is actually on screen.
+    // Without this, "Remove 3" could act on an episode the user can no longer see.
+    val selectedIds = selection intersect uiState.downloads.map { it.episode.id }.toSet()
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -137,94 +158,97 @@ fun DownloadsScreen(
         onMessageShown()
     }
 
-    if (confirmingRemoveAll) {
-        // Deleting every download is the one action here a second tap cannot undo, so it asks first.
-        AlertDialog(
-            onDismissRequest = { confirmingRemoveAll = false },
-            title = { Text(text = stringResource(R.string.downloads_remove_all_dialog_title)) },
-            text = {
-                Text(
-                    text = stringResource(
-                        R.string.downloads_remove_all_dialog_text,
-                        formatBytes(uiState.totalBytes),
-                    ),
-                )
+    // The selection is the innermost thing on screen while it exists, so back clears it rather than
+    // leaving the tab with rows still highlighted.
+    BackHandler(enabled = selectedIds.isNotEmpty()) { selection = emptySet() }
+
+    if (confirmingRemoval) {
+        RemovalDialog(
+            count = selectedIds.size,
+            freedBytes = uiState.downloads
+                .filter { it.episode.id in selectedIds }
+                .sumOf { it.episode.downloadedBytes },
+            onConfirm = {
+                confirmingRemoval = false
+                onRemoveSelected(selectedIds)
+                selection = emptySet()
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmingRemoveAll = false
-                        onRemoveAll()
-                    },
-                ) {
-                    Text(text = stringResource(R.string.downloads_remove_all_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmingRemoveAll = false }) {
-                    Text(text = stringResource(R.string.downloads_cancel))
-                }
-            },
+            onDismiss = { confirmingRemoval = false },
         )
     }
 
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(text = stringResource(R.string.downloads_title)) },
-                actions = {
-                    if (uiState.downloads.isNotEmpty()) {
-                        IconButton(onClick = { confirmingRemoveAll = true }) {
-                            Icon(
-                                imageVector = Icons.Rounded.DeleteSweep,
-                                contentDescription = stringResource(R.string.downloads_remove_all),
-                            )
-                        }
-                    }
-                },
+            BPodcatLargeTopAppBar(
+                title = stringResource(R.string.downloads_title),
+                scrollBehavior = scrollBehavior,
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        when {
-            uiState.isLoading -> LoadingState(
-                modifier = Modifier.padding(padding),
-                contentDescription = stringResource(R.string.downloads_loading),
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            when {
+                uiState.isLoading -> LoadingState(
+                    contentDescription = stringResource(R.string.downloads_loading),
+                )
 
-            uiState.downloads.isEmpty() -> EmptyState(
-                icon = Icons.Rounded.DownloadDone,
-                title = stringResource(R.string.downloads_empty_title),
-                description = stringResource(R.string.downloads_empty_description),
-                actionLabel = stringResource(R.string.downloads_empty_action),
-                onAction = onBrowseLibrary,
-                modifier = Modifier.padding(padding),
-            )
+                uiState.downloads.isEmpty() -> EmptyState(
+                    icon = Icons.Rounded.DownloadDone,
+                    title = stringResource(R.string.downloads_empty_title),
+                    description = stringResource(R.string.downloads_empty_description),
+                    actionLabel = stringResource(R.string.downloads_empty_action),
+                    onAction = onBrowseLibrary,
+                )
 
-            else -> LazyColumn(
+                else -> DownloadList(
+                    uiState = uiState,
+                    now = now,
+                    selectedIds = selectedIds,
+                    onEpisodeClick = onEpisodeClick,
+                    onEpisodeRetry = onEpisodeRetry,
+                    onEpisodeQueue = onEpisodeQueue,
+                    onEpisodeRemove = onEpisodeRemove,
+                    onToggleSelected = { id ->
+                        selection = if (id in selectedIds) selectedIds - id else selectedIds + id
+                    },
+                )
+            }
+
+            SelectionToolbar(
+                visible = selectedIds.isNotEmpty(),
+                label = pluralStringResource(
+                    R.plurals.downloads_selected,
+                    selectedIds.size,
+                    selectedIds.size,
+                ),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                    .align(Alignment.BottomCenter)
+                    .padding(BPodcatTheme.spacing.lg),
             ) {
-                item {
-                    StorageSummary(
-                        episodeCount = uiState.completedCount,
-                        totalBytes = uiState.totalBytes,
+                IconButton(
+                    onClick = { selection = uiState.downloads.map { it.episode.id }.toSet() },
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SelectAll,
+                        contentDescription = stringResource(R.string.downloads_select_all),
                     )
-                    HorizontalDivider()
                 }
-                items(items = uiState.downloads, key = { it.episode.id }) { download ->
-                    DownloadRow(
-                        download = download,
-                        now = now,
-                        unmeteredOnly = uiState.unmeteredOnly,
-                        onClick = { onEpisodeClick(download.episode.id) },
-                        onRetry = { onEpisodeRetry(download.episode.id) },
-                        onQueue = { onEpisodeQueue(download.episode.id) },
-                        onRemove = { onEpisodeRemove(download.episode.id) },
+                IconButton(onClick = { confirmingRemoval = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = stringResource(R.string.downloads_remove_selected),
                     )
-                    HorizontalDivider()
+                }
+                IconButton(onClick = { selection = emptySet() }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.downloads_clear_selection),
+                    )
                 }
             }
         }
@@ -232,244 +256,303 @@ fun DownloadsScreen(
 }
 
 /**
- * How much of the device the downloads occupy.
+ * The scrolling body: the storage card, then a row per tracked episode.
  *
- * Shown here as well as in Settings' storage section: this number is what makes someone decide to
- * delete something, so it belongs next to the things they would delete.
+ * @param uiState what to render.
+ * @param now reference time for relative date formatting.
+ * @param selectedIds the current selection.
+ * @param onEpisodeClick tap handler for a finished episode.
+ * @param onEpisodeRetry tap handler for a failed download.
+ * @param onEpisodeQueue add-to-queue handler.
+ * @param onEpisodeRemove delete-or-cancel handler.
+ * @param onToggleSelected adds or removes one row from the selection.
+ */
+@Composable
+private fun DownloadList(
+    uiState: DownloadsUiState,
+    now: Instant,
+    selectedIds: Set<String>,
+    onEpisodeClick: (String) -> Unit,
+    onEpisodeRetry: (String) -> Unit,
+    onEpisodeQueue: (String) -> Unit,
+    onEpisodeRemove: (String) -> Unit,
+    onToggleSelected: (String) -> Unit,
+) {
+    val resources = LocalResources.current
+    val selecting = selectedIds.isNotEmpty()
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = LIST_BOTTOM_PADDING),
+    ) {
+        item(key = STORAGE_CARD_KEY) {
+            StorageCard(
+                episodeCount = uiState.completedCount,
+                totalBytes = uiState.totalBytes,
+                freeBytes = uiState.freeBytes,
+            )
+        }
+
+        items(items = uiState.downloads, key = { it.episode.id }) { download ->
+            val episode = download.episode
+            val isCompleted = episode.downloadState == DownloadState.COMPLETED
+            val isFailed = episode.downloadState == DownloadState.FAILED
+
+            EpisodeRow(
+                title = episode.title,
+                showTitle = download.showTitle,
+                metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
+                artworkUrl = download.artworkUrl,
+                isPlayed = isCompleted && episode.isPlayed,
+                playedFraction = if (isCompleted) episode.playedFraction else 0f,
+                isSelected = episode.id in selectedIds,
+                // What a tap does follows the state, because that is the only thing a tap could
+                // sensibly mean: a finished episode plays, a failed one retries, and a transfer in
+                // progress does nothing at all — there is no local audio to play, and streaming
+                // instead would spend mobile data nobody asked to spend. While a selection exists,
+                // every row means "add me to it" instead; that is what selection mode is.
+                onClick = when {
+                    selecting -> ({ onToggleSelected(episode.id) })
+                    isCompleted -> ({ onEpisodeClick(episode.id) })
+                    isFailed -> ({ onEpisodeRetry(episode.id) })
+                    else -> null
+                },
+                onLongClick = { onToggleSelected(episode.id) },
+                longClickLabel = stringResource(R.string.downloads_select),
+                trailing = {
+                    // Nothing to queue until the audio is on the device, and nothing to press at
+                    // all while the row is standing in for a selection.
+                    if (isCompleted && !selecting) {
+                        IconButton(onClick = { onEpisodeQueue(episode.id) }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                                // These buttons are reached out of the list's reading order, so
+                                // each one names the episode it acts on.
+                                contentDescription = stringResource(
+                                    R.string.downloads_queue_episode,
+                                    episode.title,
+                                ),
+                            )
+                        }
+                    }
+                    if (!selecting) {
+                        DownloadButton(
+                            state = episode.downloadState,
+                            progressPercent = episode.downloadPercent,
+                            // The button means what its own label says, which is not the same
+                            // action in every state: a failure asks to be tried again, and
+                            // anything else asks to be given back. Removing a failed download —
+                            // the one case neither control covers — is what the selection is for.
+                            onClick = {
+                                if (isFailed) onEpisodeRetry(episode.id) else onEpisodeRemove(episode.id)
+                            },
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+
+/**
+ * What the downloads cost, drawn against what is left.
  *
- * Counts only what has finished downloading, even though the list below it also shows transfers and
- * failures: this line is about disk, and a half-finished file is not something the user can free by
+ * The figure used to be one line of text. A number on its own does not answer the question someone
+ * opens this screen with — "can I keep doing this?" — and the bar does, at a glance, without the
+ * user having to know how big their phone is.
+ *
+ * Counts only what has finished downloading, even though the list below also shows transfers and
+ * failures: this card is about disk, and a half-finished file is not space a user can free by
  * deleting a finished episode.
  *
  * @param episodeCount how many episodes are stored on the device.
  * @param totalBytes what they occupy.
+ * @param freeBytes what is left on the volume; zero when it could not be read, which draws the
+ *   figures without the bar rather than a bar that is a guess.
  * @param modifier layout modifier.
  */
 @Composable
-private fun StorageSummary(
+private fun StorageCard(
     episodeCount: Int,
     totalBytes: Long,
+    freeBytes: Long,
     modifier: Modifier = Modifier,
 ) {
-    Text(
-        text = stringResource(
-            R.string.downloads_storage_summary,
-            pluralStringResource(R.plurals.downloads_episode_count, episodeCount, episodeCount),
-            formatBytes(totalBytes),
-        ),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(
+                horizontal = BPodcatTheme.spacing.screenHorizontal,
+                vertical = BPodcatTheme.spacing.sm,
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(BPodcatTheme.spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm),
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.downloads_storage_summary,
+                    pluralStringResource(
+                        R.plurals.downloads_episode_count,
+                        episodeCount,
+                        episodeCount,
+                    ),
+                    formatBytes(totalBytes),
+                ),
+                style = MaterialTheme.typography.titleMedium,
+            )
+
+            if (freeBytes > 0L) {
+                val usedFraction =
+                    (totalBytes.toFloat() / (totalBytes + freeBytes).toFloat()).coerceIn(0f, 1f)
+                val barDescription = stringResource(
+                    R.string.downloads_storage_bar_description,
+                    formatBytes(totalBytes),
+                    formatBytes(freeBytes),
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(BAR_HEIGHT)
+                        .clip(BPodcatTheme.shapes.pill)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        // The bar is a picture of the two figures under it; announcing it as a
+                        // third, unlabelled thing would only get in the way.
+                        .clearAndSetSemantics { contentDescription = barDescription },
+                ) {
+                    if (usedFraction > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(usedFraction)
+                                // A minimum width, because the honest fraction is often a rounding
+                                // error against a 128 GB phone: a bar drawn with nothing in it
+                                // says "nothing stored", when what is true is "not much".
+                                .widthIn(min = MIN_SEGMENT_WIDTH)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.downloads_storage_used,
+                            formatBytes(totalBytes),
+                        ),
+                        style = BPodcatTheme.type.numeric,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.downloads_storage_free,
+                            formatBytes(freeBytes),
+                        ),
+                        style = BPodcatTheme.type.numeric,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The confirmation shown before a selection is deleted.
+ *
+ * Deleting several episodes is the one action here that no second tap undoes, so it asks first —
+ * and says how much space it will actually free, which is usually why it is being done.
+ *
+ * @param count how many episodes are selected.
+ * @param freedBytes what deleting them gives back.
+ * @param onConfirm proceed.
+ * @param onDismiss cancel.
+ */
+@Composable
+private fun RemovalDialog(
+    count: Int,
+    freedBytes: Long,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = pluralStringResource(R.plurals.downloads_remove_dialog_title, count, count))
+        },
+        text = {
+            Text(
+                text = stringResource(
+                    R.string.downloads_remove_dialog_text,
+                    formatBytes(freedBytes),
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = stringResource(R.string.downloads_remove_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.downloads_cancel))
+            }
+        },
     )
 }
 
 /**
- * One row of the download list, in whichever state the episode is in.
+ * The metadata line under a download's title.
  *
- * Carries the show's name and artwork, which the podcast detail screen's row can leave out: here
- * the episodes come from every show at once, so the episode title alone does not say what you are
- * looking at.
+ * A finished episode describes itself — when it came out, how long it is, what it takes up, whether
+ * it has been played. Everything else describes what is *happening* to it instead, because until
+ * the transfer is done that is the only fact about the row worth the space, and a state that
+ * appears nowhere is a download the user cannot tell has stalled.
  *
- * What a tap does follows the state, because that is the only thing a tap could sensibly mean.
- * A finished episode plays. A failed one retries — it is the action the row exists to offer. A
- * transfer in progress or one waiting its turn does nothing at all: there is no local audio to play
- * and starting a stream instead would spend mobile data the user never asked to spend. Cancelling
- * stays where it always was, on the trailing button.
- *
- * @param download the episode and its show.
  * @param now reference time for relative date formatting.
- * @param unmeteredOnly whether downloads wait for Wi-Fi, so a waiting row can say which kind of
- *   waiting it is doing.
- * @param onClick tap handler for a finished episode; playing it.
- * @param onRetry tap handler for a failed download.
- * @param onQueue add-to-queue handler.
- * @param onRemove delete-or-cancel handler.
- * @param modifier layout modifier.
- */
-@Composable
-private fun DownloadRow(
-    download: EpisodeWithShow,
-    now: Instant,
-    unmeteredOnly: Boolean,
-    onClick: () -> Unit,
-    onRetry: () -> Unit,
-    onQueue: () -> Unit,
-    onRemove: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val episode = download.episode
-    val isCompleted = episode.downloadState == DownloadState.COMPLETED
-    val isFailed = episode.downloadState == DownloadState.FAILED
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                when {
-                    isCompleted -> Modifier.clickable(onClick = onClick)
-
-                    isFailed -> Modifier.clickable(onClick = onRetry)
-
-                    // No `clickable` at all rather than one that does nothing: an inert row should
-                    // not ripple, and TalkBack should not announce it as a button.
-                    else -> Modifier
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        PodcastArtwork(url = download.artworkUrl, size = ArtworkSize.Row)
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = download.showTitle,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = episode.title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = listOfNotNull(
-                    formatPublishedDate(episode.publishedAt, now),
-                    formatRemaining(episode.durationMs, episode.positionMs)
-                        ?.takeIf { episode.positionMs > 0 }
-                        ?: formatDuration(episode.durationMs),
-                    // Only meaningful once the file is whole; mid-transfer it would read as a size
-                    // that keeps changing, next to a percentage that already says the same thing.
-                    episode.downloadedBytes.takeIf { isCompleted && it > 0L }?.let(::formatBytes),
-                    stringResource(R.string.downloads_played).takeIf { isCompleted && episode.isPlayed },
-                ).joinToString(stringResource(R.string.downloads_metadata_separator)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-
-            DownloadStateLabel(
-                state = episode.downloadState,
-                downloadPercent = episode.downloadPercent,
-                unmeteredOnly = unmeteredOnly,
-            )
-
-            // The playback position bar, not the download one — only a finished episode has a
-            // position to be part-way through.
-            if (isCompleted && episode.positionMs > 0 && !episode.isPlayed) {
-                LinearProgressIndicator(
-                    progress = { episode.playedFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                )
-            }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Nothing to queue until the audio is on the device.
-            if (isCompleted) {
-                IconButton(onClick = onQueue) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                        // These buttons are reached out of the list's reading order, so each one
-                        // names the episode it acts on.
-                        contentDescription = stringResource(
-                            R.string.downloads_queue_episode,
-                            episode.title,
-                        ),
-                    )
-                }
-            }
-            IconButton(onClick = onRemove) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    // Same button, two honest descriptions: deleting audio and calling off a
-                    // transfer are not the same thing to someone who cannot see the row.
-                    contentDescription = stringResource(
-                        if (isCompleted) {
-                            R.string.downloads_remove_episode
-                        } else {
-                            R.string.downloads_cancel_episode
-                        },
-                        episode.title,
-                    ),
-                )
-            }
-        }
-    }
-}
-
-/**
- * The line that says what is happening to a download, for every state except a finished one.
- *
- * A completed episode says nothing here: the row above it — its size, its position, whether it has
- * been played — already describes it, and "Downloaded" on every row of a screen called Downloads is
- * noise. Everything else earns a line, because until now none of these states appeared anywhere in
- * the app at all.
- *
- * @param state the episode's download state.
- * @param downloadPercent progress in `0f..100f`, meaningful while [DownloadState.DOWNLOADING].
+ * @param resources for the strings and plurals.
  * @param unmeteredOnly whether downloads wait for Wi-Fi, which is usually the answer to "why is
  *   this still waiting".
- * @param modifier layout modifier.
+ * @return the line to show.
  */
-@Composable
-private fun DownloadStateLabel(
-    state: DownloadState,
-    downloadPercent: Float,
+private fun EpisodeWithShow.metadataLine(
+    now: Instant,
+    resources: Resources,
     unmeteredOnly: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    when (state) {
-        DownloadState.COMPLETED, DownloadState.NOT_DOWNLOADED -> Unit
+): String = when (episode.downloadState) {
+    DownloadState.DOWNLOADING -> resources.getString(
+        R.string.downloads_state_downloading,
+        episode.downloadPercent.roundToInt(),
+    )
 
-        DownloadState.DOWNLOADING -> Column(modifier = modifier.padding(top = 6.dp)) {
-            Text(
-                text = stringResource(
-                    R.string.downloads_state_downloading,
-                    downloadPercent.roundToInt(),
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            LinearProgressIndicator(
-                // Media3 reports 0..100; the indicator wants 0..1. Coerced because a feed that
-                // over-reports its length can push the figure past 100 and a bar wider than its
-                // track looks like a rendering bug rather than a rounding one.
-                progress = { (downloadPercent / PERCENT).coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-            )
-        }
+    DownloadState.QUEUED -> resources.getString(
+        if (unmeteredOnly) {
+            R.string.downloads_state_queued_wifi
+        } else {
+            R.string.downloads_state_queued
+        },
+    )
 
-        DownloadState.QUEUED -> Text(
-            text = stringResource(
-                if (unmeteredOnly) {
-                    R.string.downloads_state_queued_wifi
-                } else {
-                    R.string.downloads_state_queued
-                },
-            ),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = modifier.padding(top = 4.dp),
-        )
+    DownloadState.FAILED -> resources.getString(R.string.downloads_state_failed)
 
-        // The error colour rather than a plain label: this is the one row on the screen that is
-        // asking to be dealt with, and the text says what tapping it will do.
-        DownloadState.FAILED -> Text(
-            text = stringResource(R.string.downloads_state_failed),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-            modifier = modifier.padding(top = 4.dp),
-        )
-    }
+    DownloadState.COMPLETED, DownloadState.NOT_DOWNLOADED -> listOfNotNull(
+        formatPublishedDate(episode.publishedAt, now),
+        formatRemaining(episode.durationMs, episode.positionMs)
+            ?.takeIf { episode.positionMs > 0 }
+            ?: formatDuration(episode.durationMs),
+        // Only meaningful once the file is whole; mid-transfer it would read as a size that keeps
+        // changing, next to a percentage that already says the same thing.
+        episode.downloadedBytes.takeIf { it > 0L }?.let(::formatBytes),
+        resources.getString(R.string.downloads_played).takeIf { episode.isPlayed },
+    ).joinToString(resources.getString(R.string.downloads_metadata_separator))
 }
 
 /**
@@ -503,6 +586,26 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
         resources.getString(R.string.downloads_message_unavailable)
 }
 
+/**
+ * Keeps the selection across a configuration change.
+ *
+ * A [Set] is not something [rememberSaveable] can store on its own; the ids are, and a list of them
+ * is all the selection ever was.
+ */
+private val selectionSaver = listSaver<MutableState<Set<String>>, String>(
+    save = { state -> state.value.toList() },
+    restore = { ids -> mutableStateOf(ids.toSet()) },
+)
+
+private const val STORAGE_CARD_KEY = "storage-card"
+
+/** Room under the last row for the floating selection bar, which is drawn over the list. */
+private val LIST_BOTTOM_PADDING = 88.dp
+private val BAR_HEIGHT = 10.dp
+
+/** The narrowest the stored segment is drawn at, so a small library still marks the bar. */
+private val MIN_SEGMENT_WIDTH = 12.dp
+
 @Preview
 @Composable
 private fun DownloadsScreenPreview() {
@@ -512,6 +615,7 @@ private fun DownloadsScreenPreview() {
                 isLoading = false,
                 completedCount = 1,
                 totalBytes = 90_000_000L,
+                freeBytes = 4_000_000_000L,
                 unmeteredOnly = true,
                 // One row per state, in the order the query returns them, because the states are
                 // the whole point of this screen and only a preview shows all four at once.
@@ -546,7 +650,7 @@ private fun DownloadsScreenPreview() {
             onEpisodeQueue = {},
             onEpisodeRetry = {},
             onEpisodeRemove = {},
-            onRemoveAll = {},
+            onRemoveSelected = {},
             onBrowseLibrary = {},
             onMessageShown = {},
         )
@@ -593,6 +697,3 @@ private fun previewDownload(
     showTitle = "Podlodka Podcast",
     showArtworkUrl = null,
 )
-
-/** Media3 reports download progress on a 0..100 scale; the progress indicator wants 0..1. */
-private const val PERCENT = 100f

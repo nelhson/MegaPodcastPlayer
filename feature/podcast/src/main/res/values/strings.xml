@@ -12,6 +12,28 @@
 
     <string name="podcast_back">Back to the library</string>
     <string name="podcast_remove">Remove this podcast</string>
+    <string name="podcast_more_actions">More actions</string>
+    <string name="podcast_play_latest">Play latest</string>
+
+    <!-- The overflow's background-refresh switch, which had no control anywhere until now. -->
+    <string name="podcast_auto_refresh_on">Refreshing in the background</string>
+    <string name="podcast_auto_refresh_off">Not refreshing in the background</string>
+
+    <!-- The show description, which is clipped until asked for in full. -->
+    <string name="podcast_description_expand">Show more</string>
+    <string name="podcast_description_collapse">Show less</string>
+
+    <!-- Filter chips over the episode list. -->
+    <string name="podcast_filter_all">All</string>
+    <string name="podcast_filter_unplayed">Unplayed</string>
+    <string name="podcast_filter_in_progress">In progress</string>
+    <string name="podcast_filter_downloaded">Downloaded</string>
+    <string name="podcast_filter_empty_title">Nothing here</string>
+    <string name="podcast_filter_empty_description">No episodes of this show match that filter.</string>
+    <string name="podcast_filter_empty_action">Show all episodes</string>
+
+    <!-- Announced for the hairline that marks the refresh run on entering the screen. -->
+    <string name="podcast_refreshing">Checking for new episodes</string>
 
     <string name="podcast_loading">Loading episodes</string>
 
@@ -22,23 +44,14 @@
     <string name="podcast_empty_description_rss">This feed published nothing we could read. Try refreshing.</string>
     <string name="podcast_empty_action">Refresh</string>
 
-    <!-- Marks on an episode row. -->
-    <string name="podcast_episode_played">Played</string>
-    <string name="podcast_episode_downloaded">Downloaded</string>
     <!-- Separates the parts of a row's metadata line. -->
-    <string name="podcast_metadata_separator"> · </string>
+    <string name="podcast_metadata_separator">" · "</string>
 
-    <!-- Per-episode buttons; %1$s is the episode title. -->
+    <!--
+        Per-episode buttons; %1$s is the episode title. The download control's own labels now come
+        from the shared component in `:core:designsystem`, so only the queue button is left here.
+    -->
     <string name="podcast_queue_episode">Add %1$s to the queue</string>
-    <string name="podcast_download_episode">Download %1$s</string>
-    <string name="podcast_cancel_queued_download">Cancel the queued download of %1$s</string>
-    <!-- %2$d is whole percent, 0–100; a plural because languages inflect the number word. -->
-    <plurals name="podcast_cancel_download">
-        <item quantity="one">Cancel the download of %1$s, %2$d percent complete</item>
-        <item quantity="other">Cancel the download of %1$s, %2$d percent complete</item>
-    </plurals>
-    <string name="podcast_remove_download">Remove the download of %1$s</string>
-    <string name="podcast_retry_download">Download of %1$s failed. Retry</string>
 
     <!-- Snackbars. -->
     <plurals name="podcast_message_new_episodes">

@@ -12,6 +12,18 @@
 
     <string name="library_add_podcast">Add a podcast</string>
 
+    <!-- The two ways in, named in the add menu rather than left for the user to discover. -->
+    <string name="library_add_search">Search Apple Podcasts</string>
+    <string name="library_add_link">Paste a link</string>
+    <string name="library_add_close">Close</string>
+
+    <!-- The grid/list toggle; each label says what tapping it will do. -->
+    <string name="library_layout_show_grid">Show as grid</string>
+    <string name="library_layout_show_list">Show as list</string>
+
+    <!-- Announced for the hairline that marks the refresh run on entering the screen. -->
+    <string name="library_refreshing">Checking for new episodes</string>
+
     <string name="library_loading">Loading your podcasts</string>
 
     <string name="library_empty_title">No podcasts yet</string>

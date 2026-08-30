@@ -7,11 +7,13 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import md.borisveriga.bpodcat.core.data.repository.AutoDownloadScheduler
 import md.borisveriga.bpodcat.core.data.repository.DefaultPlaybackRepository
+import md.borisveriga.bpodcat.core.data.repository.DefaultUiPreferencesRepository
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
 import md.borisveriga.bpodcat.core.data.repository.MediaDownloadRepository
 import md.borisveriga.bpodcat.core.data.repository.OfflineFirstPodcastRepository
 import md.borisveriga.bpodcat.core.data.repository.PlaybackRepository
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
+import md.borisveriga.bpodcat.core.data.repository.UiPreferencesRepository
 import md.borisveriga.bpodcat.core.media.PlaybackProgressRecorder
 import md.borisveriga.bpodcat.core.media.PlaybackQueueSource
 import md.borisveriga.bpodcat.core.media.download.DownloadStatusRecorder
@@ -77,4 +79,10 @@ abstract class DataModule {
     abstract fun bindsDownloadStatusRecorder(
         implementation: MediaDownloadRepository,
     ): DownloadStatusRecorder
+
+    @Binds
+    @Singleton
+    abstract fun bindsUiPreferencesRepository(
+        implementation: DefaultUiPreferencesRepository,
+    ): UiPreferencesRepository
 }

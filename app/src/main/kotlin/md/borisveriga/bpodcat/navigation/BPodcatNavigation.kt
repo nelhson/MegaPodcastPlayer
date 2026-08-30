@@ -39,9 +39,14 @@ sealed interface Route {
      *
      * Not a [TopLevelDestination]: the library's add button is the one way in, so this is pushed
      * onto the back stack like any other detail screen and backs out to wherever it was opened from.
+     *
+     * @property paste true when the user chose "Paste a link" rather than "Search", which is the
+     *   only thing that entitles the screen to read the clipboard. Carried in the route rather than
+     *   handed over as a callback so that the distinction survives process death with the back
+     *   stack.
      */
     @Serializable
-    data object Search : Route
+    data class Search(val paste: Boolean = false) : Route
 
     /**
      * One show's episode list.

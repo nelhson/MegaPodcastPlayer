@@ -32,6 +32,20 @@
     <string name="designsystem_download_remove">Downloaded, remove from device</string>
     <string name="designsystem_download_retry">Download failed, retry</string>
 
+    <!-- The app bar's back arrow. Overridable, but this is the right answer nearly everywhere. -->
+    <string name="designsystem_back">Back</string>
+
+    <!-- Announced for the hairline that marks work the user did not ask for. -->
+    <string name="designsystem_working">Working</string>
+
+    <!-- A settings row reads as one control: its name, then what it does. -->
+    <string name="designsystem_setting_description">%1$s. %2$s</string>
+
+    <!-- A choice chip announces which setting it belongs to, not just its own caption. -->
+    <string name="designsystem_choice_description">%1$s: %2$s</string>
+    <string name="designsystem_chip_selected">Selected</string>
+    <string name="designsystem_chip_not_selected">Not selected</string>
+
     <!-- Announced as an episode row's state, in addition to its title. -->
     <string name="designsystem_state_played">Played</string>
     <string name="designsystem_state_unplayed">Not played</string>

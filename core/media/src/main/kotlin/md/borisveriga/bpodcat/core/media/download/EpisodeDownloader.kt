@@ -1,6 +1,7 @@
 package md.borisveriga.bpodcat.core.media.download
 
 import android.content.Context
+import android.os.storage.StorageManager
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.media3.datasource.cache.Cache
@@ -178,6 +179,28 @@ class EpisodeDownloader @Inject constructor(
      */
     suspend fun downloadedBytes(): Long = withContext(ioDispatcher) {
         suspendRunCatching { cache.cacheSpace }.getOrElse { 0L }
+    }
+
+    /**
+     * Bytes the app could still write to the volume the downloads live on.
+     *
+     * Asked of the volume holding the app's private files directory, which is where [
+     * md.borisveriga.bpodcat.core.media.di.DownloadModule] puts the cache: any other volume would
+     * produce a number that looks right and is not, on a device with removable storage.
+     *
+     * `getAllocatableBytes` rather than `File.usableSpace`, which is what the platform recommends
+     * and is also the more honest answer to the question the downloads screen is asking. The system
+     * will clear other apps' cached data to make room, so what can actually be downloaded is
+     * usually larger than what is free at this instant.
+     *
+     * Zero on failure, for the same reason as [downloadedBytes]: this figure decorates a bar, and
+     * no bar is better than a crash.
+     */
+    suspend fun freeBytes(): Long = withContext(ioDispatcher) {
+        suspendRunCatching {
+            val storageManager = context.getSystemService(StorageManager::class.java)
+            storageManager.getAllocatableBytes(storageManager.getUuidForPath(context.filesDir))
+        }.getOrElse { 0L }
     }
 
     /**

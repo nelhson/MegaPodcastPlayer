@@ -40,14 +40,9 @@
     <string name="settings_message_downloads_removed">Removed all downloads, freeing %1$s</string>
 
     <!-- TalkBack label for a switch row: the setting name (%1$s) then its explanation (%2$s). -->
-    <string name="settings_switch_description">%1$s. %2$s</string>
     <!-- TalkBack label for one chip: the setting name (%1$s) then the option (%2$s). -->
-    <string name="settings_choice_description">%1$s: %2$s</string>
-    <string name="settings_chip_selected">Selected</string>
-    <string name="settings_chip_not_selected">Not selected</string>
 
     <!-- Playback rate, e.g. "1.5x". %1$s is already formatted, so the "x" is the only copy. -->
-    <string name="settings_speed_format">%1$sx</string>
 
     <!-- Skip intervals. Symbols rather than words: these sit inside a narrow chip. -->
     <string name="settings_skip_seconds">%1$d s</string>

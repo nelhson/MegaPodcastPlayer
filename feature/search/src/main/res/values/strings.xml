@@ -7,7 +7,8 @@
 -->
 <resources>
 
-    <string name="search_title">Add a podcast</string>
+    <!-- Heading of the card offered when what was typed or pasted looks like a feed link. -->
+    <string name="search_link_card_title">This looks like a podcast link</string>
     <string name="search_back">Back to the library</string>
 
     <string name="search_field_label">Show name, Apple / RSS / YouTube playlist link</string>
@@ -38,7 +39,7 @@
     </plurals>
 
     <!-- Separates the parts of a result row's metadata line. -->
-    <string name="search_result_separator"> · </string>
+    <string name="search_result_separator">" · "</string>
 
     <string name="search_result_exclusive">Apple Podcasts exclusive — no RSS feed to download</string>
 

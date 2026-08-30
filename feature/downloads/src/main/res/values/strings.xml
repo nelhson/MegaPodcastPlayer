@@ -10,18 +10,37 @@
 
     <string name="downloads_title">Downloads</string>
 
-    <string name="downloads_remove_all">Remove all downloads</string>
     <string name="downloads_loading">Loading your downloads</string>
 
     <string name="downloads_empty_title">Nothing downloaded</string>
     <string name="downloads_empty_description">Episodes you download appear here and play without a connection.</string>
     <string name="downloads_empty_action">Go to your library</string>
 
-    <string name="downloads_remove_all_dialog_title">Remove all downloads?</string>
+    <!-- Confirmation before deleting a whole selection, which no second tap can undo. -->
+    <plurals name="downloads_remove_dialog_title">
+        <item quantity="one">Remove %1$d download?</item>
+        <item quantity="other">Remove %1$d downloads?</item>
+    </plurals>
     <!-- %1$s is the freed size, e.g. "148 MB". -->
-    <string name="downloads_remove_all_dialog_text">This frees %1$s. The episodes stay in your library and can be downloaded again.</string>
-    <string name="downloads_remove_all_confirm">Remove all</string>
+    <string name="downloads_remove_dialog_text">This frees %1$s. The episodes stay in your library and can be downloaded again.</string>
+    <string name="downloads_remove_confirm">Remove</string>
     <string name="downloads_cancel">Cancel</string>
+
+    <!-- Multi-selection: a long press starts it, and the floating bar carries what it can do. -->
+    <string name="downloads_select">Select</string>
+    <plurals name="downloads_selected">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <string name="downloads_select_all">Select all</string>
+    <string name="downloads_clear_selection">Clear the selection</string>
+    <string name="downloads_remove_selected">Remove the selected downloads</string>
+
+    <!-- The storage card. %1$s is a size, e.g. "1.4 GB". -->
+    <string name="downloads_storage_used">%1$s downloaded</string>
+    <string name="downloads_storage_free">%1$s free</string>
+    <!-- Read out instead of the bar, which is a picture of the two figures beside it. -->
+    <string name="downloads_storage_bar_description">%1$s downloaded, %2$s free</string>
 
     <plurals name="downloads_episode_count">
         <item quantity="one">%1$d episode</item>
@@ -32,7 +51,7 @@
     <string name="downloads_storage_summary">%1$s · %2$s</string>
 
     <!-- Separates the parts of a row's metadata line. -->
-    <string name="downloads_metadata_separator"> · </string>
+    <string name="downloads_metadata_separator">" · "</string>
 
     <!-- Marks an episode that has been listened to all the way through. -->
     <string name="downloads_played">Played</string>

@@ -1,55 +1,59 @@
 package md.borisveriga.bpodcat.feature.podcast
 
 import android.content.res.Resources
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DownloadForOffline
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.SyncDisabled
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,13 +62,18 @@ import md.borisveriga.bpodcat.core.common.format.formatDuration
 import md.borisveriga.bpodcat.core.common.format.formatPublishedDate
 import md.borisveriga.bpodcat.core.common.format.formatRemaining
 import md.borisveriga.bpodcat.core.common.format.toPlainText
+import md.borisveriga.bpodcat.core.designsystem.R as DesignSystemR
+import md.borisveriga.bpodcat.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatTopAppBar
+import md.borisveriga.bpodcat.core.designsystem.component.DownloadButton
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
+import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
+import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
-import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSource
@@ -110,6 +119,7 @@ fun PodcastDetailRoute(
         onEpisodeQueue = viewModel::addToQueue,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onRefresh = viewModel::refresh,
+        onAutoRefreshChange = viewModel::setAutoRefresh,
         onRemove = viewModel::removePodcast,
         onMessageShown = viewModel::onMessageShown,
         showBackButton = showBackButton,
@@ -127,6 +137,7 @@ fun PodcastDetailRoute(
  * @param onEpisodeDownloadToggle download/remove handler; one action, because the button's
  *   meaning follows the episode's download state.
  * @param onRefresh pull-to-refresh handler; also the empty state's action.
+ * @param onAutoRefreshChange background-refresh toggle handler.
  * @param onRemove remove-show handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -141,6 +152,7 @@ fun PodcastDetailScreen(
     onEpisodeQueue: (String) -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
     onRefresh: () -> Unit,
+    onAutoRefreshChange: (Boolean) -> Unit,
     onRemove: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -152,6 +164,8 @@ fun PodcastDetailScreen(
     // change invalidates the read.
     val resources = LocalResources.current
     val now = remember { Instant.now() }
+    // Saveable so neither choice is lost when the Fold 7 is opened.
+    var filter by rememberSaveable { mutableStateOf(EpisodeFilter.ALL) }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -162,29 +176,18 @@ fun PodcastDetailScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = uiState.podcast?.title.orEmpty(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    if (showBackButton) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = stringResource(R.string.podcast_back),
-                            )
-                        }
-                    }
-                },
+            // Small and quiet: the show's name is set large in the header a few dp below, and
+            // repeating it at full strength here would be the same words twice.
+            BPodcatTopAppBar(
+                title = uiState.podcast?.title.orEmpty(),
+                onBack = onBack.takeIf { showBackButton },
+                backDescription = stringResource(R.string.podcast_back),
                 actions = {
-                    IconButton(onClick = onRemove) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = stringResource(R.string.podcast_remove),
+                    if (uiState.podcast != null) {
+                        OverflowMenu(
+                            autoRefresh = uiState.podcast.autoRefresh,
+                            onAutoRefreshChange = onAutoRefreshChange,
+                            onRemove = onRemove,
                         )
                     }
                 },
@@ -201,7 +204,7 @@ fun PodcastDetailScreen(
             // The automatic refresh's entire footprint: a line under the title, nothing that moves
             // the list the user is already reading.
             if (uiState.isAutoRefreshing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                WavyProgressLine(contentDescription = stringResource(R.string.podcast_refreshing))
             }
 
             when {
@@ -231,17 +234,57 @@ fun PodcastDetailScreen(
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    val shown = uiState.episodes.filterBy(filter)
+
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        item { PodcastHeader(podcast = podcast) }
-                        items(items = uiState.episodes, key = { it.id }) { episode ->
-                            EpisodeRow(
-                                episode = episode,
-                                now = now,
-                                onClick = { onEpisodeClick(episode.id) },
-                                onQueue = { onEpisodeQueue(episode.id) },
-                                onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
+                        item(key = HEADER_KEY) {
+                            PodcastHeader(
+                                podcast = podcast,
+                                onPlayLatest = {
+                                    uiState.episodes.firstOrNull()
+                                        ?.let { onEpisodeClick(it.id) }
+                                },
                             )
-                            HorizontalDivider()
+                        }
+                        item(key = FILTERS_KEY) {
+                            FilterChips(selected = filter, onSelect = { filter = it })
+                        }
+
+                        if (shown.isEmpty()) {
+                            item(key = FILTER_EMPTY_KEY) {
+                                FilterEmptyState(onShowAll = { filter = EpisodeFilter.ALL })
+                            }
+                        }
+
+                        items(items = shown, key = { it.id }) { episode ->
+                            EpisodeRow(
+                                title = episode.title,
+                                metadata = episode.metadataLine(now, resources),
+                                artworkUrl = episode.artworkUrl ?: podcast.artworkUrl,
+                                isUnplayed = episode.isNew,
+                                isPlayed = episode.isPlayed,
+                                playedFraction = episode.playedFraction,
+                                onClick = { onEpisodeClick(episode.id) },
+                                trailing = {
+                                    IconButton(onClick = { onEpisodeQueue(episode.id) }) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                                            // Naming the episode matters here: TalkBack users reach
+                                            // this button out of the list's reading order, without
+                                            // the title next to it.
+                                            contentDescription = stringResource(
+                                                R.string.podcast_queue_episode,
+                                                episode.title,
+                                            ),
+                                        )
+                                    }
+                                    DownloadButton(
+                                        state = episode.downloadState,
+                                        progressPercent = episode.downloadPercent,
+                                        onClick = { onEpisodeDownloadToggle(episode.id) },
+                                    )
+                                },
+                            )
                         }
                     }
                 }
@@ -251,211 +294,275 @@ fun PodcastDetailScreen(
 }
 
 /**
- * Show header: artwork, author and description.
+ * The show, at the top of its own page.
+ *
+ * The cover is drawn twice — once blurred, filling the width, and once sharp and raised over it.
+ * That is the whole trick: a podcast's artwork is the most colourful thing the app has, and it is
+ * what makes a show's page feel like that show's page rather than another list.
  *
  * @param podcast the show.
+ * @param onPlayLatest starts the newest episode; the one thing most visits to this screen want.
  * @param modifier layout modifier.
  */
 @Composable
-private fun PodcastHeader(podcast: Podcast, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        PodcastArtwork(url = podcast.artworkUrl, size = ArtworkSize.Header)
-        Column {
+private fun PodcastHeader(
+    podcast: Podcast,
+    onPlayLatest: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
+    // Feed descriptions are HTML fragments, often double-escaped.
+    val description = remember(podcast.description) { podcast.description.toPlainText() }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // The wash is behind the cover only. The show's name, its description and its buttons sit
+        // on the page below it, on the ordinary surface: cover art is arbitrary third-party
+        // imagery, and body text over an arbitrary photograph is a contrast bet the app loses on
+        // any bright artwork — which is most of them.
+        ArtworkBackdrop(
+            url = podcast.artworkUrl,
+            scrim = Brush.verticalGradient(
+                listOf(Color.Transparent, MaterialTheme.colorScheme.surface),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = BPodcatTheme.spacing.xl),
+                contentAlignment = Alignment.Center,
+            ) {
+                // A raised card rather than a bare square: the artwork has to separate itself from
+                // the blurred copy of itself behind it, and a shadow is what does that.
+                Surface(
+                    shape = BPodcatTheme.shapes.artworkLarge,
+                    shadowElevation = BPodcatTheme.elevation.level3,
+                ) {
+                    PodcastArtwork(
+                        url = podcast.artworkUrl,
+                        size = ArtworkSize.Header,
+                        shape = BPodcatTheme.shapes.artworkLarge,
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = BPodcatTheme.spacing.lg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.md),
+        ) {
+            Text(
+                text = podcast.title,
+                style = MaterialTheme.typography.headlineMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm),
             ) {
                 SourceBadge(source = podcast.source)
                 Text(
                     text = podcast.author,
                     style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
             }
-            Text(
-                // Feed descriptions are HTML fragments, often double-escaped.
-                text = remember(podcast.description) { podcast.description.toPlainText() },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp),
+
+            Button(onClick = onPlayLatest) {
+                Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.podcast_play_latest),
+                    modifier = Modifier.padding(start = BPodcatTheme.spacing.sm),
+                )
+            }
+
+            if (description.isNotBlank()) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Clipped rather than truncated for good: a hard four-line cut with no way past
+                    // it is how a show's own summary becomes unreadable in the app that shows it.
+                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else COLLAPSED_LINES,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.animateContentSize(),
+                )
+                TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
+                    Text(
+                        text = stringResource(
+                            if (descriptionExpanded) {
+                                R.string.podcast_description_collapse
+                            } else {
+                                R.string.podcast_description_expand
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The four ways of looking at a show's episodes.
+ *
+ * @param selected the current filter.
+ * @param onSelect invoked with the chosen filter.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun FilterChips(
+    selected: EpisodeFilter,
+    onSelect: (EpisodeFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(
+                horizontal = BPodcatTheme.spacing.screenHorizontal,
+                vertical = BPodcatTheme.spacing.sm,
+            ),
+        horizontalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm),
+    ) {
+        EpisodeFilter.entries.forEach { option ->
+            val isSelected = option == selected
+            // Built here rather than inside `semantics`, which is not a composable scope.
+            // The same two words the settings chips announce, from the design system, rather than
+            // a second copy of "Selected" that a translator would have to find twice.
+            val state = stringResource(
+                if (isSelected) {
+                    DesignSystemR.string.designsystem_chip_selected
+                } else {
+                    DesignSystemR.string.designsystem_chip_not_selected
+                },
+            )
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelect(option) },
+                label = { Text(text = stringResource(option.labelResId)) },
+                modifier = Modifier.semantics { stateDescription = state },
             )
         }
     }
 }
 
 /**
- * One episode row.
+ * What a filter with no matches shows.
+ *
+ * Offers the way out rather than only stating the fact: the most likely next thing anyone wants is
+ * the full list back.
+ *
+ * @param onShowAll clears the filter.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(BPodcatTheme.spacing.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm),
+    ) {
+        Text(
+            text = stringResource(R.string.podcast_filter_empty_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(R.string.podcast_filter_empty_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(onClick = onShowAll) {
+            Text(text = stringResource(R.string.podcast_filter_empty_action))
+        }
+    }
+}
+
+/**
+ * The show's rarely-used actions.
+ *
+ * Removing a show sat in the top bar, one mis-tap from the back arrow, for something that deletes
+ * every episode and every download it has. It belongs behind a menu. The background-refresh switch
+ * joins it because until now the repository could turn it off and nothing in the app could.
+ *
+ * @param autoRefresh whether this show is refreshed in the background.
+ * @param onAutoRefreshChange toggle handler.
+ * @param onRemove remove-show handler.
+ */
+@Composable
+private fun OverflowMenu(
+    autoRefresh: Boolean,
+    onAutoRefreshChange: (Boolean) -> Unit,
+    onRemove: () -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    IconButton(onClick = { expanded = true }) {
+        Icon(
+            imageVector = Icons.Rounded.MoreVert,
+            contentDescription = stringResource(R.string.podcast_more_actions),
+        )
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        val autoRefreshLabel = stringResource(
+            if (autoRefresh) R.string.podcast_auto_refresh_on else R.string.podcast_auto_refresh_off,
+        )
+        DropdownMenuItem(
+            text = { Text(text = autoRefreshLabel) },
+            leadingIcon = {
+                Icon(
+                    imageVector = if (autoRefresh) {
+                        Icons.Rounded.Sync
+                    } else {
+                        Icons.Rounded.SyncDisabled
+                    },
+                    contentDescription = null,
+                )
+            },
+            onClick = {
+                expanded = false
+                onAutoRefreshChange(!autoRefresh)
+            },
+            // The label states the current setting, so the item needs to say what pressing it does.
+            modifier = Modifier.semantics { contentDescription = autoRefreshLabel },
+        )
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.podcast_remove)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Delete, contentDescription = null)
+            },
+            onClick = {
+                expanded = false
+                onRemove()
+            },
+        )
+    }
+}
+
+/**
+ * The metadata line under an episode title.
  *
  * Shows publication date, duration and — once playback has started — how much is left, which is the
  * number that actually matters when picking what to listen to next.
  *
- * @param episode the episode.
  * @param now reference time for relative date formatting.
- * @param onClick tap handler; playing the episode.
- * @param onQueue add-to-queue handler.
- * @param onDownloadToggle download/remove handler.
- * @param modifier layout modifier.
+ * @param resources for the marks that are not formatter output.
+ * @return the line to show.
  */
-@Composable
-private fun EpisodeRow(
-    episode: Episode,
-    now: Instant,
-    onClick: () -> Unit,
-    onQueue: () -> Unit,
-    onDownloadToggle: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = episode.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = if (episode.isNew) FontWeight.Bold else FontWeight.Normal,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            DownloadButton(episode = episode, onClick = onDownloadToggle)
-            IconButton(onClick = onQueue) {
-                Icon(
-                    imageVector = Icons.Rounded.PlaylistAdd,
-                    // Naming the episode matters here: TalkBack users reach this button out of the
-                    // list's reading order, without the title next to it.
-                    contentDescription = stringResource(R.string.podcast_queue_episode, episode.title),
-                )
-            }
-        }
-
-        Text(
-            text = listOfNotNull(
-                formatPublishedDate(episode.publishedAt, now),
-                formatRemaining(episode.durationMs, episode.positionMs)
-                    ?.takeIf { episode.positionMs > 0 }
-                    ?: formatDuration(episode.durationMs),
-                stringResource(R.string.podcast_episode_played).takeIf { episode.isPlayed },
-                stringResource(R.string.podcast_episode_downloaded)
-                    .takeIf { episode.downloadState == DownloadState.COMPLETED },
-            ).joinToString(stringResource(R.string.podcast_metadata_separator)),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-
-        if (episode.positionMs > 0 && !episode.isPlayed) {
-            LinearProgressIndicator(
-                progress = { episode.playedFraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-            )
-        }
-    }
-}
-
-/**
- * The per-episode download control.
- *
- * One button with four faces rather than four controls: an episode is in exactly one download state
- * at a time, and the action always follows from it — download what is absent, retry what failed,
- * cancel what is running, remove what is finished.
- *
- * @param episode the episode whose state the button reflects.
- * @param onClick invoked on tap; the caller decides what the tap means from the same state.
- * @param modifier layout modifier.
- */
-@Composable
-private fun DownloadButton(
-    episode: Episode,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // Built here rather than inside `semantics`, which is not a composable scope.
-    val cancelQueuedDescription =
-        stringResource(R.string.podcast_cancel_queued_download, episode.title)
-    val cancelDescription = pluralStringResource(
-        R.plurals.podcast_cancel_download,
-        episode.downloadPercent.toInt(),
-        episode.title,
-        episode.downloadPercent.toInt(),
-    )
-
-    IconButton(onClick = onClick, modifier = modifier) {
-        when (episode.downloadState) {
-            DownloadState.NOT_DOWNLOADED -> DownloadIcon(
-                icon = Icons.Rounded.DownloadForOffline,
-                contentDescription = stringResource(
-                    R.string.podcast_download_episode,
-                    episode.title,
-                ),
-            )
-
-            // Queued and downloading share a spinner; what differs is whether it advances. A
-            // determinate ring on a download still waiting for Wi-Fi would sit at zero and read as
-            // broken, so that case gets an indeterminate one.
-            DownloadState.QUEUED -> CircularProgressIndicator(
-                strokeWidth = 2.dp,
-                modifier = Modifier
-                    .size(20.dp)
-                    .semantics {
-                        contentDescription = cancelQueuedDescription
-                    },
-            )
-
-            DownloadState.DOWNLOADING -> CircularProgressIndicator(
-                progress = { episode.downloadPercent / 100f },
-                strokeWidth = 2.dp,
-                modifier = Modifier
-                    .size(20.dp)
-                    .semantics {
-                        contentDescription = cancelDescription
-                    },
-            )
-
-            DownloadState.COMPLETED -> DownloadIcon(
-                icon = Icons.Rounded.CheckCircle,
-                contentDescription = stringResource(R.string.podcast_remove_download, episode.title),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-
-            DownloadState.FAILED -> DownloadIcon(
-                icon = Icons.Rounded.ErrorOutline,
-                contentDescription = stringResource(R.string.podcast_retry_download, episode.title),
-                tint = MaterialTheme.colorScheme.error,
-            )
-        }
-    }
-}
-
-/**
- * One face of [DownloadButton].
- *
- * @param icon the glyph to show.
- * @param contentDescription what TalkBack announces; always names the episode, because this button
- *   is reachable out of the list's reading order.
- * @param tint icon colour; defaults to the local content colour.
- */
-@Composable
-private fun DownloadIcon(
-    icon: ImageVector,
-    contentDescription: String,
-    tint: Color = LocalContentColor.current,
-) {
-    Icon(imageVector = icon, contentDescription = contentDescription, tint = tint)
-}
+private fun Episode.metadataLine(now: Instant, resources: Resources): String = listOfNotNull(
+    formatPublishedDate(publishedAt, now),
+    formatRemaining(durationMs, positionMs)?.takeIf { positionMs > 0 } ?: formatDuration(durationMs),
+).joinToString(resources.getString(R.string.podcast_metadata_separator))
 
 /**
  * Turns a [PodcastDetailMessage] into snackbar text.
@@ -497,6 +604,13 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
     is PodcastDetailMessage.DownloadRemoved ->
         resources.getString(R.string.podcast_message_download_removed, title)
 }
+
+private const val HEADER_KEY = "header"
+private const val FILTERS_KEY = "filters"
+private const val FILTER_EMPTY_KEY = "filter-empty"
+
+/** How much of a show's description is shown before it has been asked for in full. */
+private const val COLLAPSED_LINES = 4
 
 @Preview
 @Composable
@@ -541,6 +655,7 @@ private fun PodcastDetailScreenPreview() {
             onEpisodeQueue = {},
             onEpisodeDownloadToggle = {},
             onRefresh = {},
+            onAutoRefreshChange = {},
             onRemove = {},
             onMessageShown = {},
         )

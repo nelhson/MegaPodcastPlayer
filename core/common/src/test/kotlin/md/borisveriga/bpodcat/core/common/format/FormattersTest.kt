@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.core.common.format
 
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -78,5 +79,32 @@ class FormattersTest {
     fun `formats byte counts in megabytes and gigabytes`() {
         assertEquals("340 MB", formatBytes(340_000_000L))
         assertEquals("1.2 GB", formatBytes(1_200_000_000L))
+    }
+
+    @Test
+    fun `whole playback rates lose their decimals`() {
+        assertEquals("1x", formatSpeed(1f))
+        assertEquals("2x", formatSpeed(2f))
+    }
+
+    @Test
+    fun `fractional playback rates keep only the digits they need`() {
+        assertEquals("1.5x", formatSpeed(1.5f))
+        assertEquals("1.75x", formatSpeed(1.75f))
+        assertEquals("0.8x", formatSpeed(0.8f))
+    }
+
+    @Test
+    fun `playback rates are formatted in a fixed locale`() {
+        val previous = Locale.getDefault()
+        try {
+            // German writes 1,5 rather than 1.5. The speed chips sit next to each other across two
+            // screens and the watch, and a separator that changed with the device locale would make
+            // the same setting look like two.
+            Locale.setDefault(Locale.GERMANY)
+            assertEquals("1.5x", formatSpeed(1.5f))
+        } finally {
+            Locale.setDefault(previous)
+        }
     }
 }

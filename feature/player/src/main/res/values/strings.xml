@@ -52,9 +52,6 @@
         <item quantity="other">Skip back %1$d seconds</item>
     </plurals>
 
-    <!-- Playback rate, e.g. "1.5x". %1$s is already formatted, so the "x" is the only copy. -->
-    <string name="player_speed_format">%1$sx</string>
-
     <!-- The link from the player into the queue; %1$d is how many episodes follow this one. -->
     <plurals name="player_queue_summary">
         <item quantity="one">Up next · %1$d episode</item>

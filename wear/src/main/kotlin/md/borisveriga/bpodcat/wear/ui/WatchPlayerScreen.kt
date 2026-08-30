@@ -48,6 +48,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import md.borisveriga.bpodcat.core.common.format.formatSpeed
 import md.borisveriga.bpodcat.core.wearprotocol.QueuedEpisode
 import md.borisveriga.bpodcat.wear.R
 import md.borisveriga.bpodcat.wear.data.PhoneLink

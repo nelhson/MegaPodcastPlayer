@@ -1,52 +1,47 @@
 package md.borisveriga.bpodcat.feature.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.toggleableState
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import md.borisveriga.bpodcat.core.common.format.formatBytes
+import md.borisveriga.bpodcat.core.common.format.formatSpeed
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatTopAppBar
+import md.borisveriga.bpodcat.core.designsystem.component.SectionHeader
+import md.borisveriga.bpodcat.core.designsystem.component.SettingsChoiceRow
+import md.borisveriga.bpodcat.core.designsystem.component.SettingsSwitchRow
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.PlaybackSettings
@@ -85,6 +80,10 @@ fun SettingsRoute(
 
 /**
  * Stateless settings screen.
+ *
+ * The three groups are cards rather than runs of rows between dividers. A divider says "these two
+ * things are different"; a card says "these belong together", which is what a settings group is —
+ * and it means a long screen can be scanned by shape rather than read line by line.
  *
  * @param uiState what to render.
  * @param onBack back handler.
@@ -139,16 +138,10 @@ fun SettingsScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.settings_back),
-                        )
-                    }
-                },
+            BPodcatTopAppBar(
+                title = stringResource(R.string.settings_title),
+                onBack = onBack,
+                backDescription = stringResource(R.string.settings_back),
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -157,234 +150,145 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = BPodcatTheme.spacing.xl),
         ) {
-            SectionHeader(stringResource(R.string.settings_section_playback))
+            SectionHeader(text = stringResource(R.string.settings_section_playback))
+            SettingsCard {
+                SettingsChoiceRow(
+                    title = stringResource(R.string.settings_playback_speed),
+                    options = PlaybackSettings.SPEED_STEPS,
+                    selected = uiState.playback.speed,
+                    label = { speed -> formatSpeed(speed) },
+                    onSelect = onSpeedChange,
+                )
 
-            ChoiceRow(
-                title = stringResource(R.string.settings_playback_speed),
-                options = PlaybackSettings.SPEED_STEPS,
-                selected = uiState.playback.speed,
-                label = { speed -> formatSpeed(speed) },
-                onSelect = onSpeedChange,
-            )
+                SettingsChoiceRow(
+                    title = stringResource(R.string.settings_skip_forward),
+                    options = SKIP_FORWARD_STEPS_MS,
+                    selected = uiState.playback.skipForwardMs,
+                    label = { millis -> formatSkip(millis) },
+                    onSelect = onSkipForwardChange,
+                )
 
-            ChoiceRow(
-                title = stringResource(R.string.settings_skip_forward),
-                options = SKIP_FORWARD_STEPS_MS,
-                selected = uiState.playback.skipForwardMs,
-                label = { millis -> formatSkip(millis) },
-                onSelect = onSkipForwardChange,
-            )
+                SettingsChoiceRow(
+                    title = stringResource(R.string.settings_skip_back),
+                    options = SKIP_BACK_STEPS_MS,
+                    selected = uiState.playback.skipBackMs,
+                    label = { millis -> formatSkip(millis) },
+                    onSelect = onSkipBackChange,
+                )
 
-            ChoiceRow(
-                title = stringResource(R.string.settings_skip_back),
-                options = SKIP_BACK_STEPS_MS,
-                selected = uiState.playback.skipBackMs,
-                label = { millis -> formatSkip(millis) },
-                onSelect = onSkipBackChange,
-            )
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_auto_play_next_title),
+                    description = stringResource(R.string.settings_auto_play_next_description),
+                    checked = uiState.playback.autoPlayNext,
+                    onCheckedChange = onAutoPlayNextChange,
+                )
+            }
 
-            SwitchRow(
-                title = stringResource(R.string.settings_auto_play_next_title),
-                description = stringResource(R.string.settings_auto_play_next_description),
-                checked = uiState.playback.autoPlayNext,
-                onCheckedChange = onAutoPlayNextChange,
-            )
+            SectionHeader(text = stringResource(R.string.settings_section_downloads))
+            SettingsCard {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_auto_download_title),
+                    description = stringResource(R.string.settings_auto_download_description),
+                    checked = uiState.downloads.autoDownloadNewEpisodes,
+                    onCheckedChange = onAutoDownloadChange,
+                )
 
-            HorizontalDivider()
-            SectionHeader(stringResource(R.string.settings_section_downloads))
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_unmetered_title),
+                    description = stringResource(R.string.settings_unmetered_description),
+                    checked = uiState.downloads.unmeteredOnly,
+                    onCheckedChange = onUnmeteredOnlyChange,
+                )
 
-            SwitchRow(
-                title = stringResource(R.string.settings_auto_download_title),
-                description = stringResource(R.string.settings_auto_download_description),
-                checked = uiState.downloads.autoDownloadNewEpisodes,
-                onCheckedChange = onAutoDownloadChange,
-            )
+                SettingsChoiceRow(
+                    title = stringResource(R.string.settings_keep_limit_title),
+                    options = DownloadSettings.KEEP_LIMIT_STEPS,
+                    selected = uiState.downloads.keepLimitPerPodcast,
+                    label = { limit -> formatKeepLimit(limit) },
+                    onSelect = onKeepLimitChange,
+                )
 
-            SwitchRow(
-                title = stringResource(R.string.settings_unmetered_title),
-                description = stringResource(R.string.settings_unmetered_description),
-                checked = uiState.downloads.unmeteredOnly,
-                onCheckedChange = onUnmeteredOnlyChange,
-            )
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_delete_after_playing_title),
+                    description = stringResource(R.string.settings_delete_after_playing_description),
+                    checked = uiState.downloads.deleteAfterPlaying,
+                    onCheckedChange = onDeleteAfterPlayingChange,
+                )
+            }
 
-            ChoiceRow(
-                title = stringResource(R.string.settings_keep_limit_title),
-                options = DownloadSettings.KEEP_LIMIT_STEPS,
-                selected = uiState.downloads.keepLimitPerPodcast,
-                label = { limit -> formatKeepLimit(limit) },
-                onSelect = onKeepLimitChange,
-            )
+            SectionHeader(text = stringResource(R.string.settings_section_storage))
+            SettingsCard {
+                ListItem(
+                    headlineContent = {
+                        Text(text = stringResource(R.string.settings_downloaded_episodes))
+                    },
+                    supportingContent = {
+                        Text(
+                            text = formatStorage(
+                                uiState.downloadedEpisodeCount,
+                                uiState.downloadedBytes,
+                            ),
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
 
-            SwitchRow(
-                title = stringResource(R.string.settings_delete_after_playing_title),
-                description = stringResource(R.string.settings_delete_after_playing_description),
-                checked = uiState.downloads.deleteAfterPlaying,
-                onCheckedChange = onDeleteAfterPlayingChange,
-            )
-
-            HorizontalDivider()
-            SectionHeader(stringResource(R.string.settings_section_storage))
-
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.settings_downloaded_episodes)) },
-                supportingContent = {
-                    Text(formatStorage(uiState.downloadedEpisodeCount, uiState.downloadedBytes))
-                },
-            )
-
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.settings_remove_all)) },
-                supportingContent = {
-                    Text(
-                        if (uiState.hasDownloads) {
-                            stringResource(
-                                R.string.settings_remove_all_frees,
-                                formatBytes(uiState.downloadedBytes),
-                            )
-                        } else {
-                            stringResource(R.string.settings_remove_all_nothing)
-                        },
-                    )
-                },
-                leadingContent = {
-                    Icon(imageVector = Icons.Rounded.DeleteSweep, contentDescription = null)
-                },
-                modifier = Modifier
-                    .clickable(
-                        enabled = uiState.hasDownloads && !uiState.isRemovingDownloads,
-                        onClick = onRemoveAllDownloads,
-                    )
-                    .semantics { role = Role.Button },
-            )
+                ListItem(
+                    headlineContent = { Text(text = stringResource(R.string.settings_remove_all)) },
+                    supportingContent = {
+                        Text(
+                            text = if (uiState.hasDownloads) {
+                                stringResource(
+                                    R.string.settings_remove_all_frees,
+                                    formatBytes(uiState.downloadedBytes),
+                                )
+                            } else {
+                                stringResource(R.string.settings_remove_all_nothing)
+                            },
+                        )
+                    },
+                    leadingContent = {
+                        Icon(imageVector = Icons.Rounded.DeleteSweep, contentDescription = null)
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier
+                        .clickable(
+                            enabled = uiState.hasDownloads && !uiState.isRemovingDownloads,
+                            onClick = onRemoveAllDownloads,
+                        )
+                        .semantics { role = Role.Button },
+                )
+            }
         }
     }
 }
 
 /**
- * A settings group heading.
+ * One group of settings, on its own ground.
  *
- * @param title the group's name.
  * @param modifier layout modifier.
+ * @param content the rows in the group.
  */
 @Composable
-private fun SectionHeader(title: String, modifier: Modifier = Modifier) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-    )
-}
-
-/**
- * A labelled switch.
- *
- * The whole row toggles, not just the switch: a 48 dp target at the far edge of the screen is a
- * poor one, and TalkBack should announce one control rather than a row and a switch beside it.
- *
- * @param title the setting's name.
- * @param description one line explaining what it does.
- * @param checked current value.
- * @param onCheckedChange invoked with the new value.
- * @param modifier layout modifier.
- */
-@Composable
-private fun SwitchRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+private fun SettingsCard(
     modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    // Built here rather than inside `semantics`, which is not a composable scope.
-    val rowDescription = stringResource(R.string.settings_switch_description, title, description)
-
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(description) },
-        trailingContent = {
-            // The row owns the semantics, so the switch itself must not announce a second control.
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                modifier = Modifier.clearAndSetSemantics {},
-            )
-        },
+    Card(
         modifier = modifier
-            .clickable { onCheckedChange(!checked) }
-            .semantics {
-                role = Role.Switch
-                contentDescription = rowDescription
-                toggleableState = ToggleableState(checked)
-            },
-    )
-}
-
-/**
- * A row of mutually exclusive chips.
- *
- * A chip row rather than a dialog because every one of these settings has a handful of sensible
- * values and no free-form input, and seeing them all is faster than opening a picker.
- *
- * @param T the option type.
- * @param title the setting's name.
- * @param options every value on offer.
- * @param selected the current value.
- * @param label renders one option's caption; composable, because the captions come from
- *   resources.
- * @param onSelect invoked with the chosen value.
- * @param modifier layout modifier.
- */
-@Composable
-private fun <T> ChoiceRow(
-    title: String,
-    options: List<T>,
-    selected: T,
-    label: @Composable (T) -> String,
-    onSelect: (T) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.padding(vertical = 8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(horizontal = 16.dp),
+            .fillMaxWidth()
+            .padding(horizontal = BPodcatTheme.spacing.screenHorizontal),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = BPodcatTheme.spacing.sm),
+            content = content,
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { option ->
-                val optionLabel = label(option)
-                val isSelected = option == selected
-                // Built here rather than inside `semantics`, which is not a composable scope.
-                val chipDescription =
-                    stringResource(R.string.settings_choice_description, title, optionLabel)
-                val chipState = stringResource(
-                    if (isSelected) {
-                        R.string.settings_chip_selected
-                    } else {
-                        R.string.settings_chip_not_selected
-                    },
-                )
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onSelect(option) },
-                    label = { Text(optionLabel) },
-                    // Without this the chip announces only its own caption — "30 s" tells a
-                    // TalkBack user nothing about which setting they are changing.
-                    modifier = Modifier.semantics {
-                        contentDescription = chipDescription
-                        stateDescription = chipState
-                    },
-                )
-            }
-        }
     }
 }
 
@@ -393,19 +297,6 @@ private val SKIP_FORWARD_STEPS_MS = listOf(10_000L, 15_000L, 30_000L, 45_000L, 6
 
 /** The skip-back intervals on offer, shorter because skipping back is about a missed sentence. */
 private val SKIP_BACK_STEPS_MS = listOf(5_000L, 10_000L, 15_000L, 30_000L)
-
-/**
- * Formats a playback rate as `1x` or `1.5x`, dropping a trailing `.0`.
- *
- * @param speed the rate.
- * @return the chip caption.
- */
-@Composable
-private fun formatSpeed(speed: Float): String {
-    val rounded = Math.round(speed * 100) / 100f
-    val digits = if (rounded % 1f == 0f) rounded.toInt().toString() else rounded.toString()
-    return stringResource(R.string.settings_speed_format, digits)
-}
 
 /**
  * Formats a skip interval as `30 s`, or `1 min` at exactly a minute.

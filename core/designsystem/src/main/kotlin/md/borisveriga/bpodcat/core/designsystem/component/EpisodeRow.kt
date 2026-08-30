@@ -1,8 +1,10 @@
 package md.borisveriga.bpodcat.core.designsystem.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -59,9 +62,17 @@ import md.borisveriga.bpodcat.core.model.DownloadState
  * @param playedFraction progress through the episode in `0f..1f`; drawn as a hairline under the row.
  * @param isNowPlaying whether this episode is the one loaded in the player.
  * @param isPlaying whether that episode is actually running, as opposed to loaded and paused.
+ * @param isSelected whether the row is part of a multi-selection; tints the row and announces
+ *   itself as selected.
  * @param onClick invoked when the row is pressed; the row is not focusable when null.
+ * @param onLongClick invoked on a long press, usually to start selecting. Published to
+ *   accessibility services as a named custom action, because a long press is a gesture a TalkBack
+ *   user cannot make.
+ * @param longClickLabel names that custom action, e.g. "Select". Required in practice whenever
+ *   [onLongClick] is set.
  * @param trailing actions pinned to the end of the row, e.g. a [DownloadButton].
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun EpisodeRow(
     title: String,
@@ -75,14 +86,21 @@ fun EpisodeRow(
     playedFraction: Float = 0f,
     isNowPlaying: Boolean = false,
     isPlaying: Boolean = false,
+    isSelected: Boolean = false,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val background by animateColorAsState(
-        targetValue = if (isNowPlaying) {
-            BPodcatTheme.colors.nowPlayingContainer
-        } else {
-            MaterialTheme.colorScheme.surface
+        targetValue = when {
+            // Selection wins over now-playing: while a selection is being made, which rows are in
+            // it is the only thing the user is looking for.
+            isSelected -> MaterialTheme.colorScheme.secondaryContainer
+
+            isNowPlaying -> BPodcatTheme.colors.nowPlayingContainer
+
+            else -> MaterialTheme.colorScheme.surface
         },
         animationSpec = Motion.fade(),
         label = "rowBackground",
@@ -105,16 +123,19 @@ fun EpisodeRow(
         modifier = modifier
             .fillMaxWidth()
             .background(background)
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(role = Role.Button, onClick = onClick)
-                } else {
-                    Modifier
-                },
+            .rowGestures(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                longClickLabel = longClickLabel,
             )
             // One node per row: TalkBack should say "Hard Fork, The AI bubble, 42 minutes, 30
             // percent played", not walk four separate labels.
-            .semantics(mergeDescendants = true) { stateDescription = state },
+            .semantics(mergeDescendants = true) {
+                stateDescription = state
+                // Only when true: every row announcing "not selected" outside a selection would be
+                // noise on a screen where nothing is selectable yet.
+                if (isSelected) selected = true
+            },
     ) {
         Row(
             modifier = Modifier
@@ -207,6 +228,36 @@ fun EpisodeRow(
             }
         }
     }
+}
+
+/**
+ * The gestures a row accepts, which is none, a tap, or a tap and a long press.
+ *
+ * A modifier factory rather than three branches inside [EpisodeRow] so the row itself stays
+ * readable, and so the rule that a long press is always published with a label lives in one place.
+ *
+ * @param onClick tap handler; null makes the row inert and unfocusable.
+ * @param onLongClick long-press handler; ignored without [onClick], since a row that can only be
+ *   long-pressed offers no way in for anyone who cannot make the gesture.
+ * @param longClickLabel names the long press for accessibility services.
+ * @return the modifier to apply.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.rowGestures(
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)?,
+    longClickLabel: String?,
+): Modifier = when {
+    onClick != null && onLongClick != null -> combinedClickable(
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onLongClickLabel = longClickLabel,
+        role = Role.Button,
+    )
+
+    onClick != null -> clickable(role = Role.Button, onClick = onClick)
+
+    else -> this
 }
 
 private val ROW_MIN_HEIGHT = 72.dp

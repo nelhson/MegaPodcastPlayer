@@ -25,6 +25,9 @@ import md.borisveriga.bpodcat.core.model.EpisodeWithShow
  *   or has failed is not yet costing anything worth reporting.
  * @property totalBytes what the completed episodes occupy, summed from the per-episode counters
  *   Media3 writes back — so the figure needs no separate read and can never lag the list it labels.
+ * @property freeBytes what is left on the volume the downloads are written to, so the screen can
+ *   draw what is stored against what is still available. Zero until the first read comes back, and
+ *   zero if the read fails, in which case the bar shows only the stored share.
  * @property unmeteredOnly whether downloads wait for Wi-Fi, which is what lets a waiting row say
  *   why it is waiting rather than just that it is.
  * @property isLoading true until the first database emission arrives.
@@ -35,6 +38,7 @@ data class DownloadsUiState(
     val downloads: List<EpisodeWithShow> = emptyList(),
     val completedCount: Int = 0,
     val totalBytes: Long = 0L,
+    val freeBytes: Long = 0L,
     val unmeteredOnly: Boolean = false,
     val isLoading: Boolean = true,
     val message: DownloadsMessage? = null,
@@ -108,11 +112,25 @@ class DownloadsViewModel @Inject constructor(
 
     private val transientState = MutableStateFlow<DownloadsMessage?>(null)
 
+    /**
+     * Free space, sampled rather than observed.
+     *
+     * There is no flow to watch, and re-reading it on every emission of the download list would
+     * mean a disk stat several times a second while a transfer runs, for a figure that moves by a
+     * megabyte at a time. Read once on arrival and again after anything that frees space.
+     */
+    private val freeBytes = MutableStateFlow(0L)
+
+    init {
+        refreshFreeBytes()
+    }
+
     val uiState: StateFlow<DownloadsUiState> = combine(
         downloadRepository.observeDownloads(),
         downloadRepository.observeDownloadSettings(),
+        freeBytes,
         transientState,
-    ) { downloads, settings, message ->
+    ) { downloads, settings, free, message ->
         val completed = downloads.filter { it.episode.downloadState == DownloadState.COMPLETED }
         DownloadsUiState(
             downloads = downloads,
@@ -121,6 +139,7 @@ class DownloadsViewModel @Inject constructor(
             // storage the user can act on, and counting them would make the figure jump about
             // while a download runs.
             totalBytes = completed.sumOf { it.episode.downloadedBytes },
+            freeBytes = free,
             unmeteredOnly = settings.unmeteredOnly,
             isLoading = false,
             message = message,
@@ -206,6 +225,7 @@ class DownloadsViewModel @Inject constructor(
         viewModelScope.launch {
             downloadRepository.removeDownload(episodeId)
             transientState.value = DownloadsMessage.Removed(title)
+            refreshFreeBytes()
         }
     }
 
@@ -223,12 +243,40 @@ class DownloadsViewModel @Inject constructor(
         viewModelScope.launch {
             downloadRepository.removeAllDownloads()
             transientState.value = DownloadsMessage.RemovedAll(count)
+            refreshFreeBytes()
+        }
+    }
+
+    /**
+     * Deletes everything the user picked out, cancelling any of it that is still transferring.
+     *
+     * A selection covering the whole list is handed to [removeAll] instead: it is the same request,
+     * and Media3 can do it as one sweep rather than as one cancellation per episode.
+     *
+     * @param episodeIds the selected episodes. An empty set does nothing.
+     */
+    fun removeSelected(episodeIds: Set<String>) {
+        if (episodeIds.isEmpty()) return
+        val downloads = uiState.value.downloads
+        if (episodeIds.containsAll(downloads.map { it.episode.id })) {
+            removeAll()
+            return
+        }
+        viewModelScope.launch {
+            episodeIds.forEach { downloadRepository.removeDownload(it) }
+            transientState.value = DownloadsMessage.RemovedAll(episodeIds.size)
+            refreshFreeBytes()
         }
     }
 
     /** Clears the current [DownloadsUiState.message] once its snackbar has been shown. */
     fun onMessageShown() {
         transientState.value = null
+    }
+
+    /** Re-reads free space; called on arrival and after anything that gives space back. */
+    private fun refreshFreeBytes() {
+        viewModelScope.launch { freeBytes.value = downloadRepository.freeBytes() }
     }
 
     /** The title of a listed episode, or null if it is no longer in the list. */

@@ -1,70 +1,92 @@
 package md.borisveriga.bpodcat.feature.library
 
 import android.content.res.Resources
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
-import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
-import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
-import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
+import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
+import md.borisveriga.bpodcat.core.designsystem.component.ShowTile
+import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
+import md.borisveriga.bpodcat.core.designsystem.theme.Motion
+import md.borisveriga.bpodcat.core.model.LibraryLayout
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSource
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
 
 /**
- * Library screen: every subscribed show, refreshed on entry, with a route into search.
+ * Library screen: every subscribed show, refreshed on entry, with two routes into search.
  *
- * @param onPodcastClick invoked with a podcast id when a row is tapped.
- * @param onAddClick invoked when the user wants to add a show.
+ * @param onPodcastClick invoked with a podcast id when a show is tapped.
+ * @param onSearchClick invoked when the user wants to look a show up by name.
+ * @param onPasteLinkClick invoked when the user wants to add a show from a link they have copied.
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
 @Composable
 fun LibraryRoute(
     onPodcastClick: (String) -> Unit,
-    onAddClick: () -> Unit,
+    onSearchClick: () -> Unit,
+    onPasteLinkClick: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -85,7 +107,9 @@ fun LibraryRoute(
     LibraryScreen(
         uiState = uiState,
         onPodcastClick = onPodcastClick,
-        onAddClick = onAddClick,
+        onSearchClick = onSearchClick,
+        onPasteLinkClick = onPasteLinkClick,
+        onLayoutChange = viewModel::setLayout,
         onRefresh = viewModel::refreshAll,
         onMessageShown = viewModel::onMessageShown,
         modifier = modifier,
@@ -96,8 +120,10 @@ fun LibraryRoute(
  * Stateless library screen.
  *
  * @param uiState what to render.
- * @param onPodcastClick row tap handler.
- * @param onAddClick add-podcast handler.
+ * @param onPodcastClick show tap handler.
+ * @param onSearchClick opens search by name.
+ * @param onPasteLinkClick opens search with a copied link.
+ * @param onLayoutChange grid/list toggle handler.
  * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -107,7 +133,9 @@ fun LibraryRoute(
 fun LibraryScreen(
     uiState: LibraryUiState,
     onPodcastClick: (String) -> Unit,
-    onAddClick: () -> Unit,
+    onSearchClick: () -> Unit,
+    onPasteLinkClick: () -> Unit,
+    onLayoutChange: (LibraryLayout) -> Unit,
     onRefresh: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -117,6 +145,9 @@ fun LibraryScreen(
     // composition, where `stringResource` is not available. `LocalResources` rather than
     // `LocalContext.current.resources`, so a configuration change invalidates the read.
     val resources = LocalResources.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Saveable so the menu does not silently close when the Fold 7 is opened mid-decision.
+    var addMenuExpanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -125,15 +156,23 @@ fun LibraryScreen(
     }
 
     Scaffold(
-        modifier = modifier,
-        topBar = { TopAppBar(title = { Text(text = stringResource(R.string.library_title)) }) },
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            BPodcatLargeTopAppBar(
+                title = stringResource(R.string.library_title),
+                scrollBehavior = scrollBehavior,
+                actions = {
+                    LayoutToggle(layout = uiState.layout, onLayoutChange = onLayoutChange)
+                },
+            )
+        },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddClick) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = stringResource(R.string.library_add_podcast),
-                )
-            }
+            AddMenu(
+                expanded = addMenuExpanded,
+                onExpandedChange = { addMenuExpanded = it },
+                onSearchClick = onSearchClick,
+                onPasteLinkClick = onPasteLinkClick,
+            )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -146,7 +185,9 @@ fun LibraryScreen(
             // the title rather than anything that moves the list or blocks a tap: the user did not
             // ask for this and should be able to ignore it completely.
             if (uiState.isAutoRefreshing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                WavyProgressLine(
+                    contentDescription = stringResource(R.string.library_refreshing),
+                )
             }
 
             when {
@@ -157,11 +198,11 @@ fun LibraryScreen(
                 // No pull-to-refresh here: there are no feeds to fetch, and the gesture needs
                 // something scrollable underneath it to work at all.
                 uiState.podcasts.isEmpty() -> EmptyState(
-                    icon = Icons.Rounded.LibraryMusic,
+                    icon = Icons.Rounded.GridView,
                     title = stringResource(R.string.library_empty_title),
                     description = stringResource(R.string.library_empty_description),
-                    actionLabel = stringResource(R.string.library_add_podcast),
-                    onAction = onAddClick,
+                    actionLabel = stringResource(R.string.library_add_search),
+                    onAction = onSearchClick,
                 )
 
                 else -> PullToRefreshBox(
@@ -169,13 +210,16 @@ fun LibraryScreen(
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                    ) {
-                        items(items = uiState.podcasts, key = { it.podcast.id }) { entry ->
-                            PodcastRow(entry = entry, onClick = { onPodcastClick(entry.podcast.id) })
-                        }
+                    when (uiState.layout) {
+                        LibraryLayout.GRID -> ShowGrid(
+                            podcasts = uiState.podcasts,
+                            onPodcastClick = onPodcastClick,
+                        )
+
+                        LibraryLayout.LIST -> ShowList(
+                            podcasts = uiState.podcasts,
+                            onPodcastClick = onPodcastClick,
+                        )
                     }
                 }
             }
@@ -184,86 +228,264 @@ fun LibraryScreen(
 }
 
 /**
- * One library row: artwork, title, author and a "new episodes" badge.
+ * The shows as a wall of cover art.
  *
- * @param entry the show and its counts.
- * @param onClick row tap handler.
- * @param modifier layout modifier.
+ * Adaptive rather than a fixed column count, so the same code fills a phone, a rail-width pane and
+ * the Fold 7 opened out without any of them being a special case.
+ *
+ * @param podcasts the library.
+ * @param onPodcastClick tile tap handler.
  */
 @Composable
-private fun PodcastRow(
-    entry: PodcastWithCounts,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun ShowGrid(
+    podcasts: List<PodcastWithCounts>,
+    onPodcastClick: (String) -> Unit,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    val resources = LocalResources.current
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = TILE_MIN_WIDTH),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(BPodcatTheme.spacing.sm),
     ) {
-        PodcastArtwork(url = entry.podcast.artworkUrl, size = ArtworkSize.RowLarge)
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = entry.podcast.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+        items(items = podcasts, key = { it.podcast.id }) { entry ->
+            ShowTile(
+                title = entry.podcast.title,
+                artworkUrl = entry.podcast.artworkUrl,
+                author = entry.podcast.author,
+                source = entry.podcast.source,
+                badgeCount = entry.newEpisodeCount,
+                stateDescription = entry.newEpisodeDescription(resources),
+                onClick = { onPodcastClick(entry.podcast.id) },
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                // Badge first: a long author name that truncates can then never push it off the
-                // row, which is exactly when knowing the source matters most.
-                SourceBadge(source = entry.podcast.source)
-                Text(
-                    text = entry.podcast.author,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-            }
-            // "videos" rather than "episodes" for a playlist: it is what the user called them
-            // when they added it.
-            val countLabel = pluralStringResource(
-                id = if (entry.podcast.source == PodcastSource.YOUTUBE) {
-                    R.plurals.library_video_count
-                } else {
-                    R.plurals.library_episode_count
-                },
-                count = entry.episodeCount,
-                entry.episodeCount,
-            )
-            Text(
-                text = if (entry.downloadedCount > 0) {
-                    stringResource(
-                        R.string.library_counts_combined,
-                        countLabel,
-                        pluralStringResource(
-                            R.plurals.library_downloaded_count,
-                            entry.downloadedCount,
-                            entry.downloadedCount,
-                        ),
-                    )
-                } else {
-                    countLabel
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        if (entry.newEpisodeCount > 0) {
-            Badge { Text(text = entry.newEpisodeCount.toString()) }
         }
     }
 }
+
+/**
+ * The shows as rows, for a library too long to recognise by cover alone.
+ *
+ * @param podcasts the library.
+ * @param onPodcastClick row tap handler.
+ */
+@Composable
+private fun ShowList(
+    podcasts: List<PodcastWithCounts>,
+    onPodcastClick: (String) -> Unit,
+) {
+    val resources = LocalResources.current
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = BPodcatTheme.spacing.sm),
+    ) {
+        items(items = podcasts, key = { it.podcast.id }) { entry ->
+            ShowRow(
+                title = entry.podcast.title,
+                author = entry.podcast.author,
+                metadata = entry.countsLine(resources),
+                artworkUrl = entry.podcast.artworkUrl,
+                source = entry.podcast.source,
+                stateDescription = entry.newEpisodeDescription(resources),
+                onClick = { onPodcastClick(entry.podcast.id) },
+                trailing = {
+                    // The same mark the grid puts on a cover. Without it the list would be the
+                    // layout that cannot answer "which of these has something new".
+                    if (entry.newEpisodeCount > 0) {
+                        Badge(
+                            containerColor = BPodcatTheme.colors.unplayed,
+                            contentColor = BPodcatTheme.colors.onUnplayed,
+                            // The row already announces "3 new episodes"; a bare number read out
+                            // after it would be the same fact, less usefully put.
+                            modifier = Modifier.clearAndSetSemantics {},
+                        ) {
+                            Text(text = entry.newEpisodeCount.toString())
+                        }
+                    }
+                },
+            )
+        }
+    }
+}
+
+/**
+ * The button that swaps the two layouts.
+ *
+ * Shows the layout it would switch *to*, and says so, because an icon of the layout you are already
+ * looking at is a puzzle rather than a control.
+ *
+ * @param layout the layout currently on screen.
+ * @param onLayoutChange invoked with the layout to switch to.
+ */
+@Composable
+private fun LayoutToggle(layout: LibraryLayout, onLayoutChange: (LibraryLayout) -> Unit) {
+    IconButton(onClick = { onLayoutChange(layout.toggled) }) {
+        Icon(
+            imageVector = when (layout) {
+                LibraryLayout.GRID -> Icons.AutoMirrored.Rounded.ViewList
+                LibraryLayout.LIST -> Icons.Rounded.GridView
+            },
+            contentDescription = stringResource(
+                when (layout) {
+                    LibraryLayout.GRID -> R.string.library_layout_show_list
+                    LibraryLayout.LIST -> R.string.library_layout_show_grid
+                },
+            ),
+        )
+    }
+}
+
+/**
+ * The add button, and the two ways of adding a show.
+ *
+ * A single "Add" button used to open search, where a pasted link happened to work but nothing said
+ * so — the only mention of it was in the empty state, which a library with shows in it never shows.
+ * Naming both routes on the button itself is the fix.
+ *
+ * Hand-built rather than Material's `FloatingActionButtonMenu`, which is Expressive and not in
+ * material3 1.4.0's public API.
+ *
+ * @param expanded whether the two actions are showing.
+ * @param onExpandedChange opens and closes the menu.
+ * @param onSearchClick opens search by name.
+ * @param onPasteLinkClick opens search with a copied link.
+ */
+@Composable
+private fun AddMenu(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSearchClick: () -> Unit,
+    onPasteLinkClick: () -> Unit,
+) {
+    // An open menu is the innermost thing on screen, so back closes it before it leaves the tab.
+    BackHandler(enabled = expanded) { onExpandedChange(false) }
+
+    // The plus turns into a close glyph by rotating an eighth of a turn, which is the same two
+    // strokes in both states — no second icon, and nothing to cross-fade.
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) CLOSE_ROTATION_DEGREES else 0f,
+        animationSpec = Motion.bouncy(),
+        label = "addMenuRotation",
+    )
+
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.md),
+    ) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + scaleIn(animationSpec = Motion.bouncy()),
+            exit = fadeOut() + scaleOut(animationSpec = Motion.smooth()),
+        ) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.md),
+            ) {
+                AddMenuItem(
+                    label = stringResource(R.string.library_add_link),
+                    icon = Icons.Rounded.Link,
+                    onClick = {
+                        onExpandedChange(false)
+                        onPasteLinkClick()
+                    },
+                )
+                AddMenuItem(
+                    label = stringResource(R.string.library_add_search),
+                    icon = Icons.Rounded.Search,
+                    onClick = {
+                        onExpandedChange(false)
+                        onSearchClick()
+                    },
+                )
+            }
+        }
+
+        FloatingActionButton(onClick = { onExpandedChange(!expanded) }) {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = stringResource(
+                    if (expanded) R.string.library_add_close else R.string.library_add_podcast,
+                ),
+                modifier = Modifier.rotate(rotation),
+            )
+        }
+    }
+}
+
+/**
+ * One entry in the add menu.
+ *
+ * The label is repeated as a content description rather than left to the button's own text.
+ * `ExtendedFloatingActionButton` wraps its icon and label in `clearAndSetSemantics`, so the text
+ * inside it never reaches an accessibility service: without this the menu is two unnamed buttons.
+ *
+ * @param label what the entry does.
+ * @param icon the glyph beside it; decorative, since the label is right there.
+ * @param onClick invoked on tap.
+ */
+@Composable
+private fun AddMenuItem(label: String, icon: ImageVector, onClick: () -> Unit) {
+    ExtendedFloatingActionButton(
+        text = { Text(text = label) },
+        icon = { Icon(imageVector = icon, contentDescription = null) },
+        onClick = onClick,
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.semantics { contentDescription = label },
+    )
+}
+
+/**
+ * The counts line under a show: how many episodes there are, and how many are on the device.
+ *
+ * @param resources for the plurals.
+ * @return the metadata line.
+ */
+private fun PodcastWithCounts.countsLine(resources: Resources): String {
+    // "videos" rather than "episodes" for a playlist: it is what the user called them when they
+    // added it.
+    val countLabel = resources.getQuantityString(
+        if (podcast.source == PodcastSource.YOUTUBE) {
+            R.plurals.library_video_count
+        } else {
+            R.plurals.library_episode_count
+        },
+        episodeCount,
+        episodeCount,
+    )
+    return if (downloadedCount > 0) {
+        resources.getString(
+            R.string.library_counts_combined,
+            countLabel,
+            resources.getQuantityString(
+                R.plurals.library_downloaded_count,
+                downloadedCount,
+                downloadedCount,
+            ),
+        )
+    } else {
+        countLabel
+    }
+}
+
+/**
+ * What a row or tile announces beyond its text: how many episodes are waiting.
+ *
+ * Null when there are none, so a show with nothing new says nothing rather than "0 new episodes".
+ *
+ * @param resources for the plural.
+ * @return the state description, or null.
+ */
+private fun PodcastWithCounts.newEpisodeDescription(resources: Resources): String? =
+    if (newEpisodeCount > 0) {
+        resources.getQuantityString(
+            R.plurals.library_message_new_episodes,
+            newEpisodeCount,
+            newEpisodeCount,
+        )
+    } else {
+        null
+    }
 
 /**
  * Turns a [LibraryMessage] into snackbar text.
@@ -305,6 +527,12 @@ private fun LibraryMessage.toText(resources: Resources): String = when (this) {
     }
 }
 
+/** The narrowest a cover tile may be before the grid drops a column. */
+private val TILE_MIN_WIDTH = 148.dp
+
+/** An eighth of a turn, which is what turns a plus into a close glyph. */
+private const val CLOSE_ROTATION_DEGREES = 45f
+
 @Preview
 @Composable
 private fun LibraryScreenPreview() {
@@ -313,31 +541,63 @@ private fun LibraryScreenPreview() {
             uiState = LibraryUiState(
                 isLoading = false,
                 podcasts = listOf(
-                    PodcastWithCounts(
-                        podcast = Podcast(
-                            id = "1",
-                            itunesId = 1209828744L,
-                            title = "Podlodka Podcast",
-                            author = "Егор Толстой и другие",
-                            feedUrl = "https://example.com/feed.rss",
-                            artworkUrl = null,
-                            description = "",
-                            addedAt = Instant.EPOCH,
-                            lastRefreshAt = null,
-                            etag = null,
-                            lastModified = null,
-                            autoRefresh = true,
-                        ),
-                        episodeCount = 412,
-                        newEpisodeCount = 3,
-                        downloadedCount = 2,
-                    ),
+                    previewEntry("1", "Podlodka Podcast", newEpisodeCount = 3),
+                    previewEntry("2", "Acquired", newEpisodeCount = 0),
                 ),
             ),
             onPodcastClick = {},
-            onAddClick = {},
+            onSearchClick = {},
+            onPasteLinkClick = {},
+            onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},
         )
     }
 }
+
+@Preview
+@Composable
+private fun LibraryScreenListPreview() {
+    BPodcatTheme {
+        LibraryScreen(
+            uiState = LibraryUiState(
+                isLoading = false,
+                layout = LibraryLayout.LIST,
+                podcasts = listOf(previewEntry("1", "Podlodka Podcast", newEpisodeCount = 3)),
+            ),
+            onPodcastClick = {},
+            onSearchClick = {},
+            onPasteLinkClick = {},
+            onLayoutChange = {},
+            onRefresh = {},
+            onMessageShown = {},
+        )
+    }
+}
+
+/**
+ * One library entry for the previews.
+ *
+ * @param id the show's id, which also keys the list.
+ * @param title the show's name.
+ * @param newEpisodeCount unplayed episodes, for the badge.
+ */
+private fun previewEntry(id: String, title: String, newEpisodeCount: Int) = PodcastWithCounts(
+    podcast = Podcast(
+        id = id,
+        itunesId = 1209828744L,
+        title = title,
+        author = "Егор Толстой и другие",
+        feedUrl = "https://example.com/feed.rss",
+        artworkUrl = null,
+        description = "",
+        addedAt = Instant.EPOCH,
+        lastRefreshAt = null,
+        etag = null,
+        lastModified = null,
+        autoRefresh = true,
+    ),
+    episodeCount = 412,
+    newEpisodeCount = newEpisodeCount,
+    downloadedCount = 2,
+)

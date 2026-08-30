@@ -35,6 +35,10 @@ import md.borisveriga.bpodcat.feature.search.SearchRoute
 import md.borisveriga.bpodcat.feature.settings.SettingsRoute
 import md.borisveriga.bpodcat.navigation.Route
 import md.borisveriga.bpodcat.navigation.TopLevelDestination
+import md.borisveriga.bpodcat.navigation.popEnter
+import md.borisveriga.bpodcat.navigation.popExit
+import md.borisveriga.bpodcat.navigation.pushEnter
+import md.borisveriga.bpodcat.navigation.pushExit
 
 /**
  * The app's navigation shell.
@@ -104,11 +108,15 @@ fun BPodcatApp(
                 // collapsed bar occupies has to be given back here or every list's last row would
                 // sit permanently underneath it.
                 modifier = Modifier.padding(playerPadding),
+                enterTransition = { pushEnter() },
+                exitTransition = { pushExit() },
+                popEnterTransition = { popEnter() },
+                popExitTransition = { popExit() },
             ) {
                 composable<Route.Home> {
                     HomeRoute(
                         onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
-                        onAddPodcast = { navController.navigate(Route.Search) },
+                        onAddPodcast = { navController.navigate(Route.Search()) },
                         onOpenSettings = { navController.navigate(Route.Settings) },
                     )
                 }
@@ -117,8 +125,10 @@ fun BPodcatApp(
                     LibraryRoute(
                         onPodcastClick = { id -> navController.navigate(Route.PodcastDetail(id)) },
                         // A plain push now that search is not a tab: it opens on top of the library
-                        // and backing out returns there.
-                        onAddClick = { navController.navigate(Route.Search) },
+                        // and backing out returns there. The two entries differ only in whether the
+                        // screen may read the clipboard on arrival.
+                        onSearchClick = { navController.navigate(Route.Search()) },
+                        onPasteLinkClick = { navController.navigate(Route.Search(paste = true)) },
                     )
                 }
 
@@ -131,9 +141,10 @@ fun BPodcatApp(
                     )
                 }
 
-                composable<Route.Search> {
+                composable<Route.Search> { entry ->
                     SearchRoute(
                         onBack = { navController.popBackStack() },
+                        pasteFromClipboard = entry.toRoute<Route.Search>().paste,
                         // Search drops off the back stack as the new show opens: its job is done,
                         // and backing out of a podcast you just added should land in the library
                         // that now contains it, not in the search results you left behind.

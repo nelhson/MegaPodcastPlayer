@@ -13,12 +13,17 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.data.repository.RefreshSummary
+import md.borisveriga.bpodcat.core.data.repository.UiPreferencesRepository
+import md.borisveriga.bpodcat.core.model.LibraryLayout
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
 
 /**
  * State rendered by the library screen.
  *
  * @property podcasts subscribed shows with their episode counts.
+ * @property layout whether the shows are drawn as cover tiles or as rows. Part of the state rather
+ *   than remembered in the composition, because it is a stored preference: a layout that reset on
+ *   process death would be one the user has to keep re-choosing.
  * @property isLoading true until the first database emission arrives.
  * @property isRefreshing true while a pull-to-refresh is in flight; drives the gesture's own
  *   spinner and ends in a snackbar.
@@ -31,6 +36,7 @@ import md.borisveriga.bpodcat.core.model.PodcastWithCounts
  */
 data class LibraryUiState(
     val podcasts: List<PodcastWithCounts> = emptyList(),
+    val layout: LibraryLayout = LibraryLayout.DEFAULT,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val isAutoRefreshing: Boolean = false,
@@ -64,20 +70,24 @@ sealed interface LibraryMessage {
  * Drives the library screen.
  *
  * @property repository the single source of podcast truth.
+ * @property uiPreferences the stored grid-or-list choice.
  */
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: PodcastRepository,
+    private val uiPreferences: UiPreferencesRepository,
 ) : ViewModel() {
 
     private val transientState = MutableStateFlow(TransientState())
 
     val uiState: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
+        uiPreferences.observeLibraryLayout(),
         transientState,
-    ) { podcasts, transient ->
+    ) { podcasts, layout, transient ->
         LibraryUiState(
             podcasts = podcasts,
+            layout = layout,
             isLoading = false,
             isRefreshing = transient.isRefreshing,
             isAutoRefreshing = transient.isAutoRefreshing,
@@ -147,6 +157,18 @@ class LibraryViewModel @Inject constructor(
                 message = LibraryMessage.Removed(podcast.podcast.title),
             )
         }
+    }
+
+    /**
+     * Switches between the cover grid and the row list, and remembers the choice.
+     *
+     * Takes the layout to move to rather than toggling from the current state, so a double tap on
+     * a slow write cannot land the screen on the layout the user just left.
+     *
+     * @param layout the layout to show from now on.
+     */
+    fun setLayout(layout: LibraryLayout) {
+        viewModelScope.launch { uiPreferences.setLibraryLayout(layout) }
     }
 
     /** Clears the current [LibraryUiState.message] once the snackbar has been shown. */

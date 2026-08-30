@@ -59,6 +59,8 @@ class MediaDownloadRepository @Inject constructor(
 
     override suspend fun downloadedBytes(): Long = downloader.downloadedBytes()
 
+    override suspend fun freeBytes(): Long = downloader.freeBytes()
+
     override suspend fun download(episodeId: String): Boolean {
         val episode = withContext(ioDispatcher) { episodeDao.getById(episodeId) } ?: return false
         // Written optimistically so the button flips to "queued" on the tap rather than a beat

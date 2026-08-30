@@ -42,6 +42,15 @@ interface DownloadRepository {
     suspend fun downloadedBytes(): Long
 
     /**
+     * Bytes still free on the volume the downloads are written to.
+     *
+     * Read once, for the same reason as [downloadedBytes]. It exists so the downloads screen can
+     * draw what is stored against what is left: "1.4 GB" means nothing on its own, and the whole
+     * point of the figure is to answer "can I keep doing this".
+     */
+    suspend fun freeBytes(): Long
+
+    /**
      * Requests an episode be downloaded.
      *
      * Safe to call for an episode that is already downloading (a no-op) or that previously failed
