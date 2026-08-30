@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.feature.library
 
+import android.content.res.Resources
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -94,10 +98,14 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Resolved in composition rather than inside the effect: `LaunchedEffect` runs outside the
+    // composition, where `stringResource` is not available. `LocalResources` rather than
+    // `LocalContext.current.resources`, so a configuration change invalidates the read.
+    val resources = LocalResources.current
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showMessage(message)
+        snackbarHostState.showSnackbar(message.toText(resources))
         onMessageShown()
     }
 
@@ -105,12 +113,12 @@ fun LibraryScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text(text = "Library") },
+                title = { Text(text = stringResource(R.string.library_title)) },
                 actions = {
                     IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
                         Icon(
                             imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Check all podcasts for new episodes",
+                            contentDescription = stringResource(R.string.library_refresh),
                         )
                     }
                 },
@@ -118,7 +126,10 @@ fun LibraryScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onAddClick) {
-                Icon(imageVector = Icons.Rounded.Add, contentDescription = "Add a podcast")
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.library_add_podcast),
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -126,15 +137,14 @@ fun LibraryScreen(
         when {
             uiState.isLoading -> LoadingState(
                 modifier = Modifier.padding(padding),
-                contentDescription = "Loading your podcasts",
+                contentDescription = stringResource(R.string.library_loading),
             )
 
             uiState.podcasts.isEmpty() -> MessageState(
                 icon = Icons.Rounded.LibraryMusic,
-                title = "No podcasts yet",
-                description = "Search Apple Podcasts, or paste an RSS or YouTube playlist " +
-                    "link, to add your first show.",
-                actionLabel = "Add a podcast",
+                title = stringResource(R.string.library_empty_title),
+                description = stringResource(R.string.library_empty_description),
+                actionLabel = stringResource(R.string.library_add_podcast),
                 onAction = onAddClick,
                 modifier = Modifier.padding(padding),
             )
@@ -199,13 +209,30 @@ private fun PodcastRow(
                     modifier = Modifier.weight(1f, fill = false),
                 )
             }
+            // "videos" rather than "episodes" for a playlist: it is what the user called them
+            // when they added it.
+            val countLabel = pluralStringResource(
+                id = if (entry.podcast.source == PodcastSource.YOUTUBE) {
+                    R.plurals.library_video_count
+                } else {
+                    R.plurals.library_episode_count
+                },
+                count = entry.episodeCount,
+                entry.episodeCount,
+            )
             Text(
-                text = buildString {
-                    // "videos" rather than "episodes" for a playlist: it is what the user called
-                    // them when they added it.
-                    val noun = if (entry.podcast.source == PodcastSource.YOUTUBE) "videos" else "episodes"
-                    append("${entry.episodeCount} $noun")
-                    if (entry.downloadedCount > 0) append(" · ${entry.downloadedCount} downloaded")
+                text = if (entry.downloadedCount > 0) {
+                    stringResource(
+                        R.string.library_counts_combined,
+                        countLabel,
+                        pluralStringResource(
+                            R.plurals.library_downloaded_count,
+                            entry.downloadedCount,
+                            entry.downloadedCount,
+                        ),
+                    )
+                } else {
+                    countLabel
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -218,22 +245,44 @@ private fun PodcastRow(
     }
 }
 
-/** Turns a [LibraryMessage] into snackbar text. */
-private suspend fun SnackbarHostState.showMessage(message: LibraryMessage) {
-    val text = when (message) {
-        is LibraryMessage.Removed -> "Removed ${message.title}"
-        is LibraryMessage.RefreshFinished -> with(message.summary) {
-            when {
-                failedTitles.isNotEmpty() && newEpisodeCount > 0 ->
-                    "$newEpisodeCount new episodes · ${failedTitles.size} feeds failed"
+/**
+ * Turns a [LibraryMessage] into snackbar text.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+private fun LibraryMessage.toText(resources: Resources): String = when (this) {
+    is LibraryMessage.Removed -> resources.getString(R.string.library_message_removed, title)
 
-                failedTitles.isNotEmpty() -> "Couldn't refresh ${failedTitles.joinToString()}"
-                newEpisodeCount > 0 -> "$newEpisodeCount new episodes"
-                else -> "No new episodes"
-            }
+    is LibraryMessage.RefreshFinished -> with(summary) {
+        val newEpisodes = resources.getQuantityString(
+            R.plurals.library_message_new_episodes,
+            newEpisodeCount,
+            newEpisodeCount,
+        )
+        when {
+            failedTitles.isNotEmpty() && newEpisodeCount > 0 -> resources.getString(
+                R.string.library_message_new_and_failed,
+                newEpisodes,
+                resources.getQuantityString(
+                    R.plurals.library_message_failed_feeds,
+                    failedTitles.size,
+                    failedTitles.size,
+                ),
+            )
+
+            failedTitles.isNotEmpty() -> resources.getString(
+                R.string.library_message_refresh_failed,
+                failedTitles.joinToString(),
+            )
+
+            newEpisodeCount > 0 -> newEpisodes
+
+            else -> resources.getString(R.string.library_message_no_new_episodes)
         }
     }
-    showSnackbar(text)
 }
 
 @Preview

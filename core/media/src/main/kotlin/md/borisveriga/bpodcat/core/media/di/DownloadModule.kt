@@ -61,14 +61,6 @@ object DownloadModule {
     private const val MAX_PARALLEL_DOWNLOADS = 3
 
     /**
-     * The index Media3 keeps of what is downloaded and what is cached.
-     *
-     * Deliberately a *standalone* database rather than a table in [
-     * md.borisveriga.bpodcat.core.database.BPodcatDatabase]: Media3 owns its schema and migrates it
-     * on its own release cadence, and mixing it into the app's Room database would make every
-     * media3 upgrade an app migration.
-     */
-    /**
      * The network end of both data source chains.
      *
      * [ResolvingDataSource] wraps OkHttp rather than replacing it, so a `youtube://video/<id>` URI
@@ -88,6 +80,14 @@ object DownloadModule {
         youTubeResolver,
     )
 
+    /**
+     * The index Media3 keeps of what is downloaded and what is cached.
+     *
+     * Deliberately a *standalone* database rather than a table in [
+     * md.borisveriga.bpodcat.core.database.BPodcatDatabase]: Media3 owns its schema and migrates it
+     * on its own release cadence, and mixing it into the app's Room database would make every
+     * media3 upgrade an app migration.
+     */
     @Provides
     @Singleton
     fun providesDownloadDatabaseProvider(

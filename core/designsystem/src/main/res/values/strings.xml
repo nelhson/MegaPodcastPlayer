@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Strings owned by shared components rather than by any one screen.
+
+    Deliberately short: a design-system component that carries its own copy is a component that
+    two screens cannot word differently. Only the labels that are part of the component's own
+    contract live here — everything a screen says goes in that feature module's strings.xml.
+-->
+<resources>
+
+    <!-- Brand name; never translated. -->
+    <string name="designsystem_youtube" translatable="false">YouTube</string>
+
+    <!-- TalkBack label for the badge marking a show that came from a YouTube playlist. -->
+    <string name="designsystem_source_youtube_description">From YouTube</string>
+
+    <!-- Announced while a screen has nothing to show yet. -->
+    <string name="designsystem_loading">Loading</string>
+
+</resources>

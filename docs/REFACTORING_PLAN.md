@@ -297,6 +297,22 @@ makes copy review impossible, and means TalkBack strings cannot be adjusted with
 
 Roughly 150–200 strings. Mechanical but not automatable safely; budget a day.
 
+**Done in Phase 3.** All seven modules plus `:app` (the navigation bar labels) and
+`:core:designsystem` (the `SourceBadge` label and the default loading description, which are part
+of those components' contracts) now read from `strings.xml`. Counts are `<plurals>`; two-part
+sentences are joined by a `%1$s … %2$s` string so a translator can reorder them. Two view-model
+signatures changed rather than being translated in place, as step 3 anticipated:
+`SearchUiState.searchError` is now a `SearchError` sealed interface instead of pre-worded text,
+and `TopLevelDestination.label` is now a `@StringRes labelResId`.
+
+**Deliberately left:** `:core:common`'s formatters (`formatDuration`, `formatPublishedDate`,
+`formatBytes`, `formatRemaining`) still produce English — "Today", "Yesterday", "3 days ago",
+"1 h 24 min", "90 MB", "… left". They are pure functions with no `Context`, unit-tested as such,
+and used from three feature modules; moving them onto resources changes their design and their
+tests rather than moving a literal, so it is its own piece of work. Until it happens, an episode
+row is part-translated: the labels around the metadata line are localised, the date and duration
+inside it are not.
+
 ---
 
 ### Q-2 — `MainDispatcherRule` duplicated in five modules · **Medium**
@@ -337,6 +353,19 @@ composition-count trace — this is a real but small win and should not be done 
 Note: if adopting kotlinx.collections.immutable, use the 0.5.x API names (`adding`, `removingAt`)
 per KEEP-0459.
 
+**Measured in Phase 3 — no change made.** The premise no longer holds on this toolchain. Strong
+skipping has been on by default since Kotlin 2.0.20, and this project is on 2.3.21: an unstable
+parameter is compared by instance rather than disqualifying the composable. The Compose compiler
+reports (`./gradlew assembleDebug -Pbpodcat.compose.metrics=true`, wired in `AndroidCompose.kt`)
+say so directly — across `:app`, `:wear` and all six feature modules, **48 of 48** restartable
+composables are `skippable`, none unskippable, even though `SearchUiState`, `DownloadsUiState`,
+`PlayerUiState`, `PodcastDetailUiState` and `WatchPlayerUiState` are all still reported as
+`unstable class`.
+
+Adding a dependency and rewriting five state classes to fix a number that is already zero is not
+worth it. Re-measure with the same flag after a Compose or Kotlin bump; if unskippable composables
+appear, the fix above is still the right one.
+
 ---
 
 ### Q-5 — Feature modules depend directly on `:core:data` · **Low / architectural, informational**
@@ -356,6 +385,11 @@ Revisit if a single ViewModel starts orchestrating three or more repositories
 - Version catalog entries declared and never referenced anywhere:
   `androidx-lifecycle-service`, `androidx-media3-ui-compose`, `compose-gradlePlugin`,
   `hilt-android-testing`, `mockk-android`.
+
+**Done in Phase 3**, with one correction: `compose-gradlePlugin` *is* referenced — it is a
+`compileOnly` dependency of `build-logic/convention` — and stays. The other four were removed,
+along with `androidx-test-espresso-core`, which only the deleted `:app` androidTest wiring used.
+`androidx-test-junit` also stays: several modules use it as a `testImplementation`.
 
 ---
 

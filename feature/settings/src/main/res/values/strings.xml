@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the settings screen.
+
+    Every chip row carries a `..._description` that repeats the setting name, because TalkBack
+    reaches a chip out of context: "30 s" on its own says nothing about which interval it sets.
+-->
+<resources>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+
+    <string name="settings_section_playback">Playback</string>
+    <string name="settings_section_downloads">Downloads</string>
+    <string name="settings_section_storage">Storage</string>
+
+    <string name="settings_playback_speed">Playback speed</string>
+    <string name="settings_skip_forward">Skip forward</string>
+    <string name="settings_skip_back">Skip back</string>
+
+    <string name="settings_auto_play_next_title">Play next automatically</string>
+    <string name="settings_auto_play_next_description">Start the next queued episode when one finishes</string>
+
+    <string name="settings_auto_download_title">Download new episodes</string>
+    <string name="settings_auto_download_description">Save episodes for offline listening as they are published</string>
+
+    <string name="settings_unmetered_title">Wi-Fi only</string>
+    <string name="settings_unmetered_description">Wait for an unmetered network before downloading</string>
+
+    <string name="settings_keep_limit_title">Episodes to keep per show</string>
+
+    <string name="settings_delete_after_playing_title">Delete after playing</string>
+    <string name="settings_delete_after_playing_description">Free up storage when an episode finishes</string>
+
+    <string name="settings_downloaded_episodes">Downloaded episodes</string>
+    <string name="settings_remove_all">Remove all downloads</string>
+    <!-- %1$s is the space that would be reclaimed, e.g. "512 MB". -->
+    <string name="settings_remove_all_frees">Frees %1$s</string>
+    <string name="settings_remove_all_nothing">Nothing is downloaded</string>
+    <string name="settings_message_downloads_removed">Removed all downloads, freeing %1$s</string>
+
+    <!-- TalkBack label for a switch row: the setting name (%1$s) then its explanation (%2$s). -->
+    <string name="settings_switch_description">%1$s. %2$s</string>
+    <!-- TalkBack label for one chip: the setting name (%1$s) then the option (%2$s). -->
+    <string name="settings_choice_description">%1$s: %2$s</string>
+    <string name="settings_chip_selected">Selected</string>
+    <string name="settings_chip_not_selected">Not selected</string>
+
+    <!-- Playback rate, e.g. "1.5x". %1$s is already formatted, so the "x" is the only copy. -->
+    <string name="settings_speed_format">%1$sx</string>
+
+    <!-- Skip intervals. Symbols rather than words: these sit inside a narrow chip. -->
+    <string name="settings_skip_seconds">%1$d s</string>
+    <string name="settings_skip_minutes">%1$d min</string>
+
+    <!-- The "keep every episode" end of the keep-limit chips. -->
+    <string name="settings_keep_limit_all">All</string>
+
+    <string name="settings_storage_none">None</string>
+    <plurals name="settings_episode_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+    <!-- Joins the episode count (%1$s) with the size on disk (%2$s). -->
+    <string name="settings_storage_summary">%1$s · %2$s</string>
+
+</resources>

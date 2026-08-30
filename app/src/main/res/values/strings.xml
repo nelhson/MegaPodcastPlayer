@@ -1,3 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Strings owned by the app shell: the launcher name and the navigation bar.
+
+    Every screen's own copy lives in its feature module.
+-->
 <resources>
+
     <string name="app_name">BPodcat</string>
+
+    <!-- Navigation bar / rail destinations. -->
+    <string name="destination_library">Library</string>
+    <string name="destination_downloads">Downloads</string>
+    <string name="destination_search">Add</string>
+    <string name="destination_settings">Settings</string>
+
 </resources>

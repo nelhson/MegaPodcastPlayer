@@ -1,3 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the watch app.
+
+    Watch copy has a hard constraint the phone does not: a Wear screen fits roughly four short
+    lines, so every string here is deliberately one clause. Keep translations equally short rather
+    than equally literal.
+
+    The playback time and speed labels (`1:04:12`, `1.5x`) stay in Kotlin — see `Durations.kt`.
+    They are numeric formats rather than copy, and they are unit-tested without a Context.
+-->
 <resources>
+
     <string name="app_name">BPodcat</string>
+
+    <string name="watch_up_next">Up next</string>
+
+    <string name="watch_play">Play</string>
+    <string name="watch_pause">Pause</string>
+    <string name="watch_previous_episode">Previous episode</string>
+    <string name="watch_next_episode">Next episode</string>
+
+    <!-- TalkBack labels for the skip buttons; the glyph carries the number visually. -->
+    <plurals name="watch_skip_forward">
+        <item quantity="one">Skip ahead %1$d second</item>
+        <item quantity="other">Skip ahead %1$d seconds</item>
+    </plurals>
+    <plurals name="watch_skip_back">
+        <item quantity="one">Skip back %1$d second</item>
+        <item quantity="other">Skip back %1$d seconds</item>
+    </plurals>
+
+    <string name="watch_nothing_playing_title">Nothing playing</string>
+    <string name="watch_nothing_playing_with_queue">Pick an episode below to start it on your phone.</string>
+    <string name="watch_nothing_playing_empty">Start an episode on your phone and it will show up here.</string>
+
+    <string name="watch_command_failed">Could not reach your phone</string>
+
+    <string name="watch_link_checking_title">Looking for your phone</string>
+    <string name="watch_link_checking_description">One moment.</string>
+    <string name="watch_link_app_missing_title">BPodcat is not on your phone</string>
+    <string name="watch_link_app_missing_description">Install BPodcat on your phone to control it from here.</string>
+    <string name="watch_link_disconnected_title">Phone not connected</string>
+    <string name="watch_link_disconnected_description">Bring your phone closer, or turn Bluetooth back on.</string>
+
+    <string name="watch_retry">Retry</string>
+
 </resources>

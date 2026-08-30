@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the downloads screen.
+
+    The per-row metadata line ("24 Aug · 1 h 24 min · 90 MB · Played") is assembled from parts that
+    come from `:core:common`'s formatters, which still format in English. Only the parts this
+    screen owns are here; see Q-1 in docs/REFACTORING_PLAN.md.
+-->
+<resources>
+
+    <string name="downloads_title">Downloads</string>
+
+    <string name="downloads_remove_all">Remove all downloads</string>
+    <string name="downloads_loading">Loading your downloads</string>
+
+    <string name="downloads_empty_title">Nothing downloaded</string>
+    <string name="downloads_empty_description">Episodes you download appear here and play without a connection.</string>
+    <string name="downloads_empty_action">Go to your library</string>
+
+    <string name="downloads_remove_all_dialog_title">Remove all downloads?</string>
+    <!-- %1$s is the freed size, e.g. "148 MB". -->
+    <string name="downloads_remove_all_dialog_text">This frees %1$s. The episodes stay in your library and can be downloaded again.</string>
+    <string name="downloads_remove_all_confirm">Remove all</string>
+    <string name="downloads_cancel">Cancel</string>
+
+    <plurals name="downloads_episode_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+
+    <!-- Joins the episode count (%1$s) with the size on disk (%2$s). -->
+    <string name="downloads_storage_summary">%1$s · %2$s</string>
+
+    <!-- Separates the parts of a row's metadata line. -->
+    <string name="downloads_metadata_separator"> · </string>
+
+    <!-- Marks an episode that has been listened to all the way through. -->
+    <string name="downloads_played">Played</string>
+
+    <!-- Row buttons are reached out of reading order, so each names the episode it acts on. -->
+    <string name="downloads_queue_episode">Add %1$s to the queue</string>
+    <string name="downloads_remove_episode">Remove the download of %1$s</string>
+
+    <string name="downloads_message_removed">Removed \"%1$s\" from this device</string>
+    <plurals name="downloads_message_removed_all">
+        <item quantity="one">Removed %1$d download</item>
+        <item quantity="other">Removed %1$d downloads</item>
+    </plurals>
+    <string name="downloads_message_queued">Added \"%1$s\" to the queue</string>
+    <string name="downloads_message_unavailable">That episode is no longer in your library</string>
+
+</resources>

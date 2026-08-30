@@ -29,6 +29,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +49,7 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
 import md.borisveriga.bpodcat.core.wearprotocol.QueuedEpisode
+import md.borisveriga.bpodcat.wear.R
 import md.borisveriga.bpodcat.wear.data.PhoneLink
 
 /**
@@ -148,7 +151,7 @@ fun WatchPlayerScreen(
             }
 
             if (uiState.snapshot.upNext.isNotEmpty()) {
-                item { ListHeader { Text(text = "Up next") } }
+                item { ListHeader { Text(text = stringResource(R.string.watch_up_next)) } }
                 items(uiState.snapshot.upNext) { episode ->
                     QueueRow(episode = episode, onClick = { onPlayQueued(episode.id) })
                 }
@@ -246,7 +249,9 @@ private fun TransportRow(
                 } else {
                     Icons.Rounded.PlayArrow
                 },
-                contentDescription = if (uiState.snapshot.isPlaying) "Pause" else "Play",
+                contentDescription = stringResource(
+                    if (uiState.snapshot.isPlaying) R.string.watch_pause else R.string.watch_play,
+                ),
             )
         }
 
@@ -275,7 +280,7 @@ private fun SecondaryRow(
         IconButton(onClick = onSkipToPrevious) {
             Icon(
                 imageVector = Icons.Rounded.SkipPrevious,
-                contentDescription = "Previous episode",
+                contentDescription = stringResource(R.string.watch_previous_episode),
             )
         }
 
@@ -286,7 +291,7 @@ private fun SecondaryRow(
         IconButton(onClick = onSkipToNext, enabled = uiState.snapshot.hasNext) {
             Icon(
                 imageVector = Icons.Rounded.SkipNext,
-                contentDescription = "Next episode",
+                contentDescription = stringResource(R.string.watch_next_episode),
             )
         }
     }
@@ -311,16 +316,18 @@ private fun NothingPlaying(hasQueue: Boolean) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Nothing playing",
+            text = stringResource(R.string.watch_nothing_playing_title),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
         Text(
-            text = if (hasQueue) {
-                "Pick an episode below to start it on your phone."
-            } else {
-                "Start an episode on your phone and it will show up here."
-            },
+            text = stringResource(
+                if (hasQueue) {
+                    R.string.watch_nothing_playing_with_queue
+                } else {
+                    R.string.watch_nothing_playing_empty
+                },
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -332,7 +339,7 @@ private fun NothingPlaying(hasQueue: Boolean) {
 @Composable
 private fun CommandFailedNote() {
     Text(
-        text = "Could not reach your phone",
+        text = stringResource(R.string.watch_command_failed),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.error,
         textAlign = TextAlign.Center,
@@ -358,27 +365,35 @@ private fun LinkProblemScreen(link: PhoneLink, onRetry: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = when (link) {
-                        PhoneLink.CHECKING -> "Looking for your phone"
-                        PhoneLink.APP_NOT_INSTALLED -> "BPodcat is not on your phone"
-                        else -> "Phone not connected"
-                    },
+                    text = stringResource(
+                        when (link) {
+                            PhoneLink.CHECKING -> R.string.watch_link_checking_title
+                            PhoneLink.APP_NOT_INSTALLED -> R.string.watch_link_app_missing_title
+                            else -> R.string.watch_link_disconnected_title
+                        },
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = when (link) {
-                        PhoneLink.CHECKING -> "One moment."
-                        PhoneLink.APP_NOT_INSTALLED ->
-                            "Install BPodcat on your phone to control it from here."
-                        else -> "Bring your phone closer, or turn Bluetooth back on."
-                    },
+                    text = stringResource(
+                        when (link) {
+                            PhoneLink.CHECKING -> R.string.watch_link_checking_description
+
+                            PhoneLink.APP_NOT_INSTALLED ->
+                                R.string.watch_link_app_missing_description
+
+                            else -> R.string.watch_link_disconnected_description
+                        },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
                 if (link != PhoneLink.CHECKING) {
-                    TextButton(onClick = onRetry) { Text(text = "Retry") }
+                    TextButton(onClick = onRetry) {
+                        Text(text = stringResource(R.string.watch_retry))
+                    }
                 }
             }
         }
@@ -420,10 +435,16 @@ private fun skipBackIcon(skipMs: Long): ImageVector = when (skipMs) {
  *
  * @param skipMs the configured distance.
  * @param forward true for the skip-ahead button.
+ * @return the spoken label, pluralised on the number of seconds.
  */
+@Composable
 private fun skipContentDescription(skipMs: Long, forward: Boolean): String {
-    val seconds = (skipMs / 1_000L).coerceAtLeast(1L)
-    return if (forward) "Skip ahead $seconds seconds" else "Skip back $seconds seconds"
+    val seconds = (skipMs / 1_000L).coerceAtLeast(1L).toInt()
+    return pluralStringResource(
+        id = if (forward) R.plurals.watch_skip_forward else R.plurals.watch_skip_back,
+        count = seconds,
+        seconds,
+    )
 }
 
 /** The play button is deliberately larger than its neighbours: it is the one pressed blind. */

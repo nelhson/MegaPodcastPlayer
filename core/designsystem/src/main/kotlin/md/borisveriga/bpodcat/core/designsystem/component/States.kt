@@ -15,10 +15,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import md.borisveriga.bpodcat.core.designsystem.R
 
 /**
  * Centred progress indicator for a screen that has nothing to show yet.
@@ -29,7 +31,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun LoadingState(
     modifier: Modifier = Modifier,
-    contentDescription: String = "Loading",
+    contentDescription: String = stringResource(R.string.designsystem_loading),
 ) {
     Box(
         // The spinner carries no text of its own, so the state is described on the container.

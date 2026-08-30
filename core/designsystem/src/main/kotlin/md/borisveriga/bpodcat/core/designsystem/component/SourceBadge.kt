@@ -17,10 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import md.borisveriga.bpodcat.core.designsystem.R
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.PodcastSource
 
@@ -49,6 +51,7 @@ fun SourceBadge(
 ) {
     if (source == PodcastSource.RSS) return
 
+    val badgeDescription = stringResource(R.string.designsystem_source_youtube_description)
     val glyphColor = if (isSystemInDarkTheme()) YOUTUBE_RED_DARK else YOUTUBE_RED_LIGHT
 
     Row(
@@ -57,7 +60,9 @@ fun SourceBadge(
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(horizontal = 6.dp, vertical = 2.dp)
             // One label for TalkBack, rather than a glyph and a word announced separately.
-            .clearAndSetSemantics { contentDescription = "From YouTube" },
+            .clearAndSetSemantics {
+                contentDescription = badgeDescription
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -68,7 +73,7 @@ fun SourceBadge(
             modifier = Modifier.size(14.dp),
         )
         Text(
-            text = "YouTube",
+            text = stringResource(R.string.designsystem_youtube),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

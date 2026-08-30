@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.feature.search
 
+import android.content.res.Resources
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,7 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -99,10 +103,14 @@ fun SearchScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val keyboard = LocalSoftwareKeyboardController.current
+    // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
+    // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
+    // change invalidates the read.
+    val resources = LocalResources.current
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message.toUserText())
+        snackbarHostState.showSnackbar(message.toUserText(resources))
         // Both branches mean "this show is in the library now"; go look at it.
         when (message) {
             is AddPodcastResult.Added -> onPodcastAdded(message.podcast.id)
@@ -114,7 +122,7 @@ fun SearchScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(text = "Add a podcast") }) },
+        topBar = { TopAppBar(title = { Text(text = stringResource(R.string.search_title)) }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
@@ -128,13 +136,16 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text(text = "Show name, Apple / RSS / YouTube playlist link") },
+                label = { Text(text = stringResource(R.string.search_field_label)) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                 trailingIcon = {
                     if (uiState.query.isNotEmpty()) {
                         IconButton(onClick = { onQueryChange("") }) {
-                            Icon(Icons.Rounded.Clear, contentDescription = "Clear the search field")
+                            Icon(
+                                imageVector = Icons.Rounded.Clear,
+                                contentDescription = stringResource(R.string.search_clear),
+                            )
                         }
                     }
                 },
@@ -160,11 +171,13 @@ fun SearchScreen(
                         Text(
                             // Naming the source is the clearest possible confirmation that the app
                             // recognised what was pasted, before any network call is made.
-                            text = if (uiState.isYouTubeLink) {
-                                "Add this YouTube playlist"
-                            } else {
-                                "Add this link"
-                            },
+                            text = stringResource(
+                                if (uiState.isYouTubeLink) {
+                                    R.string.search_add_youtube_playlist
+                                } else {
+                                    R.string.search_add_link
+                                },
+                            ),
                             modifier = Modifier.padding(start = 8.dp),
                         )
                     }
@@ -183,16 +196,15 @@ fun SearchScreen(
 
                 uiState.searchError != null -> MessageState(
                     icon = Icons.Rounded.Search,
-                    title = "Couldn't search",
-                    description = uiState.searchError,
+                    title = stringResource(R.string.search_error_title),
+                    description = uiState.searchError.toText(),
                 )
 
                 uiState.results.isEmpty() && uiState.query.isNotBlank() && !uiState.isLink ->
                     MessageState(
                         icon = Icons.Rounded.Search,
-                        title = "Nothing found",
-                        description = "Try a different spelling, or paste the show's Apple " +
-                            "Podcasts link instead.",
+                        title = stringResource(R.string.search_empty_title),
+                        description = stringResource(R.string.search_empty_description),
                     )
 
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -255,11 +267,13 @@ private fun SearchResultRow(
             Text(
                 text = if (addable) {
                     listOfNotNull(
-                        result.episodeCount?.let { "$it episodes" },
+                        result.episodeCount?.let {
+                            pluralStringResource(R.plurals.search_episode_count, it, it)
+                        },
                         result.genres.firstOrNull(),
-                    ).joinToString(" · ")
+                    ).joinToString(stringResource(R.string.search_result_separator))
                 } else {
-                    "Apple Podcasts exclusive — no RSS feed to download"
+                    stringResource(R.string.search_result_exclusive)
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -268,31 +282,67 @@ private fun SearchResultRow(
 
         when {
             isAdding -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
+
             addable -> Icon(
                 imageVector = Icons.Rounded.Add,
-                contentDescription = "Add ${result.title}",
+                contentDescription = stringResource(R.string.search_add_result, result.title),
             )
         }
     }
 }
 
-/** Turns an add outcome into snackbar text. */
-private fun AddPodcastResult.toUserText(): String = when (this) {
-    is AddPodcastResult.Added -> {
-        val noun = if (podcast.source == PodcastSource.YOUTUBE) "videos" else "episodes"
-        "Added ${podcast.title} · $episodeCount $noun"
-    }
+/**
+ * Wording for a [SearchError].
+ *
+ * @return the sentence shown under the failed-search heading.
+ */
+@Composable
+private fun SearchError.toText(): String = when (this) {
+    SearchError.NoConnection -> stringResource(R.string.search_error_no_connection)
+    SearchError.Timeout -> stringResource(R.string.search_error_timeout)
+    is SearchError.Unknown -> stringResource(R.string.search_error_unknown, detail)
+}
 
-    is AddPodcastResult.AlreadyInLibrary -> "${podcast.title} is already in your library"
-    is AddPodcastResult.NoFeedAvailable -> "$title has no RSS feed and can't be downloaded"
-    AddPodcastResult.NotFound -> "Apple doesn't know that podcast id"
-    AddPodcastResult.InvalidInput -> "That doesn't look like a podcast link"
-    // Almost always a single video pasted instead of the playlist, so the message says what to do
-    // rather than just what went wrong.
-    AddPodcastResult.NotAPlaylist ->
-        "That's a YouTube link, but not a playlist — open the playlist and copy its link"
+/**
+ * Turns an add outcome into snackbar text.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+private fun AddPodcastResult.toUserText(resources: Resources): String = when (this) {
+    is AddPodcastResult.Added -> resources.getString(
+        R.string.search_message_added,
+        podcast.title,
+        resources.getQuantityString(
+            // "videos" rather than "episodes" for a playlist: it is what the user called them.
+            if (podcast.source == PodcastSource.YOUTUBE) {
+                R.plurals.search_video_count
+            } else {
+                R.plurals.search_episode_count
+            },
+            episodeCount,
+            episodeCount,
+        ),
+    )
 
-    is AddPodcastResult.Failed -> "Couldn't read that feed: ${cause.message ?: "unknown error"}"
+    is AddPodcastResult.AlreadyInLibrary ->
+        resources.getString(R.string.search_message_already_in_library, podcast.title)
+
+    is AddPodcastResult.NoFeedAvailable ->
+        resources.getString(R.string.search_message_no_feed, title)
+
+    AddPodcastResult.NotFound -> resources.getString(R.string.search_message_not_found)
+
+    AddPodcastResult.InvalidInput -> resources.getString(R.string.search_message_invalid_input)
+
+    AddPodcastResult.NotAPlaylist -> resources.getString(R.string.search_message_not_a_playlist)
+
+    is AddPodcastResult.Failed -> resources.getString(
+        R.string.search_message_failed,
+        cause.message ?: resources.getString(R.string.search_message_failed_unknown_cause),
+    )
 }
 
 @Preview

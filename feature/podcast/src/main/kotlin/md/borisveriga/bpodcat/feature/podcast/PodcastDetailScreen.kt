@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.feature.podcast
 
+import android.content.res.Resources
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -133,35 +137,15 @@ fun PodcastDetailScreen(
     showBackButton: Boolean = true,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
+    // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
+    // change invalidates the read.
+    val resources = LocalResources.current
     val now = remember { Instant.now() }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(
-            when (message) {
-                is PodcastDetailMessage.Refreshed -> when (message.newEpisodeCount) {
-                    0 -> "No new episodes"
-                    1 -> "1 new episode"
-                    else -> "${message.newEpisodeCount} new episodes"
-                }
-
-                is PodcastDetailMessage.RefreshFailed -> "Couldn't refresh: ${message.reason}"
-
-                PodcastDetailMessage.EpisodeUnavailable ->
-                    "That episode is no longer in your library"
-
-                is PodcastDetailMessage.Queued -> "Added \"${message.title}\" to the queue"
-
-                is PodcastDetailMessage.DownloadQueued -> if (message.waitingForWifi) {
-                    "\"${message.title}\" will download on Wi-Fi"
-                } else {
-                    "Downloading \"${message.title}\""
-                }
-
-                is PodcastDetailMessage.DownloadRemoved ->
-                    "Removed \"${message.title}\" from this device"
-            },
-        )
+        snackbarHostState.showSnackbar(message.toText(resources))
         onMessageShown()
     }
 
@@ -181,7 +165,7 @@ fun PodcastDetailScreen(
                         IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Back to the library",
+                                contentDescription = stringResource(R.string.podcast_back),
                             )
                         }
                     }
@@ -190,13 +174,13 @@ fun PodcastDetailScreen(
                     IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
                         Icon(
                             imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Check for new episodes",
+                            contentDescription = stringResource(R.string.podcast_refresh),
                         )
                     }
                     IconButton(onClick = onRemove) {
                         Icon(
                             imageVector = Icons.Rounded.Delete,
-                            contentDescription = "Remove this podcast",
+                            contentDescription = stringResource(R.string.podcast_remove),
                         )
                     }
                 },
@@ -208,21 +192,20 @@ fun PodcastDetailScreen(
         when {
             uiState.isLoading || podcast == null -> LoadingState(
                 modifier = Modifier.padding(padding),
-                contentDescription = "Loading episodes",
+                contentDescription = stringResource(R.string.podcast_loading),
             )
 
             uiState.episodes.isEmpty() -> MessageState(
                 icon = Icons.Rounded.PlaylistRemove,
-                title = "No episodes",
-                description = if (podcast.source == PodcastSource.YOUTUBE) {
-                    // A playlist that reads as empty is almost always a permissions problem, not a
-                    // transient one, so "try refreshing" would send the user in the wrong direction.
-                    "This playlist has no public videos we can read. Check that it is set to " +
-                        "Public or Unlisted."
-                } else {
-                    "This feed published nothing we could read. Try refreshing."
-                },
-                actionLabel = "Refresh",
+                title = stringResource(R.string.podcast_empty_title),
+                description = stringResource(
+                    if (podcast.source == PodcastSource.YOUTUBE) {
+                        R.string.podcast_empty_description_youtube
+                    } else {
+                        R.string.podcast_empty_description_rss
+                    },
+                ),
+                actionLabel = stringResource(R.string.podcast_empty_action),
                 onAction = onRefresh,
                 modifier = Modifier.padding(padding),
             )
@@ -336,7 +319,7 @@ private fun EpisodeRow(
                     imageVector = Icons.Rounded.PlaylistAdd,
                     // Naming the episode matters here: TalkBack users reach this button out of the
                     // list's reading order, without the title next to it.
-                    contentDescription = "Add ${episode.title} to the queue",
+                    contentDescription = stringResource(R.string.podcast_queue_episode, episode.title),
                 )
             }
         }
@@ -347,9 +330,10 @@ private fun EpisodeRow(
                 formatRemaining(episode.durationMs, episode.positionMs)
                     ?.takeIf { episode.positionMs > 0 }
                     ?: formatDuration(episode.durationMs),
-                "Played".takeIf { episode.isPlayed },
-                "Downloaded".takeIf { episode.downloadState == DownloadState.COMPLETED },
-            ).joinToString(" · "),
+                stringResource(R.string.podcast_episode_played).takeIf { episode.isPlayed },
+                stringResource(R.string.podcast_episode_downloaded)
+                    .takeIf { episode.downloadState == DownloadState.COMPLETED },
+            ).joinToString(stringResource(R.string.podcast_metadata_separator)),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
@@ -383,11 +367,24 @@ private fun DownloadButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Built here rather than inside `semantics`, which is not a composable scope.
+    val cancelQueuedDescription =
+        stringResource(R.string.podcast_cancel_queued_download, episode.title)
+    val cancelDescription = pluralStringResource(
+        R.plurals.podcast_cancel_download,
+        episode.downloadPercent.toInt(),
+        episode.title,
+        episode.downloadPercent.toInt(),
+    )
+
     IconButton(onClick = onClick, modifier = modifier) {
         when (episode.downloadState) {
             DownloadState.NOT_DOWNLOADED -> DownloadIcon(
                 icon = Icons.Rounded.DownloadForOffline,
-                contentDescription = "Download ${episode.title}",
+                contentDescription = stringResource(
+                    R.string.podcast_download_episode,
+                    episode.title,
+                ),
             )
 
             // Queued and downloading share a spinner; what differs is whether it advances. A
@@ -398,7 +395,7 @@ private fun DownloadButton(
                 modifier = Modifier
                     .size(20.dp)
                     .semantics {
-                        contentDescription = "Cancel the queued download of ${episode.title}"
+                        contentDescription = cancelQueuedDescription
                     },
             )
 
@@ -408,20 +405,19 @@ private fun DownloadButton(
                 modifier = Modifier
                     .size(20.dp)
                     .semantics {
-                        contentDescription = "Cancel the download of ${episode.title}, " +
-                            "${episode.downloadPercent.toInt()} percent complete"
+                        contentDescription = cancelDescription
                     },
             )
 
             DownloadState.COMPLETED -> DownloadIcon(
                 icon = Icons.Rounded.CheckCircle,
-                contentDescription = "Remove the download of ${episode.title}",
+                contentDescription = stringResource(R.string.podcast_remove_download, episode.title),
                 tint = MaterialTheme.colorScheme.primary,
             )
 
             DownloadState.FAILED -> DownloadIcon(
                 icon = Icons.Rounded.ErrorOutline,
-                contentDescription = "Download of ${episode.title} failed. Retry",
+                contentDescription = stringResource(R.string.podcast_retry_download, episode.title),
                 tint = MaterialTheme.colorScheme.error,
             )
         }
@@ -443,6 +439,47 @@ private fun DownloadIcon(
     tint: Color = LocalContentColor.current,
 ) {
     Icon(imageVector = icon, contentDescription = contentDescription, tint = tint)
+}
+
+/**
+ * Turns a [PodcastDetailMessage] into snackbar text.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+private fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
+    is PodcastDetailMessage.Refreshed -> if (newEpisodeCount == 0) {
+        resources.getString(R.string.podcast_message_no_new_episodes)
+    } else {
+        resources.getQuantityString(
+            R.plurals.podcast_message_new_episodes,
+            newEpisodeCount,
+            newEpisodeCount,
+        )
+    }
+
+    is PodcastDetailMessage.RefreshFailed ->
+        resources.getString(R.string.podcast_message_refresh_failed, reason)
+
+    PodcastDetailMessage.EpisodeUnavailable ->
+        resources.getString(R.string.podcast_message_episode_unavailable)
+
+    is PodcastDetailMessage.Queued ->
+        resources.getString(R.string.podcast_message_queued, title)
+
+    is PodcastDetailMessage.DownloadQueued -> resources.getString(
+        if (waitingForWifi) {
+            R.string.podcast_message_download_waiting_for_wifi
+        } else {
+            R.string.podcast_message_downloading
+        },
+        title,
+    )
+
+    is PodcastDetailMessage.DownloadRemoved ->
+        resources.getString(R.string.podcast_message_download_removed, title)
 }
 
 @Preview

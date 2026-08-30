@@ -9,7 +9,9 @@ import androidx.compose.material.icons.rounded.Forward5
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Replay30
 import androidx.compose.material.icons.rounded.Replay5
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Picks the skip-ahead glyph that matches the configured interval.
@@ -46,8 +48,14 @@ fun skipBackIcon(skipMs: Long): ImageVector = when (skipMs) {
  *
  * @param skipMs the configured distance.
  * @param forward true for the skip-ahead button.
+ * @return the spoken label, pluralised on the number of seconds.
  */
+@Composable
 fun skipContentDescription(skipMs: Long, forward: Boolean): String {
-    val seconds = (skipMs / 1_000L).coerceAtLeast(1L)
-    return if (forward) "Skip ahead $seconds seconds" else "Skip back $seconds seconds"
+    val seconds = (skipMs / 1_000L).coerceAtLeast(1L).toInt()
+    return pluralStringResource(
+        id = if (forward) R.plurals.player_skip_forward else R.plurals.player_skip_back,
+        count = seconds,
+        seconds,
+    )
 }

@@ -2,7 +2,9 @@ package md.borisveriga.bpodcat.buildlogic
 
 import com.android.build.api.dsl.CommonExtension
 import org.gradle.api.Project
+import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
+import org.jetbrains.kotlin.compose.compiler.gradle.ComposeCompilerGradlePluginExtension
 
 /**
  * Enables Jetpack Compose for a **mobile** module and wires the standard Compose dependency set.
@@ -12,6 +14,7 @@ import org.gradle.kotlin.dsl.dependencies
  */
 internal fun Project.configureCompose(extension: CommonExtension) {
     pluginManager.apply("org.jetbrains.kotlin.plugin.compose")
+    configureComposeMetrics()
 
     extension.buildFeatures.compose = true
 
@@ -41,6 +44,7 @@ internal fun Project.configureCompose(extension: CommonExtension) {
  */
 internal fun Project.configureWearCompose(extension: CommonExtension) {
     pluginManager.apply("org.jetbrains.kotlin.plugin.compose")
+    configureComposeMetrics()
 
     extension.buildFeatures.compose = true
 
@@ -65,3 +69,29 @@ internal fun Project.configureWearCompose(extension: CommonExtension) {
         add("androidTestImplementation", libs.findLibrary("androidx-compose-ui-test-junit4").get())
     }
 }
+
+/**
+ * Opt-in Compose compiler metrics and stability reports.
+ *
+ * Off by default: the reports cost a full non-incremental Kotlin compile and are only useful when
+ * someone is actually reading them. Turn them on for one run with
+ *
+ *     ./gradlew assembleDebug -Pbpodcat.compose.metrics=true
+ *
+ * and read the `-composables.txt` file under a module’s `build/compose-metrics` directory: it
+ * lists every composable with its `restartable` and `skippable` verdict. The `-classes.txt` file
+ * beside it says which types the compiler inferred as stable. That is the measurement Q-4 in
+ * `docs/REFACTORING_PLAN.md` asks for before anyone reaches for `kotlinx-collections-immutable`.
+ */
+private fun Project.configureComposeMetrics() {
+    if (!providers.gradleProperty(COMPOSE_METRICS_FLAG).isPresent) return
+
+    extensions.configure<ComposeCompilerGradlePluginExtension> {
+        val destination = layout.buildDirectory.dir("compose-metrics")
+        metricsDestination.set(destination)
+        reportsDestination.set(destination)
+    }
+}
+
+/** Gradle property that turns on the Compose compiler reports; see [configureComposeMetrics]. */
+private const val COMPOSE_METRICS_FLAG = "bpodcat.compose.metrics"

@@ -40,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -127,10 +129,14 @@ fun NowPlayingScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
+    // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
+    // change invalidates the read.
+    val resources = LocalResources.current
 
     LaunchedEffect(uiState.playback.errorMessage) {
         val error = uiState.playback.errorMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar("Playback problem: $error")
+        snackbarHostState.showSnackbar(resources.getString(R.string.player_error, error))
         onErrorShown()
     }
 
@@ -149,7 +155,7 @@ fun NowPlayingScreen(
                     IconButton(onClick = onCollapse) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "Close the player",
+                            contentDescription = stringResource(R.string.player_close),
                         )
                     }
                 },
@@ -160,8 +166,8 @@ fun NowPlayingScreen(
         if (uiState.isIdle) {
             MessageState(
                 icon = Icons.Rounded.PlayArrow,
-                title = "Nothing playing",
-                description = "Pick an episode from one of your shows and it will appear here.",
+                title = stringResource(R.string.player_idle_title),
+                description = stringResource(R.string.player_idle_description),
                 modifier = Modifier.padding(padding),
             )
             return@Scaffold
@@ -190,7 +196,7 @@ fun NowPlayingScreen(
             if (upNext.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Up next",
+                        text = stringResource(R.string.player_up_next),
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                     )
@@ -306,6 +312,8 @@ private fun Scrubber(
 
     // A duration the player has not read yet leaves nothing to scrub along.
     val enabled = durationMs != null
+    // Built here rather than inside `semantics`, which is not a composable scope.
+    val scrubberDescription = stringResource(R.string.player_scrubber)
     val displayedMs = dragPositionMs ?: playback.positionMs
 
     Column(modifier = modifier.fillMaxWidth().padding(top = 16.dp)) {
@@ -319,7 +327,7 @@ private fun Scrubber(
             valueRange = 0f..(durationMs ?: 1L).toFloat(),
             enabled = enabled,
             modifier = Modifier.semantics {
-                contentDescription = "Playback position"
+                contentDescription = scrubberDescription
             },
         )
 
@@ -335,7 +343,8 @@ private fun Scrubber(
             Text(
                 // An em dash rather than "0:00" while the duration is unknown: a wrong number reads
                 // as fact, a dash reads as "not yet".
-                text = durationMs?.let(::formatPosition) ?: "—",
+                text = durationMs?.let(::formatPosition)
+                    ?: stringResource(R.string.player_unknown_duration),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -376,7 +385,7 @@ private fun TransportControls(
         IconButton(onClick = onSkipToPrevious) {
             Icon(
                 imageVector = Icons.Rounded.SkipPrevious,
-                contentDescription = "Restart or go to the previous episode",
+                contentDescription = stringResource(R.string.player_previous),
             )
         }
 
@@ -409,7 +418,9 @@ private fun TransportControls(
                     } else {
                         Icons.Rounded.PlayArrow
                     },
-                    contentDescription = if (playback.isPlaying) "Pause" else "Play",
+                    contentDescription = stringResource(
+                        if (playback.isPlaying) R.string.player_pause else R.string.player_play,
+                    ),
                     modifier = Modifier.size(36.dp),
                 )
             }
@@ -426,7 +437,7 @@ private fun TransportControls(
         IconButton(onClick = onSkipToNext, enabled = playback.hasNext) {
             Icon(
                 imageVector = Icons.Rounded.SkipNext,
-                contentDescription = "Next episode",
+                contentDescription = stringResource(R.string.player_next),
             )
         }
     }
@@ -476,7 +487,10 @@ private fun QueueRow(
         IconButton(onClick = onRemove) {
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = "Remove ${entry.episode.title} from the queue",
+                contentDescription = stringResource(
+                    R.string.player_remove_from_queue,
+                    entry.episode.title,
+                ),
             )
         }
     }
@@ -486,15 +500,25 @@ private fun QueueRow(
  * Formats a playback rate for the speed button.
  *
  * Whole rates lose their decimal — `2x`, not `2.0x` — because that is how every podcast app writes
- * it and how people say it.
+ * it and how people say it. Fractional ones lose only their trailing zero, so 1.5 reads as `1.5x`
+ * rather than `1.50x`.
+ *
+ * The digits are formatted in [Locale.US] rather than the device locale, deliberately: the button
+ * is a fixed-width control and a comma decimal separator would not match the `SPEED_STEPS` a user
+ * sees in Settings.
+ *
+ * @param speed the playback rate.
+ * @return the button caption.
  */
+@Composable
 private fun formatSpeed(speed: Float): String {
     val rounded = Math.round(speed * 100f) / 100f
-    return if (rounded % 1f == 0f) {
-        String.format(Locale.US, "%.0fx", rounded)
+    val digits = if (rounded % 1f == 0f) {
+        String.format(Locale.US, "%.0f", rounded)
     } else {
-        String.format(Locale.US, "%.2fx", rounded).trimEnd('0').trimEnd('.') + "x"
+        String.format(Locale.US, "%.2f", rounded).trimEnd('0').trimEnd('.')
     }
+    return stringResource(R.string.player_speed_format, digits)
 }
 
 @Preview

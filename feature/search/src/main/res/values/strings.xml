@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the add/search screen.
+
+    The failure messages are keyed off `SearchError` and `AddPodcastResult` rather than off free
+    text, so the view model never builds a sentence: it names the outcome and the screen says it.
+-->
+<resources>
+
+    <string name="search_title">Add a podcast</string>
+
+    <string name="search_field_label">Show name, Apple / RSS / YouTube playlist link</string>
+    <string name="search_clear">Clear the search field</string>
+
+    <!-- Naming the source confirms the app recognised what was pasted, before any network call. -->
+    <string name="search_add_link">Add this link</string>
+    <string name="search_add_youtube_playlist">Add this YouTube playlist</string>
+
+    <string name="search_error_title">Couldn\'t search</string>
+    <string name="search_error_no_connection">No connection</string>
+    <string name="search_error_timeout">Apple didn\'t respond in time</string>
+    <!-- %1$s is the underlying failure, e.g. an exception message. -->
+    <string name="search_error_unknown">Search failed: %1$s</string>
+
+    <string name="search_empty_title">Nothing found</string>
+    <string name="search_empty_description">Try a different spelling, or paste the show\'s Apple Podcasts link instead.</string>
+
+    <plurals name="search_episode_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+
+    <!-- The same count for a YouTube playlist, where the user calls them videos. -->
+    <plurals name="search_video_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+
+    <!-- Separates the parts of a result row's metadata line. -->
+    <string name="search_result_separator"> · </string>
+
+    <string name="search_result_exclusive">Apple Podcasts exclusive — no RSS feed to download</string>
+
+    <!-- TalkBack label on a result row's add glyph; %1$s is the show title. -->
+    <string name="search_add_result">Add %1$s</string>
+
+    <!-- Snackbars. %1$s is a show title; %2$s is a pluralised episode or video count. -->
+    <string name="search_message_added">Added %1$s · %2$s</string>
+    <string name="search_message_already_in_library">%1$s is already in your library</string>
+    <string name="search_message_no_feed">%1$s has no RSS feed and can\'t be downloaded</string>
+    <string name="search_message_not_found">Apple doesn\'t know that podcast id</string>
+    <string name="search_message_invalid_input">That doesn\'t look like a podcast link</string>
+    <!-- Almost always a single video pasted instead of the playlist, so this says what to do. -->
+    <string name="search_message_not_a_playlist">That\'s a YouTube link, but not a playlist — open the playlist and copy its link</string>
+    <!-- %1$s is the parse or network failure. -->
+    <string name="search_message_failed">Couldn\'t read that feed: %1$s</string>
+    <string name="search_message_failed_unknown_cause">unknown error</string>
+
+</resources>

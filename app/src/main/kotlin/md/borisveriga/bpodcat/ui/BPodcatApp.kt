@@ -8,6 +8,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -53,7 +54,7 @@ fun BPodcatApp(
                     selected = currentDestination.isOn(destination),
                     onClick = { navController.navigateToTopLevel(destination) },
                     icon = { Icon(destination.icon, contentDescription = null) },
-                    label = { Text(destination.label) },
+                    label = { Text(stringResource(destination.labelResId)) },
                 )
             }
         },

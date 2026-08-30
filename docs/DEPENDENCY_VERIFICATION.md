@@ -33,7 +33,8 @@ Two causes, and they need opposite responses:
 
 ```bash
 ./gradlew --write-verification-metadata sha256 \
-    detekt assembleDebug testDebugUnitTest test lintDebug help
+    detekt assembleDebug testDebugUnitTest test lintDebug \
+    koverXmlReportDebug koverHtmlReportDebug koverLogDebug help
 ```
 
 The task list matters: the file records what the build *resolves*, so a task graph that misses a

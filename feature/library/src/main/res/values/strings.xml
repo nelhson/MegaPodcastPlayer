@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the library screen.
+
+    Counts are plurals rather than "%d episodes" so a translation into a language with more than
+    two forms is possible without touching Kotlin. The two-part strings (`..._combined`) exist so a
+    translator can reorder or re-punctuate the halves; concatenating in code would take that away.
+-->
+<resources>
+
+    <string name="library_title">Library</string>
+
+    <!-- Toolbar action; also its TalkBack label, so it is a sentence rather than "Refresh". -->
+    <string name="library_refresh">Check all podcasts for new episodes</string>
+
+    <string name="library_add_podcast">Add a podcast</string>
+
+    <string name="library_loading">Loading your podcasts</string>
+
+    <string name="library_empty_title">No podcasts yet</string>
+    <string name="library_empty_description">Search Apple Podcasts, or paste an RSS or YouTube playlist link, to add your first show.</string>
+
+    <!-- Episode count under a show. -->
+    <plurals name="library_episode_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+
+    <!-- The same count for a YouTube playlist, where the user calls them videos. -->
+    <plurals name="library_video_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+
+    <plurals name="library_downloaded_count">
+        <item quantity="one">%1$d downloaded</item>
+        <item quantity="other">%1$d downloaded</item>
+    </plurals>
+
+    <!-- Joins the episode count (%1$s) with the downloaded count (%2$s). -->
+    <string name="library_counts_combined">%1$s · %2$s</string>
+
+    <!-- Snackbar after a show is removed; %1$s is the show title. -->
+    <string name="library_message_removed">Removed %1$s</string>
+
+    <plurals name="library_message_new_episodes">
+        <item quantity="one">%1$d new episode</item>
+        <item quantity="other">%1$d new episodes</item>
+    </plurals>
+
+    <plurals name="library_message_failed_feeds">
+        <item quantity="one">%1$d feed failed</item>
+        <item quantity="other">%1$d feeds failed</item>
+    </plurals>
+
+    <!-- Joins the new-episode count (%1$s) with the failed-feed count (%2$s). -->
+    <string name="library_message_new_and_failed">%1$s · %2$s</string>
+
+    <!-- Shown when a refresh found nothing new but some feeds failed; %1$s lists the show titles. -->
+    <string name="library_message_refresh_failed">Couldn\'t refresh %1$s</string>
+
+    <string name="library_message_no_new_episodes">No new episodes</string>
+
+</resources>

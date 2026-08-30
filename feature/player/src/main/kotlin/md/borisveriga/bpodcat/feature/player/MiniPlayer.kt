@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -130,14 +131,16 @@ fun MiniPlayer(
                         } else {
                             Icons.Rounded.PlayArrow
                         },
-                        contentDescription = if (playback.isPlaying) "Pause" else "Play",
+                        contentDescription = stringResource(
+                            if (playback.isPlaying) R.string.player_pause else R.string.player_play,
+                        ),
                     )
                 }
 
                 IconButton(onClick = onSkipForward) {
                     Icon(
                         imageVector = Icons.Rounded.Forward30,
-                        contentDescription = "Skip ahead",
+                        contentDescription = stringResource(R.string.player_mini_skip_ahead),
                     )
                 }
             }

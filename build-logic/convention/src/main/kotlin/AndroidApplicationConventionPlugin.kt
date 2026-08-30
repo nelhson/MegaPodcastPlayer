@@ -41,9 +41,9 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                         "proguard-rules.pro",
                     )
                 }
-                named("debug") {
-                    applicationIdSuffix = ""
-                }
+                // No `applicationIdSuffix` on debug, deliberately: the Wearable Data Layer
+                // routes messages on package name plus signing certificate, so a suffixed
+                // debug phone build could never talk to the watch build sitting beside it.
             }
         }
     }

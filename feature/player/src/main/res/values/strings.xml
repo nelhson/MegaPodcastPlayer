@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the mini player and the full now-playing screen.
+
+    The playback position labels (`4:12`, `1:04:12`) stay in Kotlin: they are numeric formats, not
+    copy, and they are shared with the watch.
+-->
+<resources>
+
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+
+    <!-- The mini player has one fixed-size skip button, so its label names no interval. -->
+    <string name="player_mini_skip_ahead">Skip ahead</string>
+
+    <string name="player_close">Close the player</string>
+
+    <string name="player_idle_title">Nothing playing</string>
+    <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>
+
+    <string name="player_up_next">Up next</string>
+
+    <string name="player_scrubber">Playback position</string>
+    <!-- Shown in place of a duration the player has not read yet; a wrong number would read as fact. -->
+    <string name="player_unknown_duration">—</string>
+
+    <string name="player_previous">Restart or go to the previous episode</string>
+    <string name="player_next">Next episode</string>
+
+    <!-- TalkBack labels for the skip buttons; the glyph carries the number visually. -->
+    <plurals name="player_skip_forward">
+        <item quantity="one">Skip ahead %1$d second</item>
+        <item quantity="other">Skip ahead %1$d seconds</item>
+    </plurals>
+    <plurals name="player_skip_back">
+        <item quantity="one">Skip back %1$d second</item>
+        <item quantity="other">Skip back %1$d seconds</item>
+    </plurals>
+
+    <!-- Playback rate, e.g. "1.5x". %1$s is already formatted, so the "x" is the only copy. -->
+    <string name="player_speed_format">%1$sx</string>
+
+    <!-- %1$s is the episode title; the button is reached out of the list's reading order. -->
+    <string name="player_remove_from_queue">Remove %1$s from the queue</string>
+
+    <!-- %1$s is the player's own error text. -->
+    <string name="player_error">Playback problem: %1$s</string>
+
+</resources>

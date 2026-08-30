@@ -3,6 +3,8 @@ package md.borisveriga.bpodcat.feature.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -33,7 +35,8 @@ import md.borisveriga.bpodcat.core.model.PodcastSearchResult
  *   they pasted.
  * @property results Apple search results for [query].
  * @property isSearching true while a search is in flight.
- * @property searchError message when the search itself failed (offline, rate limited).
+ * @property searchError why the search itself failed (offline, rate limited), or null. A closed
+ *   set rather than a message, so the wording lives with the screen that shows it.
  * @property addingId Apple id (or feed URL) currently being added, so exactly one row shows a
  *   spinner.
  * @property message the outcome of the last add attempt.
@@ -44,10 +47,32 @@ data class SearchUiState(
     val isYouTubeLink: Boolean = false,
     val results: List<PodcastSearchResult> = emptyList(),
     val isSearching: Boolean = false,
-    val searchError: String? = null,
+    val searchError: SearchError? = null,
     val addingId: String? = null,
     val message: AddPodcastResult? = null,
 )
+
+/**
+ * Why a search failed.
+ *
+ * Modelled rather than pre-worded because a view model has no `Context` and should not be choosing
+ * copy; the screen turns each of these into a sentence.
+ */
+sealed interface SearchError {
+
+    /** The device could not resolve Apple's host — almost always no connection at all. */
+    data object NoConnection : SearchError
+
+    /** Apple accepted the connection but did not answer in time. */
+    data object Timeout : SearchError
+
+    /**
+     * Anything else.
+     *
+     * @property detail the failure's own words, for the message; never null, never empty.
+     */
+    data class Unknown(val detail: String) : SearchError
+}
 
 /**
  * Drives the add/search screen.
@@ -89,7 +114,7 @@ class SearchViewModel @Inject constructor(
                 emit(
                     result.fold(
                         onSuccess = { SearchState(results = it) },
-                        onFailure = { SearchState(error = it.toUserMessage()) },
+                        onFailure = { SearchState(error = it.toSearchError()) },
                     ),
                 )
             }
@@ -159,7 +184,7 @@ class SearchViewModel @Inject constructor(
     private data class SearchState(
         val results: List<PodcastSearchResult> = emptyList(),
         val isSearching: Boolean = false,
-        val error: String? = null,
+        val error: SearchError? = null,
     )
 
     /** Add-in-progress state. */
@@ -174,9 +199,13 @@ class SearchViewModel @Inject constructor(
     }
 }
 
-/** Turns a network failure into something worth showing a person. */
-private fun Throwable.toUserMessage(): String = when (this) {
-    is java.net.UnknownHostException -> "No connection"
-    is java.net.SocketTimeoutException -> "Apple didn't respond in time"
-    else -> "Search failed: ${message ?: this::class.simpleName}"
+/**
+ * Classifies a search failure.
+ *
+ * @return the closed-set reason the screen can word for itself.
+ */
+private fun Throwable.toSearchError(): SearchError = when (this) {
+    is UnknownHostException -> SearchError.NoConnection
+    is SocketTimeoutException -> SearchError.Timeout
+    else -> SearchError.Unknown(message ?: this::class.simpleName.orEmpty())
 }

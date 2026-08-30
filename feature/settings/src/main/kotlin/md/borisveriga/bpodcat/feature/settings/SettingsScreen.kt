@@ -31,6 +31,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -115,13 +118,19 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
+    // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
+    // change invalidates the read.
+    val resources = LocalResources.current
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(
             when (message) {
-                is SettingsMessage.DownloadsRemoved ->
-                    "Removed all downloads, freeing ${formatBytes(message.freedBytes)}"
+                is SettingsMessage.DownloadsRemoved -> resources.getString(
+                    R.string.settings_message_downloads_removed,
+                    formatBytes(message.freedBytes),
+                )
             },
         )
         onMessageShown()
@@ -131,12 +140,12 @@ fun SettingsScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.settings_back),
                         )
                     }
                 },
@@ -150,10 +159,10 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SectionHeader("Playback")
+            SectionHeader(stringResource(R.string.settings_section_playback))
 
             ChoiceRow(
-                title = "Playback speed",
+                title = stringResource(R.string.settings_playback_speed),
                 options = PlaybackSettings.SPEED_STEPS,
                 selected = uiState.playback.speed,
                 label = { speed -> formatSpeed(speed) },
@@ -161,7 +170,7 @@ fun SettingsScreen(
             )
 
             ChoiceRow(
-                title = "Skip forward",
+                title = stringResource(R.string.settings_skip_forward),
                 options = SKIP_FORWARD_STEPS_MS,
                 selected = uiState.playback.skipForwardMs,
                 label = { millis -> formatSkip(millis) },
@@ -169,7 +178,7 @@ fun SettingsScreen(
             )
 
             ChoiceRow(
-                title = "Skip back",
+                title = stringResource(R.string.settings_skip_back),
                 options = SKIP_BACK_STEPS_MS,
                 selected = uiState.playback.skipBackMs,
                 label = { millis -> formatSkip(millis) },
@@ -177,31 +186,31 @@ fun SettingsScreen(
             )
 
             SwitchRow(
-                title = "Play next automatically",
-                description = "Start the next queued episode when one finishes",
+                title = stringResource(R.string.settings_auto_play_next_title),
+                description = stringResource(R.string.settings_auto_play_next_description),
                 checked = uiState.playback.autoPlayNext,
                 onCheckedChange = onAutoPlayNextChange,
             )
 
             HorizontalDivider()
-            SectionHeader("Downloads")
+            SectionHeader(stringResource(R.string.settings_section_downloads))
 
             SwitchRow(
-                title = "Download new episodes",
-                description = "Save episodes for offline listening as they are published",
+                title = stringResource(R.string.settings_auto_download_title),
+                description = stringResource(R.string.settings_auto_download_description),
                 checked = uiState.downloads.autoDownloadNewEpisodes,
                 onCheckedChange = onAutoDownloadChange,
             )
 
             SwitchRow(
-                title = "Wi-Fi only",
-                description = "Wait for an unmetered network before downloading",
+                title = stringResource(R.string.settings_unmetered_title),
+                description = stringResource(R.string.settings_unmetered_description),
                 checked = uiState.downloads.unmeteredOnly,
                 onCheckedChange = onUnmeteredOnlyChange,
             )
 
             ChoiceRow(
-                title = "Episodes to keep per show",
+                title = stringResource(R.string.settings_keep_limit_title),
                 options = DownloadSettings.KEEP_LIMIT_STEPS,
                 selected = uiState.downloads.keepLimitPerPodcast,
                 label = { limit -> formatKeepLimit(limit) },
@@ -209,30 +218,33 @@ fun SettingsScreen(
             )
 
             SwitchRow(
-                title = "Delete after playing",
-                description = "Free up storage when an episode finishes",
+                title = stringResource(R.string.settings_delete_after_playing_title),
+                description = stringResource(R.string.settings_delete_after_playing_description),
                 checked = uiState.downloads.deleteAfterPlaying,
                 onCheckedChange = onDeleteAfterPlayingChange,
             )
 
             HorizontalDivider()
-            SectionHeader("Storage")
+            SectionHeader(stringResource(R.string.settings_section_storage))
 
             ListItem(
-                headlineContent = { Text("Downloaded episodes") },
+                headlineContent = { Text(stringResource(R.string.settings_downloaded_episodes)) },
                 supportingContent = {
                     Text(formatStorage(uiState.downloadedEpisodeCount, uiState.downloadedBytes))
                 },
             )
 
             ListItem(
-                headlineContent = { Text("Remove all downloads") },
+                headlineContent = { Text(stringResource(R.string.settings_remove_all)) },
                 supportingContent = {
                     Text(
                         if (uiState.hasDownloads) {
-                            "Frees ${formatBytes(uiState.downloadedBytes)}"
+                            stringResource(
+                                R.string.settings_remove_all_frees,
+                                formatBytes(uiState.downloadedBytes),
+                            )
                         } else {
-                            "Nothing is downloaded"
+                            stringResource(R.string.settings_remove_all_nothing)
                         },
                     )
                 },
@@ -286,6 +298,9 @@ private fun SwitchRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Built here rather than inside `semantics`, which is not a composable scope.
+    val rowDescription = stringResource(R.string.settings_switch_description, title, description)
+
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(description) },
@@ -301,7 +316,7 @@ private fun SwitchRow(
             .clickable { onCheckedChange(!checked) }
             .semantics {
                 role = Role.Switch
-                contentDescription = "$title. $description"
+                contentDescription = rowDescription
                 toggleableState = ToggleableState(checked)
             },
     )
@@ -317,7 +332,8 @@ private fun SwitchRow(
  * @param title the setting's name.
  * @param options every value on offer.
  * @param selected the current value.
- * @param label renders one option's caption.
+ * @param label renders one option's caption; composable, because the captions come from
+ *   resources.
  * @param onSelect invoked with the chosen value.
  * @param modifier layout modifier.
  */
@@ -326,7 +342,7 @@ private fun <T> ChoiceRow(
     title: String,
     options: List<T>,
     selected: T,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -345,15 +361,26 @@ private fun <T> ChoiceRow(
         ) {
             options.forEach { option ->
                 val optionLabel = label(option)
+                val isSelected = option == selected
+                // Built here rather than inside `semantics`, which is not a composable scope.
+                val chipDescription =
+                    stringResource(R.string.settings_choice_description, title, optionLabel)
+                val chipState = stringResource(
+                    if (isSelected) {
+                        R.string.settings_chip_selected
+                    } else {
+                        R.string.settings_chip_not_selected
+                    },
+                )
                 FilterChip(
-                    selected = option == selected,
+                    selected = isSelected,
                     onClick = { onSelect(option) },
                     label = { Text(optionLabel) },
                     // Without this the chip announces only its own caption — "30 s" tells a
                     // TalkBack user nothing about which setting they are changing.
                     modifier = Modifier.semantics {
-                        contentDescription = "$title: $optionLabel"
-                        stateDescription = if (option == selected) "Selected" else "Not selected"
+                        contentDescription = chipDescription
+                        stateDescription = chipState
                     },
                 )
             }
@@ -367,23 +394,45 @@ private val SKIP_FORWARD_STEPS_MS = listOf(10_000L, 15_000L, 30_000L, 45_000L, 6
 /** The skip-back intervals on offer, shorter because skipping back is about a missed sentence. */
 private val SKIP_BACK_STEPS_MS = listOf(5_000L, 10_000L, 15_000L, 30_000L)
 
-/** Formats a playback rate as `1x` or `1.5x`, dropping a trailing `.0`. */
+/**
+ * Formats a playback rate as `1x` or `1.5x`, dropping a trailing `.0`.
+ *
+ * @param speed the rate.
+ * @return the chip caption.
+ */
+@Composable
 private fun formatSpeed(speed: Float): String {
     val rounded = Math.round(speed * 100) / 100f
-    return if (rounded % 1f == 0f) "${rounded.toInt()}x" else "${rounded}x"
+    val digits = if (rounded % 1f == 0f) rounded.toInt().toString() else rounded.toString()
+    return stringResource(R.string.settings_speed_format, digits)
 }
 
-/** Formats a skip interval as `30 s`, or `1 min` at exactly a minute. */
+/**
+ * Formats a skip interval as `30 s`, or `1 min` at exactly a minute.
+ *
+ * @param millis the interval.
+ * @return the chip caption.
+ */
+@Composable
 private fun formatSkip(millis: Long): String {
     val seconds = millis / 1_000L
-    return if (seconds >= 60L && seconds % 60L == 0L) "${seconds / 60} min" else "$seconds s"
+    return if (seconds >= 60L && seconds % 60L == 0L) {
+        stringResource(R.string.settings_skip_minutes, seconds / 60L)
+    } else {
+        stringResource(R.string.settings_skip_seconds, seconds)
+    }
 }
 
-/** Formats a keep-limit, spelling out the "keep everything" sentinel. */
+/**
+ * Formats a keep-limit, spelling out the "keep everything" sentinel.
+ *
+ * @param limit the configured limit.
+ * @return the chip caption.
+ */
+@Composable
 private fun formatKeepLimit(limit: Int): String = when (limit) {
-    DownloadSettings.KEEP_ALL -> "All"
-    1 -> "1"
-    else -> "$limit"
+    DownloadSettings.KEEP_ALL -> stringResource(R.string.settings_keep_limit_all)
+    else -> limit.toString()
 }
 
 /**
@@ -391,11 +440,17 @@ private fun formatKeepLimit(limit: Int): String = when (limit) {
  *
  * @param count how many episodes are downloaded.
  * @param bytes how much space they take.
+ * @return the supporting line under "Downloaded episodes".
  */
+@Composable
 private fun formatStorage(count: Int, bytes: Long): String = when (count) {
-    0 -> "None"
-    1 -> "1 episode · ${formatBytes(bytes)}"
-    else -> "$count episodes · ${formatBytes(bytes)}"
+    0 -> stringResource(R.string.settings_storage_none)
+
+    else -> stringResource(
+        R.string.settings_storage_summary,
+        pluralStringResource(R.plurals.settings_episode_count, count, count),
+        formatBytes(bytes),
+    )
 }
 
 @Preview

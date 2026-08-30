@@ -46,7 +46,4 @@ dependencies {
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
-
-    androidTestImplementation(libs.androidx.test.junit)
-    androidTestImplementation(libs.androidx.test.espresso.core)
 }

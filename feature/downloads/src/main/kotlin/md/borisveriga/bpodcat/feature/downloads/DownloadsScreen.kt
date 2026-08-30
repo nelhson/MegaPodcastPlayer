@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.feature.downloads
 
+import android.content.res.Resources
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -111,27 +115,17 @@ fun DownloadsScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
+    // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
+    // change invalidates the read.
+    val resources = LocalResources.current
     val now = remember { Instant.now() }
     // Saveable so the confirmation does not vanish when the Fold 7 is opened mid-decision.
     var confirmingRemoveAll by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(
-            when (message) {
-                is DownloadsMessage.Removed -> "Removed \"${message.title}\" from this device"
-
-                is DownloadsMessage.RemovedAll -> when (message.count) {
-                    1 -> "Removed 1 download"
-                    else -> "Removed ${message.count} downloads"
-                }
-
-                is DownloadsMessage.Queued -> "Added \"${message.title}\" to the queue"
-
-                DownloadsMessage.EpisodeUnavailable ->
-                    "That episode is no longer in your library"
-            },
-        )
+        snackbarHostState.showSnackbar(message.toText(resources))
         onMessageShown()
     }
 
@@ -139,11 +133,13 @@ fun DownloadsScreen(
         // Deleting every download is the one action here a second tap cannot undo, so it asks first.
         AlertDialog(
             onDismissRequest = { confirmingRemoveAll = false },
-            title = { Text(text = "Remove all downloads?") },
+            title = { Text(text = stringResource(R.string.downloads_remove_all_dialog_title)) },
             text = {
                 Text(
-                    text = "This frees ${formatBytes(uiState.totalBytes)}. " +
-                        "The episodes stay in your library and can be downloaded again.",
+                    text = stringResource(
+                        R.string.downloads_remove_all_dialog_text,
+                        formatBytes(uiState.totalBytes),
+                    ),
                 )
             },
             confirmButton = {
@@ -153,11 +149,13 @@ fun DownloadsScreen(
                         onRemoveAll()
                     },
                 ) {
-                    Text(text = "Remove all")
+                    Text(text = stringResource(R.string.downloads_remove_all_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmingRemoveAll = false }) { Text(text = "Cancel") }
+                TextButton(onClick = { confirmingRemoveAll = false }) {
+                    Text(text = stringResource(R.string.downloads_cancel))
+                }
             },
         )
     }
@@ -166,13 +164,13 @@ fun DownloadsScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text(text = "Downloads") },
+                title = { Text(text = stringResource(R.string.downloads_title)) },
                 actions = {
                     if (uiState.downloads.isNotEmpty()) {
                         IconButton(onClick = { confirmingRemoveAll = true }) {
                             Icon(
                                 imageVector = Icons.Rounded.DeleteSweep,
-                                contentDescription = "Remove all downloads",
+                                contentDescription = stringResource(R.string.downloads_remove_all),
                             )
                         }
                     }
@@ -184,14 +182,14 @@ fun DownloadsScreen(
         when {
             uiState.isLoading -> LoadingState(
                 modifier = Modifier.padding(padding),
-                contentDescription = "Loading your downloads",
+                contentDescription = stringResource(R.string.downloads_loading),
             )
 
             uiState.downloads.isEmpty() -> MessageState(
                 icon = Icons.Rounded.DownloadDone,
-                title = "Nothing downloaded",
-                description = "Episodes you download appear here and play without a connection.",
-                actionLabel = "Go to your library",
+                title = stringResource(R.string.downloads_empty_title),
+                description = stringResource(R.string.downloads_empty_description),
+                actionLabel = stringResource(R.string.downloads_empty_action),
                 onAction = onBrowseLibrary,
                 modifier = Modifier.padding(padding),
             )
@@ -240,11 +238,11 @@ private fun StorageSummary(
     modifier: Modifier = Modifier,
 ) {
     Text(
-        text = buildString {
-            append(if (episodeCount == 1) "1 episode" else "$episodeCount episodes")
-            append(" · ")
-            append(formatBytes(totalBytes))
-        },
+        text = stringResource(
+            R.string.downloads_storage_summary,
+            pluralStringResource(R.plurals.downloads_episode_count, episodeCount, episodeCount),
+            formatBytes(totalBytes),
+        ),
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
@@ -308,8 +306,8 @@ private fun DownloadRow(
                         ?.takeIf { episode.positionMs > 0 }
                         ?: formatDuration(episode.durationMs),
                     episode.downloadedBytes.takeIf { it > 0L }?.let(::formatBytes),
-                    "Played".takeIf { episode.isPlayed },
-                ).joinToString(" · "),
+                    stringResource(R.string.downloads_played).takeIf { episode.isPlayed },
+                ).joinToString(stringResource(R.string.downloads_metadata_separator)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -331,17 +329,39 @@ private fun DownloadRow(
                     imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
                     // These buttons are reached out of the list's reading order, so each one names
                     // the episode it acts on.
-                    contentDescription = "Add ${episode.title} to the queue",
+                    contentDescription = stringResource(R.string.downloads_queue_episode, episode.title),
                 )
             }
             IconButton(onClick = onRemove) {
                 Icon(
                     imageVector = Icons.Rounded.Delete,
-                    contentDescription = "Remove the download of ${episode.title}",
+                    contentDescription = stringResource(R.string.downloads_remove_episode, episode.title),
                 )
             }
         }
     }
+}
+
+/**
+ * Turns a [DownloadsMessage] into snackbar text.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+private fun DownloadsMessage.toText(resources: Resources): String = when (this) {
+    is DownloadsMessage.Removed ->
+        resources.getString(R.string.downloads_message_removed, title)
+
+    is DownloadsMessage.RemovedAll ->
+        resources.getQuantityString(R.plurals.downloads_message_removed_all, count, count)
+
+    is DownloadsMessage.Queued ->
+        resources.getString(R.string.downloads_message_queued, title)
+
+    DownloadsMessage.EpisodeUnavailable ->
+        resources.getString(R.string.downloads_message_unavailable)
 }
 
 @Preview
