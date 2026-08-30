@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import md.borisveriga.bpodcat.core.common.di.BPodcatDispatcher
 import md.borisveriga.bpodcat.core.common.di.Dispatcher
-import md.borisveriga.bpodcat.core.data.mapper.asDownloadedEpisode
+import md.borisveriga.bpodcat.core.data.mapper.asEpisodeWithShow
 import md.borisveriga.bpodcat.core.database.dao.EpisodeDao
 import md.borisveriga.bpodcat.core.database.dao.QueueDao
 import md.borisveriga.bpodcat.core.database.model.asExternalModel
@@ -19,8 +19,8 @@ import md.borisveriga.bpodcat.core.media.download.EpisodeDownloadStatus
 import md.borisveriga.bpodcat.core.media.download.EpisodeDownloader
 import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.DownloadState
-import md.borisveriga.bpodcat.core.model.DownloadedEpisode
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 
 /**
  * Media3- and Room-backed implementation of the download stack.
@@ -54,8 +54,8 @@ class MediaDownloadRepository @Inject constructor(
     override fun observeDownloadedEpisodes(): Flow<List<Episode>> =
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
 
-    override fun observeDownloads(): Flow<List<DownloadedEpisode>> =
-        episodeDao.observeDownloadsWithShow().map { rows -> rows.map { it.asDownloadedEpisode() } }
+    override fun observeDownloads(): Flow<List<EpisodeWithShow>> =
+        episodeDao.observeDownloadsWithShow().map { rows -> rows.map { it.asEpisodeWithShow() } }
 
     override suspend fun downloadedBytes(): Long = downloader.downloadedBytes()
 

@@ -13,12 +13,27 @@
     <!-- The mini player has one fixed-size skip button, so its label names no interval. -->
     <string name="player_mini_skip_ahead">Skip ahead</string>
 
+    <string name="player_expand">Open the player</string>
     <string name="player_close">Close the player</string>
 
     <string name="player_idle_title">Nothing playing</string>
     <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>
 
     <string name="player_up_next">Up next</string>
+
+    <!-- The queue screen. Its title names the whole list; "Up next" heads the editable part. -->
+    <string name="queue_title">Queue</string>
+    <string name="queue_back">Leave the queue</string>
+    <string name="queue_now_playing">Now playing</string>
+    <string name="queue_empty_title">Nothing queued</string>
+    <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>
+
+    <!--
+        Reordering is a drag and removing is a swipe, and a screen reader can do neither, so both
+        are offered again as spoken actions on the row.
+    -->
+    <string name="queue_move_up">Move up</string>
+    <string name="queue_move_down">Move down</string>
 
     <string name="player_scrubber">Playback position</string>
     <!-- Shown in place of a duration the player has not read yet; a wrong number would read as fact. -->
@@ -39,6 +54,12 @@
 
     <!-- Playback rate, e.g. "1.5x". %1$s is already formatted, so the "x" is the only copy. -->
     <string name="player_speed_format">%1$sx</string>
+
+    <!-- The link from the player into the queue; %1$d is how many episodes follow this one. -->
+    <plurals name="player_queue_summary">
+        <item quantity="one">Up next · %1$d episode</item>
+        <item quantity="other">Up next · %1$d episodes</item>
+    </plurals>
 
     <!-- %1$s is the episode title; the button is reached out of the list's reading order. -->
     <string name="player_remove_from_queue">Remove %1$s from the queue</string>

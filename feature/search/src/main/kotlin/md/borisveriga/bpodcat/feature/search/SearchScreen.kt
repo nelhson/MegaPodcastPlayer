@@ -47,7 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import md.borisveriga.bpodcat.core.data.repository.AddPodcastResult
-import md.borisveriga.bpodcat.core.designsystem.component.MessageState
+import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.PodcastSearchResult
@@ -214,14 +215,14 @@ fun SearchScreen(
                     CircularProgressIndicator()
                 }
 
-                uiState.searchError != null -> MessageState(
+                uiState.searchError != null -> EmptyState(
                     icon = Icons.Rounded.Search,
                     title = stringResource(R.string.search_error_title),
                     description = uiState.searchError.toText(),
                 )
 
                 uiState.results.isEmpty() && uiState.query.isNotBlank() && !uiState.isLink ->
-                    MessageState(
+                    EmptyState(
                         icon = Icons.Rounded.Search,
                         title = stringResource(R.string.search_empty_title),
                         description = stringResource(R.string.search_empty_description),
@@ -268,7 +269,7 @@ private fun SearchResultRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        PodcastArtwork(url = result.artworkUrl, modifier = Modifier.size(56.dp))
+        PodcastArtwork(url = result.artworkUrl, size = ArtworkSize.Row)
 
         Column(modifier = Modifier.weight(1f)) {
             Text(

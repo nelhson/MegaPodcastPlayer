@@ -13,8 +13,8 @@ import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
 import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.DownloadState
-import md.borisveriga.bpodcat.core.model.DownloadedEpisode
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,7 +38,7 @@ class DownloadsViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
-    private val downloads = MutableStateFlow(emptyList<DownloadedEpisode>())
+    private val downloads = MutableStateFlow(emptyList<EpisodeWithShow>())
     private val downloadSettings = MutableStateFlow(DownloadSettings())
 
     private lateinit var downloadRepository: DownloadRepository
@@ -51,7 +51,7 @@ class DownloadsViewModelTest {
         downloadedBytes: Long = 1_000L,
         downloadState: DownloadState = DownloadState.COMPLETED,
         downloadPercent: Float = 100f,
-    ) = DownloadedEpisode(
+    ) = EpisodeWithShow(
         episode = Episode(
             id = id,
             podcastId = "podcast-1",

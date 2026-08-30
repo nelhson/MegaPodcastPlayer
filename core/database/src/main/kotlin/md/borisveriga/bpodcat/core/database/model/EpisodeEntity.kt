@@ -29,6 +29,9 @@ import md.borisveriga.bpodcat.core.model.Episode
     indices = [
         Index(value = ["podcast_id", "published_at"]),
         Index(value = ["download_state"]),
+        // The Latest feed sorts by date across every show. The composite index above cannot serve
+        // that: its leading column is `podcast_id`, so a global ORDER BY published_at would scan.
+        Index(value = ["published_at"]),
     ],
 )
 data class EpisodeEntity(

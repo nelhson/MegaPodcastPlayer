@@ -48,6 +48,16 @@ data class Episode(
      */
     val playedFraction: Float
         get() = durationMs?.takeIf { it > 0L }?.let { (positionMs.toFloat() / it).coerceIn(0f, 1f) } ?: 0f
+
+    /**
+     * Whether the episode has been started but not finished.
+     *
+     * The "continue listening" shelf and the progress hairline on a row both ask this question, and
+     * both got it subtly wrong when they asked it inline: a finished episode keeps its
+     * [positionMs], so `positionMs > 0` alone is true for everything ever played.
+     */
+    val isInProgress: Boolean
+        get() = positionMs > 0L && !isPlayed
 }
 
 /** Offline availability of an [Episode]'s audio. */

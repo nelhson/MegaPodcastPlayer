@@ -4,7 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import md.borisveriga.bpodcat.R
@@ -16,6 +16,15 @@ import md.borisveriga.bpodcat.R
  * loosely typed strings.
  */
 sealed interface Route {
+
+    /**
+     * The Latest feed: every followed show's newest episodes in one chronological list.
+     *
+     * The start destination. It answers "what is new" — the question a podcast app is opened to
+     * ask — which the library, being a list of shows rather than of episodes, never could.
+     */
+    @Serializable
+    data object Home : Route
 
     /** The library of subscribed shows. */
     @Serializable
@@ -42,18 +51,28 @@ sealed interface Route {
     @Serializable
     data class PodcastDetail(val podcastId: String) : Route
 
-    /** Playback and download preferences. */
+    /**
+     * Playback and download preferences.
+     *
+     * Not a [TopLevelDestination]. Settings is opened rarely and was spending a third of the
+     * navigation bar; it is reached from the Latest feed's top bar instead, which is where the
+     * platform convention puts it.
+     */
     @Serializable
     data object Settings : Route
 
     /**
-     * The full-screen player.
+     * The play queue, with drag-to-reorder.
      *
-     * Carries no arguments: what is playing is owned by the playback service, not by the back
-     * stack, so a route argument could only ever disagree with it.
+     * Pushed like [Search] rather than shown as a tab: it is reached from the player, and is empty
+     * most of the time.
+     *
+     * The player itself is deliberately *not* a route. It is a sheet that grows out of the bar
+     * above the navigation bar, so there is no destination to navigate to and nothing for the back
+     * stack to disagree with the playback service about.
      */
     @Serializable
-    data object NowPlaying : Route
+    data object Queue : Route
 }
 
 /**
@@ -61,7 +80,8 @@ sealed interface Route {
  *
  * Adding a podcast is deliberately absent: the library screen carries a floating action button for
  * it, and a permanent tab for the same job spent a quarter of the bar on something used once per
- * new show.
+ * new show. Settings left for the same reason — a destination opened once a month does not earn a
+ * permanent slot, and it is one tap away in the Latest feed's top bar.
  *
  * @property route the route object to navigate to.
  * @property labelResId visible label, also used as the accessibility name. A resource id rather
@@ -73,7 +93,7 @@ enum class TopLevelDestination(
     @param:StringRes val labelResId: Int,
     val icon: ImageVector,
 ) {
+    HOME(Route.Home, R.string.destination_home, Icons.Rounded.NewReleases),
     LIBRARY(Route.Library, R.string.destination_library, Icons.Rounded.LibraryMusic),
     DOWNLOADS(Route.Downloads, R.string.destination_downloads, Icons.Rounded.DownloadDone),
-    SETTINGS(Route.Settings, R.string.destination_settings, Icons.Rounded.Settings),
 }

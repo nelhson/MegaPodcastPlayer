@@ -52,13 +52,14 @@ import md.borisveriga.bpodcat.core.common.format.formatBytes
 import md.borisveriga.bpodcat.core.common.format.formatDuration
 import md.borisveriga.bpodcat.core.common.format.formatPublishedDate
 import md.borisveriga.bpodcat.core.common.format.formatRemaining
+import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
-import md.borisveriga.bpodcat.core.designsystem.component.MessageState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
-import md.borisveriga.bpodcat.core.model.DownloadedEpisode
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 
 /**
  * Downloads screen: everything the download stack is tracking, across all shows — finished
@@ -192,7 +193,7 @@ fun DownloadsScreen(
                 contentDescription = stringResource(R.string.downloads_loading),
             )
 
-            uiState.downloads.isEmpty() -> MessageState(
+            uiState.downloads.isEmpty() -> EmptyState(
                 icon = Icons.Rounded.DownloadDone,
                 title = stringResource(R.string.downloads_empty_title),
                 description = stringResource(R.string.downloads_empty_description),
@@ -289,7 +290,7 @@ private fun StorageSummary(
  */
 @Composable
 private fun DownloadRow(
-    download: DownloadedEpisode,
+    download: EpisodeWithShow,
     now: Instant,
     unmeteredOnly: Boolean,
     onClick: () -> Unit,
@@ -319,7 +320,7 @@ private fun DownloadRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        PodcastArtwork(url = download.artworkUrl, modifier = Modifier.size(56.dp))
+        PodcastArtwork(url = download.artworkUrl, size = ArtworkSize.Row)
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -572,7 +573,7 @@ private fun previewDownload(
     downloadedBytes: Long = 0L,
     downloadPercent: Float = 0f,
     positionMs: Long = 0L,
-) = DownloadedEpisode(
+) = EpisodeWithShow(
     episode = Episode(
         id = id,
         podcastId = "1",

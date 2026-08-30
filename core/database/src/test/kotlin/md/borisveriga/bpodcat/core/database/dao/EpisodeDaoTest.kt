@@ -309,6 +309,70 @@ class EpisodeDaoTest {
     }
 
     @Test
+    fun `observeLatestWithShow returns every show's episodes newest first`() = runTest {
+        val other = podcast.copy(
+            id = "podcast-2",
+            title = "Other Show",
+            feedUrl = "https://example.com/other.rss",
+        )
+        podcastDao.upsert(podcast)
+        podcastDao.upsert(other)
+        episodeDao.upsertFromFeed(
+            listOf(
+                episode("mine-old", publishedAt = 1_000L),
+                episode("mine-new", publishedAt = 9_000L),
+            ),
+        )
+        episodeDao.upsertFromFeed(
+            listOf(episode("theirs", publishedAt = 5_000L).copy(podcastId = other.id)),
+        )
+
+        val rows = episodeDao.observeLatestWithShow(limit = 10).first()
+
+        // The whole point of the feed: one chronological list across shows, not a list per show.
+        assertEquals(listOf("mine-new", "theirs", "mine-old"), rows.map { it.episode.id })
+    }
+
+    @Test
+    fun `observeLatestWithShow carries the show on every row`() = runTest {
+        podcastDao.upsert(podcast.copy(artworkUrl = "https://art/show.jpg"))
+        episodeDao.upsertFromFeed(listOf(episode("a")))
+
+        val row = episodeDao.observeLatestWithShow(limit = 10).first().single()
+
+        assertEquals("Podlodka Podcast", row.showTitle)
+        assertEquals("https://art/show.jpg", row.showArtworkUrl)
+    }
+
+    @Test
+    fun `observeLatestWithShow drops episodes the feed gave no date`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("dated", publishedAt = 1_000L), episode("undated", publishedAt = null)),
+        )
+
+        val rows = episodeDao.observeLatestWithShow(limit = 10).first()
+
+        // A chronological feed has nowhere to put an undated episode, and a trailing block of them
+        // under "Earlier" would be indistinguishable from genuinely old ones.
+        assertEquals(listOf("dated"), rows.map { it.episode.id })
+    }
+
+    @Test
+    fun `observeLatestWithShow honours the limit and keeps the newest`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            (1..5).map { episode("e$it", publishedAt = it * 1_000L) },
+        )
+
+        val rows = episodeDao.observeLatestWithShow(limit = 2).first()
+
+        // The limit exists so a large library does not load entirely into memory; it has to cut
+        // from the old end, or the feed would be capped at the episodes nobody wants to see.
+        assertEquals(listOf("e5", "e4"), rows.map { it.episode.id })
+    }
+
+    @Test
     fun `getWithShowByIds joins the show and skips unknown ids`() = runTest {
         podcastDao.upsert(podcast.copy(artworkUrl = "https://art/show.jpg"))
         episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))

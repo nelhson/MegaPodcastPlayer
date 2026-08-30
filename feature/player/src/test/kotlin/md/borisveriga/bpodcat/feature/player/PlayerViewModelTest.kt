@@ -185,4 +185,86 @@ class PlayerViewModelTest {
 
         coVerify { episodePlayer.play("c") }
     }
+
+    @Test
+    fun `a reorder is translated from list positions to player indices`() = runTest {
+        // The screen lists what comes after "b", so its index 0 is "c" and its index 1 is "d" —
+        // while the player's queue still holds "a" and "b" in front of them. Passing the list
+        // indices straight through would move "a" onto "b" and leave the queue in an order the
+        // user never asked for.
+        playbackState.value = PlaybackState(
+            episodeId = "b",
+            queueEpisodeIds = listOf("a", "b", "c", "d"),
+            queueIndex = 1,
+        )
+        queue.value = listOf(playable("a"), playable("b"), playable("c"), playable("d"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.moveInUpNext(fromIndex = 1, toIndex = 0)
+
+            coVerify { episodePlayer.moveInQueue(3, 2, listOf("a", "b", "d", "c")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a reorder is refused when the player queue disagrees with the stored one`() = runTest {
+        // The player has moved on and no longer holds "d"; reordering by position would move
+        // whatever now sits at that index. There is no safe interpretation, so nothing happens.
+        playbackState.value = PlaybackState(
+            episodeId = "b",
+            queueEpisodeIds = listOf("a", "b", "c"),
+            queueIndex = 1,
+        )
+        queue.value = listOf(playable("a"), playable("b"), playable("c"), playable("d"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.moveInUpNext(fromIndex = 1, toIndex = 0)
+
+            coVerify(exactly = 0) { episodePlayer.moveInQueue(any(), any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a reorder off the end of the list does nothing`() = runTest {
+        playbackState.value = PlaybackState(
+            episodeId = "b",
+            queueEpisodeIds = listOf("a", "b", "c"),
+            queueIndex = 1,
+        )
+        queue.value = listOf(playable("a"), playable("b"), playable("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.moveInUpNext(fromIndex = 0, toIndex = 5)
+
+            coVerify(exactly = 0) { episodePlayer.moveInQueue(any(), any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `dropping an episode back where it started does nothing`() = runTest {
+        playbackState.value = PlaybackState(
+            episodeId = "a",
+            queueEpisodeIds = listOf("a", "b", "c"),
+            queueIndex = 0,
+        )
+        queue.value = listOf(playable("a"), playable("b"), playable("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.moveInUpNext(fromIndex = 1, toIndex = 1)
+
+            coVerify(exactly = 0) { episodePlayer.moveInQueue(any(), any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

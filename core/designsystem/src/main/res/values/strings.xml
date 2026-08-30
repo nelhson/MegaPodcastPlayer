@@ -17,4 +17,25 @@
     <!-- Announced while a screen has nothing to show yet. -->
     <string name="designsystem_loading">Loading</string>
 
+    <!-- Transport control, announced instead of the glyph so it does not flip mid-animation. -->
+    <string name="designsystem_play">Play</string>
+    <string name="designsystem_pause">Pause</string>
+    <string name="designsystem_buffering">Buffering</string>
+
+    <!-- The scrubber. TalkBack reads the position from the progress range, not from this label. -->
+    <string name="designsystem_seek">Playback position</string>
+
+    <!-- Download control; one label per state of the same button. -->
+    <string name="designsystem_download">Download</string>
+    <string name="designsystem_download_queued">Download queued</string>
+    <string name="designsystem_download_in_progress">Downloading, %1$d%%</string>
+    <string name="designsystem_download_remove">Downloaded, remove from device</string>
+    <string name="designsystem_download_retry">Download failed, retry</string>
+
+    <!-- Announced as an episode row's state, in addition to its title. -->
+    <string name="designsystem_state_played">Played</string>
+    <string name="designsystem_state_unplayed">Not played</string>
+    <string name="designsystem_state_in_progress">%1$d%% played</string>
+    <string name="designsystem_state_now_playing">Now playing</string>
+
 </resources>

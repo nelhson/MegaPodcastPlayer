@@ -14,12 +14,14 @@ import md.borisveriga.bpodcat.core.common.di.BPodcatDispatcher
 import md.borisveriga.bpodcat.core.common.di.Dispatcher
 import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.data.mapper.asEpisodeEntity
+import md.borisveriga.bpodcat.core.data.mapper.asEpisodeWithShow
 import md.borisveriga.bpodcat.core.data.mapper.asPodcastEntity
 import md.borisveriga.bpodcat.core.database.dao.EpisodeDao
 import md.borisveriga.bpodcat.core.database.dao.PodcastDao
 import md.borisveriga.bpodcat.core.database.model.PodcastEntity
 import md.borisveriga.bpodcat.core.database.model.asExternalModel
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastLink
 import md.borisveriga.bpodcat.core.model.PodcastLinkParser
@@ -65,6 +67,9 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
     override fun observeDownloadedEpisodes(): Flow<List<Episode>> =
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
+
+    override fun observeLatestEpisodes(limit: Int): Flow<List<EpisodeWithShow>> =
+        episodeDao.observeLatestWithShow(limit).map { rows -> rows.map { it.asEpisodeWithShow() } }
 
     override fun observeEpisode(episodeId: String): Flow<Episode?> =
         episodeDao.observeById(episodeId).map { it?.asExternalModel() }

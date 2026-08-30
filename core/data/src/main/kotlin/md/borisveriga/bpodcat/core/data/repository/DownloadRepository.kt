@@ -2,8 +2,8 @@ package md.borisveriga.bpodcat.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.bpodcat.core.model.DownloadSettings
-import md.borisveriga.bpodcat.core.model.DownloadedEpisode
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 
 /**
  * Everything the app knows about episodes stored on the device.
@@ -31,7 +31,7 @@ interface DownloadRepository {
      * failure are precisely what the user opens this screen to find out about, and neither is
      * "available offline". Ordered failures first, then in progress, then waiting, then completed.
      */
-    fun observeDownloads(): Flow<List<DownloadedEpisode>>
+    fun observeDownloads(): Flow<List<EpisodeWithShow>>
 
     /**
      * Total bytes the downloads occupy on disk.

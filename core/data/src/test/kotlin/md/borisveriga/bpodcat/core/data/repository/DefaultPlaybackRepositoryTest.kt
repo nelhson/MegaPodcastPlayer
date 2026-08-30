@@ -175,6 +175,38 @@ class DefaultPlaybackRepositoryTest {
         }
 
     @Test
+    fun `reordering the queue stores the order the user dropped it in`() = runTest {
+        repository.enqueue("a")
+        repository.enqueue("b")
+        repository.enqueue("c")
+
+        repository.reorderQueue(listOf("c", "a", "b"))
+
+        assertEquals(
+            listOf("c", "a", "b"),
+            repository.observeQueue().first().map { it.episode.id },
+        )
+    }
+
+    @Test
+    fun `a reorder leaves positions an append can still extend`() = runTest {
+        repository.enqueue("a")
+        repository.enqueue("b")
+        repository.enqueue("c")
+        repository.reorderQueue(listOf("c", "b"))
+
+        // Appending is where stale positions would show: a new entry takes max(position) + 1, so
+        // a queue left holding the positions of a longer list would sort the newcomer into the
+        // middle. It also pins the documented contract — an id left out of the reorder is dropped.
+        repository.enqueue("a")
+
+        assertEquals(
+            listOf("c", "b", "a"),
+            repository.observeQueue().first().map { it.episode.id },
+        )
+    }
+
+    @Test
     fun `the resumable queue is the stored queue when there is one`() = runTest {
         preferences.setLastPlayedEpisodeId("c")
         repository.enqueue("a")

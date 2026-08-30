@@ -132,6 +132,36 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { episodePlayer.removeFromQueue(episodeId) }
     }
 
+    /**
+     * Applies a drag-to-reorder of the "up next" list.
+     *
+     * Both arguments are positions in [PlayerUiState.upNext] — what the queue screen actually
+     * draws — and both are translated to the player's own indices here rather than in the
+     * composable. That translation is the whole reason this method exists: `upNext` is the queue
+     * *after* the episode playing, so a list index is never a player index, and handing a player a
+     * `LazyColumn` index would reorder an episode the user never touched. Matching by id also means
+     * a queue that has drifted out of step with the player does nothing rather than something
+     * wrong.
+     *
+     * @param fromIndex the dragged episode's position in `upNext`.
+     * @param toIndex the position it was dropped on.
+     */
+    fun moveInUpNext(fromIndex: Int, toIndex: Int) {
+        val state = uiState.value
+        val upNext = state.upNext
+        val movedId = upNext.getOrNull(fromIndex)?.episode?.id ?: return
+        val targetId = upNext.getOrNull(toIndex)?.episode?.id ?: return
+
+        val playerQueue = state.playback.queueEpisodeIds
+        val playerFrom = playerQueue.indexOf(movedId)
+        val playerTo = playerQueue.indexOf(targetId)
+        if (playerFrom < 0 || playerTo < 0) return
+
+        val orderedIds = state.queue.map { it.episode.id }.movedTo(movedId, targetId) ?: return
+
+        viewModelScope.launch { episodePlayer.moveInQueue(playerFrom, playerTo, orderedIds) }
+    }
+
     /** Marks the current episode played, which also drops it from the queue and skips on. */
     fun markCurrentPlayed() {
         val episodeId = uiState.value.playback.episodeId ?: return

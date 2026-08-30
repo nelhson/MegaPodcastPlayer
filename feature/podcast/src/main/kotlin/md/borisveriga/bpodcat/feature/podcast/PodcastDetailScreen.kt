@@ -58,8 +58,9 @@ import md.borisveriga.bpodcat.core.common.format.formatDuration
 import md.borisveriga.bpodcat.core.common.format.formatPublishedDate
 import md.borisveriga.bpodcat.core.common.format.formatRemaining
 import md.borisveriga.bpodcat.core.common.format.toPlainText
+import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
-import md.borisveriga.bpodcat.core.designsystem.component.MessageState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -211,7 +212,7 @@ fun PodcastDetailScreen(
                 // The empty state keeps an explicit refresh action rather than the gesture: there is
                 // no list here for a pull to act on, and an empty show is exactly when someone wants
                 // to press something and find out why.
-                uiState.episodes.isEmpty() -> MessageState(
+                uiState.episodes.isEmpty() -> EmptyState(
                     icon = Icons.Rounded.PlaylistRemove,
                     title = stringResource(R.string.podcast_empty_title),
                     description = stringResource(
@@ -263,7 +264,7 @@ private fun PodcastHeader(podcast: Podcast, modifier: Modifier = Modifier) {
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        PodcastArtwork(url = podcast.artworkUrl, modifier = Modifier.size(96.dp))
+        PodcastArtwork(url = podcast.artworkUrl, size = ArtworkSize.Header)
         Column {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

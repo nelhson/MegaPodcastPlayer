@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
 import md.borisveriga.bpodcat.core.model.DownloadState
-import md.borisveriga.bpodcat.core.model.DownloadedEpisode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 
 /**
  * State rendered by the downloads screen.
@@ -32,7 +32,7 @@ import md.borisveriga.bpodcat.core.model.DownloadedEpisode
  *   [DownloadsViewModel.onMessageShown].
  */
 data class DownloadsUiState(
-    val downloads: List<DownloadedEpisode> = emptyList(),
+    val downloads: List<EpisodeWithShow> = emptyList(),
     val completedCount: Int = 0,
     val totalBytes: Long = 0L,
     val unmeteredOnly: Boolean = false,

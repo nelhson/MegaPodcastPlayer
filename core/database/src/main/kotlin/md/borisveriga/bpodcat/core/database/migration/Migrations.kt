@@ -74,3 +74,25 @@ val MIGRATION_2_3: Migration = object : Migration(2, 3) {
         connection.execSQL("DELETE FROM queue WHERE episode_id NOT IN (SELECT id FROM episodes)")
     }
 }
+
+/**
+ * Adds an index on `episodes.published_at` for the Latest feed.
+ *
+ * The feed orders every episode in the library by date, across shows. The existing composite index
+ * leads with `podcast_id`, so it cannot serve that sort — without this index the query degrades to
+ * a full scan plus a sort of the whole table on every emission, and the feed re-queries whenever
+ * any episode row changes.
+ *
+ * The index name must be exactly what Room generates for
+ * `Index(value = ["published_at"])` on `EpisodeEntity`: Room validates the migrated schema against
+ * the entity definition when it opens the database and refuses to start if a name differs.
+ *
+ * Purely additive — no data is read or rewritten, so the migration is instant on any library size.
+ */
+val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_episodes_published_at ON episodes (published_at)",
+        )
+    }
+}

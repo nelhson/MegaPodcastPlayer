@@ -43,8 +43,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
+import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
-import md.borisveriga.bpodcat.core.designsystem.component.MessageState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -155,7 +156,7 @@ fun LibraryScreen(
 
                 // No pull-to-refresh here: there are no feeds to fetch, and the gesture needs
                 // something scrollable underneath it to work at all.
-                uiState.podcasts.isEmpty() -> MessageState(
+                uiState.podcasts.isEmpty() -> EmptyState(
                     icon = Icons.Rounded.LibraryMusic,
                     title = stringResource(R.string.library_empty_title),
                     description = stringResource(R.string.library_empty_description),
@@ -203,7 +204,7 @@ private fun PodcastRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        PodcastArtwork(url = entry.podcast.artworkUrl, modifier = Modifier.size(64.dp))
+        PodcastArtwork(url = entry.podcast.artworkUrl, size = ArtworkSize.RowLarge)
 
         Column(modifier = Modifier.weight(1f)) {
             Text(

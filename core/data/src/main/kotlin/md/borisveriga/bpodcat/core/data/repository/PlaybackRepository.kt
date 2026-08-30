@@ -35,6 +35,23 @@ interface PlaybackRepository {
     suspend fun dequeue(episodeId: String)
 
     /**
+     * Rewrites the queue's order.
+     *
+     * Takes the whole order rather than a pair of indices because that is what the caller has after
+     * a drag: the list as the user now sees it. Positions in the table are an implementation
+     * detail, and reassigning all of them is what keeps them contiguous.
+     *
+     * The service mirrors every player edit back into the same table, so this write is usually
+     * redundant. It exists for the case where it is not — an edit made while the service is
+     * unreachable is dropped by the player, and without this the user's reordering would vanish
+     * with it.
+     *
+     * @param episodeIds the new order, first to play first. Ids not in the queue are queued;
+     *   queued ids not listed are dropped.
+     */
+    suspend fun reorderQueue(episodeIds: List<String>)
+
+    /**
      * Marks an episode played or unplayed.
      *
      * Marking played resets the stored position, so re-opening a finished episode starts it from

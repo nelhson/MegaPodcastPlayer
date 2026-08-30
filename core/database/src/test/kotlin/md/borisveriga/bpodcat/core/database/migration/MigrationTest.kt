@@ -32,7 +32,12 @@ import org.robolectric.annotation.Config
  *
  * `MIGRATION_2_3` is the opposite shape — it changes no schema and only deletes rows — so there its
  * assertions *are* the test: what it removes, what it leaves alone, and what its cascade takes with
- * it. Every open here chains both migrations, which also proves the two compose.
+ * it.
+ *
+ * `MIGRATION_3_4` only adds an index, so its test is really Room's own schema validation:
+ * an index whose name does not match what Room derives from the entity is rejected at open.
+ *
+ * Every open here chains the whole migration list, which also proves the three compose.
  *
  * `MigrationTestHelper` is deliberately not used: under Robolectric it wants the exported schema
  * JSON on the asset path, which means extra source-set plumbing for no extra safety, since the
@@ -59,7 +64,7 @@ class MigrationTest {
         writeVersion1Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
         try {
@@ -88,7 +93,7 @@ class MigrationTest {
         writeVersion1Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
         try {
@@ -168,7 +173,7 @@ class MigrationTest {
         writeVersion2Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
         try {
@@ -201,7 +206,7 @@ class MigrationTest {
         writeVersion2Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
         try {
@@ -210,6 +215,104 @@ class MigrationTest {
             assertEquals(listOf("episode-http"), queued)
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun `a v3 library gains the feed index without losing anything`() = runTest {
+        writeVersion3Database()
+
+        val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .build()
+
+        try {
+            // Opening at all is the real assertion. Room reads the migrated database's indices
+            // and compares them to the entity definitions, so a `published_at` index named
+            // anything other than what Room generates for `Index(value = ["published_at"])` —
+            // or a missing one — fails here rather than on the first upgrader's device.
+            val episodeDao = database.episodeDao()
+
+            assertEquals(123_000L, checkNotNull(episodeDao.getById("episode-http")).positionMs)
+            assertNotNull(episodeDao.getById("episode-https"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `the feed index migration is safe to meet twice`() = runTest {
+        // A library that already carries the index — because Room created it on a fresh install at
+        // v4 and the user then restored a backup, or simply because the statement ran once already
+        // — must not abort the upgrade. `IF NOT EXISTS` is what makes that true; this pins it.
+        writeVersion3Database(
+            extraStatements = listOf(
+                "CREATE INDEX IF NOT EXISTS `index_episodes_published_at` " +
+                    "ON `episodes` (`published_at`)",
+            ),
+        )
+
+        val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .build()
+
+        try {
+            assertNotNull(database.episodeDao().getById("episode-http"))
+        } finally {
+            database.close()
+        }
+    }
+
+    /**
+     * Creates a database exactly as version 3 left it.
+     *
+     * Version 3 is schema-identical to version 2 — [MIGRATION_2_3] only deletes rows — so the DDL
+     * and the identity hash are version 2's. Only the URLs [MIGRATION_2_3] would have swept are
+     * left out, because a real v3 database cannot contain them.
+     *
+     * @param extraStatements DDL to run after the schema, for seeding a database that is already
+     *   partly migrated.
+     */
+    private fun writeVersion3Database(extraStatements: List<String> = emptyList()) {
+        val file = context.getDatabasePath(DB_NAME)
+        file.parentFile?.mkdirs()
+
+        val db = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            for (statement in VERSION_2_SCHEMA + extraStatements) {
+                db.execSQL(statement)
+            }
+            db.execSQL(
+                "INSERT INTO room_master_table (id, identity_hash) VALUES (42, ?)",
+                arrayOf(VERSION_3_IDENTITY_HASH),
+            )
+            db.execSQL(
+                """
+                INSERT INTO podcasts
+                    (id, itunes_id, title, author, feed_url, artwork_url, description,
+                     added_at, last_refresh_at, etag, last_modified, auto_refresh, source)
+                VALUES ('podcast-1', NULL, 'Podlodka Podcast', '',
+                        'https://feeds.example.com/podlodka.rss', NULL, '',
+                        1756684800000, NULL, NULL, NULL, 1, 'RSS')
+                """.trimIndent(),
+            )
+            for ((id, audioUrl) in VERSION_3_EPISODES) {
+                db.execSQL(
+                    """
+                    INSERT INTO episodes
+                        (id, podcast_id, guid, title, description, audio_url, artwork_url,
+                         duration_ms, published_at, size_bytes, position_ms, is_played, is_new,
+                         download_state, downloaded_bytes, download_percent)
+                    VALUES (?, 'podcast-1', ?, 'Episode', '', ?, NULL,
+                            NULL, 1756684800000, NULL, 123000, 0, 0,
+                            'NOT_DOWNLOADED', 0, 0)
+                    """.trimIndent(),
+                    arrayOf(id, "guid-$id", audioUrl),
+                )
+            }
+            db.version = 3
+        } finally {
+            db.close()
         }
     }
 
@@ -356,6 +459,26 @@ class MigrationTest {
                 "`position` INTEGER NOT NULL, PRIMARY KEY(`episode_id`), " +
                 "FOREIGN KEY(`episode_id`) REFERENCES `episodes`(`id`) " +
                 "ON UPDATE NO ACTION ON DELETE CASCADE )",
+        )
+
+        /**
+         * `database.identityHash` from the committed `schemas/…/3.json`.
+         *
+         * Identical to version 2's: [MIGRATION_2_3] deletes rows and changes no schema, so Room
+         * derives the same hash for both. Named separately anyway, so that a future version 3
+         * schema change makes the two diverge here rather than silently reusing a stale constant.
+         */
+        const val VERSION_3_IDENTITY_HASH = VERSION_2_IDENTITY_HASH
+
+        /**
+         * Episode rows seeded into a version 3 database, as `id to audio_url`.
+         *
+         * Only URLs [MIGRATION_2_3] would have kept: by version 3 the hostile ones are gone, so a
+         * real database cannot hold them.
+         */
+        val VERSION_3_EPISODES = listOf(
+            "episode-http" to "http://cdn.example.com/one.mp3",
+            "episode-https" to "https://cdn.example.com/two.mp3",
         )
     }
 }

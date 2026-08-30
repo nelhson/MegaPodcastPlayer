@@ -66,6 +66,33 @@ interface EpisodeDao {
     )
     fun observeDownloadsWithShow(): Flow<List<EpisodeWithShowEntity>>
 
+    /**
+     * Observes the newest episodes across every subscribed show, joined with that show.
+     *
+     * Backs the Latest feed — the screen that answers "what is new" without making the user open
+     * each show in turn.
+     *
+     * Unlike every other query here, this one **excludes** episodes with no publication date
+     * rather than sorting them last. A strictly chronological feed has nowhere to put an undated
+     * episode: it cannot go under Today, and burying it under Earlier would hide it for good. Such
+     * episodes are still reachable from their show. Excluding them also lets SQLite use the
+     * `published_at` index for the sort instead of scanning the whole table.
+     *
+     * @param limit how many rows to return. The feed is a recency view, not an archive; a few
+     *   hundred rows is more than anyone scrolls and keeps the query and the recomposition cheap.
+     */
+    @Query(
+        """
+        SELECT e.*, p.title AS show_title, p.artwork_url AS show_artwork_url
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.published_at IS NOT NULL
+        ORDER BY e.published_at DESC
+        LIMIT :limit
+        """,
+    )
+    fun observeLatestWithShow(limit: Int): Flow<List<EpisodeWithShowEntity>>
+
     @Query("SELECT * FROM episodes WHERE id = :id")
     fun observeById(id: String): Flow<EpisodeEntity?>
 

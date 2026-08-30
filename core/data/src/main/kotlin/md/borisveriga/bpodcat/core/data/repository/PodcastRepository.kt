@@ -3,6 +3,7 @@ package md.borisveriga.bpodcat.core.data.repository
 import java.time.Duration
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.bpodcat.core.model.Episode
+import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSearchResult
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
@@ -123,6 +124,17 @@ interface PodcastRepository {
     /** Observes every episode available offline. */
     fun observeDownloadedEpisodes(): Flow<List<Episode>>
 
+    /**
+     * Observes the newest episodes across every subscribed show, newest first, with the show each
+     * belongs to.
+     *
+     * Backs the Latest feed. Episodes whose feed published no date are omitted — a chronological
+     * view has nowhere to put them; see `EpisodeDao.observeLatestWithShow`.
+     *
+     * @param limit how many episodes to return, most recent first.
+     */
+    fun observeLatestEpisodes(limit: Int = DEFAULT_LATEST_LIMIT): Flow<List<EpisodeWithShow>>
+
     /** Observes a single episode. */
     fun observeEpisode(episodeId: String): Flow<Episode?>
 
@@ -181,3 +193,11 @@ interface PodcastRepository {
     /** Enables or disables background refresh for one show. */
     suspend fun setAutoRefresh(podcastId: String, enabled: Boolean)
 }
+
+/**
+ * How many episodes the Latest feed asks for by default.
+ *
+ * The feed is a recency view, not an archive. A few hundred rows is far more than anyone scrolls,
+ * and capping it keeps both the query and the recomposition cheap on a large library.
+ */
+const val DEFAULT_LATEST_LIMIT: Int = 200

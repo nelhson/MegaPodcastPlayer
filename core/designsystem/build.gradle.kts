@@ -13,6 +13,9 @@ dependencies {
     // configuring an icon, a label and a tint and slowly drifting apart.
     api(projects.core.model)
     api(libs.coil.compose)
+    // Polygon morphing for the play/pause button and the artwork mask. material3 1.4.0 keeps
+    // MaterialShapes internal, so the design system drives graphics-shapes itself.
+    api(libs.androidx.graphics.shapes)
     api(libs.androidx.adaptive)
     api(libs.androidx.adaptive.layout)
     api(libs.androidx.adaptive.navigation)

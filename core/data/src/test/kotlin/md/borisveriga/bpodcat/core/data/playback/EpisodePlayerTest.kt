@@ -159,4 +159,15 @@ class EpisodePlayerTest {
         coVerify { connection.removeFromQueue("a") }
         coVerify { playbackRepository.dequeue("a") }
     }
+
+    @Test
+    fun `a reorder is applied to the player and persisted whole`() = runTest {
+        episodePlayer.moveInQueue(fromIndex = 3, toIndex = 1, orderedIds = listOf("a", "d", "b", "c"))
+
+        coVerify { connection.moveInQueue(3, 1) }
+        // The durable write is the whole order rather than the same two indices: the table's
+        // positions are what the queue is, and a pair of indices could only be applied to whatever
+        // the table happens to hold, which is not necessarily what the user was looking at.
+        coVerify { playbackRepository.reorderQueue(listOf("a", "d", "b", "c")) }
+    }
 }

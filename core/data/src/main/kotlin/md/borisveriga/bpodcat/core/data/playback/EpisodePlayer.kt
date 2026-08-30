@@ -76,6 +76,26 @@ class EpisodePlayer @Inject constructor(
     }
 
     /**
+     * Applies a drag-to-reorder to both the live player queue and the durable one.
+     *
+     * The two indices are the player's, not a list position on screen: what the queue screen shows
+     * is the episodes *after* the one playing, so its own indices are offset, and translating them
+     * is the caller's job — see `PlayerViewModel.moveInUpNext`, which does it by episode id rather
+     * than by arithmetic on the offset.
+     *
+     * [orderedIds] is the whole queue as it should end up, which is what makes the durable write
+     * independent of whether the player accepted the move; see [playNext] on why both are written.
+     *
+     * @param fromIndex the moved episode's current index in the player's queue.
+     * @param toIndex the index it should occupy afterwards.
+     * @param orderedIds the queue's new order, first to play first.
+     */
+    suspend fun moveInQueue(fromIndex: Int, toIndex: Int, orderedIds: List<String>) {
+        connection.moveInQueue(fromIndex, toIndex)
+        playbackRepository.reorderQueue(orderedIds)
+    }
+
+    /**
      * Loads the persisted queue into a player that has none — a cold start.
      *
      * Loaded paused: the mini player appears where the user left it, but launching the app does not

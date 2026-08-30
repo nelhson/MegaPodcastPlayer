@@ -63,6 +63,13 @@ class DefaultPlaybackRepository @Inject constructor(
         queueDao.remove(episodeId)
     }
 
+    // Same statement as recordQueue below, deliberately not shared: one is the UI asking for a
+    // reorder and the other is the service reporting one, and collapsing them would make a change
+    // to either side silently change the other.
+    override suspend fun reorderQueue(episodeIds: List<String>) = withContext(ioDispatcher) {
+        queueDao.replaceAll(episodeIds)
+    }
+
     override suspend fun setPlayed(episodeId: String, isPlayed: Boolean) =
         withContext(ioDispatcher) {
             // Finishing an episode resets its position; un-marking one leaves it at the start too,

@@ -22,6 +22,7 @@ internal fun Project.configureCompose(extension: CommonExtension) {
         val bom = libs.findLibrary("androidx-compose-bom").get()
         add("implementation", platform(bom))
         add("androidTestImplementation", platform(bom))
+        add("testImplementation", platform(bom))
 
         add("implementation", libs.findLibrary("androidx-compose-foundation").get())
         add("implementation", libs.findLibrary("androidx-compose-material3").get())
@@ -35,6 +36,14 @@ internal fun Project.configureCompose(extension: CommonExtension) {
         add("debugImplementation", libs.findLibrary("androidx-compose-ui-tooling").get())
         add("debugImplementation", libs.findLibrary("androidx-compose-ui-test-manifest").get())
         add("androidTestImplementation", libs.findLibrary("androidx-compose-ui-test-junit4").get())
+
+        // Compose UI tests run on the JVM under Robolectric, not on a device: the repo has no
+        // `androidTest` sources by design (see docs/REFACTORING_PLAN.md T-2), so without these
+        // four the phone modules have no way to assert on a composable at all. `:wear` wired the
+        // same set up by hand, which is why the watch had a screen test and the phone did not.
+        add("testImplementation", libs.findLibrary("robolectric").get())
+        add("testImplementation", libs.findLibrary("androidx-test-junit").get())
+        add("testImplementation", libs.findLibrary("androidx-compose-ui-test-junit4").get())
     }
 }
 

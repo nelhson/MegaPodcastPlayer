@@ -56,6 +56,10 @@ exceptions:
   SwallowedException:
     active: true
     ignoredExceptionTypes:
+      # A coroutine catching its own cancellation to run cleanup — the documented shape of a
+      # `PredictiveBackHandler`, where an abandoned gesture arrives as a CancellationException and
+      # the handler answers by animating back rather than by reporting anything.
+      - CancellationException
       - InterruptedException
       - MalformedURLException
       - NumberFormatException

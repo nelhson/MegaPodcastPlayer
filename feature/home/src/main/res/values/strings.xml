@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy owned by the Latest feed.
+
+    The section headers are the screen's own vocabulary rather than the design system's: the same
+    buckets could reasonably be worded differently on a different screen, and a shared component
+    that carries copy is a component two screens cannot word differently.
+-->
+<resources>
+
+    <!-- Screen title. Deliberately not "Home": it says what the list contains. -->
+    <string name="home_title">Latest</string>
+
+    <!-- Recency buckets; see LatestSection. -->
+    <string name="home_section_today">Today</string>
+    <string name="home_section_yesterday">Yesterday</string>
+    <string name="home_section_this_week">This week</string>
+    <string name="home_section_earlier">Earlier</string>
+
+    <!-- The shelf of started-but-unfinished episodes. -->
+    <string name="home_continue_listening">Continue listening</string>
+
+    <!-- Announced while the feed is loading. -->
+    <string name="home_loading">Loading your latest episodes</string>
+
+    <!-- Shown when no subscribed show has published a dated episode. -->
+    <string name="home_empty_title">Nothing new yet</string>
+    <string name="home_empty_description">Follow a show and its newest episodes will land here.</string>
+    <string name="home_empty_action">Find a show</string>
+
+    <!-- Top bar actions. -->
+    <string name="home_search">Search</string>
+    <string name="home_settings">Settings</string>
+
+    <!-- Row actions. -->
+    <string name="home_add_to_queue">Add to queue</string>
+
+    <!-- Snackbars. -->
+    <string name="home_queued">Added “%1$s” to the queue</string>
+    <string name="home_episode_unavailable">That episode is no longer available</string>
+    <string name="home_refresh_failed">Could not refresh some shows</string>
+    <string name="home_refresh_up_to_date">You are up to date</string>
+    <plurals name="home_refresh_new_episodes">
+        <item quantity="one">%1$d new episode</item>
+        <item quantity="other">%1$d new episodes</item>
+    </plurals>
+
+</resources>

@@ -1,13 +1,15 @@
 package md.borisveriga.bpodcat.ui
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.rememberNavigationSuiteScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavDestination
@@ -20,10 +22,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.feature.downloads.DownloadsRoute
+import md.borisveriga.bpodcat.feature.home.HomeRoute
 import md.borisveriga.bpodcat.feature.library.LibraryRoute
-import md.borisveriga.bpodcat.feature.player.MiniPlayerRoute
-import md.borisveriga.bpodcat.feature.player.NowPlayingRoute
+import md.borisveriga.bpodcat.feature.player.PlayerSheetScaffold
+import md.borisveriga.bpodcat.feature.player.PlayerSheetState
+import md.borisveriga.bpodcat.feature.player.QueueRoute
+import md.borisveriga.bpodcat.feature.player.rememberPlayerSheetState
 import md.borisveriga.bpodcat.feature.podcast.PodcastDetailRoute
 import md.borisveriga.bpodcat.feature.search.SearchRoute
 import md.borisveriga.bpodcat.feature.settings.SettingsRoute
@@ -34,13 +40,17 @@ import md.borisveriga.bpodcat.navigation.TopLevelDestination
  * The app's navigation shell.
  *
  * [NavigationSuiteScaffold] renders a bottom bar when the Fold 7 is closed and a navigation rail
- * when it is open, without the call site knowing which.
+ * when it is open, without the call site knowing which. It hides that bar entirely while the player
+ * sheet is expanded, so the player owns the whole screen rather than sitting above a row of tabs it
+ * has nothing to do with.
  *
  * @param modifier layout modifier.
  * @param pendingPodcastId a show a notification asked to open, or null. Navigated to once and then
  *   reported back through [onPendingPodcastHandled], so a rotation does not repeat the jump.
  * @param onPendingPodcastHandled called after [pendingPodcastId] has been navigated to.
  * @param navController navigation controller; injected for tests.
+ * @param playerSheetState how open the player is; hoisted here because the navigation bar and
+ *   every "now playing" hand-off react to it.
  */
 @Composable
 fun BPodcatApp(
@@ -48,9 +58,11 @@ fun BPodcatApp(
     pendingPodcastId: String? = null,
     onPendingPodcastHandled: () -> Unit = {},
     navController: NavHostController = rememberNavController(),
+    playerSheetState: PlayerSheetState = rememberPlayerSheetState(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(pendingPodcastId) {
         val podcastId = pendingPodcastId ?: return@LaunchedEffect
@@ -60,8 +72,15 @@ fun BPodcatApp(
         onPendingPodcastHandled()
     }
 
+    val navigationSuiteState = rememberNavigationSuiteScaffoldState()
+
+    LaunchedEffect(playerSheetState.isExpanded) {
+        if (playerSheetState.isExpanded) navigationSuiteState.hide() else navigationSuiteState.show()
+    }
+
     NavigationSuiteScaffold(
         modifier = modifier,
+        state = navigationSuiteState,
         navigationSuiteItems = {
             TopLevelDestination.entries.forEach { destination ->
                 item(
@@ -73,14 +92,27 @@ fun BPodcatApp(
             }
         },
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        PlayerSheetScaffold(
+            sheetState = playerSheetState,
+            onOpenQueue = { navController.navigate(Route.Queue) { launchSingleTop = true } },
+            modifier = Modifier.fillMaxSize(),
+        ) { playerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = Route.Library,
-                // The mini player is a sibling of the nav host rather than part of any screen, so
-                // it must not be covered: the host takes what is left after the bar.
-                modifier = Modifier.weight(1f),
+                startDestination = Route.Home,
+                // The sheet is drawn over the screens rather than beside them, so the space its
+                // collapsed bar occupies has to be given back here or every list's last row would
+                // sit permanently underneath it.
+                modifier = Modifier.padding(playerPadding),
             ) {
+                composable<Route.Home> {
+                    HomeRoute(
+                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
+                        onAddPodcast = { navController.navigate(Route.Search) },
+                        onOpenSettings = { navController.navigate(Route.Settings) },
+                    )
+                }
+
                 composable<Route.Library> {
                     LibraryRoute(
                         onPodcastClick = { id -> navController.navigate(Route.PodcastDetail(id)) },
@@ -92,7 +124,7 @@ fun BPodcatApp(
 
                 composable<Route.Downloads> {
                     DownloadsRoute(
-                        onEpisodePlaying = { navController.navigateToNowPlaying() },
+                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
                         onBrowseLibrary = {
                             navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
                         },
@@ -119,29 +151,19 @@ fun BPodcatApp(
                     entry.toRoute<Route.PodcastDetail>()
                     PodcastDetailRoute(
                         onBack = { navController.popBackStack() },
-                        onEpisodePlaying = { navController.navigateToNowPlaying() },
+                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
                     )
                 }
 
                 composable<Route.Settings> {
-                    // The back arrow returns to the library rather than popping, because Settings
-                    // is a top-level tab: there may be nothing behind it on a fresh launch.
-                    SettingsRoute(
-                        onBack = {
-                            navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
-                        },
-                    )
+                    // A plain pop now that Settings is pushed from the Latest feed's top bar
+                    // rather than being a tab: there is always something behind it.
+                    SettingsRoute(onBack = { navController.popBackStack() })
                 }
 
-                composable<Route.NowPlaying> {
-                    NowPlayingRoute(onCollapse = { navController.popBackStack() })
+                composable<Route.Queue> {
+                    QueueRoute(onBack = { navController.popBackStack() })
                 }
-            }
-
-            // Hidden by the mini player itself when nothing is loaded, and suppressed on the full
-            // player, where it would be a duplicate of the controls already on screen.
-            if (!currentDestination.isNowPlaying()) {
-                MiniPlayerRoute(onExpand = { navController.navigateToNowPlaying() })
             }
         }
     }
@@ -151,25 +173,11 @@ fun BPodcatApp(
 private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
     this?.hierarchy?.any { node ->
         when (destination) {
+            TopLevelDestination.HOME -> node.hasRoute(Route.Home::class)
             TopLevelDestination.LIBRARY -> node.hasRoute(Route.Library::class)
             TopLevelDestination.DOWNLOADS -> node.hasRoute(Route.Downloads::class)
-            TopLevelDestination.SETTINGS -> node.hasRoute(Route.Settings::class)
         }
     } == true
-
-/** True while the full player is on screen. */
-private fun NavDestination?.isNowPlaying(): Boolean =
-    this?.hasRoute(Route.NowPlaying::class) == true
-
-/**
- * Opens the full player.
- *
- * [launchSingleTop] because the player is a single place, not a stack: expanding the mini player
- * twice must not leave two copies to back out of.
- */
-private fun NavHostController.navigateToNowPlaying() {
-    navigate(Route.NowPlaying) { launchSingleTop = true }
-}
 
 /**
  * Switches top-level tabs the way a bottom bar is expected to behave: one entry per tab on the back
