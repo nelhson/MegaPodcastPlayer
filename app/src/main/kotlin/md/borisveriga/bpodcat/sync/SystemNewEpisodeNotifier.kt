@@ -139,10 +139,22 @@ class SystemNewEpisodeNotifier @Inject constructor(
         /** Channel id; stable, because renaming one strands the user's per-channel settings. */
         const val CHANNEL_ID = "new_episodes"
 
-        /** Fixed, so each refresh replaces the previous card rather than adding to a pile. */
-        const val NOTIFICATION_ID = 1001
+        /**
+         * Fixed, so each refresh replaces the previous card rather than adding to a pile.
+         *
+         * Notification ids are per-package, so this has to avoid the two the app already posts:
+         * `EpisodeDownloadService.FOREGROUND_NOTIFICATION_ID` is 2, and Media3's playback
+         * notification is **1001** (`DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID`,
+         * which `PlaybackService` leaves at its default). Reusing either would replace a
+         * foreground service's own notification.
+         */
+        const val NOTIFICATION_ID = 3
 
-        /** Fixed too, so [PendingIntent.FLAG_UPDATE_CURRENT] has something to update. */
+        /**
+         * Request code for the tap intent, fixed so [PendingIntent.FLAG_UPDATE_CURRENT] has
+         * something to update. Request codes live in their own namespace, so this one is free to
+         * collide with anything above.
+         */
         private const val REQUEST_CODE = 1001
     }
 }

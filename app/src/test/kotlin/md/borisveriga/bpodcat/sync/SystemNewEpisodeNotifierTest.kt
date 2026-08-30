@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import androidx.test.core.app.ApplicationProvider
 import md.borisveriga.bpodcat.core.data.repository.NewEpisode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -49,6 +50,19 @@ class SystemNewEpisodeNotifierTest {
     )
 
     private fun postedNotifications() = shadowOf(notificationManager).allNotifications
+
+    private companion object {
+
+        /**
+         * Media3's `DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID`, which
+         * `PlaybackService` leaves at its default. Duplicated as a literal rather than referenced,
+         * because the point is to notice if Media3 ever moves it.
+         */
+        const val MEDIA3_PLAYBACK_NOTIFICATION_ID = 1001
+
+        /** `EpisodeDownloadService.FOREGROUND_NOTIFICATION_ID`, duplicated for the same reason. */
+        const val DOWNLOAD_FOREGROUND_NOTIFICATION_ID = 2
+    }
 
     @Test
     fun `posts nothing without the runtime permission`() {
@@ -95,6 +109,23 @@ class SystemNewEpisodeNotifierTest {
         assertEquals(
             "2 new episodes",
             notification.extras.getCharSequence(NotificationCompat.EXTRA_TITLE).toString(),
+        )
+    }
+
+    @Test
+    fun `does not reuse a notification id another part of the app already posts`() {
+        // Found on a device, not in a test: Media3's playback notification sits on 1001 and the
+        // download service's on 2, both belonging to foreground services. Posting over either
+        // would replace a running service's own card.
+        assertNotEquals(
+            "Media3's DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID",
+            MEDIA3_PLAYBACK_NOTIFICATION_ID,
+            SystemNewEpisodeNotifier.NOTIFICATION_ID,
+        )
+        assertNotEquals(
+            "EpisodeDownloadService.FOREGROUND_NOTIFICATION_ID",
+            DOWNLOAD_FOREGROUND_NOTIFICATION_ID,
+            SystemNewEpisodeNotifier.NOTIFICATION_ID,
         )
     }
 
