@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- New-episode and download notifications. -->
+    <!--
+      New-episode notifications, posted by the periodic refresh (see sync/RefreshWorker). The
+      download notifications do not need this one: they belong to a foreground service.
+    -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Playback and download foreground services. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -28,10 +32,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BPodcat">
 
+        <!--
+          singleTop so a new-episode notification tapped while the app is running is delivered to
+          the running instance through onNewIntent, rather than stacking a second copy of the app.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.BPodcat"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -56,6 +65,22 @@
                     android:pathPrefix="/bpodcat" />
             </intent-filter>
         </service>
+        <!--
+          BPodcatApplication supplies WorkManager's Configuration so that @HiltWorker workers can be
+          injected. On-demand initialisation and the default androidx.startup initializer are
+          mutually exclusive, so the default one is removed here.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
     </application>
 
 </manifest>

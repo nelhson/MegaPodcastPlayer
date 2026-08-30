@@ -15,12 +15,7 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.core.network)
 
-    implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.androidx.hilt.work)
-    ksp(libs.androidx.hilt.compiler)
-
     testImplementation(libs.androidx.room.runtime)
-    testImplementation(libs.androidx.work.testing)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
 }

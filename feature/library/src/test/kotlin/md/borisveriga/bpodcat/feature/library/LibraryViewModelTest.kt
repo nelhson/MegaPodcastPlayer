@@ -9,6 +9,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.bpodcat.core.data.repository.NewEpisode
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.data.repository.RefreshSummary
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
@@ -72,7 +73,17 @@ class LibraryViewModelTest {
 
     @Test
     fun `refresh all raises the spinner, drops it, and reports the summary`() = runTest {
-        val summary = RefreshSummary(refreshedCount = 2, newEpisodeCount = 3)
+        val summary = RefreshSummary(
+            refreshedCount = 2,
+            newEpisodes = List(3) { index ->
+                NewEpisode(
+                    episodeId = "ep-$index",
+                    episodeTitle = "Episode $index",
+                    podcastId = "pod-1",
+                    podcastTitle = "Show pod-1",
+                )
+            },
+        )
         val release = CompletableDeferred<Unit>()
         coEvery { repository.refreshAll(onlyAutoRefreshable = false) } coAnswers {
             release.await()

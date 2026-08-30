@@ -2,6 +2,8 @@ package md.borisveriga.bpodcat
 
 import android.app.Application
 import android.content.Context
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -13,6 +15,7 @@ import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import md.borisveriga.bpodcat.core.data.download.DownloadStateSynchroniser
 import md.borisveriga.bpodcat.core.network.di.BPodcatOkHttp
+import md.borisveriga.bpodcat.sync.RefreshScheduler
 import md.borisveriga.bpodcat.wearsync.NowPlayingPublisher
 import okhttp3.OkHttpClient
 
@@ -23,13 +26,21 @@ import okhttp3.OkHttpClient
  * [OkHttpClient], so artwork requests share the same connection pool and DNS cache as the feed and
  * iTunes calls.
  *
- * It is also where download mirroring and the watch bridge start. Both have to happen here rather
- * than in a screen: downloads run while no screen exists, and a download that finished with the app
- * closed is only noticed by the reconciliation pass [DownloadStateSynchroniser] makes on start-up,
- * while the watch has to see playback state whether or not anyone has opened the phone app.
+ * It is also where download mirroring, the watch bridge and the periodic feed refresh start. All
+ * three have to happen here rather than in a screen: downloads run while no screen exists, and a
+ * download that finished with the app closed is only noticed by the reconciliation pass
+ * [DownloadStateSynchroniser] makes on start-up; the watch has to see playback state whether or not
+ * anyone has opened the phone app; and the refresh exists precisely for the hours nobody does.
+ *
+ * It implements [Configuration.Provider] so WorkManager builds its workers through Hilt. That is
+ * also why the manifest removes WorkManager's default `androidx.startup` initializer: with a custom
+ * configuration, WorkManager has to be initialised on demand from here instead.
  */
 @HiltAndroidApp
-class BPodcatApplication : Application(), SingletonImageLoader.Factory {
+class BPodcatApplication :
+    Application(),
+    SingletonImageLoader.Factory,
+    Configuration.Provider {
 
     /**
      * Injected lazily as a provider: Coil may ask for the loader before the Hilt graph would
@@ -47,6 +58,19 @@ class BPodcatApplication : Application(), SingletonImageLoader.Factory {
     @Inject
     internal lateinit var nowPlayingPublisher: NowPlayingPublisher
 
+    /** Puts the periodic feed refresh on WorkManager's schedule. */
+    @Inject
+    internal lateinit var refreshScheduler: RefreshScheduler
+
+    /** Builds `@HiltWorker` workers, so [md.borisveriga.bpodcat.sync.RefreshWorker] can inject. */
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
+
     override fun onCreate() {
         super.onCreate()
         // Returns immediately; the reconciliation and the event collection run on the application
@@ -55,6 +79,9 @@ class BPodcatApplication : Application(), SingletonImageLoader.Factory {
         // Likewise returns immediately. Costs nothing when no watch is paired: the publisher only
         // writes when playback changes, and a write with no peer simply fails and is swallowed.
         nowPlayingPublisher.start()
+        // Cheap and idempotent: WorkManager keeps the run already scheduled, so this is a no-op on
+        // every start after the first.
+        refreshScheduler.schedule()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

@@ -257,6 +257,42 @@ which `clearNewFlags` already maintains.
 Media3's `PlatformScheduler` does not need it first — it does, so keep that one), and mark
 `refreshAll(onlyAutoRefreshable = true)` as unreachable or remove the parameter.
 
+**Done in Phase 4** — built, not deferred. The pieces:
+
+- `RefreshWorker` (`:app`, `sync/`): a `@HiltWorker` `CoroutineWorker` calling
+  `refreshAll(onlyAutoRefreshable = true)`. A run where *every* feed failed is retried with
+  exponential backoff up to three attempts, on the theory that it means the network came back only
+  far enough to satisfy the `CONNECTED` constraint; one failure among several is a success.
+- `RefreshScheduler`: `PeriodicWorkRequest` every 6 h, `NetworkType.CONNECTED`, enqueued as unique
+  work with `KEEP` from `BPodcatApplication.onCreate`. `KEEP` is the load-bearing half — `REPLACE`
+  would push the next run six hours out on every app launch, so a phone used daily would never
+  refresh in the background at all.
+- `NewEpisodeNotifier`: an interface, so the worker is testable without a notification manager. Its
+  content — how many lines, and whether the tap has a single show to open — is a pure function
+  (`newEpisodeNotificationContent`) tested on its own; `SystemNewEpisodeNotifier` does the posting.
+  One notification id, so each refresh replaces the last card rather than stacking.
+- Tapping it opens `MainActivity` through an **explicit** intent carrying `EXTRA_PODCAST_ID`, not an
+  exported deep-link URI: navigation into the app stays something only the app can ask for. The
+  activity is now `singleTop` so a tap while it is running reaches `onNewIntent`.
+- `POST_NOTIFICATIONS` is requested once per launch from the composition
+  (`NotificationPermissionEffect`), because the worker runs with no UI to ask from. The notifier
+  re-checks the grant on every post, so a denial simply means silence.
+- `RefreshSummary` gained `newEpisodes: List<NewEpisode>` (show title + episode title), built from
+  entities the refresh already had in hand; `newEpisodeCount` is now derived from it. That also
+  retired `refreshOne`'s `NOT_MODIFIED = -1` sentinel and the `coerceAtLeast(0)` it forced on
+  `PodcastDetailViewModel`.
+- `androidx.work` + `androidx.hilt.work` moved from `:core:data` — which declared them and never
+  imported them — to `:app`, which now uses them. The manifest removes WorkManager's default
+  `androidx.startup` initializer, as on-demand initialisation requires.
+
+Every permission in the manifest now backs a feature that exists: `POST_NOTIFICATIONS` for the
+notification above, `FOREGROUND_SERVICE_DATA_SYNC` for `EpisodeDownloadService`'s `dataSync` type,
+and `RECEIVE_BOOT_COMPLETED` for Media3's `PlatformScheduler`.
+
+**Not done, deliberately:** auto-download still has no interaction with the notification — an
+episode the refresh queues for download is announced as new like any other, and the download's own
+progress notification is separate. Merging the two is a product question, not refactoring debt.
+
 ---
 
 ### C-4 — Watch link poller runs on a fixed 10 s timer · **Low**
@@ -540,6 +576,11 @@ This is the one item that is a product decision rather than a refactor. It also 
 the two gaps recorded in the project's milestone notes — the missing "Downloaded" screen consumer
 for `observeDownloadedEpisodes()`, and the watch's missing artwork/tile/complication — which are
 new work rather than refactoring and are deliberately out of scope here.
+
+**Decided: build it.** See C-3 above for what shipped.
+
+**Exit:** the worker refreshes only shows that opted in, retries a run in which every feed failed,
+and posts nothing without the runtime permission — all three covered by tests in `:app`.
 
 ---
 

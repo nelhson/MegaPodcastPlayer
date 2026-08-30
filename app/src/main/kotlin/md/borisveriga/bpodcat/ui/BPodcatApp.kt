@@ -6,6 +6,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -36,15 +37,28 @@ import md.borisveriga.bpodcat.navigation.TopLevelDestination
  * when it is open, without the call site knowing which.
  *
  * @param modifier layout modifier.
+ * @param pendingPodcastId a show a notification asked to open, or null. Navigated to once and then
+ *   reported back through [onPendingPodcastHandled], so a rotation does not repeat the jump.
+ * @param onPendingPodcastHandled called after [pendingPodcastId] has been navigated to.
  * @param navController navigation controller; injected for tests.
  */
 @Composable
 fun BPodcatApp(
     modifier: Modifier = Modifier,
+    pendingPodcastId: String? = null,
+    onPendingPodcastHandled: () -> Unit = {},
     navController: NavHostController = rememberNavController(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
+
+    LaunchedEffect(pendingPodcastId) {
+        val podcastId = pendingPodcastId ?: return@LaunchedEffect
+        // launchSingleTop so a second tap on the same notification does not stack a second copy of
+        // the show on top of the first.
+        navController.navigate(Route.PodcastDetail(podcastId)) { launchSingleTop = true }
+        onPendingPodcastHandled()
+    }
 
     NavigationSuiteScaffold(
         modifier = modifier,

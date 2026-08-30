@@ -191,7 +191,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
     override suspend fun refresh(podcastId: String): Result<Int> = withContext(ioDispatcher) {
         val podcast = podcastDao.getById(podcastId)
             ?: return@withContext Result.failure(NoSuchElementException("Unknown podcast $podcastId"))
-        suspendRunCatching { refreshOne(podcast) }
+        suspendRunCatching { refreshOne(podcast).newEpisodes.size }
     }
 
     override suspend fun refreshAll(onlyAutoRefreshable: Boolean): RefreshSummary =
@@ -204,7 +204,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
             var refreshed = 0
             var notModified = 0
-            var newEpisodes = 0
+            val newEpisodes = mutableListOf<NewEpisode>()
             val failed = mutableListOf<String>()
 
             for (podcast in podcasts) {
@@ -212,9 +212,9 @@ class OfflineFirstPodcastRepository @Inject constructor(
                 // stop here rather than work through every remaining feed. suspendRunCatching is
                 // what keeps those two apart.
                 suspendRunCatching { refreshOne(podcast) }
-                    .onSuccess { discovered ->
-                        if (discovered == NOT_MODIFIED) notModified++ else refreshed++
-                        if (discovered > 0) newEpisodes += discovered
+                    .onSuccess { outcome ->
+                        if (outcome.notModified) notModified++ else refreshed++
+                        newEpisodes += outcome.newEpisodes
                     }
                     .onFailure { error ->
                         Log.w(TAG, "Refresh failed for ${podcast.feedUrl}", error)
@@ -225,7 +225,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
             RefreshSummary(
                 refreshedCount = refreshed,
                 notModifiedCount = notModified,
-                newEpisodeCount = newEpisodes,
+                newEpisodes = newEpisodes,
                 failedTitles = failed,
             )
         }
@@ -233,10 +233,10 @@ class OfflineFirstPodcastRepository @Inject constructor(
     /**
      * Fetches one feed and applies it.
      *
-     * @return the number of newly discovered episodes, or [NOT_MODIFIED] when the server reported
-     *   the feed unchanged.
+     * @return what the fetch did: whether the server reported the feed unchanged, and which
+     *   episodes were genuinely new.
      */
-    private suspend fun refreshOne(podcast: PodcastEntity): Int {
+    private suspend fun refreshOne(podcast: PodcastEntity): RefreshOutcome {
         val result = feeds.fetch(
             feedUrl = podcast.feedUrl,
             etag = podcast.etag,
@@ -254,7 +254,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
                     etag = podcast.etag,
                     lastModified = podcast.lastModified,
                 )
-                NOT_MODIFIED
+                RefreshOutcome(notModified = true)
             }
 
             is FeedFetchResult.Fetched -> {
@@ -269,10 +269,38 @@ class OfflineFirstPodcastRepository @Inject constructor(
                 // After the metadata write, so a failure to queue downloads cannot cost us the
                 // etag and make the next refresh re-download the whole feed.
                 autoDownloadScheduler.onEpisodesDiscovered(podcast.id, newIds)
-                newIds.size
+
+                // The entities are already in hand, so the titles cost nothing here; re-reading
+                // the rows would be a second query for data we have just written.
+                val newIdSet = newIds.toSet()
+                RefreshOutcome(
+                    newEpisodes = episodes
+                        .filter { it.id in newIdSet }
+                        .map { episode ->
+                            NewEpisode(
+                                episodeId = episode.id,
+                                episodeTitle = episode.title,
+                                podcastId = podcast.id,
+                                podcastTitle = podcast.title,
+                            )
+                        },
+                )
             }
         }
     }
+
+    /**
+     * What one feed fetch did.
+     *
+     * @property notModified true when the server answered `304 Not Modified` and nothing was
+     *   written.
+     * @property newEpisodes the episodes this fetch discovered; empty both for a 304 and for a feed
+     *   that changed without gaining episodes.
+     */
+    private data class RefreshOutcome(
+        val notModified: Boolean = false,
+        val newEpisodes: List<NewEpisode> = emptyList(),
+    )
 
     override suspend fun remove(podcastId: String) = withContext(ioDispatcher) {
         podcastDao.deleteById(podcastId)
@@ -289,8 +317,5 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
     private companion object {
         private const val TAG = "PodcastRepository"
-
-        /** Sentinel returned by [refreshOne] when the server answered `304 Not Modified`. */
-        const val NOT_MODIFIED = -1
     }
 }

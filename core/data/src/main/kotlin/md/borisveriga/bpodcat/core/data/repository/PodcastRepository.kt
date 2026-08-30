@@ -52,20 +52,48 @@ sealed interface AddPodcastResult {
 }
 
 /**
+ * An episode a refresh has just discovered.
+ *
+ * Carries the show's name alongside the episode's so that a caller — the background refresh's
+ * notification, in practice — can say "Podlodka Podcast: Episode 42" without going back to the
+ * database for a join it would only need once.
+ *
+ * @property episodeId the new episode's local id.
+ * @property episodeTitle the episode's title as the feed publishes it.
+ * @property podcastId the show the episode belongs to, so a notification can open it.
+ * @property podcastTitle the show's title.
+ */
+data class NewEpisode(
+    val episodeId: String,
+    val episodeTitle: String,
+    val podcastId: String,
+    val podcastTitle: String,
+)
+
+/**
  * Result of refreshing one or more feeds.
  *
  * @property refreshedCount feeds that were fetched and applied.
  * @property notModifiedCount feeds the server reported as unchanged (a 304).
- * @property newEpisodeCount episodes discovered across all refreshed feeds.
+ * @property newEpisodes every episode discovered across all refreshed feeds, in the order the
+ *   feeds were visited.
  * @property failedTitles shows whose refresh failed, by title, so one dead feed can be reported
  *   without failing the whole run.
  */
 data class RefreshSummary(
     val refreshedCount: Int = 0,
     val notModifiedCount: Int = 0,
-    val newEpisodeCount: Int = 0,
+    val newEpisodes: List<NewEpisode> = emptyList(),
     val failedTitles: List<String> = emptyList(),
-)
+) {
+    /**
+     * How many episodes the run discovered.
+     *
+     * Derived rather than stored: a count that can disagree with the list beside it is a bug
+     * waiting to be written.
+     */
+    val newEpisodeCount: Int get() = newEpisodes.size
+}
 
 /**
  * The single entry point for everything the app knows about podcasts.
@@ -112,6 +140,9 @@ interface PodcastRepository {
      * Re-fetches one feed and stores any new episodes.
      *
      * Never downloads audio.
+     *
+     * @return how many episodes were discovered; zero both when the feed is unchanged and when it
+     *   changed without gaining episodes, because the two are the same answer to the user.
      */
     suspend fun refresh(podcastId: String): Result<Int>
 

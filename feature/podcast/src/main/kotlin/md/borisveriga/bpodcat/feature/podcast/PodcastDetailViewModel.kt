@@ -145,9 +145,9 @@ class PodcastDetailViewModel @Inject constructor(
                 isRefreshing = false,
                 message = result.fold(
                     onSuccess = { discovered ->
-                        // A 304 is reported as a negative sentinel by the repository; from the
-                        // user's point of view it simply means nothing new.
-                        PodcastDetailMessage.Refreshed(discovered.coerceAtLeast(0))
+                        // Zero covers both "the server said nothing changed" and "the feed changed
+                        // but gained no episodes"; to the user those are the same answer.
+                        PodcastDetailMessage.Refreshed(discovered)
                     },
                     onFailure = { error ->
                         PodcastDetailMessage.RefreshFailed(

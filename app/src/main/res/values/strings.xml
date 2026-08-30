@@ -14,4 +14,27 @@
     <string name="destination_search">Add</string>
     <string name="destination_settings">Settings</string>
 
+    <!--
+      The new-episode notification, posted by the periodic background refresh.
+
+      The count is a plural and each line is a two-part string so a translator can reorder or
+      re-punctuate the show and episode halves; concatenating them in code would take that away.
+    -->
+    <string name="new_episodes_channel_name">New episodes</string>
+    <string name="new_episodes_channel_description">A quiet note when a show you follow publishes something new</string>
+
+    <plurals name="new_episodes_title">
+        <item quantity="one">%1$d new episode</item>
+        <item quantity="other">%1$d new episodes</item>
+    </plurals>
+
+    <!-- One line of the notification: %1$s is the show, %2$s the episode. -->
+    <string name="new_episodes_line">%1$s: %2$s</string>
+
+    <!-- Last line when there were more episodes than the notification lists. -->
+    <plurals name="new_episodes_more">
+        <item quantity="one">and %1$d more</item>
+        <item quantity="other">and %1$d more</item>
+    </plurals>
+
 </resources>

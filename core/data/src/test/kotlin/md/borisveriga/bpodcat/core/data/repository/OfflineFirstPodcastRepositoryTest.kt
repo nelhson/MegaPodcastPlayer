@@ -249,6 +249,13 @@ class OfflineFirstPodcastRepositoryTest {
         assertEquals(1, summary.newEpisodeCount)
         assertEquals(1, summary.refreshedCount)
 
+        // The summary has to name what it found: the background refresh's notification builds its
+        // text from this list rather than going back to the database.
+        val discovered = summary.newEpisodes.single()
+        assertEquals("Episode b", discovered.episodeTitle)
+        assertEquals("Podlodka Podcast", discovered.podcastTitle)
+        assertEquals(added.podcast.id, discovered.podcastId)
+
         val episodes = repository.observeEpisodes(added.podcast.id).first()
         assertEquals(2, episodes.size)
         val newest = episodes.first { it.guid == "b" }
