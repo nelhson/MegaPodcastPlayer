@@ -23,3 +23,10 @@ build/
 keystore.properties
 *.jks
 *.keystore
+
+# Per-developer Claude Code state. The project's shared skills in .claude/skills/ are committed;
+# settings.local.json records one machine's permission grants and is not shared.
+.claude/settings.local.json
+
+# Cygwin/MSYS crash dumps, produced by the bash used for tooling on Windows.
+*.stackdump
