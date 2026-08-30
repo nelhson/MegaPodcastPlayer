@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Search
@@ -57,12 +58,14 @@ import md.borisveriga.bpodcat.core.model.PodcastSource
  *
  * @param onPodcastAdded invoked with the new show's id once an add succeeds, so the caller can
  *   navigate straight to it.
+ * @param onBack invoked when the user leaves without adding anything.
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
 @Composable
 fun SearchRoute(
     onPodcastAdded: (String) -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
@@ -75,6 +78,7 @@ fun SearchRoute(
         onAddResult = viewModel::addSearchResult,
         onMessageShown = viewModel::onMessageShown,
         onPodcastAdded = onPodcastAdded,
+        onBack = onBack,
         modifier = modifier,
     )
 }
@@ -88,6 +92,7 @@ fun SearchRoute(
  * @param onAddResult handler for adding a search result.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param onPodcastAdded called with the new show's id after a successful add.
+ * @param onBack back handler.
  * @param modifier layout modifier.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,6 +104,7 @@ fun SearchScreen(
     onAddResult: (PodcastSearchResult) -> Unit,
     onMessageShown: () -> Unit,
     onPodcastAdded: (String) -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -122,7 +128,21 @@ fun SearchScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(text = stringResource(R.string.search_title)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(text = stringResource(R.string.search_title)) },
+                // Search is reached from the library's add button rather than a tab, so it
+                // needs the back affordance every pushed screen has.
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.search_back),
+                        )
+                    }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
@@ -378,6 +398,7 @@ private fun SearchScreenPreview() {
             onAddResult = {},
             onMessageShown = {},
             onPodcastAdded = {},
+            onBack = {},
         )
     }
 }

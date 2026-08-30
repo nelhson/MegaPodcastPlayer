@@ -55,7 +55,7 @@ class MediaDownloadRepository @Inject constructor(
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
 
     override fun observeDownloads(): Flow<List<DownloadedEpisode>> =
-        episodeDao.observeDownloadedWithShow().map { rows -> rows.map { it.asDownloadedEpisode() } }
+        episodeDao.observeDownloadsWithShow().map { rows -> rows.map { it.asDownloadedEpisode() } }
 
     override suspend fun downloadedBytes(): Long = downloader.downloadedBytes()
 

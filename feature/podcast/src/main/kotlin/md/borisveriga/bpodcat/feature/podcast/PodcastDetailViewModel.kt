@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Duration
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,7 +26,11 @@ import md.borisveriga.bpodcat.core.model.Podcast
  * @property podcast the show; null while loading or after it has been removed.
  * @property episodes its episodes, newest first.
  * @property isLoading true until the first database emission arrives.
- * @property isRefreshing true while this show's feed is being re-fetched.
+ * @property isRefreshing true while a pull-to-refresh is re-fetching this show's feed; ends in a
+ *   snackbar either way.
+ * @property isAutoRefreshing true while the refresh that runs on entering the screen is in flight.
+ *   Separate from [isRefreshing] because it renders as a thin progress line and says nothing when
+ *   it finishes.
  * @property message a one-off refresh outcome for the snackbar.
  */
 data class PodcastDetailUiState(
@@ -33,6 +38,7 @@ data class PodcastDetailUiState(
     val episodes: List<Episode> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    val isAutoRefreshing: Boolean = false,
     val message: PodcastDetailMessage? = null,
 )
 
@@ -121,6 +127,7 @@ class PodcastDetailViewModel @Inject constructor(
             episodes = episodes,
             isLoading = false,
             isRefreshing = transient.isRefreshing,
+            isAutoRefreshing = transient.isAutoRefreshing,
             message = transient.message,
         )
     }.stateIn(
@@ -132,12 +139,41 @@ class PodcastDetailViewModel @Inject constructor(
     init {
         // Opening the episode list is what "seeing" the new episodes means, so the badges clear
         // here rather than on scroll.
+        //
+        // Ordering against the automatic refresh matters and is deliberate: this runs first, so an
+        // episode that arrives while the user is looking at the list keeps its badge and stands out
+        // as the thing that just appeared. Clearing the flags afterwards would hide exactly the
+        // episode the refresh was worth doing for.
         viewModelScope.launch { repository.markEpisodesSeen(podcastId) }
     }
 
-    /** Re-fetches this show's feed. Never downloads audio. */
+    /**
+     * Brings this show up to date on entering the screen, quietly.
+     *
+     * Unlike the library's equivalent this ignores the per-show background-refresh toggle. That
+     * toggle declines *bulk* refreshes; opening the episode list is the user pointing at this show
+     * in particular, and since there is no manual refresh button any more, honouring the toggle
+     * here would leave an opted-out show with no way to ever update.
+     *
+     * Says nothing when it finishes, success or failure — pulling to refresh is what asks a
+     * question and expects an answer.
+     */
+    fun refreshIfStale() {
+        if (transientState.value.isBusy) return
+        transientState.value = transientState.value.copy(isAutoRefreshing = true)
+        viewModelScope.launch {
+            repository.refresh(podcastId, staleAfter = AUTO_REFRESH_STALE_AFTER)
+            transientState.value = transientState.value.copy(isAutoRefreshing = false)
+        }
+    }
+
+    /**
+     * Re-fetches this show's feed however recently it was last fetched, and reports what happened.
+     *
+     * Never downloads audio.
+     */
     fun refresh() {
-        if (transientState.value.isRefreshing) return
+        if (transientState.value.isBusy) return
         transientState.value = TransientState(isRefreshing = true)
         viewModelScope.launch {
             val result = repository.refresh(podcastId)
@@ -257,13 +293,30 @@ class PodcastDetailViewModel @Inject constructor(
 
     private data class TransientState(
         val isRefreshing: Boolean = false,
+        val isAutoRefreshing: Boolean = false,
         val message: PodcastDetailMessage? = null,
-    )
+    ) {
+        /**
+         * Whether a refresh of either kind is already running.
+         *
+         * One guard for both, so the automatic refresh cannot start on top of a pull-to-refresh and
+         * swallow the answer it was about to give, nor the reverse.
+         */
+        val isBusy: Boolean get() = isRefreshing || isAutoRefreshing
+    }
 
     companion object {
         /** Name of the navigation argument carrying the podcast id. */
         const val PODCAST_ID_ARG = "podcastId"
 
         private const val STOP_TIMEOUT_MS = 5_000L
+
+        /**
+         * How stale this show's feed must be before opening it re-fetches it.
+         *
+         * Matches the library's window; the two run against the same feeds and disagreeing about
+         * what counts as recent would only produce requests neither of them wanted.
+         */
+        private val AUTO_REFRESH_STALE_AFTER: Duration = Duration.ofMinutes(15)
     }
 }

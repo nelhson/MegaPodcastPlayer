@@ -11,7 +11,6 @@
     <!-- Navigation bar / rail destinations. -->
     <string name="destination_library">Library</string>
     <string name="destination_downloads">Downloads</string>
-    <string name="destination_search">Add</string>
     <string name="destination_settings">Settings</string>
 
     <!--

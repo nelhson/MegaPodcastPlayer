@@ -84,7 +84,9 @@ fun BPodcatApp(
                 composable<Route.Library> {
                     LibraryRoute(
                         onPodcastClick = { id -> navController.navigate(Route.PodcastDetail(id)) },
-                        onAddClick = { navController.navigateToTopLevel(TopLevelDestination.SEARCH) },
+                        // A plain push now that search is not a tab: it opens on top of the library
+                        // and backing out returns there.
+                        onAddClick = { navController.navigate(Route.Search) },
                     )
                 }
 
@@ -99,7 +101,15 @@ fun BPodcatApp(
 
                 composable<Route.Search> {
                     SearchRoute(
-                        onPodcastAdded = { id -> navController.navigate(Route.PodcastDetail(id)) },
+                        onBack = { navController.popBackStack() },
+                        // Search drops off the back stack as the new show opens: its job is done,
+                        // and backing out of a podcast you just added should land in the library
+                        // that now contains it, not in the search results you left behind.
+                        onPodcastAdded = { id ->
+                            navController.navigate(Route.PodcastDetail(id)) {
+                                popUpTo<Route.Search> { inclusive = true }
+                            }
+                        },
                     )
                 }
 
@@ -143,7 +153,6 @@ private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
         when (destination) {
             TopLevelDestination.LIBRARY -> node.hasRoute(Route.Library::class)
             TopLevelDestination.DOWNLOADS -> node.hasRoute(Route.Downloads::class)
-            TopLevelDestination.SEARCH -> node.hasRoute(Route.Search::class)
             TopLevelDestination.SETTINGS -> node.hasRoute(Route.Settings::class)
         }
     } == true

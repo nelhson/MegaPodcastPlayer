@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
+import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.DownloadedEpisode
 import md.borisveriga.bpodcat.core.model.Episode
@@ -26,9 +27,10 @@ import org.junit.Test
 /**
  * Tests for [DownloadsViewModel].
  *
- * The screen's whole job is to be an honest picture of what is on the device and to let the user
- * free that space, so the cases worth pinning are the storage total it reports and the two removal
- * paths — including the one that must not fire on an empty list.
+ * The screen has to be an honest picture of what the download stack is doing and let the user act
+ * on it, so the cases worth pinning are the storage total it reports — which counts only finished
+ * episodes even though the list shows more than those — the retry path, and the two removal paths,
+ * including the one that must not fire on an empty list.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadsViewModelTest {
@@ -37,6 +39,7 @@ class DownloadsViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val downloads = MutableStateFlow(emptyList<DownloadedEpisode>())
+    private val downloadSettings = MutableStateFlow(DownloadSettings())
 
     private lateinit var downloadRepository: DownloadRepository
     private lateinit var episodePlayer: EpisodePlayer
@@ -46,6 +49,8 @@ class DownloadsViewModelTest {
         id: String,
         showTitle: String = "Podlodka Podcast",
         downloadedBytes: Long = 1_000L,
+        downloadState: DownloadState = DownloadState.COMPLETED,
+        downloadPercent: Float = 100f,
     ) = DownloadedEpisode(
         episode = Episode(
             id = id,
@@ -58,9 +63,9 @@ class DownloadsViewModelTest {
             durationMs = 60_000L,
             publishedAt = Instant.EPOCH,
             sizeBytes = downloadedBytes,
-            downloadState = DownloadState.COMPLETED,
+            downloadState = downloadState,
             downloadedBytes = downloadedBytes,
-            downloadPercent = 100f,
+            downloadPercent = downloadPercent,
         ),
         showTitle = showTitle,
         showArtworkUrl = null,
@@ -71,6 +76,7 @@ class DownloadsViewModelTest {
         downloadRepository = mockk(relaxed = true)
         episodePlayer = mockk(relaxed = true)
         every { downloadRepository.observeDownloads() } returns downloads
+        every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         viewModel = DownloadsViewModel(downloadRepository, episodePlayer)
     }
 
@@ -85,6 +91,7 @@ class DownloadsViewModelTest {
             val state = awaitItem()
             assertFalse(state.isLoading)
             assertEquals(2, state.downloads.size)
+            assertEquals(2, state.completedCount)
             assertEquals(8_000_000L, state.totalBytes)
             cancelAndIgnoreRemainingEvents()
         }
@@ -190,6 +197,122 @@ class DownloadsViewModelTest {
             viewModel.onMessageShown()
 
             assertNull(awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the storage figure counts only what has finished downloading`() = runTest {
+        downloads.value = listOf(
+            download("broken", downloadedBytes = 0L, downloadState = DownloadState.FAILED),
+            download(
+                "busy",
+                downloadedBytes = 2_000_000L,
+                downloadState = DownloadState.DOWNLOADING,
+                downloadPercent = 40f,
+            ),
+            download("waiting", downloadedBytes = 0L, downloadState = DownloadState.QUEUED),
+            download("done", downloadedBytes = 5_000_000L),
+        )
+
+        viewModel.uiState.test {
+            val state = awaitItem()
+
+            // Everything is listed...
+            assertEquals(4, state.downloads.size)
+            // ...but the storage line answers "what is on this device", and a transfer that is 40%
+            // through is not an episode anyone can free by deleting it.
+            assertEquals(1, state.completedCount)
+            assertEquals(5_000_000L, state.totalBytes)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the wifi-only setting reaches the state, so a waiting row can say why`() = runTest {
+        downloads.value = listOf(download("waiting", downloadState = DownloadState.QUEUED))
+        downloadSettings.value = DownloadSettings(unmeteredOnly = true)
+
+        viewModel.uiState.test {
+            assertTrue(awaitItem().unmeteredOnly)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `retrying a failed download asks for it again and confirms`() = runTest {
+        downloads.value = listOf(download("broken", downloadState = DownloadState.FAILED))
+        // Wi-Fi only is on by default, so an unqualified retry has to switch it off to be one.
+        downloadSettings.value = DownloadSettings(unmeteredOnly = false)
+        coEvery { downloadRepository.download("broken") } returns true
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.retry("broken")
+
+            coVerify { downloadRepository.download("broken") }
+            assertEquals(
+                DownloadsMessage.RetryQueued(title = "Episode broken", waitingForWifi = false),
+                awaitItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a retry that will wait for wifi says so`() = runTest {
+        downloads.value = listOf(download("broken", downloadState = DownloadState.FAILED))
+        downloadSettings.value = DownloadSettings(unmeteredOnly = true)
+        coEvery { downloadRepository.download("broken") } returns true
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.retry("broken")
+
+            // Without this the tap looks like it did nothing at all until the phone finds Wi-Fi.
+            assertEquals(
+                DownloadsMessage.RetryQueued(title = "Episode broken", waitingForWifi = true),
+                awaitItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `retrying an episode that has gone is reported rather than left silent`() = runTest {
+        downloads.value = listOf(download("broken", downloadState = DownloadState.FAILED))
+        // The show was removed between the row rendering and the tap landing.
+        coEvery { downloadRepository.download("broken") } returns false
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.retry("broken")
+
+            assertEquals(DownloadsMessage.EpisodeUnavailable, awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `removing all counts the transfers it cancels as well as the files it deletes`() = runTest {
+        downloads.value = listOf(
+            download("done"),
+            download("busy", downloadState = DownloadState.DOWNLOADING),
+            download("waiting", downloadState = DownloadState.QUEUED),
+        )
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.removeAll()
+
+            coVerify { downloadRepository.removeAllDownloads() }
+            // Three rows go, so the confirmation says three: the sweep stops the queued and
+            // in-flight transfers too, and claiming one would misdescribe what just happened.
+            assertEquals(DownloadsMessage.RemovedAll(3), awaitItem().message)
             cancelAndIgnoreRemainingEvents()
         }
     }

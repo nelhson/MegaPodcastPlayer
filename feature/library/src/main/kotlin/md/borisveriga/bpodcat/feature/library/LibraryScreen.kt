@@ -4,6 +4,7 @@ import android.content.res.Resources
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,18 +15,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
@@ -51,7 +53,7 @@ import md.borisveriga.bpodcat.core.model.PodcastSource
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
 
 /**
- * Library screen: every subscribed show, with a manual refresh and a route into search.
+ * Library screen: every subscribed show, refreshed on entry, with a route into search.
  *
  * @param onPodcastClick invoked with a podcast id when a row is tapped.
  * @param onAddClick invoked when the user wants to add a show.
@@ -66,6 +68,18 @@ fun LibraryRoute(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Tied to the lifecycle rather than run once from `init` or `LaunchedEffect(Unit)`, because
+    // neither would fire often enough: switching tabs saves and restores this destination, so the
+    // view model and the composition both survive and a one-shot effect would run only on the first
+    // visit of the whole process. The back stack entry going RESUMED is the accurate signal for
+    // "the user is looking at the library now" — it covers returning from a show, switching back to
+    // this tab, and bringing the app to the foreground. The staleness window in the view model is
+    // what stops that being a lot of network traffic.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshStale()
+        onPauseOrDispose { }
+    }
 
     LibraryScreen(
         uiState = uiState,
@@ -83,7 +97,7 @@ fun LibraryRoute(
  * @param uiState what to render.
  * @param onPodcastClick row tap handler.
  * @param onAddClick add-podcast handler.
- * @param onRefresh manual refresh handler.
+ * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
  */
@@ -111,19 +125,7 @@ fun LibraryScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text(text = stringResource(R.string.library_title)) },
-                actions = {
-                    IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.library_refresh),
-                        )
-                    }
-                },
-            )
-        },
+        topBar = { TopAppBar(title = { Text(text = stringResource(R.string.library_title)) }) },
         floatingActionButton = {
             FloatingActionButton(onClick = onAddClick) {
                 Icon(
@@ -134,29 +136,46 @@ fun LibraryScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        when {
-            uiState.isLoading -> LoadingState(
-                modifier = Modifier.padding(padding),
-                contentDescription = stringResource(R.string.library_loading),
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            // The whole of the automatic refresh's presence on screen. Deliberately a line under
+            // the title rather than anything that moves the list or blocks a tap: the user did not
+            // ask for this and should be able to ignore it completely.
+            if (uiState.isAutoRefreshing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
 
-            uiState.podcasts.isEmpty() -> MessageState(
-                icon = Icons.Rounded.LibraryMusic,
-                title = stringResource(R.string.library_empty_title),
-                description = stringResource(R.string.library_empty_description),
-                actionLabel = stringResource(R.string.library_add_podcast),
-                onAction = onAddClick,
-                modifier = Modifier.padding(padding),
-            )
+            when {
+                uiState.isLoading -> LoadingState(
+                    contentDescription = stringResource(R.string.library_loading),
+                )
 
-            else -> LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-            ) {
-                items(items = uiState.podcasts, key = { it.podcast.id }) { entry ->
-                    PodcastRow(entry = entry, onClick = { onPodcastClick(entry.podcast.id) })
+                // No pull-to-refresh here: there are no feeds to fetch, and the gesture needs
+                // something scrollable underneath it to work at all.
+                uiState.podcasts.isEmpty() -> MessageState(
+                    icon = Icons.Rounded.LibraryMusic,
+                    title = stringResource(R.string.library_empty_title),
+                    description = stringResource(R.string.library_empty_description),
+                    actionLabel = stringResource(R.string.library_add_podcast),
+                    onAction = onAddClick,
+                )
+
+                else -> PullToRefreshBox(
+                    isRefreshing = uiState.isRefreshing,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                    ) {
+                        items(items = uiState.podcasts, key = { it.podcast.id }) { entry ->
+                            PodcastRow(entry = entry, onClick = { onPodcastClick(entry.podcast.id) })
+                        }
+                    }
                 }
             }
         }

@@ -8,6 +8,7 @@
 <resources>
 
     <string name="search_title">Add a podcast</string>
+    <string name="search_back">Back to the library</string>
 
     <string name="search_field_label">Show name, Apple / RSS / YouTube playlist link</string>
     <string name="search_clear">Clear the search field</string>

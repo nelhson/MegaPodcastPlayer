@@ -6,7 +6,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -20,16 +22,23 @@ import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
 /**
- * Tests for [PodcastDetailViewModel]'s download button.
+ * Tests for [PodcastDetailViewModel]'s download button and its two refreshes.
  *
- * The button carries one action whose meaning follows the episode's state, so the branch it picks
- * is the whole behaviour — and getting it wrong means a tap that deletes an episode the user meant
- * to fetch.
+ * The download button carries one action whose meaning follows the episode's state, so the branch
+ * it picks is the whole behaviour — and getting it wrong means a tap that deletes an episode the
+ * user meant to fetch.
+ *
+ * The refreshes differ in what they ask for and what they say. Entering the screen checks the feed
+ * only if it is stale and reports nothing either way; pulling the list down always checks and
+ * always answers. Which feeds a staleness window actually skips is `OfflineFirstPodcastRepositoryTest`'s
+ * business, not this one's.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PodcastDetailViewModelTest {
@@ -193,5 +202,129 @@ class PodcastDetailViewModelTest {
         viewModel.uiState.test {
             assertEquals(PodcastDetailMessage.EpisodeUnavailable, awaitItem().message)
         }
+    }
+
+    @Test
+    fun `entering the screen refreshes the feed only when it is stale`() = runTest {
+        coEvery { repository.refresh(any(), any()) } returns Result.success(0)
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.refreshIfStale()
+
+        coVerify(exactly = 1) {
+            repository.refresh(podcast.id, staleAfter = Duration.ofMinutes(15))
+        }
+    }
+
+    @Test
+    fun `an automatic refresh raises its own flag and reports nothing`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.refresh(any(), any()) } coAnswers {
+            release.await()
+            Result.success(3)
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refreshIfStale()
+            val running = awaitItem()
+            assertTrue(running.isAutoRefreshing)
+            assertFalse("The pull-to-refresh spinner must stay down", running.isRefreshing)
+
+            release.complete(Unit)
+            val done = awaitItem()
+            assertFalse(done.isAutoRefreshing)
+            // Three new episodes is worth showing, not worth announcing: they are already in the
+            // list the user is looking at.
+            assertEquals(null, done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an automatic refresh that fails stays silent`() = runTest {
+        coEvery { repository.refresh(any(), any()) } returns
+            Result.failure(java.io.IOException("no route to host"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refreshIfStale()
+            assertTrue(awaitItem().isAutoRefreshing)
+
+            val done = awaitItem()
+            assertFalse(done.isAutoRefreshing)
+            // The deliberate cost of not interrupting on entry: a dead feed surfaces when the user
+            // pulls to refresh, not before.
+            assertEquals(null, done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `pulling to refresh checks the feed however recent it is, and reports what it found`() =
+        runTest {
+            coEvery { repository.refresh(podcast.id) } returns Result.success(2)
+
+            viewModel.uiState.test {
+                awaitItem()
+
+                viewModel.refresh()
+                assertTrue(awaitItem().isRefreshing)
+
+                val done = awaitItem()
+                assertFalse(done.isRefreshing)
+                assertEquals(PodcastDetailMessage.Refreshed(2), done.message)
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            // No staleness window: the gesture means "check now".
+            coVerify(exactly = 1) { repository.refresh(podcast.id, null) }
+        }
+
+    @Test
+    fun `a failed pull-to-refresh explains itself`() = runTest {
+        coEvery { repository.refresh(podcast.id) } returns
+            Result.failure(java.io.IOException("no route to host"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refresh()
+            assertTrue(awaitItem().isRefreshing)
+
+            val done = awaitItem()
+            assertEquals(
+                PodcastDetailMessage.RefreshFailed("no route to host"),
+                done.message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an automatic refresh does not start on top of a pull-to-refresh`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.refresh(any(), any()) } coAnswers {
+            release.await()
+            Result.success(0)
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refresh()
+            assertTrue(awaitItem().isRefreshing)
+            viewModel.refreshIfStale()
+
+            release.complete(Unit)
+            val done = awaitItem()
+            assertFalse(done.isRefreshing)
+            assertEquals(PodcastDetailMessage.Refreshed(0), done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coVerify(exactly = 1) { repository.refresh(any(), any()) }
     }
 }

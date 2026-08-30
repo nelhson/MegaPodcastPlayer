@@ -4,7 +4,6 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
@@ -26,7 +25,12 @@ sealed interface Route {
     @Serializable
     data object Downloads : Route
 
-    /** Apple search and add-by-link. */
+    /**
+     * Apple search and add-by-link.
+     *
+     * Not a [TopLevelDestination]: the library's add button is the one way in, so this is pushed
+     * onto the back stack like any other detail screen and backs out to wherever it was opened from.
+     */
     @Serializable
     data object Search : Route
 
@@ -55,6 +59,10 @@ sealed interface Route {
 /**
  * A destination reachable from the navigation bar / rail.
  *
+ * Adding a podcast is deliberately absent: the library screen carries a floating action button for
+ * it, and a permanent tab for the same job spent a quarter of the bar on something used once per
+ * new show.
+ *
  * @property route the route object to navigate to.
  * @property labelResId visible label, also used as the accessibility name. A resource id rather
  *   than a string, because this enum is built before there is a composition to resolve it in.
@@ -67,6 +75,5 @@ enum class TopLevelDestination(
 ) {
     LIBRARY(Route.Library, R.string.destination_library, Icons.Rounded.LibraryMusic),
     DOWNLOADS(Route.Downloads, R.string.destination_downloads, Icons.Rounded.DownloadDone),
-    SEARCH(Route.Search, R.string.destination_search, Icons.Rounded.Search),
     SETTINGS(Route.Settings, R.string.destination_settings, Icons.Rounded.Settings),
 }

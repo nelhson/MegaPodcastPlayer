@@ -11,7 +11,6 @@
 <resources>
 
     <string name="podcast_back">Back to the library</string>
-    <string name="podcast_refresh">Check for new episodes</string>
     <string name="podcast_remove">Remove this podcast</string>
 
     <string name="podcast_loading">Loading episodes</string>

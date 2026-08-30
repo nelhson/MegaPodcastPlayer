@@ -35,22 +35,36 @@ interface EpisodeDao {
     fun observeDownloaded(): Flow<List<EpisodeEntity>>
 
     /**
-     * Observes everything available offline, joined with the show each episode belongs to.
+     * Observes everything the download stack is tracking, joined with the show each episode belongs
+     * to.
      *
-     * The downloads screen mixes episodes from every show, so it needs the show's name and artwork
-     * on each row; [observeDownloaded] stays for the callers that only ever deal in episodes.
-     * Ordering matches [observeDownloaded] so "newest first" means the same thing on both.
+     * Wider than [observeDownloaded] on purpose. That one answers "what can I play offline" and
+     * backs the storage figure, the keep-limit sweep and the player; this one backs the downloads
+     * *screen*, where an episode still transferring, one waiting for Wi-Fi, and one that failed
+     * outright are the rows that most need to be visible. A failed download the user never sees is
+     * a download that silently never happened.
+     *
+     * Ordered by how much attention each state deserves — failures first, then what is moving, then
+     * what is waiting, then the finished library — and newest-first within each group, matching
+     * [observeDownloaded]. `NOT_DOWNLOADED` is every other episode in the database and is excluded.
      */
     @Query(
         """
         SELECT e.*, p.title AS show_title, p.artwork_url AS show_artwork_url
         FROM episodes e
         INNER JOIN podcasts p ON p.id = e.podcast_id
-        WHERE e.download_state = 'COMPLETED'
-        ORDER BY e.published_at IS NULL, e.published_at DESC
+        WHERE e.download_state IN ('FAILED', 'DOWNLOADING', 'QUEUED', 'COMPLETED')
+        ORDER BY
+            CASE e.download_state
+                WHEN 'FAILED' THEN 0
+                WHEN 'DOWNLOADING' THEN 1
+                WHEN 'QUEUED' THEN 2
+                ELSE 3
+            END,
+            e.published_at IS NULL, e.published_at DESC
         """,
     )
-    fun observeDownloadedWithShow(): Flow<List<EpisodeWithShowEntity>>
+    fun observeDownloadsWithShow(): Flow<List<EpisodeWithShowEntity>>
 
     @Query("SELECT * FROM episodes WHERE id = :id")
     fun observeById(id: String): Flow<EpisodeEntity?>

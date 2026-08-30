@@ -7,6 +7,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import java.io.IOException
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.CompletableDeferred
@@ -498,4 +499,128 @@ class OfflineFirstPodcastRepositoryTest {
         assertEquals(PodcastSource.RSS, added.podcast.source)
         coVerify { feeds.fetch(podlodkaFeedUrl, any(), any(), PodcastSource.RSS) }
     }
+
+    // region Staleness
+
+    /**
+     * A second repository over the same database, running [minutes] later.
+     *
+     * The clock is injected as a `Clock.fixed`, so "time passes" is expressed by building another
+     * instance rather than by mutating one. The database is shared, so the show added through
+     * [repository] is already there with its recorded fetch time.
+     */
+    private fun repositoryMinutesLater(minutes: Long) = OfflineFirstPodcastRepository(
+        podcastDao = database.podcastDao(),
+        episodeDao = database.episodeDao(),
+        itunes = itunes,
+        feeds = feeds,
+        autoDownloadScheduler = mockk(relaxed = true),
+        clock = Clock.fixed(clock.instant().plus(Duration.ofMinutes(minutes)), ZoneOffset.UTC),
+        ioDispatcher = UnconfinedTestDispatcher(),
+    )
+
+    /** Adds Podlodka with one episode, leaving its `lastRefreshAt` at the fixed clock. */
+    private suspend fun addPodlodka(): AddPodcastResult.Added {
+        coEvery { itunes.lookup(any()) } returns appleResult
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a")), etag = "v1", lastModified = null)
+        return repository.addFromInput("1209828744") as AddPodcastResult.Added
+    }
+
+    @Test
+    fun `a feed fetched moments ago is skipped rather than fetched again`() = runTest {
+        addPodlodka()
+
+        // Same clock as the add, so the feed is zero minutes old.
+        val summary = repository.refreshAll(
+            onlyAutoRefreshable = true,
+            staleAfter = Duration.ofMinutes(15),
+        )
+
+        assertEquals(1, summary.skippedCount)
+        assertEquals(0, summary.refreshedCount)
+        assertEquals(0, summary.notModifiedCount)
+        // The point of the window: no request at all, not a cheap one.
+        coVerify(exactly = 0) { feeds.fetch(podlodkaFeedUrl, "v1", any()) }
+    }
+
+    @Test
+    fun `a feed older than the window is fetched`() = runTest {
+        addPodlodka()
+        coEvery { feeds.fetch(podlodkaFeedUrl, "v1", null) } returns
+            FeedFetchResult.Fetched(
+                channel(feedItem("a"), feedItem("b")),
+                etag = "v2",
+                lastModified = null,
+            )
+
+        val summary = repositoryMinutesLater(20).refreshAll(
+            onlyAutoRefreshable = true,
+            staleAfter = Duration.ofMinutes(15),
+        )
+
+        assertEquals(0, summary.skippedCount)
+        assertEquals(1, summary.refreshedCount)
+        assertEquals(1, summary.newEpisodeCount)
+    }
+
+    @Test
+    fun `no staleness window means every feed is fetched however recent`() = runTest {
+        addPodlodka()
+        coEvery { feeds.fetch(podlodkaFeedUrl, "v1", null) } returns FeedFetchResult.NotModified
+
+        // What pull-to-refresh and the background worker both do: ask regardless of age.
+        val summary = repository.refreshAll(onlyAutoRefreshable = false)
+
+        assertEquals(0, summary.skippedCount)
+        assertEquals(1, summary.notModifiedCount)
+    }
+
+    @Test
+    fun `a show that has never been refreshed is never considered fresh`() = runTest {
+        coEvery { itunes.lookup(any()) } returns appleResult
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
+        val added = repository.addFromInput("1209828744") as AddPodcastResult.Added
+        database.podcastDao().upsert(
+            database.podcastDao().getById(added.podcast.id)!!.copy(lastRefreshAt = null),
+        )
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns FeedFetchResult.NotModified
+
+        val summary = repository.refreshAll(
+            onlyAutoRefreshable = true,
+            staleAfter = Duration.ofMinutes(15),
+        )
+
+        assertEquals("A show with no recorded fetch has nothing to be fresh from", 0, summary.skippedCount)
+        assertEquals(1, summary.notModifiedCount)
+    }
+
+    @Test
+    fun `refreshing one fresh show reports nothing discovered without fetching`() = runTest {
+        val added = addPodlodka()
+
+        val result = repository.refresh(added.podcast.id, staleAfter = Duration.ofMinutes(15))
+
+        assertEquals(0, result.getOrNull())
+        coVerify(exactly = 0) { feeds.fetch(podlodkaFeedUrl, "v1", any()) }
+    }
+
+    @Test
+    fun `refreshing one stale show fetches it`() = runTest {
+        val added = addPodlodka()
+        coEvery { feeds.fetch(podlodkaFeedUrl, "v1", null) } returns
+            FeedFetchResult.Fetched(
+                channel(feedItem("a"), feedItem("b")),
+                etag = "v2",
+                lastModified = null,
+            )
+
+        val result = repositoryMinutesLater(20)
+            .refresh(added.podcast.id, staleAfter = Duration.ofMinutes(15))
+
+        assertEquals(1, result.getOrNull())
+    }
+
+    // endregion
 }

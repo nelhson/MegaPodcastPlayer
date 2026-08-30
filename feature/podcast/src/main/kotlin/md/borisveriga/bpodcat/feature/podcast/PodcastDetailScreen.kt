@@ -19,7 +19,6 @@ import androidx.compose.material.icons.rounded.DownloadForOffline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlaylistRemove
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
 import md.borisveriga.bpodcat.core.common.format.formatDuration
@@ -93,6 +94,14 @@ fun PodcastDetailRoute(
         if (!uiState.isLoading && uiState.podcast == null) onBack()
     }
 
+    // Lifecycle-tied rather than a one-shot in the view model's `init`, so that coming back from the
+    // full player — or from the app having been in the background for an hour — checks the feed
+    // again. The staleness window in the view model is what keeps that cheap.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshIfStale()
+        onPauseOrDispose { }
+    }
+
     PodcastDetailScreen(
         uiState = uiState,
         onBack = onBack,
@@ -116,7 +125,7 @@ fun PodcastDetailRoute(
  * @param onEpisodeQueue add-to-queue handler.
  * @param onEpisodeDownloadToggle download/remove handler; one action, because the button's
  *   meaning follows the episode's download state.
- * @param onRefresh manual refresh handler.
+ * @param onRefresh pull-to-refresh handler; also the empty state's action.
  * @param onRemove remove-show handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -171,12 +180,6 @@ fun PodcastDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.podcast_refresh),
-                        )
-                    }
                     IconButton(onClick = onRemove) {
                         Icon(
                             imageVector = Icons.Rounded.Delete,
@@ -189,45 +192,57 @@ fun PodcastDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         val podcast = uiState.podcast
-        when {
-            uiState.isLoading || podcast == null -> LoadingState(
-                modifier = Modifier.padding(padding),
-                contentDescription = stringResource(R.string.podcast_loading),
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            // The automatic refresh's entire footprint: a line under the title, nothing that moves
+            // the list the user is already reading.
+            if (uiState.isAutoRefreshing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
 
-            uiState.episodes.isEmpty() -> MessageState(
-                icon = Icons.Rounded.PlaylistRemove,
-                title = stringResource(R.string.podcast_empty_title),
-                description = stringResource(
-                    if (podcast.source == PodcastSource.YOUTUBE) {
-                        R.string.podcast_empty_description_youtube
-                    } else {
-                        R.string.podcast_empty_description_rss
-                    },
-                ),
-                actionLabel = stringResource(R.string.podcast_empty_action),
-                onAction = onRefresh,
-                modifier = Modifier.padding(padding),
-            )
+            when {
+                uiState.isLoading || podcast == null -> LoadingState(
+                    contentDescription = stringResource(R.string.podcast_loading),
+                )
 
-            else -> LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                item { PodcastHeader(podcast = podcast) }
-                if (uiState.isRefreshing) {
-                    item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
-                }
-                items(items = uiState.episodes, key = { it.id }) { episode ->
-                    EpisodeRow(
-                        episode = episode,
-                        now = now,
-                        onClick = { onEpisodeClick(episode.id) },
-                        onQueue = { onEpisodeQueue(episode.id) },
-                        onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
-                    )
-                    HorizontalDivider()
+                // The empty state keeps an explicit refresh action rather than the gesture: there is
+                // no list here for a pull to act on, and an empty show is exactly when someone wants
+                // to press something and find out why.
+                uiState.episodes.isEmpty() -> MessageState(
+                    icon = Icons.Rounded.PlaylistRemove,
+                    title = stringResource(R.string.podcast_empty_title),
+                    description = stringResource(
+                        if (podcast.source == PodcastSource.YOUTUBE) {
+                            R.string.podcast_empty_description_youtube
+                        } else {
+                            R.string.podcast_empty_description_rss
+                        },
+                    ),
+                    actionLabel = stringResource(R.string.podcast_empty_action),
+                    onAction = onRefresh,
+                )
+
+                else -> PullToRefreshBox(
+                    isRefreshing = uiState.isRefreshing,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item { PodcastHeader(podcast = podcast) }
+                        items(items = uiState.episodes, key = { it.id }) { episode ->
+                            EpisodeRow(
+                                episode = episode,
+                                now = now,
+                                onClick = { onEpisodeClick(episode.id) },
+                                onQueue = { onEpisodeQueue(episode.id) },
+                                onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
+                            )
+                            HorizontalDivider()
+                        }
+                    }
                 }
             }
         }

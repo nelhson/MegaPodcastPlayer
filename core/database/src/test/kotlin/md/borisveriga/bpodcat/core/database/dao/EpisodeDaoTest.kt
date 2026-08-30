@@ -226,17 +226,86 @@ class EpisodeDaoTest {
     }
 
     @Test
-    fun `observeDownloadedWithShow returns completed downloads with their show`() = runTest {
+    fun `observeDownloadsWithShow carries the show on every row`() = runTest {
         podcastDao.upsert(podcast.copy(artworkUrl = "https://art/show.jpg"))
-        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        episodeDao.upsertFromFeed(listOf(episode("a")))
         episodeDao.updateDownloadState("a", DownloadState.COMPLETED, 5_000L, 100f)
-        episodeDao.updateDownloadState("b", DownloadState.DOWNLOADING, 2_000L, 40f)
 
-        val rows = episodeDao.observeDownloadedWithShow().first()
+        val rows = episodeDao.observeDownloadsWithShow().first()
 
         assertEquals(listOf("a"), rows.map { it.episode.id })
         assertEquals("Podlodka Podcast", rows.first().showTitle)
         assertEquals("https://art/show.jpg", rows.first().showArtworkUrl)
+    }
+
+    @Test
+    fun `observeDownloadsWithShow includes transfers and failures, not untouched episodes`() =
+        runTest {
+            podcastDao.upsert(podcast)
+            episodeDao.upsertFromFeed(
+                listOf(episode("done"), episode("busy"), episode("waiting"), episode("broken"), episode("untouched")),
+            )
+            episodeDao.updateDownloadState("done", DownloadState.COMPLETED, 5_000L, 100f)
+            episodeDao.updateDownloadState("busy", DownloadState.DOWNLOADING, 2_000L, 40f)
+            episodeDao.updateDownloadState("waiting", DownloadState.QUEUED, 0L, 0f)
+            episodeDao.updateDownloadState("broken", DownloadState.FAILED, 0L, 0f)
+
+            val rows = episodeDao.observeDownloadsWithShow().first()
+
+            // "untouched" is every other episode in the database; listing it would make this a list
+            // of the whole library rather than of downloads.
+            assertEquals(
+                setOf("done", "busy", "waiting", "broken"),
+                rows.map { it.episode.id }.toSet(),
+            )
+        }
+
+    @Test
+    fun `observeDownloadsWithShow puts what needs attention first`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("done"), episode("busy"), episode("waiting"), episode("broken")),
+        )
+        // Applied in the opposite order to the one expected back, so passing cannot be an accident
+        // of insertion order.
+        episodeDao.updateDownloadState("done", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.updateDownloadState("busy", DownloadState.DOWNLOADING, 2_000L, 40f)
+        episodeDao.updateDownloadState("waiting", DownloadState.QUEUED, 0L, 0f)
+        episodeDao.updateDownloadState("broken", DownloadState.FAILED, 0L, 0f)
+
+        val rows = episodeDao.observeDownloadsWithShow().first()
+
+        assertEquals(listOf("broken", "busy", "waiting", "done"), rows.map { it.episode.id })
+    }
+
+    @Test
+    fun `observeDownloadsWithShow orders newest first within a state`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(
+                episode("old", publishedAt = 1_000L),
+                episode("new", publishedAt = 9_000L),
+            ),
+        )
+        episodeDao.updateDownloadState("old", DownloadState.COMPLETED, 1L, 100f)
+        episodeDao.updateDownloadState("new", DownloadState.COMPLETED, 1L, 100f)
+
+        val rows = episodeDao.observeDownloadsWithShow().first()
+
+        assertEquals(listOf("new", "old"), rows.map { it.episode.id })
+    }
+
+    @Test
+    fun `observeDownloaded still means available offline`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("done"), episode("busy"), episode("broken")))
+        episodeDao.updateDownloadState("done", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.updateDownloadState("busy", DownloadState.DOWNLOADING, 2_000L, 40f)
+        episodeDao.updateDownloadState("broken", DownloadState.FAILED, 0L, 0f)
+
+        // The downloads screen widened; this query must not, because the storage figure, the
+        // keep-limit sweep and the player all read "downloaded" as "the audio is on the device".
+        assertEquals(listOf("done"), episodeDao.observeDownloaded().first().map { it.id })
     }
 
     @Test

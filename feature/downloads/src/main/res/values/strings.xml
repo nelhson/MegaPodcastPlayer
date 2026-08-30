@@ -37,9 +37,22 @@
     <!-- Marks an episode that has been listened to all the way through. -->
     <string name="downloads_played">Played</string>
 
+    <!--
+        The state line under a row. A finished episode gets none: the screen is called Downloads,
+        so saying "Downloaded" on every row adds nothing.
+    -->
+    <string name="downloads_state_downloading">Downloading %1$d%%</string>
+    <string name="downloads_state_queued">Waiting to download</string>
+    <!-- Wi-Fi only is on by default, so this is the usual reason a download has not started. -->
+    <string name="downloads_state_queued_wifi">Waiting for Wi-Fi</string>
+    <!-- Names the action, because tapping the row is what retries it. -->
+    <string name="downloads_state_failed">Download failed — tap to try again</string>
+
     <!-- Row buttons are reached out of reading order, so each names the episode it acts on. -->
     <string name="downloads_queue_episode">Add %1$s to the queue</string>
     <string name="downloads_remove_episode">Remove the download of %1$s</string>
+    <!-- The same button on a row that has not finished: it calls the transfer off. -->
+    <string name="downloads_cancel_episode">Cancel the download of %1$s</string>
 
     <string name="downloads_message_removed">Removed \"%1$s\" from this device</string>
     <plurals name="downloads_message_removed_all">
@@ -47,6 +60,9 @@
         <item quantity="other">Removed %1$d downloads</item>
     </plurals>
     <string name="downloads_message_queued">Added \"%1$s\" to the queue</string>
+    <!-- A retry may sit waiting, so the confirmation says which of the two happened. -->
+    <string name="downloads_message_retry_queued">Downloading \"%1$s\" again</string>
+    <string name="downloads_message_retry_queued_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="downloads_message_unavailable">That episode is no longer in your library</string>
 
 </resources>

@@ -5,6 +5,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.time.Duration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,9 +27,11 @@ import org.junit.Test
  * Tests for [LibraryViewModel].
  *
  * The repository is mocked: nothing here is storage behaviour, which is covered in
- * `OfflineFirstPodcastRepositoryTest`. What matters on this screen is the orchestration around a
- * manual refresh — that it cannot be started twice, that the spinner goes down again, and that the
- * one-off outcomes reach the snackbar exactly once.
+ * `OfflineFirstPodcastRepositoryTest` — including which feeds a staleness window actually skips.
+ * What matters on this screen is the orchestration around the two refreshes, which differ in every
+ * way that is visible to the user: the pull-to-refresh checks everything and answers with a
+ * snackbar, the one that runs on entering the screen checks only what is stale and opted in, and
+ * says nothing. Neither may run while the other is in flight.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
@@ -172,5 +175,100 @@ class LibraryViewModelTest {
             assertEquals(null, awaitItem().message)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `entering the screen refreshes only stale opted-in shows`() = runTest {
+        coEvery { repository.refreshAll(any(), any()) } returns RefreshSummary()
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.refreshStale()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Both arguments matter. The window is what stops a burst of tab switches becoming a burst
+        // of requests, and honouring the per-show toggle is what keeps that toggle meaning
+        // something once the manual refresh button is gone.
+        coVerify(exactly = 1) {
+            repository.refreshAll(
+                onlyAutoRefreshable = true,
+                staleAfter = Duration.ofMinutes(15),
+            )
+        }
+    }
+
+    @Test
+    fun `an automatic refresh raises its own flag and says nothing when it finishes`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.refreshAll(any(), any()) } coAnswers {
+            release.await()
+            RefreshSummary(refreshedCount = 2, newEpisodes = emptyList())
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refreshStale()
+            val running = awaitItem()
+            assertTrue(running.isAutoRefreshing)
+            assertFalse("The pull-to-refresh spinner must stay down", running.isRefreshing)
+
+            release.complete(Unit)
+            val done = awaitItem()
+            assertFalse(done.isAutoRefreshing)
+            // The whole point of the quiet refresh: no snackbar on entering the screen.
+            assertEquals(null, done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an automatic refresh does not start on top of a pull-to-refresh`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.refreshAll(any(), any()) } coAnswers {
+            release.await()
+            RefreshSummary()
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refreshAll()
+            assertTrue(awaitItem().isRefreshing)
+            // Returning to the screen while a pull-to-refresh runs must not cancel out its answer.
+            viewModel.refreshStale()
+
+            release.complete(Unit)
+            val done = awaitItem()
+            assertFalse(done.isRefreshing)
+            assertTrue(done.message is LibraryMessage.RefreshFinished)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coVerify(exactly = 1) { repository.refreshAll(any(), any()) }
+    }
+
+    @Test
+    fun `a pull-to-refresh does not start on top of an automatic refresh`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.refreshAll(any(), any()) } coAnswers {
+            release.await()
+            RefreshSummary()
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.refreshStale()
+            assertTrue(awaitItem().isAutoRefreshing)
+            viewModel.refreshAll()
+
+            release.complete(Unit)
+            assertFalse(awaitItem().isAutoRefreshing)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coVerify(exactly = 1) { repository.refreshAll(any(), any()) }
     }
 }

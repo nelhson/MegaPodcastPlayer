@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.core.data.repository
 
+import java.time.Duration
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
@@ -73,8 +74,13 @@ data class NewEpisode(
 /**
  * Result of refreshing one or more feeds.
  *
+ * Every show a run considered lands in exactly one of [refreshedCount], [notModifiedCount],
+ * [skippedCount] or [failedTitles] — a tally that does not add up is a bug.
+ *
  * @property refreshedCount feeds that were fetched and applied.
  * @property notModifiedCount feeds the server reported as unchanged (a 304).
+ * @property skippedCount feeds not contacted at all because they were refreshed too recently to be
+ *   worth another request; always zero when the caller passed no staleness window.
  * @property newEpisodes every episode discovered across all refreshed feeds, in the order the
  *   feeds were visited.
  * @property failedTitles shows whose refresh failed, by title, so one dead feed can be reported
@@ -83,6 +89,7 @@ data class NewEpisode(
 data class RefreshSummary(
     val refreshedCount: Int = 0,
     val notModifiedCount: Int = 0,
+    val skippedCount: Int = 0,
     val newEpisodes: List<NewEpisode> = emptyList(),
     val failedTitles: List<String> = emptyList(),
 ) {
@@ -141,18 +148,29 @@ interface PodcastRepository {
      *
      * Never downloads audio.
      *
-     * @return how many episodes were discovered; zero both when the feed is unchanged and when it
-     *   changed without gaining episodes, because the two are the same answer to the user.
+     * @param podcastId the show to re-fetch.
+     * @param staleAfter skip the request when the feed was last fetched less than this ago; null
+     *   always fetches. A show that has never been refreshed is always stale.
+     * @return how many episodes were discovered; zero both when the feed is unchanged, when it
+     *   changed without gaining episodes, and when the fetch was skipped as too recent — to the
+     *   user those are all the same answer.
      */
-    suspend fun refresh(podcastId: String): Result<Int>
+    suspend fun refresh(podcastId: String, staleAfter: Duration? = null): Result<Int>
 
     /**
      * Re-fetches feeds and stores any new episodes.
      *
-     * @param onlyAutoRefreshable true for the periodic background run (respects the per-show
-     *   toggle), false for a user-initiated "refresh all".
+     * @param onlyAutoRefreshable true for the periodic background run and the automatic refresh the
+     *   library performs on entry (both respect the per-show toggle), false for a user-initiated
+     *   "refresh all".
+     * @param staleAfter skip any feed fetched less than this ago, counted into
+     *   [RefreshSummary.skippedCount]; null fetches every selected feed. This is what lets a screen
+     *   refresh on every entry without turning a burst of tab switches into a burst of requests.
      */
-    suspend fun refreshAll(onlyAutoRefreshable: Boolean): RefreshSummary
+    suspend fun refreshAll(
+        onlyAutoRefreshable: Boolean,
+        staleAfter: Duration? = null,
+    ): RefreshSummary
 
     /** Removes a show and, by cascade, its episodes and queue entries. */
     suspend fun remove(podcastId: String)

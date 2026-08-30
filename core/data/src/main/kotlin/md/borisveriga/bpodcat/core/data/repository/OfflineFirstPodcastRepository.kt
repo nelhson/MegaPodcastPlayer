@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.core.data.repository
 
 import android.util.Log
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -188,19 +189,35 @@ class OfflineFirstPodcastRepository @Inject constructor(
         )
     }
 
-    override suspend fun refresh(podcastId: String): Result<Int> = withContext(ioDispatcher) {
-        val podcast = podcastDao.getById(podcastId)
-            ?: return@withContext Result.failure(NoSuchElementException("Unknown podcast $podcastId"))
-        suspendRunCatching { refreshOne(podcast).newEpisodes.size }
-    }
-
-    override suspend fun refreshAll(onlyAutoRefreshable: Boolean): RefreshSummary =
+    override suspend fun refresh(podcastId: String, staleAfter: Duration?): Result<Int> =
         withContext(ioDispatcher) {
-            val podcasts = if (onlyAutoRefreshable) {
+            val podcast = podcastDao.getById(podcastId)
+                ?: return@withContext Result.failure(
+                    NoSuchElementException("Unknown podcast $podcastId"),
+                )
+            // A skipped fetch discovers nothing, which the caller reads exactly the way it reads a
+            // feed that had no news — so it needs no result of its own.
+            if (podcast.isFreshAt(Instant.now(clock), staleAfter)) {
+                return@withContext Result.success(0)
+            }
+            suspendRunCatching { refreshOne(podcast).newEpisodes.size }
+        }
+
+    override suspend fun refreshAll(
+        onlyAutoRefreshable: Boolean,
+        staleAfter: Duration?,
+    ): RefreshSummary =
+        withContext(ioDispatcher) {
+            val selected = if (onlyAutoRefreshable) {
                 podcastDao.getAutoRefreshable()
             } else {
                 podcastDao.getAll()
             }
+
+            // Read once for the whole run rather than per feed: a slow library must not have its
+            // later shows judged against a later "now" than its earlier ones.
+            val now = Instant.now(clock)
+            val (fresh, podcasts) = selected.partition { it.isFreshAt(now, staleAfter) }
 
             var refreshed = 0
             var notModified = 0
@@ -225,6 +242,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
             RefreshSummary(
                 refreshedCount = refreshed,
                 notModifiedCount = notModified,
+                skippedCount = fresh.size,
                 newEpisodes = newEpisodes,
                 failedTitles = failed,
             )
@@ -318,4 +336,27 @@ class OfflineFirstPodcastRepository @Inject constructor(
     private companion object {
         private const val TAG = "PodcastRepository"
     }
+}
+
+/**
+ * Whether this show was fetched recently enough to leave alone.
+ *
+ * A conditional GET is cheap but not free — it is still a round trip per show, and a YouTube
+ * playlist has no validators to make it cheap at all — so a screen that refreshes on every entry
+ * needs a floor under how often that turns into traffic.
+ *
+ * @param now the moment the run started.
+ * @param staleAfter how old a fetch may be before it is worth repeating; null means the caller
+ *   wants the feed fetched whatever its age.
+ * @return true when the fetch should be skipped. Never true for a show that has no recorded fetch:
+ *   it has nothing to be fresh from.
+ */
+private fun PodcastEntity.isFreshAt(now: Instant, staleAfter: Duration?): Boolean {
+    if (staleAfter == null) return false
+    val fetchedAt = lastRefreshAt?.let(Instant::ofEpochMilli) ?: return false
+    // A clock that has gone backwards (a timezone-less device correcting itself, a restored backup)
+    // yields a negative age; treating that as stale re-fetches once rather than wedging the show
+    // until the stored timestamp is passed again.
+    val age = Duration.between(fetchedAt, now)
+    return !age.isNegative && age < staleAfter
 }

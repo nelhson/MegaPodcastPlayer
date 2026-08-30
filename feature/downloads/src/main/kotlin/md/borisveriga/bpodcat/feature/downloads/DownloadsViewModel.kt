@@ -12,21 +12,30 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
+import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.DownloadedEpisode
 
 /**
  * State rendered by the downloads screen.
  *
- * @property downloads every episode stored on the device, newest first.
- * @property totalBytes what those episodes occupy, summed from the per-episode counters Media3
- *   writes back — so the figure needs no separate read and can never lag the list it labels.
+ * @property downloads every episode the download stack is tracking: completed, transferring,
+ *   waiting and failed, failures first.
+ * @property completedCount how many of [downloads] are actually on the device. Counted separately
+ *   because the storage summary answers "what is this costing me", and a transfer that is half done
+ *   or has failed is not yet costing anything worth reporting.
+ * @property totalBytes what the completed episodes occupy, summed from the per-episode counters
+ *   Media3 writes back — so the figure needs no separate read and can never lag the list it labels.
+ * @property unmeteredOnly whether downloads wait for Wi-Fi, which is what lets a waiting row say
+ *   why it is waiting rather than just that it is.
  * @property isLoading true until the first database emission arrives.
  * @property message a one-off outcome for the snackbar; cleared via
  *   [DownloadsViewModel.onMessageShown].
  */
 data class DownloadsUiState(
     val downloads: List<DownloadedEpisode> = emptyList(),
+    val completedCount: Int = 0,
     val totalBytes: Long = 0L,
+    val unmeteredOnly: Boolean = false,
     val isLoading: Boolean = true,
     val message: DownloadsMessage? = null,
 )
@@ -62,6 +71,18 @@ sealed interface DownloadsMessage {
     data class Queued(val title: String) : DownloadsMessage
 
     /**
+     * A failed download was asked for again.
+     *
+     * Confirmed rather than left silent because the row it came from does not visibly change on the
+     * spot — the retry may sit waiting for Wi-Fi, in which case a tap with no feedback reads as a
+     * tap that missed.
+     *
+     * @property title the episode's title.
+     * @property waitingForWifi whether the retry is waiting for an unmetered network.
+     */
+    data class RetryQueued(val title: String, val waitingForWifi: Boolean) : DownloadsMessage
+
+    /**
      * An episode could not be played or queued.
      *
      * Only reachable when the show is removed between the list rendering and the tap landing.
@@ -72,10 +93,11 @@ sealed interface DownloadsMessage {
 /**
  * Drives the downloads screen.
  *
- * Owns no list of its own: the downloaded set is a query over the episode table, which Media3's
- * download events are mirrored into, so removing audio here shows up without this class being told.
+ * Owns no list of its own: the tracked set is a query over the episode table, which Media3's
+ * download events are mirrored into. That is also what makes live progress free — a transfer
+ * advancing writes its percentage back to Room and the row redraws, with nothing to poll here.
  *
- * @property downloadRepository the downloaded episodes and the operations that remove them.
+ * @property downloadRepository the tracked episodes and the operations that retry and remove them.
  * @property episodePlayer starts playback and edits the queue from an episode id.
  */
 @HiltViewModel
@@ -88,11 +110,18 @@ class DownloadsViewModel @Inject constructor(
 
     val uiState: StateFlow<DownloadsUiState> = combine(
         downloadRepository.observeDownloads(),
+        downloadRepository.observeDownloadSettings(),
         transientState,
-    ) { downloads, message ->
+    ) { downloads, settings, message ->
+        val completed = downloads.filter { it.episode.downloadState == DownloadState.COMPLETED }
         DownloadsUiState(
             downloads = downloads,
-            totalBytes = downloads.sumOf { it.episode.downloadedBytes },
+            completedCount = completed.size,
+            // Only the finished episodes: a partial transfer's bytes are on disk but are not
+            // storage the user can act on, and counting them would make the figure jump about
+            // while a download runs.
+            totalBytes = completed.sumOf { it.episode.downloadedBytes },
+            unmeteredOnly = settings.unmeteredOnly,
             isLoading = false,
             message = message,
         )
@@ -139,7 +168,33 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
-     * Deletes one episode's audio, freeing its storage.
+     * Asks for a failed download again.
+     *
+     * [DownloadRepository.download] is documented as safe to call for an episode that previously
+     * failed, so a retry is the same request as the first attempt — there is nothing to clean up
+     * first.
+     *
+     * @param episodeId the episode to try again.
+     */
+    fun retry(episodeId: String) {
+        val title = titleOf(episodeId) ?: return
+        viewModelScope.launch {
+            transientState.value = if (downloadRepository.download(episodeId)) {
+                DownloadsMessage.RetryQueued(
+                    title = title,
+                    waitingForWifi = uiState.value.unmeteredOnly,
+                )
+            } else {
+                DownloadsMessage.EpisodeUnavailable
+            }
+        }
+    }
+
+    /**
+     * Deletes one episode's audio, or cancels the transfer if it has not finished.
+     *
+     * One handler for both, because `removeDownload` already cancels an in-flight download
+     * before clearing it — the button means "stop holding this" whichever state the row is in.
      *
      * The row disappears from the list on its own: the removal writes the episode's download state
      * back to Room, which the observed query re-runs against.
@@ -155,7 +210,10 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
-     * Deletes every download.
+     * Deletes every download, cancelling anything still in flight.
+     *
+     * The count covers the whole list rather than only the finished episodes, because that is
+     * genuinely what the sweep clears: a queued transfer stops being queued too.
      *
      * The count is read before the removal, because afterwards there is nothing left to count.
      */

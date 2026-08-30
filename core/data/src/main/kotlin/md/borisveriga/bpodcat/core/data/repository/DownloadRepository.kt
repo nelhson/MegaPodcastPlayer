@@ -22,10 +22,14 @@ interface DownloadRepository {
     fun observeDownloadedEpisodes(): Flow<List<Episode>>
 
     /**
-     * Observes every episode available offline with the show it belongs to, newest first.
+     * Observes every episode the download stack is tracking — completed, transferring, waiting and
+     * failed — with the show it belongs to.
      *
-     * The downloads screen mixes shows, so a row has to name the one it came from;
-     * [observeDownloadedEpisodes] remains for callers that already know the show.
+     * Two differences from [observeDownloadedEpisodes], both deliberate. It carries the show,
+     * because the downloads screen mixes shows and an episode title alone does not say what you are
+     * looking at. And it is not limited to what is on the device: a transfer in progress and a
+     * failure are precisely what the user opens this screen to find out about, and neither is
+     * "available offline". Ordered failures first, then in progress, then waiting, then completed.
      */
     fun observeDownloads(): Flow<List<DownloadedEpisode>>
 

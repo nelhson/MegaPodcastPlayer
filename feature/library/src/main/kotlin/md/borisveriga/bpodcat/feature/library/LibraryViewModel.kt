@@ -3,6 +3,7 @@ package md.borisveriga.bpodcat.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Duration
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,7 +20,12 @@ import md.borisveriga.bpodcat.core.model.PodcastWithCounts
  *
  * @property podcasts subscribed shows with their episode counts.
  * @property isLoading true until the first database emission arrives.
- * @property isRefreshing true while a manual "refresh all" is in flight.
+ * @property isRefreshing true while a pull-to-refresh is in flight; drives the gesture's own
+ *   spinner and ends in a snackbar.
+ * @property isAutoRefreshing true while the refresh that runs on entering the screen is in flight.
+ *   Kept apart from [isRefreshing] because the two are deliberately different in tone: one is
+ *   something the user asked for and gets an answer to, the other is housekeeping and shows only a
+ *   thin progress line.
  * @property message a one-off result to surface in a snackbar; cleared via
  *   [LibraryViewModel.onMessageShown].
  */
@@ -27,6 +33,7 @@ data class LibraryUiState(
     val podcasts: List<PodcastWithCounts> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    val isAutoRefreshing: Boolean = false,
     val message: LibraryMessage? = null,
 )
 
@@ -73,6 +80,7 @@ class LibraryViewModel @Inject constructor(
             podcasts = podcasts,
             isLoading = false,
             isRefreshing = transient.isRefreshing,
+            isAutoRefreshing = transient.isAutoRefreshing,
             message = transient.message,
         )
     }.stateIn(
@@ -84,13 +92,14 @@ class LibraryViewModel @Inject constructor(
     )
 
     /**
-     * Re-fetches every feed, including shows with background refresh switched off — an explicit tap
-     * means "check everything now".
+     * Re-fetches every feed, including shows with background refresh switched off and shows fetched
+     * moments ago — pulling the list down means "check everything now", and a gesture that answers
+     * "nothing to do" would be indistinguishable from one that did not register.
      *
      * Never downloads audio.
      */
     fun refreshAll() {
-        if (transientState.value.isRefreshing) return
+        if (transientState.value.isBusy) return
         transientState.value = transientState.value.copy(isRefreshing = true)
         viewModelScope.launch {
             val summary = repository.refreshAll(onlyAutoRefreshable = false)
@@ -98,6 +107,31 @@ class LibraryViewModel @Inject constructor(
                 isRefreshing = false,
                 message = LibraryMessage.RefreshFinished(summary),
             )
+        }
+    }
+
+    /**
+     * Brings the library up to date on entering the screen, quietly.
+     *
+     * Two things keep this from being a nuisance. Feeds fetched within [AUTO_REFRESH_STALE_AFTER]
+     * are skipped in the repository, so returning from a show or flicking between tabs costs
+     * nothing; and shows the user switched background refresh off for are left out, because a bulk
+     * refresh is exactly what that toggle declines. Opening such a show directly still refreshes it
+     * — see `PodcastDetailViewModel`.
+     *
+     * Reports nothing: an update the user did not ask for should not interrupt them, and a snackbar
+     * on every entry into the library would be constant. Failures are equally silent, which is the
+     * price of that; pulling to refresh is what surfaces them.
+     */
+    fun refreshStale() {
+        if (transientState.value.isBusy) return
+        transientState.value = transientState.value.copy(isAutoRefreshing = true)
+        viewModelScope.launch {
+            repository.refreshAll(
+                onlyAutoRefreshable = true,
+                staleAfter = AUTO_REFRESH_STALE_AFTER,
+            )
+            transientState.value = transientState.value.copy(isAutoRefreshing = false)
         }
     }
 
@@ -123,10 +157,27 @@ class LibraryViewModel @Inject constructor(
     /** State owned by the view model rather than the database. */
     private data class TransientState(
         val isRefreshing: Boolean = false,
+        val isAutoRefreshing: Boolean = false,
         val message: LibraryMessage? = null,
-    )
+    ) {
+        /**
+         * Whether a refresh of either kind is already running.
+         *
+         * One guard for both, so an automatic refresh cannot start on top of a pull-to-refresh and
+         * quietly cancel out its snackbar, nor the reverse.
+         */
+        val isBusy: Boolean get() = isRefreshing || isAutoRefreshing
+    }
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
+
+        /**
+         * How stale a feed must be before entering the library re-fetches it.
+         *
+         * Fifteen minutes sits well inside the six-hour background cycle — the gap this is here to
+         * cover — while being long enough that moving around the app is free.
+         */
+        val AUTO_REFRESH_STALE_AFTER: Duration = Duration.ofMinutes(15)
     }
 }

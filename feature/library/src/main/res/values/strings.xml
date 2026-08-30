@@ -10,9 +10,6 @@
 
     <string name="library_title">Library</string>
 
-    <!-- Toolbar action; also its TalkBack label, so it is a sentence rather than "Refresh". -->
-    <string name="library_refresh">Check all podcasts for new episodes</string>
-
     <string name="library_add_podcast">Add a podcast</string>
 
     <string name="library_loading">Loading your podcasts</string>
