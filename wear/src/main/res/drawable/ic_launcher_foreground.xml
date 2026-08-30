@@ -1,30 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BPodcat launcher icon, foreground layer.
+
+  A ball microphone in its yoke, with cat ears — the "pod" and the "cat" in one mark.
+
+  Adaptive-icon geometry: the layer is 108x108dp but launchers only show the centre 72dp and may
+  mask it to any shape, so every path stays inside the 66dp safe circle (x and y in 21..87).
+
+  Two things are deliberate at launcher size, where the whole mark is ~15px tall:
+   * the capsule is a circle rather than the usual tall pill, because ears on a pill read as a
+     funnel or a rocket rather than as a head;
+   * the ears lean outwards and their inner edges meet the head near its crown, leaving a narrow V
+     of background between them. Without that notch the two triangles merge into one spike.
+
+  A single flat fill is used throughout, which also lets this drawable serve as the `monochrome`
+  layer for themed icons — the system re-tints it and only the alpha matters.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:endX="85.84757"
-                android:endY="92.4963"
-                android:startX="42.9492"
-                android:startY="49.59793"
-                android:type="linear">
-                <item
-                    android:color="#44000000"
-                    android:offset="0.0" />
-                <item
-                    android:color="#00000000"
-                    android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+
+    <!-- Left ear. Drawn before the head so the seam where they meet disappears. -->
     <path
-        android:fillColor="#FFFFFF"
-        android:fillType="nonZero"
-        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
-        android:strokeWidth="1"
-        android:strokeColor="#00000000" />
+        android:fillColor="#FFB868"
+        android:pathData="M42.5,42 L44.5,27 L53,35 Z" />
+
+    <!-- Right ear, mirrored about x=54. -->
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M65.5,42 L63.5,27 L55,35 Z" />
+
+    <!-- Head / microphone capsule: a circle of radius 12.5 centred at (54,47), sized to clear the yoke arms. -->
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M54,34.5 C60.904,34.5 66.5,40.096 66.5,47 C66.5,53.904 60.904,59.5 54,59.5 C47.096,59.5 41.5,53.904 41.5,47 C41.5,40.096 47.096,34.5 54,34.5 Z" />
+
+    <!-- Yoke: the U-shaped cradle under the capsule. Stroked rather than filled so it stays thin. -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M36,55 C36,64 44,70.5 54,70.5 C64,70.5 72,64 72,55"
+        android:strokeColor="#FFB868"
+        android:strokeWidth="5"
+        android:strokeLineCap="round" />
+
+    <!-- Stem joining the yoke to the base. -->
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M51.5,69 L56.5,69 L56.5,76 L51.5,76 Z" />
+
+    <!-- Base: a 22x5.5 rounded bar. -->
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M45.75,74.5 L62.25,74.5 C63.77,74.5 65,75.73 65,77.25 C65,78.77 63.77,80 62.25,80 L45.75,80 C44.23,80 43,78.77 43,77.25 C43,75.73 44.23,74.5 45.75,74.5 Z" />
 </vector>

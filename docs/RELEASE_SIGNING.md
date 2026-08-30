@@ -21,6 +21,14 @@ Debug builds are unaffected and still use the debug key.
 Both APKs must be signed with the **same** key — the phone and the watch app only talk to each
 other because their application ID and certificate match.
 
+The quick way, which does both steps below and prompts once for a password:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\create-release-keystore.ps1
+```
+
+By hand:
+
 ```bash
 keytool -genkeypair -v \
   -keystore bpodcat-release.jks \
