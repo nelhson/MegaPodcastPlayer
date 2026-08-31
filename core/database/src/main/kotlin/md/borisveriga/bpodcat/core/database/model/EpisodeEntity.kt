@@ -52,6 +52,18 @@ data class EpisodeEntity(
     val downloadState: DownloadState = DownloadState.NOT_DOWNLOADED,
     @ColumnInfo(name = "downloaded_bytes", defaultValue = "0") val downloadedBytes: Long = 0L,
     @ColumnInfo(name = "download_percent", defaultValue = "0") val downloadPercent: Float = 0f,
+    /**
+     * Where this episode sits in a hand-ordered show, smallest first.
+     *
+     * Only read for shows whose `source` is `YOUTUBE`, which are the ones a user can reorder; an
+     * RSS show is ordered by `published_at` and never looks at this. New videos are prepended at
+     * `MIN(sort_order) - 1` so a refresh puts them on top without rewriting every existing row,
+     * which is why the column is signed and why negative values are ordinary rather than a bug.
+     *
+     * The `defaultValue` has to match the `DEFAULT 0` in `MIGRATION_4_5` exactly.
+     */
+    @ColumnInfo(name = "sort_order", defaultValue = "0")
+    val sortOrder: Int = 0,
 )
 
 /** Maps a Room row to the domain model. */

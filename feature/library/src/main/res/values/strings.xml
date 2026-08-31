@@ -17,6 +17,16 @@
     <string name="library_add_link">Paste a link</string>
     <string name="library_add_close">Close</string>
 
+    <!-- Top bar action; Settings is pushed from here rather than owning a navigation-bar slot. -->
+    <string name="library_settings">Settings</string>
+
+    <!--
+        The reorder gesture, spoken. A drag is invisible to a screen reader, so without these the
+        library would be readable and completely unarrangeable with TalkBack on.
+    -->
+    <string name="library_move_up">Move up</string>
+    <string name="library_move_down">Move down</string>
+
     <!-- The grid/list toggle; each label says what tapping it will do. -->
     <string name="library_layout_show_grid">Show as grid</string>
     <string name="library_layout_show_list">Show as list</string>

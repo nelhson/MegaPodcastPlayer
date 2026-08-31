@@ -143,10 +143,10 @@ class SystemNewEpisodeNotifier @Inject constructor(
          * Fixed, so each refresh replaces the previous card rather than adding to a pile.
          *
          * Notification ids are per-package, so this has to avoid the two the app already posts:
-         * `EpisodeDownloadService.FOREGROUND_NOTIFICATION_ID` is 2, and Media3's playback
-         * notification is **1001** (`DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID`,
-         * which `PlaybackService` leaves at its default). Reusing either would replace a
-         * foreground service's own notification.
+         * `EpisodeDownloadService.FOREGROUND_NOTIFICATION_ID` is 2, and the player controls are
+         * **1001** (`PLAYBACK_NOTIFICATION_ID` in `:core:media`). Reusing either would replace a
+         * foreground service's own notification — and for the player that would take the service
+         * down with it, stopping playback.
          */
         const val NOTIFICATION_ID = 3
 

@@ -16,14 +16,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -47,12 +50,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -66,6 +71,12 @@ import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
 import md.borisveriga.bpodcat.core.designsystem.component.ShowTile
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
+import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.designsystem.theme.Motion
 import md.borisveriga.bpodcat.core.model.LibraryLayout
@@ -79,6 +90,8 @@ import md.borisveriga.bpodcat.core.model.PodcastWithCounts
  * @param onPodcastClick invoked with a podcast id when a show is tapped.
  * @param onSearchClick invoked when the user wants to look a show up by name.
  * @param onPasteLinkClick invoked when the user wants to add a show from a link they have copied.
+ * @param onOpenSettings invoked when the user taps the top bar's settings action.
+ * @param onMove invoked with positions in the library once a reorder gesture finishes.
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
@@ -87,6 +100,7 @@ fun LibraryRoute(
     onPodcastClick: (String) -> Unit,
     onSearchClick: () -> Unit,
     onPasteLinkClick: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -109,6 +123,8 @@ fun LibraryRoute(
         onPodcastClick = onPodcastClick,
         onSearchClick = onSearchClick,
         onPasteLinkClick = onPasteLinkClick,
+        onOpenSettings = onOpenSettings,
+        onMove = viewModel::move,
         onLayoutChange = viewModel::setLayout,
         onRefresh = viewModel::refreshAll,
         onMessageShown = viewModel::onMessageShown,
@@ -123,6 +139,9 @@ fun LibraryRoute(
  * @param onPodcastClick show tap handler.
  * @param onSearchClick opens search by name.
  * @param onPasteLinkClick opens search with a copied link.
+ * @param onOpenSettings opens the settings screen.
+ * @param onMove applies a completed reorder, as positions within [LibraryUiState.podcasts].
+ *   Called once on release rather than per frame: one gesture is one edit.
  * @param onLayoutChange grid/list toggle handler.
  * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
@@ -135,6 +154,8 @@ fun LibraryScreen(
     onPodcastClick: (String) -> Unit,
     onSearchClick: () -> Unit,
     onPasteLinkClick: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onMove: (Int, Int) -> Unit,
     onLayoutChange: (LibraryLayout) -> Unit,
     onRefresh: () -> Unit,
     onMessageShown: () -> Unit,
@@ -163,6 +184,12 @@ fun LibraryScreen(
                 scrollBehavior = scrollBehavior,
                 actions = {
                     LayoutToggle(layout = uiState.layout, onLayoutChange = onLayoutChange)
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.library_settings),
+                        )
+                    }
                 },
             )
         },
@@ -214,11 +241,13 @@ fun LibraryScreen(
                         LibraryLayout.GRID -> ShowGrid(
                             podcasts = uiState.podcasts,
                             onPodcastClick = onPodcastClick,
+                            onMove = onMove,
                         )
 
                         LibraryLayout.LIST -> ShowList(
                             podcasts = uiState.podcasts,
                             onPodcastClick = onPodcastClick,
+                            onMove = onMove,
                         )
                     }
                 }
@@ -228,27 +257,48 @@ fun LibraryScreen(
 }
 
 /**
- * The shows as a wall of cover art.
+ * The shows as a wall of cover art, rearrangeable by long press.
  *
  * Adaptive rather than a fixed column count, so the same code fills a phone, a rail-width pane and
  * the Fold 7 opened out without any of them being a special case.
  *
+ * A long press rather than a handle: a tile is artwork edge to edge, and carving a grip out of it
+ * would cost the cover the space it exists to show. The list layout, whose rows have somewhere to
+ * put one, uses a handle instead.
+ *
  * @param podcasts the library.
  * @param onPodcastClick tile tap handler.
+ * @param onMove reports a finished reorder as positions in [podcasts].
  */
 @Composable
 private fun ShowGrid(
     podcasts: List<PodcastWithCounts>,
     onPodcastClick: (String) -> Unit,
+    onMove: (Int, Int) -> Unit,
 ) {
     val resources = LocalResources.current
+    val moveUp = stringResource(R.string.library_move_up)
+    val moveDown = stringResource(R.string.library_move_down)
+    val gridState = rememberLazyGridState()
+    val drag = rememberReorderableState(
+        layout = rememberReorderableLayout(gridState),
+        items = podcasts,
+        keyOf = { it.podcast.id },
+        onMove = onMove,
+    )
 
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Adaptive(minSize = TILE_MIN_WIDTH),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(BPodcatTheme.spacing.sm),
     ) {
-        items(items = podcasts, key = { it.podcast.id }) { entry ->
+        itemsIndexed(
+            items = drag.order,
+            key = { _, entry -> entry.podcast.id },
+        ) { index, entry ->
+            val isDragging = drag.draggingKey == entry.podcast.id
+
             ShowTile(
                 title = entry.podcast.title,
                 artworkUrl = entry.podcast.artworkUrl,
@@ -257,6 +307,19 @@ private fun ShowGrid(
                 badgeCount = entry.newEpisodeCount,
                 stateDescription = entry.newEpisodeDescription(resources),
                 onClick = { onPodcastClick(entry.podcast.id) },
+                modifier = Modifier
+                    // On the tile/row itself, which merges its children: that merged node is
+                    // what a screen reader lands on, and a drag is invisible to one.
+                    .semantics { customActions = drag.moveActions(index, moveUp, moveDown) }
+                    .graphicsLayer {
+                        // Only the dragged tile moves; the rest are re-laid-out by the grid as the
+                        // order changes, which is what makes the gap follow the finger.
+                        translationX = if (isDragging) drag.offset.x else 0f
+                        translationY = if (isDragging) drag.offset.y else 0f
+                        // Lifts it above its neighbours so it is not clipped by them mid-drag.
+                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+                    }
+                    .reorderableLongPressDrag(drag, entry.podcast.id),
             )
         }
     }
@@ -267,20 +330,45 @@ private fun ShowGrid(
  *
  * @param podcasts the library.
  * @param onPodcastClick row tap handler.
+ * @param onMove reports a finished reorder as positions in [podcasts].
  */
 @Composable
 private fun ShowList(
     podcasts: List<PodcastWithCounts>,
     onPodcastClick: (String) -> Unit,
+    onMove: (Int, Int) -> Unit,
 ) {
     val resources = LocalResources.current
+    val moveUp = stringResource(R.string.library_move_up)
+    val moveDown = stringResource(R.string.library_move_down)
+    val listState = rememberLazyListState()
+    val drag = rememberReorderableState(
+        layout = rememberReorderableLayout(listState),
+        items = podcasts,
+        keyOf = { it.podcast.id },
+        onMove = onMove,
+    )
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = BPodcatTheme.spacing.sm),
     ) {
-        items(items = podcasts, key = { it.podcast.id }) { entry ->
+        itemsIndexed(
+            items = drag.order,
+            key = { _, entry -> entry.podcast.id },
+        ) { index, entry ->
+            val isDragging = drag.draggingKey == entry.podcast.id
+
             ShowRow(
+                modifier = Modifier
+                    // On the tile/row itself, which merges its children: that merged node is
+                    // what a screen reader lands on, and a drag is invisible to one.
+                    .semantics { customActions = drag.moveActions(index, moveUp, moveDown) }
+                    .graphicsLayer {
+                        translationY = if (isDragging) drag.offset.y else 0f
+                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+                    },
                 title = entry.podcast.title,
                 author = entry.podcast.author,
                 metadata = entry.countsLine(resources),
@@ -302,6 +390,9 @@ private fun ShowList(
                             Text(text = entry.newEpisodeCount.toString())
                         }
                     }
+                    ReorderHandle(
+                        modifier = Modifier.reorderableHandle(drag, entry.podcast.id),
+                    )
                 },
             )
         }
@@ -533,6 +624,9 @@ private val TILE_MIN_WIDTH = 148.dp
 /** An eighth of a turn, which is what turns a plus into a close glyph. */
 private const val CLOSE_ROTATION_DEGREES = 45f
 
+/** How far a dragged show is lifted above its neighbours, so they cannot clip it. */
+private const val DRAG_ELEVATION = 8f
+
 @Preview
 @Composable
 private fun LibraryScreenPreview() {
@@ -548,6 +642,8 @@ private fun LibraryScreenPreview() {
             onPodcastClick = {},
             onSearchClick = {},
             onPasteLinkClick = {},
+            onOpenSettings = {},
+            onMove = { _, _ -> },
             onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},
@@ -568,6 +664,8 @@ private fun LibraryScreenListPreview() {
             onPodcastClick = {},
             onSearchClick = {},
             onPasteLinkClick = {},
+            onOpenSettings = {},
+            onMove = { _, _ -> },
             onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},

@@ -1,10 +1,8 @@
 package md.borisveriga.bpodcat.feature.player
 
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -12,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -40,6 +36,11 @@ import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.SectionHeader
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.media.PlayableEpisode
 
@@ -95,7 +96,12 @@ fun QueueScreen(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    val drag = rememberQueueDragState(listState, uiState.upNext, onMove)
+    val drag = rememberReorderableState(
+        layout = rememberReorderableLayout(listState),
+        items = uiState.upNext,
+        keyOf = { it.episode.id },
+        onMove = onMove,
+    )
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -184,7 +190,7 @@ fun QueueScreen(
 private fun QueueEntry(
     entry: PlayableEpisode,
     index: Int,
-    drag: QueueDragState,
+    drag: ReorderableState<PlayableEpisode>,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
@@ -192,7 +198,7 @@ private fun QueueEntry(
     // LocalResources rather than LocalContext.current.resources, so a configuration change
     // invalidates the read.
     val resources = LocalResources.current
-    val isDragging = drag.draggingId == entry.episode.id
+    val isDragging = drag.draggingKey == entry.episode.id
 
     val dismissState = rememberSwipeToDismissBoxState()
 
@@ -207,7 +213,7 @@ private fun QueueEntry(
         modifier = modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the underlying
             // order changes, which is what makes the gap follow the finger.
-            translationY = if (isDragging) drag.offsetY else 0f
+            translationY = if (isDragging) drag.offset.y else 0f
             // Lifts the row above its neighbours so it is not clipped by them mid-drag.
             shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
         },
@@ -248,45 +254,10 @@ private fun QueueEntry(
             playedFraction = entry.episode.playedFraction,
             onClick = onPlay,
             trailing = {
-                DragHandle(
-                    modifier = Modifier.pointerInput(entry.episode.id) {
-                        detectDragGestures(
-                            onDragStart = { drag.onDragStart(entry.episode.id) },
-                            onDragEnd = { drag.onDragEnd() },
-                            onDragCancel = { drag.onDragCancel() },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                drag.onDrag(amount.y)
-                            },
-                        )
-                    },
+                ReorderHandle(
+                    modifier = Modifier.reorderableHandle(drag, entry.episode.id),
                 )
             },
-        )
-    }
-}
-
-/**
- * The grip the reorder drag starts from.
- *
- * A dedicated handle rather than a long press on the row: the row is already a button that plays
- * the episode, and a long press that both scrolls and reorders is the classic way to make a queue
- * feel broken. It also gives the gesture a visible target, which a long press never has.
- *
- * @param modifier layout modifier, carrying the drag gesture.
- */
-@Composable
-private fun DragHandle(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.size(BPodcatTheme.spacing.minTouchTarget),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.DragHandle,
-            // The gesture is published as a custom action on the row instead; announcing the
-            // handle would offer a screen reader a control it cannot operate.
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

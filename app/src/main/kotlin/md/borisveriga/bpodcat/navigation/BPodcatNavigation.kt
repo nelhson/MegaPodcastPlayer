@@ -4,7 +4,6 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.serialization.Serializable
 import md.borisveriga.bpodcat.R
@@ -18,15 +17,11 @@ import md.borisveriga.bpodcat.R
 sealed interface Route {
 
     /**
-     * The Latest feed: every followed show's newest episodes in one chronological list.
+     * The library of subscribed shows.
      *
-     * The start destination. It answers "what is new" — the question a podcast app is opened to
-     * ask — which the library, being a list of shows rather than of episodes, never could.
+     * The start destination. It is the app's inventory, and the one screen that is useful before
+     * anything has been played.
      */
-    @Serializable
-    data object Home : Route
-
-    /** The library of subscribed shows. */
     @Serializable
     data object Library : Route
 
@@ -60,7 +55,7 @@ sealed interface Route {
      * Playback and download preferences.
      *
      * Not a [TopLevelDestination]. Settings is opened rarely and was spending a third of the
-     * navigation bar; it is reached from the Latest feed's top bar instead, which is where the
+     * navigation bar; it is reached from the library's top bar instead, which is where the
      * platform convention puts it.
      */
     @Serializable
@@ -86,7 +81,7 @@ sealed interface Route {
  * Adding a podcast is deliberately absent: the library screen carries a floating action button for
  * it, and a permanent tab for the same job spent a quarter of the bar on something used once per
  * new show. Settings left for the same reason — a destination opened once a month does not earn a
- * permanent slot, and it is one tap away in the Latest feed's top bar.
+ * permanent slot, and it is one tap away in the library's top bar.
  *
  * @property route the route object to navigate to.
  * @property labelResId visible label, also used as the accessibility name. A resource id rather
@@ -98,7 +93,6 @@ enum class TopLevelDestination(
     @param:StringRes val labelResId: Int,
     val icon: ImageVector,
 ) {
-    HOME(Route.Home, R.string.destination_home, Icons.Rounded.NewReleases),
     LIBRARY(Route.Library, R.string.destination_library, Icons.Rounded.LibraryMusic),
     DOWNLOADS(Route.Downloads, R.string.destination_downloads, Icons.Rounded.DownloadDone),
 }

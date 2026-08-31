@@ -3,6 +3,7 @@ package md.borisveriga.bpodcat.core.database.dao
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.bpodcat.core.database.model.PodcastEntity
@@ -13,7 +14,11 @@ import md.borisveriga.bpodcat.core.database.model.PodcastWithCountsEntity
 interface PodcastDao {
 
     /**
-     * Observes the library, alphabetically, with the counts the library screen renders.
+     * Observes the library in the user's own order, with the counts the library screen renders.
+     *
+     * Ordered by [PodcastEntity.sortOrder] rather than by title: the library is arranged by hand,
+     * and `MIGRATION_4_5` seeded the column from the alphabetical order this used to impose, so an
+     * untouched library still reads alphabetically.
      *
      * The counts are computed as correlated sub-selects rather than joins so that a show with no
      * episodes still appears (with zeroes) instead of disappearing.
@@ -27,7 +32,7 @@ interface PodcastDao {
             (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id
                 AND e.download_state = 'COMPLETED') AS downloaded_count
         FROM podcasts p
-        ORDER BY p.title COLLATE NOCASE ASC
+        ORDER BY p.sort_order ASC
         """,
     )
     fun observeAllWithCounts(): Flow<List<PodcastWithCountsEntity>>
@@ -82,4 +87,32 @@ interface PodcastDao {
 
     @Query("UPDATE podcasts SET auto_refresh = :enabled WHERE id = :id")
     suspend fun setAutoRefresh(id: String, enabled: Boolean)
+
+    /**
+     * The position a newly subscribed show should take: the end of the library.
+     *
+     * `COALESCE` covers the empty library, where `MAX` is null and the first show belongs at 0.
+     */
+    @Query("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM podcasts")
+    suspend fun nextSortOrder(): Int
+
+    @Query("UPDATE podcasts SET sort_order = :sortOrder WHERE id = :id")
+    suspend fun setSortOrder(id: String, sortOrder: Int)
+
+    /**
+     * Writes a whole hand-made ordering.
+     *
+     * A per-row `UPDATE` in one transaction rather than `QueueDao.replaceAll`'s delete-and-reinsert:
+     * a podcast row carries the subscription itself — refresh metadata, artwork, the cascade its
+     * episodes hang off — so deleting it to reposition it would take the show with it.
+     *
+     * Ids the library no longer contains are simply no-ops, which is what makes a drag that raced a
+     * removal harmless.
+     *
+     * @param ids every show, in the order they should appear.
+     */
+    @Transaction
+    suspend fun reorder(ids: List<String>) {
+        ids.forEachIndexed { index, id -> setSortOrder(id, index) }
+    }
 }

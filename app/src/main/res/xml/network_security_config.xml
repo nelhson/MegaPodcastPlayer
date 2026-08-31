@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is permitted, deliberately and reluctantly.
+
+  A podcast client does not choose its URLs. Feeds hand us enclosure URLs written years ago, and a
+  large share of them point at a cleartext measurement redirector — dts.podtrac.com is the one that
+  prompted this file — which bounces through one or two more hops before reaching the publisher CDN.
+  Since targetSdk 28 Android blocks cleartext outright, so such a show subscribes, refreshes and
+  lists its episodes perfectly, then fails with a bare network error the moment it is played. There
+  is no allowlist that would fix it: the hosts are whatever the world's feeds name, and the hops in
+  between are not knowable until the redirect arrives.
+
+  What keeps this from being a blanket downgrade is HttpsUpgradeInterceptor, which rewrites every
+  outgoing http:// GET to https:// and only lets it fall back to cleartext when TLS genuinely is not
+  on offer. In practice the permission granted here is exercised by the leftovers, not by the bulk
+  of the traffic.
+
+  Trust anchors are left at the platform default (system CAs only, no user-installed certificates),
+  which is what targetSdk 24+ gives us and what we want: nothing here should make interception
+  easier than it already is.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -24,7 +24,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.feature.downloads.DownloadsRoute
-import md.borisveriga.bpodcat.feature.home.HomeRoute
 import md.borisveriga.bpodcat.feature.library.LibraryRoute
 import md.borisveriga.bpodcat.feature.player.PlayerSheetScaffold
 import md.borisveriga.bpodcat.feature.player.PlayerSheetState
@@ -103,7 +102,7 @@ fun BPodcatApp(
         ) { playerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = Route.Home,
+                startDestination = Route.Library,
                 // The sheet is drawn over the screens rather than beside them, so the space its
                 // collapsed bar occupies has to be given back here or every list's last row would
                 // sit permanently underneath it.
@@ -113,14 +112,6 @@ fun BPodcatApp(
                 popEnterTransition = { popEnter() },
                 popExitTransition = { popExit() },
             ) {
-                composable<Route.Home> {
-                    HomeRoute(
-                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
-                        onAddPodcast = { navController.navigate(Route.Search()) },
-                        onOpenSettings = { navController.navigate(Route.Settings) },
-                    )
-                }
-
                 composable<Route.Library> {
                     LibraryRoute(
                         onPodcastClick = { id -> navController.navigate(Route.PodcastDetail(id)) },
@@ -129,6 +120,7 @@ fun BPodcatApp(
                         // screen may read the clipboard on arrival.
                         onSearchClick = { navController.navigate(Route.Search()) },
                         onPasteLinkClick = { navController.navigate(Route.Search(paste = true)) },
+                        onOpenSettings = { navController.navigate(Route.Settings) },
                     )
                 }
 
@@ -167,8 +159,8 @@ fun BPodcatApp(
                 }
 
                 composable<Route.Settings> {
-                    // A plain pop now that Settings is pushed from the Latest feed's top bar
-                    // rather than being a tab: there is always something behind it.
+                    // A plain pop now that Settings is pushed from the library's top bar rather
+                    // than being a tab: there is always something behind it.
                     SettingsRoute(onBack = { navController.popBackStack() })
                 }
 
@@ -184,7 +176,6 @@ fun BPodcatApp(
 private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
     this?.hierarchy?.any { node ->
         when (destination) {
-            TopLevelDestination.HOME -> node.hasRoute(Route.Home::class)
             TopLevelDestination.LIBRARY -> node.hasRoute(Route.Library::class)
             TopLevelDestination.DOWNLOADS -> node.hasRoute(Route.Downloads::class)
         }

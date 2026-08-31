@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
@@ -206,8 +207,13 @@ fun PlayerSheet(
             }
         }
 
+        // UNDISPATCHED so a delta runs to its `snapTo` before `launch` returns. Dispatched, the
+        // last deltas of a gesture could land after `settle` had already started animating and
+        // cancel it; the sheet would then stop wherever the finger left it, half open.
         val dragState = rememberDraggableState { delta ->
-            scope.launch { sheetState.dragBy(delta, travelPx) }
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                sheetState.dragBy(delta, travelPx)
+            }
         }
 
         Surface(
@@ -219,7 +225,14 @@ fun PlayerSheet(
                     state = dragState,
                     orientation = Orientation.Vertical,
                     enabled = !sheetState.isExpanded,
-                    onDragStopped = { velocity -> sheetState.settle(velocity, flingPx) },
+                    onDragStarted = { sheetState.onDragStarted() },
+                    // Settled on the hoisted scope rather than the draggable's own coroutine.
+                    // `settle` sets `targetValue` before it animates, which flips `enabled` above
+                    // to false — and disabling a `draggable` tears down the very coroutine the
+                    // animation is suspended in, stranding the sheet part-open.
+                    onDragStopped = { velocity ->
+                        scope.launch { sheetState.settle(velocity, flingPx) }
+                    },
                 )
                 .clickable(
                     enabled = !sheetState.isExpanded,
@@ -278,8 +291,9 @@ fun PlayerSheet(
                             .draggable(
                                 state = dragState,
                                 orientation = Orientation.Vertical,
+                                onDragStarted = { sheetState.onDragStarted() },
                                 onDragStopped = { velocity ->
-                                    sheetState.settle(velocity, flingPx)
+                                    scope.launch { sheetState.settle(velocity, flingPx) }
                                 },
                             ),
                     )

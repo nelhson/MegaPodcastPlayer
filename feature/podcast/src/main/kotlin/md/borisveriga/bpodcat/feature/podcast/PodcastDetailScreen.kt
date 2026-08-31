@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -47,9 +47,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,6 +75,11 @@ import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
+import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
@@ -116,8 +123,8 @@ fun PodcastDetailRoute(
         uiState = uiState,
         onBack = onBack,
         onEpisodeClick = { episodeId -> viewModel.playEpisode(episodeId, onEpisodePlaying) },
-        onEpisodeQueue = viewModel::addToQueue,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
+        onEpisodeMove = viewModel::moveEpisode,
         onRefresh = viewModel::refresh,
         onAutoRefreshChange = viewModel::setAutoRefresh,
         onRemove = viewModel::removePodcast,
@@ -133,9 +140,11 @@ fun PodcastDetailRoute(
  * @param uiState what to render.
  * @param onBack back handler.
  * @param onEpisodeClick episode tap handler; a tap starts playback.
- * @param onEpisodeQueue add-to-queue handler.
  * @param onEpisodeDownloadToggle download/remove handler; one action, because the button's
  *   meaning follows the episode's download state.
+ * @param onEpisodeMove applies a completed reorder on a hand-ordered show. Takes the ids currently
+ *   on screen alongside the two positions, because a filter means those are a subset and the
+ *   positions alone would name the wrong episodes.
  * @param onRefresh pull-to-refresh handler; also the empty state's action.
  * @param onAutoRefreshChange background-refresh toggle handler.
  * @param onRemove remove-show handler.
@@ -149,8 +158,8 @@ fun PodcastDetailScreen(
     uiState: PodcastDetailUiState,
     onBack: () -> Unit,
     onEpisodeClick: (String) -> Unit,
-    onEpisodeQueue: (String) -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
+    onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onRefresh: () -> Unit,
     onAutoRefreshChange: (Boolean) -> Unit,
     onRemove: () -> Unit,
@@ -166,6 +175,9 @@ fun PodcastDetailScreen(
     val now = remember { Instant.now() }
     // Saveable so neither choice is lost when the Fold 7 is opened.
     var filter by rememberSaveable { mutableStateOf(EpisodeFilter.ALL) }
+    val listState = rememberLazyListState()
+    val moveUp = stringResource(R.string.podcast_move_up)
+    val moveDown = stringResource(R.string.podcast_move_down)
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -235,8 +247,18 @@ fun PodcastDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     val shown = uiState.episodes.filterBy(filter)
+                    // Only a YouTube playlist is arranged by hand. An RSS show is a chronology,
+                    // and offering to rearrange one would promise an order the next refresh
+                    // could not keep.
+                    val isReorderable = podcast.source == PodcastSource.YOUTUBE
+                    val drag = rememberReorderableState(
+                        layout = rememberReorderableLayout(listState),
+                        items = shown,
+                        keyOf = { it.id },
+                        onMove = { from, to -> onEpisodeMove(shown.map { it.id }, from, to) },
+                    )
 
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                         item(key = HEADER_KEY) {
                             PodcastHeader(
                                 podcast = podcast,
@@ -256,8 +278,24 @@ fun PodcastDetailScreen(
                             }
                         }
 
-                        items(items = shown, key = { it.id }) { episode ->
+                        itemsIndexed(
+                            items = drag.order,
+                            key = { _, episode -> episode.id },
+                        ) { index, episode ->
+                            val isDragging = drag.draggingKey == episode.id
+
                             EpisodeRow(
+                                modifier = Modifier
+                                    .semantics {
+                                        if (isReorderable) {
+                                            customActions =
+                                                drag.moveActions(index, moveUp, moveDown)
+                                        }
+                                    }
+                                    .graphicsLayer {
+                                        translationY = if (isDragging) drag.offset.y else 0f
+                                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+                                    },
                                 title = episode.title,
                                 metadata = episode.metadataLine(now, resources),
                                 artworkUrl = episode.artworkUrl ?: podcast.artworkUrl,
@@ -266,23 +304,17 @@ fun PodcastDetailScreen(
                                 playedFraction = episode.playedFraction,
                                 onClick = { onEpisodeClick(episode.id) },
                                 trailing = {
-                                    IconButton(onClick = { onEpisodeQueue(episode.id) }) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                            // Naming the episode matters here: TalkBack users reach
-                                            // this button out of the list's reading order, without
-                                            // the title next to it.
-                                            contentDescription = stringResource(
-                                                R.string.podcast_queue_episode,
-                                                episode.title,
-                                            ),
-                                        )
-                                    }
                                     DownloadButton(
                                         state = episode.downloadState,
                                         progressPercent = episode.downloadPercent,
                                         onClick = { onEpisodeDownloadToggle(episode.id) },
                                     )
+                                    if (isReorderable) {
+                                        ReorderHandle(
+                                            modifier = Modifier
+                                                .reorderableHandle(drag, episode.id),
+                                        )
+                                    }
                                 },
                             )
                         }
@@ -589,9 +621,6 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
     PodcastDetailMessage.EpisodeUnavailable ->
         resources.getString(R.string.podcast_message_episode_unavailable)
 
-    is PodcastDetailMessage.Queued ->
-        resources.getString(R.string.podcast_message_queued, title)
-
     is PodcastDetailMessage.DownloadQueued -> resources.getString(
         if (waitingForWifi) {
             R.string.podcast_message_download_waiting_for_wifi
@@ -604,6 +633,9 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
     is PodcastDetailMessage.DownloadRemoved ->
         resources.getString(R.string.podcast_message_download_removed, title)
 }
+
+/** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
+private const val DRAG_ELEVATION = 8f
 
 private const val HEADER_KEY = "header"
 private const val FILTERS_KEY = "filters"
@@ -652,8 +684,8 @@ private fun PodcastDetailScreenPreview() {
             ),
             onBack = {},
             onEpisodeClick = {},
-            onEpisodeQueue = {},
             onEpisodeDownloadToggle = {},
+            onEpisodeMove = { _, _, _ -> },
             onRefresh = {},
             onAutoRefreshChange = {},
             onRemove = {},

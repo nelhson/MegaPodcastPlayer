@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.database.BPodcatDatabase
 import md.borisveriga.bpodcat.core.model.PodcastSource
@@ -37,6 +38,10 @@ import org.robolectric.annotation.Config
  * `MIGRATION_3_4` only adds an index, so its test is really Room's own schema validation:
  * an index whose name does not match what Room derives from the entity is rejected at open.
  *
+ * `MIGRATION_4_5` is both shapes at once: it adds two columns *and* seeds them, and the seed is
+ * the interesting half. A seed that got the ranking wrong would not fail to open — it would
+ * silently scramble the library the first time anyone dragged anything.
+ *
  * Every open here chains the whole migration list, which also proves the three compose.
  *
  * `MigrationTestHelper` is deliberately not used: under Robolectric it wants the exported schema
@@ -64,7 +69,7 @@ class MigrationTest {
         writeVersion1Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         try {
@@ -93,7 +98,7 @@ class MigrationTest {
         writeVersion1Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         try {
@@ -173,7 +178,7 @@ class MigrationTest {
         writeVersion2Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         try {
@@ -206,7 +211,7 @@ class MigrationTest {
         writeVersion2Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         try {
@@ -223,7 +228,7 @@ class MigrationTest {
         writeVersion3Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         try {
@@ -253,7 +258,7 @@ class MigrationTest {
         )
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
         try {
@@ -311,6 +316,121 @@ class MigrationTest {
                 )
             }
             db.version = 3
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `a v4 library keeps the order it was already displayed in`() = runTest {
+        // The shows are inserted deliberately out of order, and one title differs from another
+        // only by case, because the seed sorts NOCASE and a case-sensitive rank would put it in
+        // the wrong place.
+        writeVersion4Database()
+
+        val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .build()
+
+        try {
+            val library = database.podcastDao().observeAllWithCounts().first()
+
+            // The library now sorts by `sort_order`, so reading it back alphabetically is exactly
+            // the proof that the seed reproduced the ordering the screen used to impose. Without
+            // the seed every row would sit at 0 and this order would be arbitrary.
+            assertEquals(
+                listOf("Acquired", "acquired tapes", "Podlodka Podcast", "Zeitgeist"),
+                library.map { it.podcast.title },
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `a v4 youtube show keeps its videos newest first`() = runTest {
+        writeVersion4Database()
+
+        val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .build()
+
+        try {
+            val videos = database.episodeDao().observeByPodcastOrdered("podcast-yt").first()
+
+            // Seeded by date descending, matching what the show's screen displayed before it
+            // became reorderable; the undated video sorts last, as `observeByPodcast` puts it.
+            assertEquals(listOf("yt-new", "yt-mid", "yt-old", "yt-undated"), videos.map { it.id })
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `the seed leaves rss shows alone`() = runTest {
+        writeVersion4Database()
+
+        val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .build()
+
+        try {
+            // An RSS show is a chronology and its screen never reads `sort_order`, so seeding one
+            // would be work that no user of that screen can ever see or change.
+            val episodes = database.episodeDao().observeByPodcast("podcast-1").first()
+
+            assertEquals(listOf(0, 0), episodes.map { it.sortOrder })
+        } finally {
+            database.close()
+        }
+    }
+
+    /**
+     * Creates a database exactly as version 4 left it: four shows inserted out of alphabetical
+     * order, one of them a YouTube playlist with four videos including an undated one.
+     *
+     * Version 4 is version 2's schema plus the `published_at` index, so the DDL is shared.
+     */
+    private fun writeVersion4Database() {
+        val file = context.getDatabasePath(DB_NAME)
+        file.parentFile?.mkdirs()
+
+        val db = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            for (statement in VERSION_4_SCHEMA) {
+                db.execSQL(statement)
+            }
+            db.execSQL(
+                "INSERT INTO room_master_table (id, identity_hash) VALUES (42, ?)",
+                arrayOf(VERSION_4_IDENTITY_HASH),
+            )
+            for ((id, title, source) in VERSION_4_PODCASTS) {
+                db.execSQL(
+                    """
+                    INSERT INTO podcasts
+                        (id, itunes_id, title, author, feed_url, artwork_url, description,
+                         added_at, last_refresh_at, etag, last_modified, auto_refresh, source)
+                    VALUES (?, NULL, ?, '', ?, NULL, '',
+                            1756684800000, NULL, NULL, NULL, 1, ?)
+                    """.trimIndent(),
+                    arrayOf(id, title, "https://feeds.example.com/$id.rss", source),
+                )
+            }
+            for ((id, podcastId, publishedAt) in VERSION_4_EPISODES) {
+                db.execSQL(
+                    """
+                    INSERT INTO episodes
+                        (id, podcast_id, guid, title, description, audio_url, artwork_url,
+                         duration_ms, published_at, size_bytes, position_ms, is_played, is_new,
+                         download_state, downloaded_bytes, download_percent)
+                    VALUES (?, ?, ?, 'Episode', '', 'https://cdn.example.com/a.mp3', NULL,
+                            NULL, ?, NULL, 0, 0, 0,
+                            'NOT_DOWNLOADED', 0, 0)
+                    """.trimIndent(),
+                    arrayOf<Any?>(id, podcastId, "guid-$id", publishedAt),
+                )
+            }
+            db.version = 4
         } finally {
             db.close()
         }
@@ -479,6 +599,41 @@ class MigrationTest {
         val VERSION_3_EPISODES = listOf(
             "episode-http" to "http://cdn.example.com/one.mp3",
             "episode-https" to "https://cdn.example.com/two.mp3",
+        )
+
+        /** `database.identityHash` from the committed `schemas/…/4.json`. */
+        const val VERSION_4_IDENTITY_HASH = "0947db4b9c24dc667dd702651d1b72e2"
+
+        /**
+         * Shows seeded into a version 4 database, as `id to title to source`.
+         *
+         * Inserted out of alphabetical order on purpose, and "acquired tapes" differs from
+         * "Acquired" only by case at the start, so a seed that ranked case-sensitively would put
+         * it after "Zeitgeist" instead of second.
+         */
+        val VERSION_4_PODCASTS = listOf(
+            Triple("podcast-1", "Podlodka Podcast", "RSS"),
+            Triple("podcast-z", "Zeitgeist", "RSS"),
+            Triple("podcast-yt", "Acquired", "YOUTUBE"),
+            Triple("podcast-a", "acquired tapes", "RSS"),
+        )
+
+        /** Episode rows seeded into a version 4 database, as `id to podcast_id to published_at`. */
+        val VERSION_4_EPISODES = listOf(
+            Triple("rss-a", "podcast-1", 1_000L),
+            Triple("rss-b", "podcast-1", 2_000L),
+            Triple("yt-old", "podcast-yt", 1_000L),
+            Triple("yt-new", "podcast-yt", 9_000L),
+            Triple("yt-mid", "podcast-yt", 5_000L),
+            Triple("yt-undated", "podcast-yt", null),
+        )
+
+        /**
+         * Version 4's DDL: version 2's schema plus the index [MIGRATION_3_4] adds.
+         */
+        val VERSION_4_SCHEMA = VERSION_2_SCHEMA + listOf(
+            "CREATE INDEX IF NOT EXISTS `index_episodes_published_at` " +
+                "ON `episodes` (`published_at`)",
         )
     }
 }

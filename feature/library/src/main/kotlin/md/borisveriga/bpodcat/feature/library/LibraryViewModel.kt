@@ -121,6 +121,33 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
+     * Applies a completed reorder gesture.
+     *
+     * The screen reports the move as two positions; what the database wants is the whole
+     * arrangement, so it is rebuilt here from the order the view model last published. Doing it
+     * this way rather than taking a list of ids from the UI keeps the source of truth for "what the
+     * library contains" in one place — the UI's copy can be a frame or two behind during a drag,
+     * which is the point of the local ordering it draws with.
+     *
+     * Out-of-range positions are ignored rather than clamped: they mean the library changed under
+     * the gesture, and guessing what the user meant would be worse than doing nothing.
+     *
+     * @param from the show's position before the drag.
+     * @param to where it was dropped.
+     */
+    fun move(from: Int, to: Int) {
+        val current = uiState.value.podcasts
+        if (from !in current.indices || to !in current.indices || from == to) return
+
+        val ids = current
+            .toMutableList()
+            .apply { add(to, removeAt(from)) }
+            .map { it.podcast.id }
+
+        viewModelScope.launch { repository.reorderLibrary(ids) }
+    }
+
+    /**
      * Brings the library up to date on entering the screen, quietly.
      *
      * Two things keep this from being a nuisance. Feeds fetched within [AUTO_REFRESH_STALE_AFTER]

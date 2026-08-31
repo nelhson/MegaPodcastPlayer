@@ -154,6 +154,35 @@ class PlayerSheetStateTest {
         assertEquals(1f, restored.progress, TOLERANCE)
     }
 
+    @Test
+    fun `a delta arriving after the release is ignored`() = runAnimating {
+        // The bug this pins: drag deltas and the settle run on different coroutines, so the last
+        // deltas of a gesture can land after the settle has committed. Applying one would snap the
+        // sheet back to a fraction and cancel the settle's animation, leaving it half open.
+        val sheet = state()
+        sheet.dragBy(deltaPx = -1_400f, sheetTravelPx = travelPx)
+        sheet.settle(velocityPxPerSecond = 0f, flingThresholdPxPerSecond = flingPx)
+
+        sheet.dragBy(deltaPx = 900f, sheetTravelPx = travelPx)
+
+        assertTrue(sheet.isExpanded)
+        assertEquals(1f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
+    fun `the next gesture can drag again after a settle`() = runAnimating {
+        // The other half of the guard: dropping late deltas must not deafen the sheet to the next
+        // real gesture, which is exactly how someone grabs a sheet that is still animating.
+        val sheet = state()
+        sheet.settle(velocityPxPerSecond = -flingPx * 2, flingThresholdPxPerSecond = flingPx)
+        assertEquals(1f, sheet.progress, TOLERANCE)
+
+        sheet.onDragStarted()
+        sheet.dragBy(deltaPx = 1_000f, sheetTravelPx = travelPx)
+
+        assertEquals(0.5f, sheet.progress, TOLERANCE)
+    }
+
     /**
      * Runs a test that lets the sheet settle.
      *

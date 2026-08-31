@@ -12,6 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
@@ -326,5 +327,61 @@ class PodcastDetailViewModelTest {
         }
 
         coVerify(exactly = 1) { repository.refresh(any(), any()) }
+    }
+
+    @Test
+    fun `an unfiltered reorder is written straight through`() = runTest {
+        episodes.value = listOf(
+            episode("a", DownloadState.NOT_DOWNLOADED),
+            episode("b", DownloadState.NOT_DOWNLOADED),
+            episode("c", DownloadState.NOT_DOWNLOADED),
+        )
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.moveEpisode(visibleIds = listOf("a", "b", "c"), from = 2, to = 0)
+            runCurrent()
+
+            coVerify { repository.reorderEpisodes(podcast.id, listOf("c", "a", "b")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a reorder under a filter leaves the hidden episodes where they were`() = runTest {
+        episodes.value = listOf(
+            episode("a", DownloadState.COMPLETED),
+            episode("hidden", DownloadState.NOT_DOWNLOADED),
+            episode("b", DownloadState.COMPLETED),
+        )
+        viewModel.uiState.test {
+            awaitItem()
+
+            // The screen is showing only the downloaded pair; dragging "b" above "a" must swap
+            // exactly those two and leave the episode between them untouched. Treating the two
+            // positions as positions in the full list would have moved the wrong rows entirely.
+            viewModel.moveEpisode(visibleIds = listOf("a", "b"), from = 1, to = 0)
+            runCurrent()
+
+            coVerify { repository.reorderEpisodes(podcast.id, listOf("b", "hidden", "a")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a reorder that lands where it started writes nothing`() = runTest {
+        episodes.value = listOf(
+            episode("a", DownloadState.NOT_DOWNLOADED),
+            episode("b", DownloadState.NOT_DOWNLOADED),
+        )
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.moveEpisode(visibleIds = listOf("a", "b"), from = 0, to = 0)
+            runCurrent()
+
+            coVerify(exactly = 0) { repository.reorderEpisodes(any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

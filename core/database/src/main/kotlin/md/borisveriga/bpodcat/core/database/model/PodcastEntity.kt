@@ -42,6 +42,17 @@ data class PodcastEntity(
      */
     @ColumnInfo(name = "source", defaultValue = "RSS")
     val source: PodcastSource = PodcastSource.RSS,
+    /**
+     * Where this show sits in the library, smallest first.
+     *
+     * The library is ordered by hand — the user drags shows around — so the order is data rather
+     * than a property of the row, and a title sort cannot stand in for it. New subscriptions are
+     * appended at `MAX(sort_order) + 1`; see `PodcastDao.nextSortOrder`.
+     *
+     * As with [source], the `defaultValue` has to match the `DEFAULT 0` in `MIGRATION_4_5` exactly.
+     */
+    @ColumnInfo(name = "sort_order", defaultValue = "0")
+    val sortOrder: Int = 0,
 )
 
 /**

@@ -297,4 +297,51 @@ class LibraryViewModelTest {
 
         coVerify { uiPreferences.setLibraryLayout(LibraryLayout.LIST) }
     }
+
+    @Test
+    fun `a reorder is written as the whole arrangement`() = runTest {
+        library.value = listOf(withCounts("a"), withCounts("b"), withCounts("c"))
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.move(from = 0, to = 2)
+            runCurrent()
+
+            // The screen reports two positions; the database wants the whole order, and rebuilding
+            // it here keeps "what the library contains" in one place rather than trusting a copy
+            // the UI may be a frame behind on mid-drag.
+            coVerify { repository.reorderLibrary(listOf("b", "c", "a")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a reorder that lands where it started writes nothing`() = runTest {
+        library.value = listOf(withCounts("a"), withCounts("b"))
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.move(from = 1, to = 1)
+            runCurrent()
+
+            coVerify(exactly = 0) { repository.reorderLibrary(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a reorder naming a position the library no longer has writes nothing`() = runTest {
+        library.value = listOf(withCounts("a"), withCounts("b"))
+        viewModel.uiState.test {
+            awaitItem()
+
+            // The gesture raced an unsubscribe. Guessing what the user meant would be worse than
+            // doing nothing, and clamping would silently move the wrong show.
+            viewModel.move(from = 0, to = 5)
+            runCurrent()
+
+            coVerify(exactly = 0) { repository.reorderLibrary(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

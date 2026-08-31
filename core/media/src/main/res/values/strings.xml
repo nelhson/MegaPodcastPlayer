@@ -6,4 +6,9 @@
     <string name="download_notification_channel_description">Progress while episodes are being saved for offline listening</string>
     <!-- Shown on the download progress notification while downloads are running. -->
     <string name="downloading_episodes">Downloading episodes</string>
+
+    <!-- Name of the notification channel that carries the player controls. -->
+    <string name="playback_notification_channel_name">Now playing</string>
+    <!-- Explains the channel in the system's notification settings. -->
+    <string name="playback_notification_channel_description">Player controls for the episode you are listening to. Turning this off hides the controls but does not stop playback.</string>
 </resources>

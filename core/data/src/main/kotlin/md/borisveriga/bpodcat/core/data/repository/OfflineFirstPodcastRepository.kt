@@ -7,21 +7,22 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import md.borisveriga.bpodcat.core.common.di.BPodcatDispatcher
 import md.borisveriga.bpodcat.core.common.di.Dispatcher
 import md.borisveriga.bpodcat.core.common.result.suspendRunCatching
 import md.borisveriga.bpodcat.core.data.mapper.asEpisodeEntity
-import md.borisveriga.bpodcat.core.data.mapper.asEpisodeWithShow
 import md.borisveriga.bpodcat.core.data.mapper.asPodcastEntity
 import md.borisveriga.bpodcat.core.database.dao.EpisodeDao
 import md.borisveriga.bpodcat.core.database.dao.PodcastDao
 import md.borisveriga.bpodcat.core.database.model.PodcastEntity
 import md.borisveriga.bpodcat.core.database.model.asExternalModel
 import md.borisveriga.bpodcat.core.model.Episode
-import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastLink
 import md.borisveriga.bpodcat.core.model.PodcastLinkParser
@@ -45,6 +46,9 @@ import md.borisveriga.bpodcat.core.network.rss.FeedRemoteDataSource
  * @property clock injected so refresh timestamps are deterministic in tests.
  * @property ioDispatcher dispatcher for the database and network work.
  */
+// `flatMapLatest` picks the episode ordering from the show's source; still experimental, and
+// stable enough that the alternative — duplicating the choice into every caller — is worse.
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class OfflineFirstPodcastRepository @Inject constructor(
     private val podcastDao: PodcastDao,
@@ -63,13 +67,29 @@ class OfflineFirstPodcastRepository @Inject constructor(
         podcastDao.observeById(podcastId).map { it?.asExternalModel() }
 
     override fun observeEpisodes(podcastId: String): Flow<List<Episode>> =
-        episodeDao.observeByPodcast(podcastId).map { rows -> rows.map { it.asExternalModel() } }
+        // Which ordering a show gets is a property of the show, so it is resolved here rather than
+        // asked of every screen. `flatMapLatest` because the source can change under us: removing
+        // and re-adding a feed as a different kind is a real sequence.
+        podcastDao.observeById(podcastId)
+            .map { it?.source == PodcastSource.YOUTUBE }
+            .distinctUntilChanged()
+            .flatMapLatest { handOrdered ->
+                if (handOrdered) {
+                    episodeDao.observeByPodcastOrdered(podcastId)
+                } else {
+                    episodeDao.observeByPodcast(podcastId)
+                }
+            }
+            .map { rows -> rows.map { it.asExternalModel() } }
+
+    override suspend fun reorderLibrary(podcastIds: List<String>) =
+        withContext(ioDispatcher) { podcastDao.reorder(podcastIds) }
+
+    override suspend fun reorderEpisodes(podcastId: String, episodeIds: List<String>) =
+        withContext(ioDispatcher) { episodeDao.reorder(episodeIds) }
 
     override fun observeDownloadedEpisodes(): Flow<List<Episode>> =
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
-
-    override fun observeLatestEpisodes(limit: Int): Flow<List<EpisodeWithShow>> =
-        episodeDao.observeLatestWithShow(limit).map { rows -> rows.map { it.asEpisodeWithShow() } }
 
     override fun observeEpisode(episodeId: String): Flow<Episode?> =
         episodeDao.observeById(episodeId).map { it?.asExternalModel() }
@@ -180,9 +200,12 @@ class OfflineFirstPodcastRepository @Inject constructor(
             source = source,
         ).copy(etag = channel.etag, lastModified = channel.lastModified)
 
-        podcastDao.upsert(podcastEntity)
+        // Appended rather than slotted in alphabetically: the library is arranged by hand, so a
+        // new show belongs where the user can find it — at the end — not somewhere in the middle
+        // of an order they built.
+        podcastDao.upsert(podcastEntity.copy(sortOrder = podcastDao.nextSortOrder()))
         val episodes = channel.channel.items.map { it.asEpisodeEntity(podcastEntity.id) }
-        episodeDao.upsertFromFeed(episodes)
+        episodeDao.upsertFromFeed(episodes, handOrdered = source == PodcastSource.YOUTUBE)
 
         // Episodes present when the show is first added are not "new" — the user has seen none of
         // them, so badging all 500 would be noise.
@@ -282,7 +305,10 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
             is FeedFetchResult.Fetched -> {
                 val episodes = result.channel.items.map { it.asEpisodeEntity(podcast.id) }
-                val newIds = episodeDao.upsertFromFeed(episodes)
+                val newIds = episodeDao.upsertFromFeed(
+                    episodes = episodes,
+                    handOrdered = podcast.source == PodcastSource.YOUTUBE,
+                )
                 podcastDao.updateRefreshMetadata(
                     id = podcast.id,
                     refreshedAt = now,

@@ -3,7 +3,6 @@ package md.borisveriga.bpodcat.core.data.repository
 import java.time.Duration
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.bpodcat.core.model.Episode
-import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSearchResult
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
@@ -118,22 +117,34 @@ interface PodcastRepository {
     /** Observes a single show; emits null after it is removed. */
     fun observePodcast(podcastId: String): Flow<Podcast?>
 
-    /** Observes one show's episodes, newest first. */
+    /**
+     * Observes one show's episodes.
+     *
+     * Newest first for an RSS show. A YouTube show is ordered by hand instead — see
+     * [reorderEpisodes] — and the choice is made here rather than by the caller, because which
+     * ordering a show has is a property of the show.
+     */
     fun observeEpisodes(podcastId: String): Flow<List<Episode>>
+
+    /**
+     * Stores a hand-made ordering for the library.
+     *
+     * @param podcastIds every subscribed show, in the order they should appear.
+     */
+    suspend fun reorderLibrary(podcastIds: List<String>)
+
+    /**
+     * Stores a hand-made ordering for one show's episodes.
+     *
+     * Only meaningful for a YouTube show; an RSS show's screen orders by date and never reads it.
+     *
+     * @param podcastId the show being reordered.
+     * @param episodeIds its episodes, in the order they should appear.
+     */
+    suspend fun reorderEpisodes(podcastId: String, episodeIds: List<String>)
 
     /** Observes every episode available offline. */
     fun observeDownloadedEpisodes(): Flow<List<Episode>>
-
-    /**
-     * Observes the newest episodes across every subscribed show, newest first, with the show each
-     * belongs to.
-     *
-     * Backs the Latest feed. Episodes whose feed published no date are omitted — a chronological
-     * view has nowhere to put them; see `EpisodeDao.observeLatestWithShow`.
-     *
-     * @param limit how many episodes to return, most recent first.
-     */
-    fun observeLatestEpisodes(limit: Int = DEFAULT_LATEST_LIMIT): Flow<List<EpisodeWithShow>>
 
     /** Observes a single episode. */
     fun observeEpisode(episodeId: String): Flow<Episode?>
@@ -193,11 +204,3 @@ interface PodcastRepository {
     /** Enables or disables background refresh for one show. */
     suspend fun setAutoRefresh(podcastId: String, enabled: Boolean)
 }
-
-/**
- * How many episodes the Latest feed asks for by default.
- *
- * The feed is a recency view, not an archive. A few hundred rows is far more than anyone scrolls,
- * and capping it keeps both the query and the recomposition cheap on a large library.
- */
-const val DEFAULT_LATEST_LIMIT: Int = 200

@@ -1,5 +1,7 @@
 package md.borisveriga.bpodcat.feature.podcast
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -10,7 +12,9 @@ import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
+import md.borisveriga.bpodcat.core.model.PodcastSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +28,10 @@ import org.robolectric.annotation.Config
  * back rather than leaving an empty page. It also covers the two actions that moved: playing the
  * newest episode is now a button on the header, and removing the show is behind an overflow
  * instead of sitting one mis-tap from the back arrow.
+ *
+ * Reordering is the third thing here, and what is worth pinning is which shows offer it at all: a
+ * YouTube playlist is arranged by hand, an RSS feed is a chronology, and offering to rearrange the
+ * latter would promise an order the next refresh could not keep.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -71,6 +79,8 @@ class PodcastDetailScreenTest {
     private fun setScreen(
         episodes: List<Episode>,
         autoRefresh: Boolean = true,
+        source: PodcastSource = PodcastSource.RSS,
+        onEpisodeMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
         onEpisodeClick: (String) -> Unit = {},
         onAutoRefreshChange: (Boolean) -> Unit = {},
         onRemove: () -> Unit = {},
@@ -79,14 +89,14 @@ class PodcastDetailScreenTest {
             BPodcatTheme {
                 PodcastDetailScreen(
                     uiState = PodcastDetailUiState(
-                        podcast = podcast.copy(autoRefresh = autoRefresh),
+                        podcast = podcast.copy(autoRefresh = autoRefresh, source = source),
                         episodes = episodes,
                         isLoading = false,
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
-                    onEpisodeQueue = {},
                     onEpisodeDownloadToggle = {},
+                    onEpisodeMove = onEpisodeMove,
                     onRefresh = {},
                     onAutoRefreshChange = onAutoRefreshChange,
                     onRemove = onRemove,
@@ -184,4 +194,51 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithText("Show less").performClick()
         composeRule.onNodeWithText("Show more").assertExists()
     }
+
+    @Test
+    fun `a youtube show offers to move its videos`() {
+        val moves = mutableListOf<Triple<List<String>, Int, Int>>()
+        setScreen(
+            episodes = listOf(episode("a"), episode("b"), episode("c")),
+            source = PodcastSource.YOUTUBE,
+            onEpisodeMove = { ids, from, to -> moves += Triple(ids, from, to) },
+        )
+
+        composeRule.onNodeWithText("Episode b").performCustomAccessibilityAction("Move up")
+
+        // The visible ids travel with the positions: under a filter they are a subset, and the
+        // positions alone would name the wrong videos.
+        assertEquals(listOf(Triple(listOf("a", "b", "c"), 1, 0)), moves)
+    }
+
+    @Test
+    fun `an rss show does not offer to move its episodes`() {
+        setScreen(episodes = listOf(episode("a"), episode("b"), episode("c")))
+
+        composeRule.onNodeWithText("Episode b")
+            .assertHasNoCustomAccessibilityAction("Move up")
+        composeRule.onNodeWithText("Episode b")
+            .assertHasNoCustomAccessibilityAction("Move down")
+    }
+}
+
+/**
+ * Invokes a custom accessibility action by its label.
+ *
+ * Compose offers no matcher for this, and on a hand-ordered show these actions are the only way to
+ * rearrange it with TalkBack on.
+ */
+private fun SemanticsNodeInteraction.performCustomAccessibilityAction(label: String) {
+    val actions = fetchSemanticsNode().config[SemanticsActions.CustomActions]
+    actions.first { it.label == label }.action()
+}
+
+/** Asserts no custom action carries [label]. */
+private fun SemanticsNodeInteraction.assertHasNoCustomAccessibilityAction(label: String) {
+    val actions = fetchSemanticsNode().config
+        .getOrElse(SemanticsActions.CustomActions) { emptyList() }
+    assertTrue(
+        "Expected no \"$label\" action, found ${actions.map { it.label }}",
+        actions.none { it.label == label },
+    )
 }

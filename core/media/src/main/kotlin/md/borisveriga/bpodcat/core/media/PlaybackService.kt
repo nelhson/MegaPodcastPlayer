@@ -1,15 +1,16 @@
 package md.borisveriga.bpodcat.core.media
 
 import android.app.PendingIntent
-import android.content.Intent
 import android.os.Process
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -40,7 +41,30 @@ import md.borisveriga.bpodcat.core.model.PlaybackSettings
  * notification, and writing playback position back to the database. The UI talks to it through a
  * [androidx.media3.session.MediaController], never directly, which is also how the notification,
  * Bluetooth controls and (later) the watch reach the same player.
+ *
+ * **How it survives the screen going off.** Nothing here calls `startForeground` directly. Media3
+ * does it, and the trigger is the notification: when a session becomes user-engaged it posts the
+ * one [playbackNotificationProvider] builds and promotes this service to the foreground, which is
+ * the state the platform declines to kill. When playback pauses it lets the promotion lapse — after
+ * a grace period of [MediaSessionService.DEFAULT_FOREGROUND_SERVICE_TIMEOUT_MS], the default this
+ * service keeps — and the process becomes ordinary background memory again. That is by design and
+ * not a bug to route around: a long-paused episode comes back through `onPlaybackResumption` and
+ * the persisted queue, not by holding the whole process hostage.
+ *
+ * The corollary is that the two ways foregrounding can fail both have to be handled, because either
+ * one silently leaves audio running in a killable process:
+ *
+ *  - the promotion itself being refused, which [ForegroundStartListener] catches;
+ *  - stopping the service while it still holds the foreground, which is why `onTaskRemoved` is
+ *    *not* overridden here. Media3's implementation goes through `pauseAllPlayersAndStopSelf()`,
+ *    which drops the foreground state before `stopSelf()`; a bare `stopSelf()` in its place gets
+ *    the service torn down and restarted by the system. Its default is already what this app
+ *    wants — keep playing when swiped away mid-episode, stop when nothing is playing.
  */
+// Opting *in*, rather than being marked `@UnstableApi` itself: the foreground and notification
+// controls this service needs are all unstable Media3 API, but PlaybackConnection names this class
+// to build a SessionToken, and marking it unstable would push that opt-in onto every caller.
+@OptIn(UnstableApi::class)
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
 
@@ -86,6 +110,14 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Before anything can play. Posting this notification is how Media3 promotes the service to
+        // the foreground, and a foreground service is the only kind the platform leaves alone once
+        // the screen goes off — so the channel has to exist and the provider has to be installed
+        // before the first play, not lazily on the way to it.
+        createPlaybackNotificationChannel(this)
+        setMediaNotificationProvider(playbackNotificationProvider(this))
+        setListener(ForegroundStartListener())
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
@@ -145,20 +177,9 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
 
-    /**
-     * Stops the service when the user swipes the app away and nothing is playing.
-     *
-     * Without this, a paused session lingers as a notification the user cannot dismiss.
-     */
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
-        }
-        super.onTaskRemoved(rootIntent)
-    }
-
     override fun onDestroy() {
+        // Nothing else may be delivered to the listener once the player is gone.
+        clearListener()
         mediaSession?.run {
             // One last flush, in two halves. The reading is synchronous because the player is
             // released on the very next line; the *write* is handed to [applicationScope], which
@@ -281,6 +302,27 @@ class PlaybackService : MediaSessionService() {
         override fun onPlayerError(error: PlaybackException) {
             // The controller surfaces this to the user; log it where the cause is readable.
             Log.w(TAG, "Playback failed for ${player.currentMediaItem?.episodeId}", error)
+        }
+    }
+
+    /**
+     * Handles Media3 failing to put this service in the foreground.
+     *
+     * The platform refuses the promotion when the app is not in a state that permits starting a
+     * foreground service — most often because playback was triggered from the background, by a
+     * media button or a resumption request, after the app's window to start one had closed.
+     *
+     * Stopping is the only correct response, and Media3 documents it as such: a service that was
+     * started with `startForegroundService` and never reached `startForeground` is force-stopped by
+     * the system, which surfaces to the user as the app disappearing mid-episode.
+     * [pauseAllPlayersAndStopSelf] gets there in the right order — pausing first, which runs the
+     * persistence listener and writes the position, so the episode resumes where it stopped rather
+     * than where it was last flushed.
+     */
+    private inner class ForegroundStartListener : Listener {
+        override fun onForegroundServiceStartNotAllowedException() {
+            Log.w(TAG, "Not allowed to start the playback service in the foreground; stopping")
+            pauseAllPlayersAndStopSelf()
         }
     }
 

@@ -24,6 +24,23 @@ interface EpisodeDao {
     )
     fun observeByPodcast(podcastId: String): Flow<List<EpisodeEntity>>
 
+    /**
+     * Observes one show's episodes in the user's own order.
+     *
+     * Used only for shows whose `source` is `YOUTUBE`, which are the ones that can be reordered by
+     * hand. [observeByPodcast] stays the query for everything else: an RSS show is a chronology,
+     * and imposing a stored order on it would mean seeding and maintaining a column no user of that
+     * screen can ever change.
+     */
+    @Query(
+        """
+        SELECT * FROM episodes
+        WHERE podcast_id = :podcastId
+        ORDER BY sort_order ASC
+        """,
+    )
+    fun observeByPodcastOrdered(podcastId: String): Flow<List<EpisodeEntity>>
+
     /** Observes everything available offline — the "Downloaded" tab and the watch's payload. */
     @Query(
         """
@@ -65,33 +82,6 @@ interface EpisodeDao {
         """,
     )
     fun observeDownloadsWithShow(): Flow<List<EpisodeWithShowEntity>>
-
-    /**
-     * Observes the newest episodes across every subscribed show, joined with that show.
-     *
-     * Backs the Latest feed — the screen that answers "what is new" without making the user open
-     * each show in turn.
-     *
-     * Unlike every other query here, this one **excludes** episodes with no publication date
-     * rather than sorting them last. A strictly chronological feed has nowhere to put an undated
-     * episode: it cannot go under Today, and burying it under Earlier would hide it for good. Such
-     * episodes are still reachable from their show. Excluding them also lets SQLite use the
-     * `published_at` index for the sort instead of scanning the whole table.
-     *
-     * @param limit how many rows to return. The feed is a recency view, not an archive; a few
-     *   hundred rows is more than anyone scrolls and keeps the query and the recomposition cheap.
-     */
-    @Query(
-        """
-        SELECT e.*, p.title AS show_title, p.artwork_url AS show_artwork_url
-        FROM episodes e
-        INNER JOIN podcasts p ON p.id = e.podcast_id
-        WHERE e.published_at IS NOT NULL
-        ORDER BY e.published_at DESC
-        LIMIT :limit
-        """,
-    )
-    fun observeLatestWithShow(limit: Int): Flow<List<EpisodeWithShowEntity>>
 
     @Query("SELECT * FROM episodes WHERE id = :id")
     fun observeById(id: String): Flow<EpisodeEntity?>
@@ -172,11 +162,17 @@ interface EpisodeDao {
      *
      * @param episodes every episode currently in the feed, already mapped to entities with
      *   `is_new = true`.
+     * @param handOrdered true for a show the user can reorder, which is what makes newly arrived
+     *   episodes claim positions above everything already there. Left false for an RSS show, whose
+     *   screen orders by date and never reads `sort_order`.
      * @return the ids of the episodes that were genuinely new, so the caller can report
      *   "3 new episodes" without a second query.
      */
     @Transaction
-    suspend fun upsertFromFeed(episodes: List<EpisodeEntity>): List<String> {
+    suspend fun upsertFromFeed(
+        episodes: List<EpisodeEntity>,
+        handOrdered: Boolean = false,
+    ): List<String> {
         val insertedRowIds = insertIgnoringExisting(episodes)
         val newIds = mutableListOf<String>()
 
@@ -197,7 +193,55 @@ interface EpisodeDao {
                 newIds += episode.id
             }
         }
+
+        if (handOrdered && newIds.isNotEmpty()) {
+            placeNewEpisodesOnTop(episodes.first().podcastId, newIds)
+        }
         return newIds
+    }
+
+    /**
+     * Gives newly arrived episodes the positions above everything already stored.
+     *
+     * Counting *down* from the current minimum rather than shifting every existing row up: a
+     * refresh must not rewrite a whole show to insert three videos, and it must not disturb an
+     * order the user arranged by hand. Negative positions are the ordinary consequence and are
+     * why `sort_order` is signed.
+     *
+     * The ids are walked in reverse so the first episode the feed listed ends up with the smallest
+     * position, and therefore on top.
+     *
+     * @param podcastId the show the episodes belong to.
+     * @param newIds the ids that were just inserted, in feed order.
+     */
+    @Transaction
+    suspend fun placeNewEpisodesOnTop(podcastId: String, newIds: List<String>) {
+        var next = minSortOrder(podcastId) - 1
+        newIds.asReversed().forEach { id ->
+            setSortOrder(id, next)
+            next--
+        }
+    }
+
+    /** The topmost position currently used by a show, or 0 for a show with no episodes yet. */
+    @Query("SELECT COALESCE(MIN(sort_order), 0) FROM episodes WHERE podcast_id = :podcastId")
+    suspend fun minSortOrder(podcastId: String): Int
+
+    @Query("UPDATE episodes SET sort_order = :sortOrder WHERE id = :id")
+    suspend fun setSortOrder(id: String, sortOrder: Int)
+
+    /**
+     * Writes a whole hand-made ordering for one show.
+     *
+     * Positions are rewritten from 0 up, which also normalises away the negative values a run of
+     * refreshes leaves behind. Ids the show no longer contains are no-ops, so a drag that raced a
+     * refresh is harmless.
+     *
+     * @param ids the show's episodes, in the order they should appear.
+     */
+    @Transaction
+    suspend fun reorder(ids: List<String>) {
+        ids.forEachIndexed { index, id -> setSortOrder(id, index) }
     }
 
     /** Clears the "new" badge for a whole show once the user has looked at its episode list. */

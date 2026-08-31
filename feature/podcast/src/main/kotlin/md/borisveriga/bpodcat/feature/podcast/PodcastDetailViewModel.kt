@@ -68,13 +68,6 @@ sealed interface PodcastDetailMessage {
     data object EpisodeUnavailable : PodcastDetailMessage
 
     /**
-     * An episode was added to the end of the queue.
-     *
-     * @property title the episode's title, so the confirmation names what was queued.
-     */
-    data class Queued(val title: String) : PodcastDetailMessage
-
-    /**
      * An episode was queued for download.
      *
      * Worth confirming because the download itself may not start for a while — "Wi-Fi only" is on
@@ -225,22 +218,28 @@ class PodcastDetailViewModel @Inject constructor(
     }
 
     /**
-     * Appends an episode to the end of the queue without interrupting what is playing.
+     * Applies a completed reorder gesture on a hand-ordered show.
      *
-     * @param episodeId the episode to queue.
+     * The screen may be showing a filtered subset, so two positions in that subset name the wrong
+     * episodes in the full list. The translation is to keep the *slots*: whichever positions the
+     * visible episodes occupy in the full order stay theirs, and the visible episodes are dealt
+     * back into them in their new sequence. Everything hidden stays exactly where it was, which is
+     * the only behaviour that does not surprise someone who later clears the filter.
+     *
+     * @param visibleIds the episode ids on screen, in the order they were in before the drag.
+     * @param from the episode's position among those, before the drag.
+     * @param to where it was dropped.
      */
-    fun addToQueue(episodeId: String) {
-        viewModelScope.launch {
-            val title = uiState.value.episodes.firstOrNull { it.id == episodeId }?.title
-            val queued = episodePlayer.addToQueue(episodeId)
-            transientState.value = transientState.value.copy(
-                message = if (queued && title != null) {
-                    PodcastDetailMessage.Queued(title)
-                } else {
-                    PodcastDetailMessage.EpisodeUnavailable
-                },
-            )
+    fun moveEpisode(visibleIds: List<String>, from: Int, to: Int) {
+        if (from !in visibleIds.indices || to !in visibleIds.indices || from == to) return
+
+        val reordered = visibleIds.toMutableList().apply { add(to, removeAt(from)) }.iterator()
+        val visible = visibleIds.toSet()
+        val merged = uiState.value.episodes.map { episode ->
+            if (episode.id in visible) reordered.next() else episode.id
         }
+
+        viewModelScope.launch { repository.reorderEpisodes(podcastId, merged) }
     }
 
     /**

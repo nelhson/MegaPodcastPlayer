@@ -48,10 +48,11 @@
     <string name="podcast_metadata_separator">" · "</string>
 
     <!--
-        Per-episode buttons; %1$s is the episode title. The download control's own labels now come
-        from the shared component in `:core:designsystem`, so only the queue button is left here.
+        The reorder gesture on a YouTube show, spoken. A drag is invisible to a screen reader, so
+        without these the playlist would be readable and completely unarrangeable with TalkBack on.
     -->
-    <string name="podcast_queue_episode">Add %1$s to the queue</string>
+    <string name="podcast_move_up">Move up</string>
+    <string name="podcast_move_down">Move down</string>
 
     <!-- Snackbars. -->
     <plurals name="podcast_message_new_episodes">
@@ -62,7 +63,6 @@
     <!-- %1$s is the failure reason. -->
     <string name="podcast_message_refresh_failed">Couldn\'t refresh: %1$s</string>
     <string name="podcast_message_episode_unavailable">That episode is no longer in your library</string>
-    <string name="podcast_message_queued">Added \"%1$s\" to the queue</string>
     <string name="podcast_message_download_waiting_for_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>
     <string name="podcast_message_download_removed">Removed \"%1$s\" from this device</string>

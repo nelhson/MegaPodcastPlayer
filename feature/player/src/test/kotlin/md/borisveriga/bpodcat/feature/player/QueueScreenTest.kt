@@ -22,11 +22,11 @@ import org.robolectric.annotation.Config
  * Tests for [QueueScreen].
  *
  * The reorder gesture itself is not exercised here — a synthetic drag over a `LazyColumn` proves
- * little that [QueueDragStateTest] does not prove directly. What is worth pinning on the screen is
- * the part a drag test would not reach anyway: that the queue is editable *without* a gesture, via
- * the custom accessibility actions, and that those actions report positions in the "up next" list
- * rather than including the episode that is playing. That off-by-one is the whole reason
- * [PlayerViewModel.moveInUpNext] exists.
+ * little that `ReorderableStateTest` in `:core:designsystem` does not prove directly. What is
+ * worth pinning on the screen is the part a drag test would not reach anyway: that the queue is
+ * editable *without* a gesture, via the custom accessibility actions, and that those actions
+ * report positions in the "up next" list rather than including the episode that is playing. That
+ * off-by-one is the whole reason [PlayerViewModel.moveInUpNext] exists.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)

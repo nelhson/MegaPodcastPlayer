@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Small icon for the "now playing" notification, the lock screen and the media resumption tile.
+
+    A single opaque silhouette on transparency, because the platform masks a notification's small
+    icon to its alpha channel and tints the result: anything with colour or interior detail would be
+    thrown away. Headphones rather than the microphone used for new-episode notifications, so the
+    two are distinguishable at 24dp in the status bar.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,3c-4.97,0 -9,4.03 -9,9v7c0,1.1 0.9,2 2,2h2c1.1,0 2,-0.9 2,-2v-4c0,-1.1 -0.9,-2 -2,-2H5v-1c0,-3.87 3.13,-7 7,-7s7,3.13 7,7v1h-2c-1.1,0 -2,0.9 -2,2v4c0,1.1 0.9,2 2,2h2c1.1,0 2,-0.9 2,-2v-7c0,-4.97 -4.03,-9 -9,-9z" />
+</vector>

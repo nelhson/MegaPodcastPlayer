@@ -24,7 +24,6 @@ dependencies {
     // Shared phone <-> watch message contract; the phone side of the Data Layer lives here.
     implementation(projects.core.wearprotocol)
 
-    implementation(projects.feature.home)
     implementation(projects.feature.library)
     implementation(projects.feature.downloads)
     implementation(projects.feature.search)

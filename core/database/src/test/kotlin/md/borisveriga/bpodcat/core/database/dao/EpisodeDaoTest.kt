@@ -22,6 +22,9 @@ import org.robolectric.annotation.Config
 /**
  * Tests for [EpisodeDao], focused on the one behaviour the whole refresh design rests on: a feed
  * refresh must never destroy user state.
+ *
+ * Hand ordering is the second thing covered here, and it is user state of exactly that kind: an
+ * order somebody arranged by dragging, which a refresh must add to without disturbing.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -309,70 +312,6 @@ class EpisodeDaoTest {
     }
 
     @Test
-    fun `observeLatestWithShow returns every show's episodes newest first`() = runTest {
-        val other = podcast.copy(
-            id = "podcast-2",
-            title = "Other Show",
-            feedUrl = "https://example.com/other.rss",
-        )
-        podcastDao.upsert(podcast)
-        podcastDao.upsert(other)
-        episodeDao.upsertFromFeed(
-            listOf(
-                episode("mine-old", publishedAt = 1_000L),
-                episode("mine-new", publishedAt = 9_000L),
-            ),
-        )
-        episodeDao.upsertFromFeed(
-            listOf(episode("theirs", publishedAt = 5_000L).copy(podcastId = other.id)),
-        )
-
-        val rows = episodeDao.observeLatestWithShow(limit = 10).first()
-
-        // The whole point of the feed: one chronological list across shows, not a list per show.
-        assertEquals(listOf("mine-new", "theirs", "mine-old"), rows.map { it.episode.id })
-    }
-
-    @Test
-    fun `observeLatestWithShow carries the show on every row`() = runTest {
-        podcastDao.upsert(podcast.copy(artworkUrl = "https://art/show.jpg"))
-        episodeDao.upsertFromFeed(listOf(episode("a")))
-
-        val row = episodeDao.observeLatestWithShow(limit = 10).first().single()
-
-        assertEquals("Podlodka Podcast", row.showTitle)
-        assertEquals("https://art/show.jpg", row.showArtworkUrl)
-    }
-
-    @Test
-    fun `observeLatestWithShow drops episodes the feed gave no date`() = runTest {
-        podcastDao.upsert(podcast)
-        episodeDao.upsertFromFeed(
-            listOf(episode("dated", publishedAt = 1_000L), episode("undated", publishedAt = null)),
-        )
-
-        val rows = episodeDao.observeLatestWithShow(limit = 10).first()
-
-        // A chronological feed has nowhere to put an undated episode, and a trailing block of them
-        // under "Earlier" would be indistinguishable from genuinely old ones.
-        assertEquals(listOf("dated"), rows.map { it.episode.id })
-    }
-
-    @Test
-    fun `observeLatestWithShow honours the limit and keeps the newest`() = runTest {
-        podcastDao.upsert(podcast)
-        episodeDao.upsertFromFeed(
-            (1..5).map { episode("e$it", publishedAt = it * 1_000L) },
-        )
-
-        val rows = episodeDao.observeLatestWithShow(limit = 2).first()
-
-        // The limit exists so a large library does not load entirely into memory; it has to cut
-        // from the old end, or the feed would be capped at the episodes nobody wants to see.
-        assertEquals(listOf("e5", "e4"), rows.map { it.episode.id })
-    }
-
-    @Test
     fun `getWithShowByIds joins the show and skips unknown ids`() = runTest {
         podcastDao.upsert(podcast.copy(artworkUrl = "https://art/show.jpg"))
         episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
@@ -383,5 +322,86 @@ class EpisodeDaoTest {
         assertEquals(setOf("a", "b"), rows.map { it.episode.id }.toSet())
         assertEquals("Podlodka Podcast", rows.first().showTitle)
         assertEquals("https://art/show.jpg", rows.first().showArtworkUrl)
+    }
+
+    @Test
+    fun `a hand ordered show puts newly arrived episodes on top`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("first"), episode("second")),
+            handOrdered = true,
+        )
+
+        episodeDao.upsertFromFeed(
+            listOf(episode("newest"), episode("newer"), episode("first"), episode("second")),
+            handOrdered = true,
+        )
+
+        // The two arrivals go above everything already stored, newest of them first, and the two
+        // that were already there keep the relative order they had.
+        assertEquals(
+            listOf("newest", "newer", "first", "second"),
+            episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `a refresh does not disturb an order the user arranged`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("a"), episode("b"), episode("c")),
+            handOrdered = true,
+        )
+        episodeDao.reorder(listOf("c", "a", "b"))
+
+        episodeDao.upsertFromFeed(listOf(episode("d"), episode("a")), handOrdered = true)
+
+        // Prepending is what makes this true: shifting existing rows down to make room would have
+        // to rewrite the whole show, and any slip in that rewrite would scramble the arrangement.
+        assertEquals(
+            listOf("d", "c", "a", "b"),
+            episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `an rss refresh leaves sort order alone`() = runTest {
+        podcastDao.upsert(podcast)
+
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+
+        // `observeByPodcast` is what an RSS show reads, and it sorts by date; writing positions
+        // here would be bookkeeping for a column that screen can never show or change.
+        assertEquals(listOf(0, 0), episodeDao.observeByPodcast(podcast.id).first().map { it.sortOrder })
+    }
+
+    @Test
+    fun `reordering normalises the negative positions a run of refreshes leaves behind`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a")), handOrdered = true)
+        episodeDao.upsertFromFeed(listOf(episode("b"), episode("a")), handOrdered = true)
+        episodeDao.upsertFromFeed(listOf(episode("c"), episode("b")), handOrdered = true)
+
+        episodeDao.reorder(listOf("a", "b", "c"))
+
+        assertEquals(
+            listOf(0, 1, 2),
+            episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.sortOrder },
+        )
+    }
+
+    @Test
+    fun `reordering ignores episodes the show no longer has`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")), handOrdered = true)
+
+        // A drag that raced a refresh reports ids that may since have gone; that must be harmless
+        // rather than throwing halfway through and leaving the show half-reordered.
+        episodeDao.reorder(listOf("b", "gone", "a"))
+
+        assertEquals(
+            listOf("b", "a"),
+            episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.id },
+        )
     }
 }

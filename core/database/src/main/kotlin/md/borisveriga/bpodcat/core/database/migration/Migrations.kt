@@ -96,3 +96,61 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
         )
     }
 }
+
+/**
+ * Adds `sort_order` to `podcasts` and `episodes`, which is what makes both hand-orderable.
+ *
+ * Both columns are seeded from the ordering the screens already showed, so the upgrade is
+ * invisible: nothing moves until the user drags something. Seeding matters more than it looks —
+ * leaving every row at the default `0` would collapse the library into one arbitrary blob the
+ * first time anything was reordered.
+ *
+ * The library is seeded from its alphabetical rank, which is what `PodcastDao` sorted by until
+ * now. Ties on title are broken by `id` so the seed is deterministic rather than dependent on the
+ * order SQLite happens to scan in.
+ *
+ * Episodes are seeded only for YouTube-sourced shows, since they are the only ones the user can
+ * reorder; the rank is by date, newest first, matching what the show's screen displayed. Undated
+ * episodes sort last, exactly as `observeByPodcast` puts them.
+ *
+ * Both `DEFAULT 0`s must stay in step with `@ColumnInfo(defaultValue = "0")` on
+ * [md.borisveriga.bpodcat.core.database.model.PodcastEntity] and
+ * [md.borisveriga.bpodcat.core.database.model.EpisodeEntity]: Room compares the migrated schema
+ * against the entity definitions at open time and refuses to start if they disagree.
+ */
+val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE podcasts ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE episodes ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+
+        // A correlated count is the rank: how many rows sort before this one. Cheap enough at
+        // library sizes, and it avoids needing window functions on older SQLite builds.
+        connection.execSQL(
+            """
+            UPDATE podcasts SET sort_order = (
+                SELECT COUNT(*) FROM podcasts other
+                WHERE other.title COLLATE NOCASE < podcasts.title COLLATE NOCASE
+                   OR (other.title COLLATE NOCASE = podcasts.title COLLATE NOCASE
+                       AND other.id < podcasts.id)
+            )
+            """.trimIndent(),
+        )
+
+        connection.execSQL(
+            """
+            UPDATE episodes SET sort_order = (
+                SELECT COUNT(*) FROM episodes other
+                WHERE other.podcast_id = episodes.podcast_id
+                  AND (
+                    (other.published_at IS NOT NULL AND episodes.published_at IS NULL)
+                    OR (other.published_at > episodes.published_at)
+                    OR (other.published_at = episodes.published_at AND other.id < episodes.id)
+                    OR (other.published_at IS NULL AND episodes.published_at IS NULL
+                        AND other.id < episodes.id)
+                  )
+            )
+            WHERE podcast_id IN (SELECT id FROM podcasts WHERE source = 'YOUTUBE')
+            """.trimIndent(),
+        )
+    }
+}

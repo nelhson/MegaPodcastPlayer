@@ -13,8 +13,9 @@ import androidx.core.content.ContextCompat
 /**
  * Asks for `POST_NOTIFICATIONS` once per launch, if it has not been granted.
  *
- * The background refresh is the only feature that needs it, and it runs with no UI, so the request
- * has to be made while a screen exists. Asking on start-up rather than behind a rationale screen is
+ * Two features need it and neither can ask for itself: the background refresh runs with no UI at
+ * all, and the player's transport controls are posted by a service, so the request has to be made
+ * while a screen exists. Asking on start-up rather than behind a rationale screen is
  * deliberate: the platform stops showing the dialog after two dismissals, so a user who does not
  * want it is asked at most twice, ever, and one who does gets the permission without hunting for a
  * setting.

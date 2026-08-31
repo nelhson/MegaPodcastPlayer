@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.media.PlaybackState
@@ -24,6 +26,10 @@ import org.robolectric.annotation.Config
  * from one tree — the bar at 0, the full player at 1 — and that the collapsed bar's own controls
  * still work rather than being swallowed by the tap target that opens the sheet. That last one is
  * the regression a "tap anywhere to expand" surface invites.
+ *
+ * One real gesture is driven here too. The arithmetic in [PlayerSheetStateTest] was always right;
+ * what stranded the sheet half open was the wiring between the gesture and that arithmetic, which
+ * only a test that actually swipes can see.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -142,5 +148,19 @@ class PlayerSheetTest {
         composeRule.waitForIdle()
 
         assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
+    }
+
+    @Test
+    fun `a drag that stops part-way still settles to an end`() {
+        // The sheet has two rest positions and no third. Releasing mid-drag must animate to one of
+        // them; parking at the fraction the finger left behind is the bug, and it also desynced
+        // the navigation bar, which follows `targetValue` rather than `progress`.
+        val sheetState = setContent(PlayerSheetValue.Collapsed)
+
+        composeRule.onNodeWithText("Podlodka #400").performTouchInput { swipeUp() }
+        composeRule.waitForIdle()
+
+        assertEquals(PlayerSheetValue.Expanded, sheetState.targetValue)
+        assertEquals(1f, sheetState.progress, 0.001f)
     }
 }

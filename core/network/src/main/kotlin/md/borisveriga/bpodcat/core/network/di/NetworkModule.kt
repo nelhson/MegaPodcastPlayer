@@ -12,6 +12,7 @@ import javax.inject.Qualifier
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import md.borisveriga.bpodcat.core.network.BuildConfig
+import md.borisveriga.bpodcat.core.network.HttpsUpgradeInterceptor
 import md.borisveriga.bpodcat.core.network.itunes.ItunesApi
 import md.borisveriga.bpodcat.core.network.rss.FeedApi
 import okhttp3.Cache
@@ -54,10 +55,15 @@ object NetworkModule {
     @BPodcatOkHttp
     fun providesOkHttpClient(
         @ApplicationContext context: Context,
+        httpsUpgrade: HttpsUpgradeInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
         .cache(Cache(File(context.cacheDir, "http"), HTTP_CACHE_BYTES))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        // First in the chain so everything below it — including the debug logger — sees the URL
+        // that is actually requested. Feeds publish cleartext enclosure URLs that Android will not
+        // open; see HttpsUpgradeInterceptor.
+        .addInterceptor(httpsUpgrade)
         .apply {
             if (BuildConfig.DEBUG) {
                 addInterceptor(
