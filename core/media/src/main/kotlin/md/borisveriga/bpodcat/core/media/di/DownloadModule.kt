@@ -39,6 +39,13 @@ annotation class DownloadCache
 annotation class PlaybackDataSource
 
 /**
+ * The shared client with its response cache removed, for audio only. See [mediaOkHttpClient].
+ */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class MediaOkHttp
+
+/**
  * Provides the Media3 download machinery.
  *
  * Everything here is a singleton for a hard reason rather than a stylistic one: [SimpleCache] takes
@@ -70,6 +77,9 @@ object DownloadModule {
      * Crucially this factory is only ever used as the *upstream* of a cache — never as the whole
      * chain. Both callers below put a [CacheDataSource] above it, which is what keeps cache keys
      * and download ids anchored to the sentinel instead of to a URL that expires within hours.
+     *
+     * The client must be the [MediaOkHttp] one rather than the shared [BPodcatOkHttp] one, or every
+     * episode fetched here is also written through OkHttp's response cache. See [mediaOkHttpClient].
      */
     private fun networkDataSourceFactory(
         context: Context,
@@ -79,6 +89,18 @@ object DownloadModule {
         DefaultDataSource.Factory(context, OkHttpDataSource.Factory(okHttpClient)),
         youTubeResolver,
     )
+
+    /**
+     * The audio client: everything the shared one has, minus the response cache.
+     *
+     * Built once and shared by both chains so the two do not each hold their own derived client.
+     */
+    @Provides
+    @Singleton
+    @MediaOkHttp
+    fun providesMediaOkHttpClient(
+        @BPodcatOkHttp okHttpClient: OkHttpClient,
+    ): OkHttpClient = mediaOkHttpClient(okHttpClient)
 
     /**
      * The index Media3 keeps of what is downloaded and what is cached.
@@ -125,7 +147,7 @@ object DownloadModule {
         @ApplicationContext context: Context,
         databaseProvider: DatabaseProvider,
         @DownloadCache cache: Cache,
-        @BPodcatOkHttp okHttpClient: OkHttpClient,
+        @MediaOkHttp okHttpClient: OkHttpClient,
         youTubeResolver: YouTubeDataSpecResolver,
     ): DownloadManager = DownloadManager(
         context,
@@ -156,7 +178,7 @@ object DownloadModule {
     fun providesPlaybackDataSourceFactory(
         @ApplicationContext context: Context,
         @DownloadCache cache: Cache,
-        @BPodcatOkHttp okHttpClient: OkHttpClient,
+        @MediaOkHttp okHttpClient: OkHttpClient,
         youTubeResolver: YouTubeDataSpecResolver,
     ): DataSource.Factory = CacheDataSource.Factory()
         .setCache(cache)
@@ -165,3 +187,34 @@ object DownloadModule {
         )
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 }
+
+/**
+ * Derives the audio client from the shared one by dropping its response cache.
+ *
+ * ## Why audio must not touch that cache
+ *
+ * [md.borisveriga.bpodcat.core.network.di.NetworkModule] gives the shared client a 20 MB disk cache,
+ * sized for feed XML and iTunes JSON. Media3 opens an episode with no `Range` header, so the CDN
+ * answers `200` — which OkHttp considers cacheable — and OkHttp writes the whole body into that
+ * cache as the bytes are read. An episode is routinely larger than the cache itself, so
+ * `DiskLruCache` evicts *every* existing entry trying to make room and then discards the episode
+ * too, having gained nothing.
+ *
+ * Measured on a 28 MB episode: the cache went from 19.7 MB to 16 KB, taking every cached feed with
+ * it. So the cost was paid three times over — each audio byte written to disk twice (here and in
+ * the [DownloadCache]), and the next refresh forced to re-fetch feeds that were already held.
+ *
+ * ## Why `newBuilder` rather than a fresh client
+ *
+ * `newBuilder()` copies the connection pool, dispatcher, DNS and interceptors by reference, so audio
+ * still shares the pool with feeds and artwork — the reason that client is a singleton — and still
+ * passes through [md.borisveriga.bpodcat.core.network.HttpsUpgradeInterceptor], which the cleartext
+ * enclosure URLs depend on. A separately constructed client would silently lose both.
+ *
+ * A top-level function rather than a private one so the guarantee can be asserted directly.
+ *
+ * @param shared the application-wide client.
+ * @return the same client, cacheless.
+ */
+internal fun mediaOkHttpClient(shared: OkHttpClient): OkHttpClient =
+    shared.newBuilder().cache(null).build()

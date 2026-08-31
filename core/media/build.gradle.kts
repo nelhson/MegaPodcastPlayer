@@ -29,4 +29,6 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
     testImplementation(libs.mockk)
+    // Serves the audio client a cacheable response, to prove it stores nothing.
+    testImplementation(libs.okhttp.mockwebserver)
 }
