@@ -11,6 +11,10 @@ import md.borisveriga.bpodcat.core.database.model.EpisodeWithShowEntity
 import md.borisveriga.bpodcat.core.model.DownloadState
 
 /** Reads and writes episodes. */
+// A DAO is a set of queries, not an object with responsibilities: the count says how many distinct
+// questions the app asks of one table, and splitting it to satisfy the rule would only scatter
+// those questions across files that share the same entity anyway.
+@Suppress("TooManyFunctions")
 @Dao
 interface EpisodeDao {
 
@@ -198,6 +202,49 @@ interface EpisodeDao {
             placeNewEpisodesOnTop(episodes.first().podcastId, newIds)
         }
         return newIds
+    }
+
+    /**
+     * Deletes every episode of one show.
+     *
+     * The queue's foreign key cascades, so entries pointing at these episodes go with them. Only
+     * ever called as half of [replaceForPodcast] — on its own it would leave a subscribed show with
+     * nothing in it and nothing to put back.
+     */
+    @Query("DELETE FROM episodes WHERE podcast_id = :podcastId")
+    suspend fun deleteByPodcast(podcastId: String)
+
+    /**
+     * Replaces one show's episodes wholesale, discarding everything stored about the old ones.
+     *
+     * The opposite of [upsertFromFeed], which exists precisely so a refresh never touches
+     * `position_ms`, `is_played` or `download_state`. This throws all three away, because it serves
+     * the case where the stored list is wrong in a way no merge can correct — a publisher who
+     * re-issued their back catalogue under new GUIDs, or a playlist whose stored order no longer
+     * resembles the real one — and there a merge only leaves the wrong episodes sitting alongside
+     * the right ones.
+     *
+     * One transaction, so the show is never left empty: either the old list or the new one is
+     * stored, never neither.
+     *
+     * @param podcastId the show being rebuilt.
+     * @param episodes every episode the feed now lists, already mapped to entities.
+     * @param handOrdered true for a show the user can reorder, whose positions are seeded from feed
+     *   order. Left false for an RSS show, whose screen orders by date and never reads `sort_order`.
+     */
+    @Transaction
+    suspend fun replaceForPodcast(
+        podcastId: String,
+        episodes: List<EpisodeEntity>,
+        handOrdered: Boolean = false,
+    ) {
+        deleteByPodcast(podcastId)
+        // Not badged as new, for the same reason a freshly added show is not: everything arrived at
+        // once, so marking the whole list unseen would say nothing about any of it.
+        insertIgnoringExisting(episodes.map { it.copy(isNew = false) })
+        // Feed order becomes the stored order, numbered from 0. There is nothing to preserve and
+        // nothing to count down from — the hand-made order went with the rows it belonged to.
+        if (handOrdered) reorder(episodes.map { it.id })
     }
 
     /**

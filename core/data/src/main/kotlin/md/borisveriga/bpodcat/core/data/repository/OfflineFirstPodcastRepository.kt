@@ -405,6 +405,51 @@ class OfflineFirstPodcastRepository @Inject constructor(
         val newEpisodes: List<NewEpisode> = emptyList(),
     )
 
+    override suspend fun rebuild(podcastId: String): Result<Int> = withContext(ioDispatcher) {
+        val podcast = podcastDao.getById(podcastId)
+            ?: return@withContext Result.failure(
+                NoSuchElementException("Unknown podcast $podcastId"),
+            )
+
+        suspendRunCatching {
+            // Fetched before anything is deleted, and with no validators: nothing is thrown away
+            // until the replacement is in hand, so a dead network leaves the user the list they
+            // already had rather than an empty show.
+            val fetched = fetchFeed(
+                feedUrl = podcast.feedUrl,
+                etag = null,
+                lastModified = null,
+                source = podcast.source,
+            )
+            val channel = when (fetched) {
+                is FeedFetchResult.Fetched -> fetched
+
+                // A 304 is what a *conditional* GET earns, and we sent nothing to condition on.
+                FeedFetchResult.NotModified -> throw IllegalStateException(
+                    "Server answered 304 to a request that carried no validators",
+                )
+            }
+
+            val episodes = channel.channel.items.map { it.asEpisodeEntity(podcastId) }
+            episodeDao.replaceForPodcast(
+                podcastId = podcastId,
+                episodes = episodes,
+                handOrdered = podcast.source == PodcastSource.YOUTUBE,
+            )
+            podcastDao.updateRefreshMetadata(
+                id = podcastId,
+                refreshedAt = Instant.now(clock).toEpochMilli(),
+                etag = channel.etag,
+                lastModified = channel.lastModified,
+            )
+
+            // No `autoDownloadScheduler` call, unlike `refreshOne`. Every episode here is
+            // technically newly inserted, and handing the whole back catalogue to the download
+            // stack is precisely what nobody asked for by rebuilding a list.
+            episodes.size
+        }
+    }
+
     override suspend fun remove(podcastId: String) = withContext(ioDispatcher) {
         podcastDao.deleteById(podcastId)
     }

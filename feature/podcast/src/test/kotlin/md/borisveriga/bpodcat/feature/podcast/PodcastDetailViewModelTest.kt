@@ -330,6 +330,105 @@ class PodcastDetailViewModelTest {
     }
 
     @Test
+    fun `rebuilding raises its own flag and reports the list it ended up with`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.rebuild(podcast.id) } coAnswers {
+            release.await()
+            Result.success(412)
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.rebuild()
+            val running = awaitItem()
+            assertTrue(running.isRebuilding)
+            // Neither refresh's indicator: a rebuild is about to replace the rows on screen, and
+            // borrowing the pull-to-refresh spinner would understate that.
+            assertFalse(running.isRefreshing)
+            assertFalse(running.isAutoRefreshing)
+
+            release.complete(Unit)
+            val done = awaitItem()
+            assertFalse(done.isRebuilding)
+            assertEquals(PodcastDetailMessage.Rebuilt(412), done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a rebuild clears the downloads whose rows it just deleted`() = runTest {
+        episodes.value = listOf(
+            episode("kept", DownloadState.NOT_DOWNLOADED),
+            episode("stored", DownloadState.COMPLETED),
+            episode("arriving", DownloadState.DOWNLOADING),
+        )
+        coEvery { repository.rebuild(podcast.id) } returns Result.success(3)
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.rebuild()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Anything the download stack was tracking, not only what finished: a transfer in flight
+        // also has bytes on disk and a row that is about to stop existing.
+        coVerify { downloadRepository.removeDownload("stored") }
+        coVerify { downloadRepository.removeDownload("arriving") }
+        coVerify(exactly = 0) { downloadRepository.removeDownload("kept") }
+    }
+
+    @Test
+    fun `a failed rebuild keeps the downloads, because it kept the episodes`() = runTest {
+        episodes.value = listOf(episode("stored", DownloadState.COMPLETED))
+        coEvery { repository.rebuild(podcast.id) } returns
+            Result.failure(java.io.IOException("no route to host"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.rebuild()
+            assertTrue(awaitItem().isRebuilding)
+
+            val done = awaitItem()
+            assertFalse(done.isRebuilding)
+            assertEquals(PodcastDetailMessage.RebuildFailed("no route to host"), done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // The repository deletes nothing when the fetch fails, so freeing the audio here would
+        // throw away downloads the surviving list still points at.
+        coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
+    }
+
+    @Test
+    fun `neither refresh starts on top of a rebuild`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.rebuild(podcast.id) } coAnswers {
+            release.await()
+            Result.success(1)
+        }
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.rebuild()
+            assertTrue(awaitItem().isRebuilding)
+            // Both of them, because either would merge its episodes into a list that is halfway
+            // through being replaced.
+            viewModel.refresh()
+            viewModel.refreshIfStale()
+
+            release.complete(Unit)
+            val done = awaitItem()
+            assertEquals(PodcastDetailMessage.Rebuilt(1), done.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coVerify(exactly = 0) { repository.refresh(any(), any()) }
+    }
+
+    @Test
     fun `an unfiltered reorder is written straight through`() = runTest {
         episodes.value = listOf(
             episode("a", DownloadState.NOT_DOWNLOADED),

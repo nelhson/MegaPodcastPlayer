@@ -195,6 +195,28 @@ interface PodcastRepository {
         staleAfter: Duration? = null,
     ): RefreshSummary
 
+    /**
+     * Discards this show's stored episode list and imports the feed again from scratch.
+     *
+     * [refresh] merges a feed into what is already stored and goes out of its way to preserve
+     * playback progress, played flags, download state and any hand-made order. This deliberately
+     * loses all of it, because it is the answer to a list a merge cannot fix: a publisher who
+     * re-issued their back catalogue under new GUIDs, a playlist whose stored order no longer
+     * resembles the real one, or a feed that was half-read at import time. In every one of those a
+     * refresh only ever adds to the wrong list.
+     *
+     * The feed is fetched *before* anything is deleted, and unconditionally — no `ETag`, no
+     * `Last-Modified` — so a failed fetch leaves the show exactly as it was, and the server cannot
+     * answer "unchanged" to a request whose entire point is to be told everything again.
+     *
+     * Never downloads audio, and does not remove any that is already on the device: the rows that
+     * tracked those downloads are gone afterwards, so freeing the files is the caller's job.
+     *
+     * @param podcastId the show to rebuild.
+     * @return how many episodes the feed yielded, or a failure carrying the fetch error.
+     */
+    suspend fun rebuild(podcastId: String): Result<Int>
+
     /** Removes a show and, by cascade, its episodes and queue entries. */
     suspend fun remove(podcastId: String)
 

@@ -31,6 +31,9 @@ import md.borisveriga.bpodcat.core.model.Podcast
  * @property isAutoRefreshing true while the refresh that runs on entering the screen is in flight.
  *   Separate from [isRefreshing] because it renders as a thin progress line and says nothing when
  *   it finishes.
+ * @property isRebuilding true while the episode list is being deleted and imported again. Its own
+ *   flag rather than a third kind of refresh, because it is the one operation on this screen that
+ *   destroys what the user is looking at, and it should say so while it runs.
  * @property message a one-off refresh outcome for the snackbar.
  */
 data class PodcastDetailUiState(
@@ -39,6 +42,7 @@ data class PodcastDetailUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val isAutoRefreshing: Boolean = false,
+    val isRebuilding: Boolean = false,
     val message: PodcastDetailMessage? = null,
 )
 
@@ -58,6 +62,24 @@ sealed interface PodcastDetailMessage {
      * @property reason short explanation for the snackbar.
      */
     data class RefreshFailed(val reason: String) : PodcastDetailMessage
+
+    /**
+     * The episode list was deleted and imported again.
+     *
+     * Separate from [Refreshed] because the number means something different: a refresh reports
+     * what it *found*, a rebuild reports how much of the show there now is — which is the one
+     * figure that says whether the rebuild fixed anything.
+     *
+     * @property episodeCount episodes the feed yielded.
+     */
+    data class Rebuilt(val episodeCount: Int) : PodcastDetailMessage
+
+    /**
+     * A rebuild failed, leaving the existing list untouched.
+     *
+     * @property reason short explanation for the snackbar.
+     */
+    data class RebuildFailed(val reason: String) : PodcastDetailMessage
 
     /**
      * An episode could not be played.
@@ -121,6 +143,7 @@ class PodcastDetailViewModel @Inject constructor(
             isLoading = false,
             isRefreshing = transient.isRefreshing,
             isAutoRefreshing = transient.isAutoRefreshing,
+            isRebuilding = transient.isRebuilding,
             message = transient.message,
         )
     }.stateIn(
@@ -180,6 +203,46 @@ class PodcastDetailViewModel @Inject constructor(
                     },
                     onFailure = { error ->
                         PodcastDetailMessage.RefreshFailed(
+                            error.message ?: error::class.simpleName.orEmpty(),
+                        )
+                    },
+                ),
+            )
+        }
+    }
+
+    /**
+     * Deletes this show's episode list and imports the feed again from scratch.
+     *
+     * The escape hatch for a list a refresh cannot repair — a feed re-issued under new GUIDs, a
+     * playlist whose stored order has drifted, an import that only half-worked — where every
+     * further refresh merges into the same wrong list. It costs playback progress, played flags
+     * and any hand-made order, which is the trade the user is making by choosing it.
+     *
+     * It also clears the show's downloads. The rows that tracked them do not survive the rebuild,
+     * so leaving the audio in place would strand however many gigabytes on the device with nothing
+     * left pointing at them. The ids are read *before* the rebuild, because afterwards the rows
+     * that named them are gone, and the removal runs only on success — a failed rebuild leaves the
+     * old list in place, and those downloads still belong to it.
+     */
+    fun rebuild() {
+        if (transientState.value.isBusy) return
+        transientState.value = TransientState(isRebuilding = true)
+        val downloadedIds = uiState.value.episodes
+            .filter { it.downloadState != DownloadState.NOT_DOWNLOADED }
+            .map { it.id }
+
+        viewModelScope.launch {
+            val result = repository.rebuild(podcastId)
+            if (result.isSuccess) {
+                downloadedIds.forEach { downloadRepository.removeDownload(it) }
+            }
+            transientState.value = TransientState(
+                isRebuilding = false,
+                message = result.fold(
+                    onSuccess = { PodcastDetailMessage.Rebuilt(it) },
+                    onFailure = { error ->
+                        PodcastDetailMessage.RebuildFailed(
                             error.message ?: error::class.simpleName.orEmpty(),
                         )
                     },
@@ -293,15 +356,18 @@ class PodcastDetailViewModel @Inject constructor(
     private data class TransientState(
         val isRefreshing: Boolean = false,
         val isAutoRefreshing: Boolean = false,
+        val isRebuilding: Boolean = false,
         val message: PodcastDetailMessage? = null,
     ) {
         /**
-         * Whether a refresh of either kind is already running.
+         * Whether a feed operation of any kind is already running.
          *
-         * One guard for both, so the automatic refresh cannot start on top of a pull-to-refresh and
-         * swallow the answer it was about to give, nor the reverse.
+         * One guard for all three, so the automatic refresh cannot start on top of a
+         * pull-to-refresh and swallow the answer it was about to give, nor the reverse — and so
+         * that neither refresh can land its episodes in a list a rebuild is halfway through
+         * replacing.
          */
-        val isBusy: Boolean get() = isRefreshing || isAutoRefreshing
+        val isBusy: Boolean get() = isRefreshing || isAutoRefreshing || isRebuilding
     }
 
     companion object {

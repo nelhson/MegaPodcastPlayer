@@ -391,6 +391,69 @@ class EpisodeDaoTest {
     }
 
     @Test
+    fun `replaceForPodcast throws away exactly what a refresh protects`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        episodeDao.updatePosition(id = "a", positionMs = 42_000L)
+        episodeDao.setPlayed(id = "a", isPlayed = true, positionMs = 42_000L)
+        episodeDao.updateDownloadState(
+            id = "a",
+            state = DownloadState.COMPLETED,
+            downloadedBytes = 5_000L,
+            percent = 100f,
+        )
+
+        // The feed no longer lists "b" and now lists "c". A merge cannot express that; this can.
+        episodeDao.replaceForPodcast(podcast.id, listOf(episode("a"), episode("c")))
+
+        assertNull("A withdrawn episode must not survive a rebuild", episodeDao.getById("b"))
+        val rebuilt = checkNotNull(episodeDao.getById("a"))
+        assertEquals(0L, rebuilt.positionMs)
+        assertEquals(false, rebuilt.isPlayed)
+        assertEquals(DownloadState.NOT_DOWNLOADED, rebuilt.downloadState)
+        // Nothing is badged: the whole list arrived at once, so calling any of it unseen would say
+        // nothing about any of it.
+        assertTrue(episodeDao.observeByPodcast(podcast.id).first().none { it.isNew })
+    }
+
+    @Test
+    fun `replaceForPodcast leaves every other show alone`() = runTest {
+        val other = podcast.copy(id = "podcast-2", feedUrl = "https://example.com/other.rss")
+        podcastDao.upsert(podcast)
+        podcastDao.upsert(other)
+        episodeDao.upsertFromFeed(listOf(episode("a")))
+        episodeDao.upsertFromFeed(listOf(episode("z").copy(podcastId = other.id)))
+
+        episodeDao.replaceForPodcast(podcast.id, listOf(episode("a")))
+
+        assertEquals(true, episodeDao.getById("z")?.isNew)
+    }
+
+    @Test
+    fun `replaceForPodcast renumbers a hand ordered show from the feed`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("a"), episode("b"), episode("c")),
+            handOrdered = true,
+        )
+        episodeDao.reorder(listOf("c", "b", "a"))
+
+        episodeDao.replaceForPodcast(
+            podcastId = podcast.id,
+            episodes = listOf(episode("a"), episode("b"), episode("c")),
+            handOrdered = true,
+        )
+
+        // A hand-made order is the third thing only a rebuild discards — which is the point of it,
+        // for a playlist whose stored order no longer resembles the one it came from.
+        val rebuilt = episodeDao.observeByPodcastOrdered(podcast.id).first()
+        assertEquals(listOf("a", "b", "c"), rebuilt.map { it.id })
+        // Numbered from 0 rather than counted down from the old minimum, so a rebuild also clears
+        // out the negative positions a run of refreshes leaves behind.
+        assertEquals(listOf(0, 1, 2), rebuilt.map { it.sortOrder })
+    }
+
+    @Test
     fun `reordering ignores episodes the show no longer has`() = runTest {
         podcastDao.upsert(podcast)
         episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")), handOrdered = true)

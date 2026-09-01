@@ -83,7 +83,9 @@ class PodcastDetailScreenTest {
         onEpisodeMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
         onEpisodeClick: (String) -> Unit = {},
         onAutoRefreshChange: (Boolean) -> Unit = {},
+        onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
+        isRebuilding: Boolean = false,
     ) {
         composeRule.setContent {
             BPodcatTheme {
@@ -92,6 +94,7 @@ class PodcastDetailScreenTest {
                         podcast = podcast.copy(autoRefresh = autoRefresh, source = source),
                         episodes = episodes,
                         isLoading = false,
+                        isRebuilding = isRebuilding,
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
@@ -99,6 +102,7 @@ class PodcastDetailScreenTest {
                     onEpisodeMove = onEpisodeMove,
                     onRefresh = {},
                     onAutoRefreshChange = onAutoRefreshChange,
+                    onRebuild = onRebuild,
                     onRemove = onRemove,
                     onMessageShown = {},
                 )
@@ -182,6 +186,84 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithContentDescription("Refreshing in the background").performClick()
 
         assertEquals(false, enabled)
+    }
+
+    @Test
+    fun `rebuilding the list is behind the overflow and asks before it deletes`() {
+        var rebuilds = 0
+        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
+
+        composeRule.onNodeWithText("Delete and reload all episodes").assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+
+        // The menu item opens the question; it must not be the answer.
+        assertEquals(0, rebuilds)
+        composeRule.onNodeWithText("Delete 1 episode and reload?").assertExists()
+
+        composeRule.onNodeWithText("Delete and reload").performClick()
+
+        assertEquals(1, rebuilds)
+    }
+
+    @Test
+    fun `cancelling the confirmation deletes nothing`() {
+        var rebuilds = 0
+        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+        composeRule.onNodeWithText("Cancel").performClick()
+
+        assertEquals(0, rebuilds)
+        composeRule.onNodeWithText("Delete 1 episode and reload?").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the confirmation counts what the rebuild would actually cost`() {
+        setScreen(
+            listOf(
+                episode("untouched"),
+                episode("started", positionMs = 600_000L),
+                episode("stored", downloadState = DownloadState.COMPLETED),
+                // Played but never downloaded: a mark that costs one tap to set again, which is
+                // not worth inflating the warning with.
+                episode("finished", isPlayed = true),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+
+        composeRule.onNodeWithText("Delete 4 episodes and reload?").assertExists()
+        composeRule
+            .onNodeWithText("2 episodes lose their place and any audio saved on this device.")
+            .assertExists()
+    }
+
+    @Test
+    fun `a show with nothing to lose is not asked to confirm`() {
+        var rebuilds = 0
+        setScreen(episodes = emptyList(), onRebuild = { rebuilds++ })
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+
+        // Nothing stored means nothing the confirmation could protect, and a dialog that only ever
+        // says "delete these zero episodes?" teaches people to dismiss the one that matters.
+        assertEquals(1, rebuilds)
+    }
+
+    @Test
+    fun `a rebuild in flight leaves the list readable and says what it is doing`() {
+        setScreen(listOf(episode("a")), isRebuilding = true)
+
+        // The point of announcing it separately from an ordinary refresh: this one is about to
+        // replace the very rows still on screen.
+        composeRule.onNodeWithContentDescription("Reloading every episode").assertExists()
+        composeRule.onNodeWithContentDescription("Checking for new episodes").assertDoesNotExist()
+        composeRule.onNodeWithText("Episode a").assertExists()
     }
 
     @Test

@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.database.BPodcatDatabase
 import md.borisveriga.bpodcat.core.model.DownloadState
+import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSearchResult
 import md.borisveriga.bpodcat.core.model.PodcastSource
 import md.borisveriga.bpodcat.core.model.youTubeAudioSentinel
@@ -385,6 +386,110 @@ class OfflineFirstPodcastRepositoryTest {
 
         assertTrue(repository.observeLibrary().first().isEmpty())
         assertTrue(repository.observeEpisodes(added.podcast.id).first().isEmpty())
+    }
+
+    // --- Rebuilding a list ------------------------------------------------
+
+    /**
+     * Adds the two-episode Podlodka fixture and leaves progress on "a".
+     *
+     * Every rebuild test needs a stored list that a merge would preserve, so that what a rebuild
+     * throws away is visible rather than assumed.
+     *
+     * @return the stored show.
+     */
+    private suspend fun addPodlodkaWithProgress(): Podcast {
+        coEvery { itunes.lookup(any()) } returns appleResult
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(
+                channel(feedItem("a"), feedItem("b")),
+                etag = "v1",
+                lastModified = null,
+            )
+        val added = repository.addFromInput("1209828744") as AddPodcastResult.Added
+        val stored = repository.observeEpisodes(added.podcast.id).first()
+        database.episodeDao().updatePosition(stored.first { it.guid == "a" }.id, 90_000L)
+        return added.podcast
+    }
+
+    @Test
+    fun `a rebuild replaces the list and drops the progress a refresh would have kept`() = runTest {
+        val podcast = addPodlodkaWithProgress()
+
+        // "b" is gone from the feed and "c" is new; a refresh would have left "b" behind forever,
+        // because a merge has no way to know an episode was withdrawn.
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(
+                channel(feedItem("a"), feedItem("c")),
+                etag = "v2",
+                lastModified = null,
+            )
+
+        assertEquals(2, repository.rebuild(podcast.id).getOrThrow())
+
+        val episodes = repository.observeEpisodes(podcast.id).first()
+        assertEquals(setOf("a", "c"), episodes.mapTo(mutableSetOf()) { it.guid })
+        assertEquals(
+            "A rebuild is the one operation that is allowed to lose playback progress",
+            0L,
+            episodes.first { it.guid == "a" }.positionMs,
+        )
+        // Same rule as adding a show: everything arrived at once, so nothing is "new".
+        assertTrue(episodes.none { it.isNew })
+    }
+
+    @Test
+    fun `a rebuild asks unconditionally, so it cannot be told nothing has changed`() = runTest {
+        val podcast = addPodlodkaWithProgress()
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a")), etag = "v2", lastModified = null)
+
+        repository.rebuild(podcast.id)
+
+        // Sending the stored ETag would earn a 304 — the one answer a rebuild has no use for, since
+        // it has just thrown away the copy that 304 says is still good.
+        coVerify(exactly = 0) { feeds.fetch(podlodkaFeedUrl, "v1", any()) }
+        // The new validator is still recorded, so the next ordinary refresh stays cheap.
+        assertEquals("v2", repository.observePodcast(podcast.id).first()?.etag)
+    }
+
+    @Test
+    fun `a rebuild that cannot fetch leaves the stored list exactly as it was`() = runTest {
+        val podcast = addPodlodkaWithProgress()
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } throws IOException("no route to host")
+
+        assertTrue(repository.rebuild(podcast.id).isFailure)
+
+        // The whole reason the fetch happens before the delete: a dead network must cost the user
+        // nothing, rather than emptying a show they can no longer refill.
+        val episodes = repository.observeEpisodes(podcast.id).first()
+        assertEquals(2, episodes.size)
+        assertEquals(90_000L, episodes.first { it.guid == "a" }.positionMs)
+    }
+
+    @Test
+    fun `rebuilding a show that is not stored fails without writing anything`() = runTest {
+        assertTrue(repository.rebuild("no-such-show").isFailure)
+    }
+
+    @Test
+    fun `a rebuilt playlist takes the order the feed gives it`() = runTest {
+        stubPlaylistFetch(youTubeItem("v1"), youTubeItem("v2"), youTubeItem("v3"))
+        val added = repository.addFromInput(
+            "https://www.youtube.com/playlist?list=$playlistId",
+        ) as AddPodcastResult.Added
+
+        val original = repository.observeEpisodes(added.podcast.id).first()
+        repository.reorderEpisodes(added.podcast.id, original.map { it.id }.reversed())
+
+        repository.rebuild(added.podcast.id)
+
+        // A hand-made order is the other thing only a rebuild can discard, and for a playlist whose
+        // stored order has drifted from the real one that is exactly what is being asked for.
+        assertEquals(
+            listOf("yt:video:v1", "yt:video:v2", "yt:video:v3"),
+            repository.observeEpisodes(added.podcast.id).first().map { it.guid },
+        )
     }
 
     @Test

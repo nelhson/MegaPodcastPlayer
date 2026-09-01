@@ -19,6 +19,33 @@
     <string name="podcast_auto_refresh_on">Refreshing in the background</string>
     <string name="podcast_auto_refresh_off">Not refreshing in the background</string>
 
+    <!--
+        The overflow's rebuild, for a list a refresh cannot repair — a refresh only ever merges into
+        the list it already has. The label leads with the deletion rather than the reload, because
+        that is the half the user cannot undo.
+    -->
+    <string name="podcast_rebuild">Delete and reload all episodes</string>
+
+    <!--
+        The confirmation, which no second tap can undo. Unlike removing a show, a rebuild leaves a
+        list much like the one before it, so a mis-tap could otherwise go unnoticed for weeks.
+    -->
+    <plurals name="podcast_rebuild_dialog_title">
+        <item quantity="one">Delete %1$d episode and reload?</item>
+        <item quantity="other">Delete %1$d episodes and reload?</item>
+    </plurals>
+    <string name="podcast_rebuild_dialog_text">The list is fetched from the feed again. Anything the feed no longer publishes will not come back.</string>
+    <!--
+        %1$d is how many episodes carry progress or downloaded audio. Shown only when there is
+        something to lose: a warning that applies to nothing is one nobody reads the next time.
+    -->
+    <plurals name="podcast_rebuild_dialog_at_stake">
+        <item quantity="one">%1$d episode loses its place and any audio saved on this device.</item>
+        <item quantity="other">%1$d episodes lose their place and any audio saved on this device.</item>
+    </plurals>
+    <string name="podcast_rebuild_confirm">Delete and reload</string>
+    <string name="podcast_cancel">Cancel</string>
+
     <!-- The show description, which is clipped until asked for in full. -->
     <string name="podcast_description_expand">Show more</string>
     <string name="podcast_description_collapse">Show less</string>
@@ -34,6 +61,8 @@
 
     <!-- Announced for the hairline that marks the refresh run on entering the screen. -->
     <string name="podcast_refreshing">Checking for new episodes</string>
+    <!-- The same hairline, borrowed by a rebuild, which is not the same promise. -->
+    <string name="podcast_rebuilding">Reloading every episode</string>
 
     <string name="podcast_loading">Loading episodes</string>
 
@@ -62,6 +91,16 @@
     <string name="podcast_message_no_new_episodes">No new episodes</string>
     <!-- %1$s is the failure reason. -->
     <string name="podcast_message_refresh_failed">Couldn\'t refresh: %1$s</string>
+    <!--
+        A rebuild counts what the show now has rather than what arrived, so unlike a refresh there
+        is no "nothing new" case: zero here means the feed published nothing at all.
+    -->
+    <plurals name="podcast_message_rebuilt">
+        <item quantity="one">Reloaded %1$d episode</item>
+        <item quantity="other">Reloaded %1$d episodes</item>
+    </plurals>
+    <!-- %1$s is the failure reason. Says the list survived, because that is the useful half. -->
+    <string name="podcast_message_rebuild_failed">Couldn\'t reload: %1$s. Your episodes are unchanged.</string>
     <string name="podcast_message_episode_unavailable">That episode is no longer in your library</string>
     <string name="podcast_message_download_waiting_for_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>

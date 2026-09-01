@@ -19,8 +19,10 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SyncDisabled
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -81,6 +84,7 @@ import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayou
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
 import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
+import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
 import md.borisveriga.bpodcat.core.model.Podcast
 import md.borisveriga.bpodcat.core.model.PodcastSource
@@ -127,6 +131,7 @@ fun PodcastDetailRoute(
         onEpisodeMove = viewModel::moveEpisode,
         onRefresh = viewModel::refresh,
         onAutoRefreshChange = viewModel::setAutoRefresh,
+        onRebuild = viewModel::rebuild,
         onRemove = viewModel::removePodcast,
         onMessageShown = viewModel::onMessageShown,
         showBackButton = showBackButton,
@@ -147,6 +152,8 @@ fun PodcastDetailRoute(
  *   positions alone would name the wrong episodes.
  * @param onRefresh pull-to-refresh handler; also the empty state's action.
  * @param onAutoRefreshChange background-refresh toggle handler.
+ * @param onRebuild deletes the episode list and imports the feed again from scratch; the screen
+ *   confirms first, so this is only ever called once the user has said yes.
  * @param onRemove remove-show handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -162,6 +169,7 @@ fun PodcastDetailScreen(
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onRefresh: () -> Unit,
     onAutoRefreshChange: (Boolean) -> Unit,
+    onRebuild: () -> Unit,
     onRemove: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -173,8 +181,10 @@ fun PodcastDetailScreen(
     // change invalidates the read.
     val resources = LocalResources.current
     val now = remember { Instant.now() }
-    // Saveable so neither choice is lost when the Fold 7 is opened.
+    // Saveable so neither choice — nor a confirmation mid-decision — is lost when the Fold 7 is
+    // opened.
     var filter by rememberSaveable { mutableStateOf(EpisodeFilter.ALL) }
+    var confirmingRebuild by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val moveUp = stringResource(R.string.podcast_move_up)
     val moveDown = stringResource(R.string.podcast_move_down)
@@ -183,6 +193,18 @@ fun PodcastDetailScreen(
         val message = uiState.message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(message.toText(resources))
         onMessageShown()
+    }
+
+    if (confirmingRebuild) {
+        RebuildDialog(
+            episodeCount = uiState.episodes.size,
+            atStakeCount = uiState.episodes.count { it.isAtStakeInARebuild },
+            onConfirm = {
+                confirmingRebuild = false
+                onRebuild()
+            },
+            onDismiss = { confirmingRebuild = false },
+        )
     }
 
     Scaffold(
@@ -199,6 +221,11 @@ fun PodcastDetailScreen(
                         OverflowMenu(
                             autoRefresh = uiState.podcast.autoRefresh,
                             onAutoRefreshChange = onAutoRefreshChange,
+                            // A confirmation that protects nothing is only a tax, so a show with
+                            // no episodes stored rebuilds on the tap. Everywhere else it asks.
+                            onRebuild = {
+                                if (uiState.episodes.isEmpty()) onRebuild() else confirmingRebuild = true
+                            },
                             onRemove = onRemove,
                         )
                     }
@@ -214,9 +241,17 @@ fun PodcastDetailScreen(
                 .padding(padding),
         ) {
             // The automatic refresh's entire footprint: a line under the title, nothing that moves
-            // the list the user is already reading.
-            if (uiState.isAutoRefreshing) {
-                WavyProgressLine(contentDescription = stringResource(R.string.podcast_refreshing))
+            // the list the user is already reading. A rebuild borrows the same line rather than
+            // blocking the screen — it leaves the old list readable until the moment it is
+            // replaced — but says something different, because the two are not the same promise.
+            when {
+                uiState.isRebuilding -> WavyProgressLine(
+                    contentDescription = stringResource(R.string.podcast_rebuilding),
+                )
+
+                uiState.isAutoRefreshing -> WavyProgressLine(
+                    contentDescription = stringResource(R.string.podcast_refreshing),
+                )
             }
 
             when {
@@ -527,14 +562,21 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  * every episode and every download it has. It belongs behind a menu. The background-refresh switch
  * joins it because until now the repository could turn it off and nothing in the app could.
  *
+ * Rebuilding the list belongs here for the same reason removal does, and is ordered between the
+ * two: it destroys less than removing the show but more than any refresh, and putting it directly
+ * above "Remove this podcast" keeps the menu reading from harmless to irreversible.
+ *
  * @param autoRefresh whether this show is refreshed in the background.
  * @param onAutoRefreshChange toggle handler.
+ * @param onRebuild opens the rebuild confirmation, or rebuilds outright when there is nothing
+ *   stored to lose.
  * @param onRemove remove-show handler.
  */
 @Composable
 private fun OverflowMenu(
     autoRefresh: Boolean,
     onAutoRefreshChange: (Boolean) -> Unit,
+    onRebuild: () -> Unit,
     onRemove: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -569,6 +611,16 @@ private fun OverflowMenu(
             modifier = Modifier.semantics { contentDescription = autoRefreshLabel },
         )
         DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.podcast_rebuild)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.RestartAlt, contentDescription = null)
+            },
+            onClick = {
+                expanded = false
+                onRebuild()
+            },
+        )
+        DropdownMenuItem(
             text = { Text(text = stringResource(R.string.podcast_remove)) },
             leadingIcon = {
                 Icon(imageVector = Icons.Rounded.Delete, contentDescription = null)
@@ -580,6 +632,81 @@ private fun OverflowMenu(
         )
     }
 }
+
+/**
+ * The confirmation shown before the episode list is deleted and fetched again.
+ *
+ * Everything else on this screen is either reversible or replaces one episode's state; this throws
+ * away the show's whole history in a way no second tap undoes, so it asks first — and unlike
+ * "Remove this podcast", which at least announces itself by emptying the library, a rebuild leaves
+ * a list that looks much like the one before it, so a mis-tap could go unnoticed for weeks.
+ *
+ * What is at stake is counted rather than described, because "you will lose your progress" is
+ * frightening in the abstract and decidable in the concrete: nobody hesitates over a show they have
+ * never started, and everybody wants to know before they lose twelve downloads.
+ *
+ * @param episodeCount how many episodes will be deleted.
+ * @param atStakeCount how many of those carry something the rebuild destroys; the sentence is
+ *   omitted entirely at zero rather than warning about nothing.
+ * @param onConfirm proceed.
+ * @param onDismiss cancel.
+ */
+@Composable
+private fun RebuildDialog(
+    episodeCount: Int,
+    atStakeCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(imageVector = Icons.Rounded.RestartAlt, contentDescription = null) },
+        title = {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.podcast_rebuild_dialog_title,
+                    episodeCount,
+                    episodeCount,
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm)) {
+                Text(text = stringResource(R.string.podcast_rebuild_dialog_text))
+                if (atStakeCount > 0) {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.podcast_rebuild_dialog_at_stake,
+                            atStakeCount,
+                            atStakeCount,
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = stringResource(R.string.podcast_rebuild_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.podcast_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Whether a rebuild would destroy anything about this episode worth being warned about.
+ *
+ * Deliberately not "has it been touched": a played episode with no audio on the device costs the
+ * user a mark they can set again in one tap, and counting it would inflate the warning past the
+ * point anyone reads it. Progress mid-episode and audio on the device are the two that cost real
+ * time to recover.
+ */
+private val Episode.isAtStakeInARebuild: Boolean
+    get() = positionMs > 0 || downloadState != DownloadState.NOT_DOWNLOADED
 
 /**
  * The metadata line under an episode title.
@@ -617,6 +744,17 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 
     is PodcastDetailMessage.RefreshFailed ->
         resources.getString(R.string.podcast_message_refresh_failed, reason)
+
+    // No "no episodes" special case, unlike a refresh: a rebuild that lands on zero means the feed
+    // now publishes nothing, which is news rather than the ordinary answer, and the plural says it.
+    is PodcastDetailMessage.Rebuilt -> resources.getQuantityString(
+        R.plurals.podcast_message_rebuilt,
+        episodeCount,
+        episodeCount,
+    )
+
+    is PodcastDetailMessage.RebuildFailed ->
+        resources.getString(R.string.podcast_message_rebuild_failed, reason)
 
     PodcastDetailMessage.EpisodeUnavailable ->
         resources.getString(R.string.podcast_message_episode_unavailable)
@@ -688,6 +826,7 @@ private fun PodcastDetailScreenPreview() {
             onEpisodeMove = { _, _, _ -> },
             onRefresh = {},
             onAutoRefreshChange = {},
+            onRebuild = {},
             onRemove = {},
             onMessageShown = {},
         )
