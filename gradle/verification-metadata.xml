@@ -4970,15 +4970,62 @@
          </artifact>
       </component>
       <!--
-        groovy-ant is a sibling of the Groovy above, pulled in through the same localGroovy()
-        resolution, so it is here for the same reason and on the same terms. Only the module
-        metadata is pinned: where Gradle Module Metadata exists Gradle resolves through the
-        .module and never verifies the .pom fetched beside it, which is why neither Groovy
-        component pins a .pom.
+        The remaining org.apache.groovy entries are siblings of the Groovy above, pulled in
+        through the same localGroovy() resolution, so they are here for the same reason and on
+        the same terms. Android Studio walks the whole Groovy module family during sync and
+        fails on the first one without a checksum, so every sibling the Gradle cache holds is
+        pinned at once rather than one per failed sync. Only the module metadata is pinned:
+        where Gradle Module Metadata exists Gradle resolves through the .module and never
+        verifies the .pom fetched beside it, which is why no Groovy component pins a .pom.
       -->
       <component group="org.apache.groovy" name="groovy-ant" version="4.0.32">
          <artifact name="groovy-ant-4.0.32.module">
             <sha256 value="e28d712ddaf29ca55f42a18d63cb593aedf21f94ca1afaba7ab5d996ad04ae49" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-astbuilder" version="4.0.32">
+         <artifact name="groovy-astbuilder-4.0.32.module">
+            <sha256 value="cbd2542682b41eba98fef6eab1408563eb011554e9de38b170112d7c2025c1b8" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-bom" version="4.0.32">
+         <artifact name="groovy-bom-4.0.32.module">
+            <sha256 value="d3c40b2cd918c1276fe234094d4512317261a5f0bfc80f679e43c761a004e01e" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-datetime" version="4.0.32">
+         <artifact name="groovy-datetime-4.0.32.module">
+            <sha256 value="4eadcb6948912a15dc46e41229b9d86a1ef807233bca5f28864733cd0f5fc28e" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-dateutil" version="4.0.32">
+         <artifact name="groovy-dateutil-4.0.32.module">
+            <sha256 value="002bc62612cb8338b36c95253e0b4d2d0113a3204faed16d628123874d230d05" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-groovydoc" version="4.0.32">
+         <artifact name="groovy-groovydoc-4.0.32.module">
+            <sha256 value="34028862aee0c613a6621dd76fc772948173350998b4985ad7f7691573c817f6" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-json" version="4.0.32">
+         <artifact name="groovy-json-4.0.32.module">
+            <sha256 value="27a550ad351c2889ae6e62a8351db1c38f3275a10f21210fd0088e5f9484b4b1" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-nio" version="4.0.32">
+         <artifact name="groovy-nio-4.0.32.module">
+            <sha256 value="cfaf468115fdc69a77811a866bd6f4ad5f484495ccb8eede3a45b20e351bf0af" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-templates" version="4.0.32">
+         <artifact name="groovy-templates-4.0.32.module">
+            <sha256 value="d5de06eaa56c56b0ea45d5230f5ad31f728fe4cc2e9564ba14573d2ea3aa5c88" origin="Maven Central, verified against the published .sha256"/>
+         </artifact>
+      </component>
+      <component group="org.apache.groovy" name="groovy-xml" version="4.0.32">
+         <artifact name="groovy-xml-4.0.32.module">
+            <sha256 value="fdd9f774c4efbff8530dc4e5efd9502d5035a96116ae0c9eef88426dab45db3d" origin="Maven Central, verified against the published .sha256"/>
          </artifact>
       </component>
       <component group="org.apache.httpcomponents" name="httpclient" version="4.5.14">
