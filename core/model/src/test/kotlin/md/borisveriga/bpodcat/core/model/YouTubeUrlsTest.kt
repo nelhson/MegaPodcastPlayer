@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.core.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -79,5 +80,83 @@ class YouTubeUrlsTest {
 
         assertEquals("https://i.ytimg.com/vi/niTJ2221aS8/mqdefault.jpg", url)
         assertFalse(url.contains("hqdefault"))
+    }
+
+    // --- playlist id round trip -------------------------------------------
+
+    @Test
+    fun `a minted feed url parses back to the same playlist id`() {
+        // The other load-bearing round trip. The feed URL is the show's stored identity, and the
+        // extractor is addressed by id, so refreshing a playlist has to undo the minting exactly.
+        val id = "PLBQmLCA6V3Nc_Z_LpUguOnbjrgt9LqlG0"
+
+        assertEquals(id, youTubePlaylistIdOrNull(youTubePlaylistFeedUrl(id)))
+    }
+
+    @Test
+    fun `an rss feed url names no playlist`() {
+        assertNull(youTubePlaylistIdOrNull("https://example.com/feed.rss"))
+    }
+
+    @Test
+    fun `a feed url with no id after the prefix names no playlist`() {
+        assertNull(youTubePlaylistIdOrNull(youTubePlaylistFeedUrl("")))
+    }
+
+    @Test
+    fun `the playlist page url is not the feed url`() {
+        // Two different strings on purpose: one is the identity that must never move, the other is
+        // an address handed to the extractor. Collapsing them would re-key every stored show.
+        val id = "PLAA9qRhhXQ2c"
+
+        assertEquals("https://www.youtube.com/playlist?list=$id", youTubePlaylistUrl(id))
+        assertNotEquals(youTubePlaylistFeedUrl(id), youTubePlaylistUrl(id))
+    }
+
+    // --- watch url video ids ----------------------------------------------
+
+    @Test
+    fun `reads the video id out of a watch url`() {
+        assertEquals(
+            "niTJ2221aS8",
+            youTubeVideoIdFromWatchUrlOrNull("https://www.youtube.com/watch?v=niTJ2221aS8"),
+        )
+    }
+
+    @Test
+    fun `reads the video id past the list and index a playlist entry carries`() {
+        // The shape the extractor actually reports for a video reached through a playlist.
+        assertEquals(
+            "niTJ2221aS8",
+            youTubeVideoIdFromWatchUrlOrNull(
+                "https://www.youtube.com/watch?v=niTJ2221aS8&list=PLAA9qRhhXQ2c&index=3",
+            ),
+        )
+    }
+
+    @Test
+    fun `finds the video id when it is not the first parameter`() {
+        assertEquals(
+            "niTJ2221aS8",
+            youTubeVideoIdFromWatchUrlOrNull(
+                "https://www.youtube.com/watch?list=PLAA9qRhhXQ2c&v=niTJ2221aS8",
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects a url with no video id at all`() {
+        assertNull(
+            youTubeVideoIdFromWatchUrlOrNull("https://www.youtube.com/playlist?list=PLAA9qRhhXQ2c"),
+        )
+        assertNull(youTubeVideoIdFromWatchUrlOrNull("https://www.youtube.com/watch"))
+    }
+
+    @Test
+    fun `rejects an id that is not drawn from the video id alphabet`() {
+        // The id becomes a sentinel URI, a Media3 cache key and an extractor argument, so a stray
+        // slash or dot would change the meaning of all three. Validated where it first arrives.
+        assertNull(youTubeVideoIdFromWatchUrlOrNull("https://www.youtube.com/watch?v=../../etc"))
+        assertNull(youTubeVideoIdFromWatchUrlOrNull("https://www.youtube.com/watch?v="))
     }
 }

@@ -65,8 +65,10 @@ class RssParser @Inject constructor() {
 /**
  * Turns a SAX security feature off, ignoring implementations that have never heard of it.
  *
- * Shared with [YouTubeAtomParser]: both parsers read untrusted XML from arbitrary hosts and
- * must disable external entity resolution the same way.
+ * [RssParser] reads untrusted XML from arbitrary hosts, so external entity resolution has to go.
+ * Kept as a standalone extension rather than folded into its one call site: it was shared with the
+ * YouTube Atom parser until that parser was retired, and any second XML source added here will need
+ * exactly the same treatment.
  *
  * @param feature the SAX feature URI.
  */

@@ -27,6 +27,7 @@ import md.borisveriga.bpodcat.core.network.rss.FeedChannel
 import md.borisveriga.bpodcat.core.network.rss.FeedFetchResult
 import md.borisveriga.bpodcat.core.network.rss.FeedItem
 import md.borisveriga.bpodcat.core.network.rss.FeedRemoteDataSource
+import md.borisveriga.bpodcat.core.youtube.YouTubePlaylistFetcher
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,7 @@ class OfflineFirstPodcastRepositoryTest {
     private lateinit var database: BPodcatDatabase
     private lateinit var itunes: ItunesRemoteDataSource
     private lateinit var feeds: FeedRemoteDataSource
+    private lateinit var youTubePlaylists: YouTubePlaylistFetcher
     private lateinit var repository: OfflineFirstPodcastRepository
 
     private val clock = Clock.fixed(Instant.parse("2026-08-28T12:00:00Z"), ZoneOffset.UTC)
@@ -92,7 +94,7 @@ class OfflineFirstPodcastRepositoryTest {
     private val playlistId = "PLBQmLCA6V3Nc_Z_LpUguOnbjrgt9LqlG0"
     private val playlistFeedUrl = youTubePlaylistFeedUrl(playlistId)
 
-    /** A parsed YouTube entry, exactly as YouTubeAtomParser emits it: sentinel audio, no duration. */
+    /** One video as the playlist fetcher emits it: sentinel audio, thumbnail derived from the id. */
     private fun youTubeItem(videoId: String) = FeedItem(
         guid = "yt:video:$videoId",
         title = "Video $videoId",
@@ -112,15 +114,14 @@ class OfflineFirstPodcastRepositoryTest {
         items = items.toList(),
     )
 
-    /** Stubs the playlist fetch for any validators, since YouTube's feed endpoint sends none. */
+    /**
+     * Stubs the playlist read.
+     *
+     * Keyed by playlist *id*, not by feed URL: the extractor is addressed by id, and recovering it
+     * from the stored feed URL is itself part of what these tests cover.
+     */
     private fun stubPlaylistFetch(vararg items: FeedItem) {
-        coEvery {
-            feeds.fetch(playlistFeedUrl, any(), any(), PodcastSource.YOUTUBE)
-        } returns FeedFetchResult.Fetched(
-            youTubeChannel(*items),
-            etag = null,
-            lastModified = null,
-        )
+        coEvery { youTubePlaylists.fetch(playlistId) } returns youTubeChannel(*items)
     }
 
     @Before
@@ -131,11 +132,13 @@ class OfflineFirstPodcastRepositoryTest {
         ).allowMainThreadQueries().build()
         itunes = mockk()
         feeds = mockk()
+        youTubePlaylists = mockk()
         repository = OfflineFirstPodcastRepository(
             podcastDao = database.podcastDao(),
             episodeDao = database.episodeDao(),
             itunes = itunes,
             feeds = feeds,
+            youTubePlaylists = youTubePlaylists,
             // Relaxed: what a refresh does with the ids it discovers is MediaDownloadRepository's
             // business, and is tested there.
             autoDownloadScheduler = mockk(relaxed = true),
@@ -419,7 +422,7 @@ class OfflineFirstPodcastRepositoryTest {
 
         repository.addFromInput("https://www.youtube.com/playlist?list=$playlistId")
 
-        coVerify { feeds.fetch(playlistFeedUrl, any(), any(), PodcastSource.YOUTUBE) }
+        coVerify { youTubePlaylists.fetch(playlistId) }
     }
 
     @Test
@@ -457,6 +460,39 @@ class OfflineFirstPodcastRepositoryTest {
     }
 
     @Test
+    fun `imports every video in a playlist longer than fifteen`() = runTest {
+        // The reported bug, at the size it was reported: a 34-video playlist arrived as 15, because
+        // YouTube's Atom feed serves the first fifteen entries and offers no pagination at all.
+        val videos = (1..34).map { youTubeItem("video%06d".format(it)) }
+        stubPlaylistFetch(*videos.toTypedArray())
+
+        val added = repository.addFromInput(
+            "https://www.youtube.com/playlist?list=$playlistId",
+        ) as AddPodcastResult.Added
+
+        assertEquals(34, added.episodeCount)
+        assertEquals(34, repository.observeEpisodes(added.podcast.id).first().size)
+    }
+
+    @Test
+    fun `a refresh discovers a video added past the old feed's cut-off`() = runTest {
+        // The subtler half of the same bug. The fifteen entries the feed served were the first
+        // fifteen in *playlist order*, not the fifteen newest, so for a playlist that grows at the
+        // end no refresh could ever see a new video — the show was frozen, silently and forever.
+        val original = (1..15).map { youTubeItem("video%06d".format(it)) }
+        stubPlaylistFetch(*original.toTypedArray())
+        val added = repository.addFromInput(
+            "https://www.youtube.com/playlist?list=$playlistId",
+        ) as AddPodcastResult.Added
+
+        stubPlaylistFetch(*(original + youTubeItem("video000016")).toTypedArray())
+        val discovered = repository.refresh(added.podcast.id).getOrThrow()
+
+        assertEquals(1, discovered)
+        assertEquals(16, repository.observeEpisodes(added.podcast.id).first().size)
+    }
+
+    @Test
     fun `refreshing a playlist keeps using the youtube parser`() = runTest {
         stubPlaylistFetch(youTubeItem("niTJ2221aS8"))
         val added = repository.addFromInput(
@@ -467,7 +503,7 @@ class OfflineFirstPodcastRepositoryTest {
         val discovered = repository.refresh(added.podcast.id).getOrThrow()
 
         assertEquals(1, discovered)
-        coVerify { feeds.fetch(playlistFeedUrl, any(), any(), PodcastSource.YOUTUBE) }
+        coVerify { youTubePlaylists.fetch(playlistId) }
     }
 
     @Test
@@ -477,7 +513,8 @@ class OfflineFirstPodcastRepositoryTest {
         val result = repository.addFromInput("https://www.youtube.com/watch?v=niTJ2221aS8")
 
         assertTrue("Expected NotAPlaylist, got $result", result is AddPodcastResult.NotAPlaylist)
-        coVerify(exactly = 0) { feeds.fetch(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { feeds.fetch(any(), any(), any()) }
+        coVerify(exactly = 0) { youTubePlaylists.fetch(any()) }
     }
 
     @Test
@@ -485,19 +522,20 @@ class OfflineFirstPodcastRepositoryTest {
         val result = repository.addFromInput("https://www.youtube.com/@somehandle")
 
         assertTrue("Expected NotAPlaylist, got $result", result is AddPodcastResult.NotAPlaylist)
-        coVerify(exactly = 0) { feeds.fetch(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { feeds.fetch(any(), any(), any()) }
+        coVerify(exactly = 0) { youTubePlaylists.fetch(any()) }
     }
 
     @Test
     fun `an ordinary rss feed still parses as rss`() = runTest {
         // The regression guarding every show already in the library.
-        coEvery { feeds.fetch(podlodkaFeedUrl, any(), any(), PodcastSource.RSS) } returns
+        coEvery { feeds.fetch(podlodkaFeedUrl, any(), any()) } returns
             FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
 
         val added = repository.addFromInput(podlodkaFeedUrl) as AddPodcastResult.Added
 
         assertEquals(PodcastSource.RSS, added.podcast.source)
-        coVerify { feeds.fetch(podlodkaFeedUrl, any(), any(), PodcastSource.RSS) }
+        coVerify { feeds.fetch(podlodkaFeedUrl, any(), any()) }
     }
 
     // region Staleness
@@ -514,6 +552,7 @@ class OfflineFirstPodcastRepositoryTest {
         episodeDao = database.episodeDao(),
         itunes = itunes,
         feeds = feeds,
+        youTubePlaylists = youTubePlaylists,
         autoDownloadScheduler = mockk(relaxed = true),
         clock = Clock.fixed(clock.instant().plus(Duration.ofMinutes(minutes)), ZoneOffset.UTC),
         ioDispatcher = UnconfinedTestDispatcher(),

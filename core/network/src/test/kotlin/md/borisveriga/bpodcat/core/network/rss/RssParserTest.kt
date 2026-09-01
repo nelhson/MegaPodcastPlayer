@@ -153,9 +153,9 @@ class RssParserTest {
     }
     @Test
     fun `rejects a youtube atom feed`() {
-        // The mirror of YouTubeAtomParserTest's "rejects an rss document". Together the two prove
-        // the parsers cannot be swapped by accident: whichever one is wrong for the body fails
-        // loudly instead of quietly returning an empty show.
+        // An Atom document must fail loudly here rather than quietly parse as an empty show. Still
+        // worth a test now that YouTube no longer comes through this class at all: an Atom feed is
+        // the likeliest wrong body for a user to paste as an RSS URL.
         try {
             parseFixture("youtube_playlist.xml")
             fail("Expected RssParseException for an Atom document")

@@ -14,6 +14,10 @@ dependencies {
     api(projects.core.media)
     implementation(projects.core.common)
     implementation(projects.core.network)
+    // Playlists are read with the extractor rather than fetched as a feed, so the repository picks
+    // between the two. The dependency has to be here because :core:network cannot depend on
+    // :core:youtube — :core:youtube already depends on it.
+    implementation(projects.core.youtube)
 
     testImplementation(libs.androidx.room.runtime)
     testImplementation(libs.robolectric)

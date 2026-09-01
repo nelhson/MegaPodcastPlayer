@@ -30,9 +30,11 @@ import md.borisveriga.bpodcat.core.model.PodcastSearchResult
 import md.borisveriga.bpodcat.core.model.PodcastSource
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
 import md.borisveriga.bpodcat.core.model.youTubePlaylistFeedUrl
+import md.borisveriga.bpodcat.core.model.youTubePlaylistIdOrNull
 import md.borisveriga.bpodcat.core.network.itunes.ItunesRemoteDataSource
 import md.borisveriga.bpodcat.core.network.rss.FeedFetchResult
 import md.borisveriga.bpodcat.core.network.rss.FeedRemoteDataSource
+import md.borisveriga.bpodcat.core.youtube.YouTubePlaylistFetcher
 
 /**
  * Room-backed, offline-first implementation of [PodcastRepository].
@@ -40,7 +42,10 @@ import md.borisveriga.bpodcat.core.network.rss.FeedRemoteDataSource
  * @property podcastDao podcast rows.
  * @property episodeDao episode rows.
  * @property itunes Apple search/lookup.
- * @property feeds feed fetching and parsing, for both RSS and YouTube playlists.
+ * @property feeds feed downloading and parsing, for RSS shows.
+ * @property youTubePlaylists playlist reading, for YouTube shows. A separate collaborator rather
+ *   than another parser behind [feeds] because a playlist is not fetched over HTTP at all — see
+ *   [fetchFeed].
  * @property autoDownloadScheduler told about newly discovered episodes, so the download stack
  *   can act on them without this class knowing anything about downloads.
  * @property clock injected so refresh timestamps are deterministic in tests.
@@ -55,6 +60,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
     private val episodeDao: EpisodeDao,
     private val itunes: ItunesRemoteDataSource,
     private val feeds: FeedRemoteDataSource,
+    private val youTubePlaylists: YouTubePlaylistFetcher,
     private val autoDownloadScheduler: AutoDownloadScheduler,
     private val clock: Clock,
     @Dispatcher(BPodcatDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
@@ -159,7 +165,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
      * by pasted link is a no-op the second time. For a YouTube playlist that URL is canonical, so
      * the several spellings of one playlist link collapse here too.
      *
-     * @param source which parser to run the body through, and what to record on the stored show.
+     * @param source where the show is read from, and what to record on the stored row.
      */
     private suspend fun addFeed(
         feedUrl: String,
@@ -174,7 +180,9 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
         // suspendRunCatching, not try/catch: a cancelled add must unwind rather than be reported
         // to the user as a failed one and then keep writing rows.
-        val fetched = suspendRunCatching { feeds.fetch(feedUrl, source = source) }
+        val fetched = suspendRunCatching {
+            fetchFeed(feedUrl, etag = null, lastModified = null, source = source)
+        }
             .getOrElse { error ->
                 // The user only sees a short snackbar; keep the stack trace where it can be read.
                 Log.w(TAG, "Failed to add feed $feedUrl", error)
@@ -277,13 +285,59 @@ class OfflineFirstPodcastRepository @Inject constructor(
         }
 
     /**
+     * Reads a show, from wherever that show comes from.
+     *
+     * The single seam where the two sources meet, so that adding a show and refreshing one cannot
+     * drift apart — which they previously could, because each spelled the fetch out for itself.
+     *
+     * A YouTube playlist is not fetched over HTTP here at all. Its stored `feedUrl` is an identity
+     * rather than an address: the Atom feed it names returns only the first fifteen entries of a
+     * playlist and cannot page, so it can neither import a longer playlist nor ever report a video
+     * added past position fifteen. The extractor reads the whole playlist instead, which is why the
+     * playlist id has to be recovered from the stored URL.
+     *
+     * It follows that a YouTube show never answers [FeedFetchResult.NotModified] — there is no
+     * conditional GET to answer it with. In practice nothing changes: YouTube's feed endpoint sent
+     * neither `ETag` nor `Last-Modified` either, so a YouTube refresh always re-read everything, and
+     * `upsertFromFeed` makes re-seeing a known entry a no-op.
+     *
+     * @param feedUrl the show's stored feed URL.
+     * @param etag `ETag` from the previous fetch; meaningless for YouTube.
+     * @param lastModified `Last-Modified` from the previous fetch; meaningless for YouTube.
+     * @param source where to read the show from.
+     */
+    private suspend fun fetchFeed(
+        feedUrl: String,
+        etag: String?,
+        lastModified: String?,
+        source: PodcastSource,
+    ): FeedFetchResult = when (source) {
+        PodcastSource.RSS -> feeds.fetch(feedUrl, etag, lastModified)
+
+        PodcastSource.YOUTUBE -> {
+            // Only reachable if a row were written with a YOUTUBE source and a URL that is not a
+            // playlist feed URL, which nothing can do: youTubePlaylistFeedUrl mints every one of
+            // them. Loud rather than silent, because the alternative is a show that stops
+            // refreshing for no visible reason.
+            val playlistId = requireNotNull(youTubePlaylistIdOrNull(feedUrl)) {
+                "YouTube show stored with a feed URL that names no playlist: $feedUrl"
+            }
+            FeedFetchResult.Fetched(
+                channel = youTubePlaylists.fetch(playlistId),
+                etag = null,
+                lastModified = null,
+            )
+        }
+    }
+
+    /**
      * Fetches one feed and applies it.
      *
      * @return what the fetch did: whether the server reported the feed unchanged, and which
      *   episodes were genuinely new.
      */
     private suspend fun refreshOne(podcast: PodcastEntity): RefreshOutcome {
-        val result = feeds.fetch(
+        val result = fetchFeed(
             feedUrl = podcast.feedUrl,
             etag = podcast.etag,
             lastModified = podcast.lastModified,

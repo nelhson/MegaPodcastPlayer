@@ -11,8 +11,11 @@ dependencies {
     // The youtube:// sentinel helpers live in :core:model, and callers of this module need them.
     api(projects.core.model)
     implementation(projects.core.common)
-    // For the shared OkHttpClient: extraction shares the connection pool with feeds and artwork.
-    implementation(projects.core.network)
+    // `api`, not `implementation`, on two counts: extraction shares the OkHttpClient — and so the
+    // connection pool — with feeds and artwork, and YouTubePlaylistFetcher hands back the same
+    // FeedChannel the RSS parser produces, which is what lets a playlist travel through the rest of
+    // the app as an ordinary show.
+    api(projects.core.network)
 
     // Deliberately `implementation`, not `api`: no org.schabi.* type may reach :core:media or :app.
     implementation(libs.newpipe.extractor)

@@ -24,8 +24,22 @@ package md.borisveriga.bpodcat.core.model
  */
 private const val SENTINEL_PREFIX = "youtube://video/"
 
-/** YouTube's public per-playlist Atom feed. Needs no API key and honours conditional GETs. */
+/**
+ * YouTube's per-playlist Atom feed.
+ *
+ * **No longer fetched.** That endpoint returns the first fifteen entries of a playlist and offers no
+ * pagination at all, so it can neither import a longer playlist nor ever notice a video added past
+ * position fifteen. Episodes come from the extractor instead — see
+ * `md.borisveriga.bpodcat.core.youtube.YouTubePlaylistFetcher`.
+ *
+ * The string survives because it is an *identity*, not an address: it is stored in
+ * `podcasts.feed_url`, which [podcastIdOf] hashes and the unique index compares. Changing its
+ * spelling would give every stored YouTube show a new id and orphan its episodes.
+ */
 private const val PLAYLIST_FEED_PREFIX = "https://www.youtube.com/feeds/videos.xml?playlist_id="
+
+/** The playlist's own page, which is the URL the extractor accepts. */
+private const val PLAYLIST_PAGE_PREFIX = "https://www.youtube.com/playlist?list="
 
 /**
  * The alphabet a YouTube video id is drawn from.
@@ -92,6 +106,57 @@ fun youTubeVideoIdOrNull(uri: String): String? =
  * @param playlistId the canonical playlist id, e.g. `PLBQmLCA6V3Nc_Z_LpUguOnbjrgt9LqlG0`.
  */
 fun youTubePlaylistFeedUrl(playlistId: String): String = PLAYLIST_FEED_PREFIX + playlistId
+
+/**
+ * Recovers the playlist id from a stored [youTubePlaylistFeedUrl].
+ *
+ * The show's identity is the feed URL, but the extractor wants a playlist id, so refreshing has to
+ * undo the minting above. Kept next to it deliberately: these two must stay exact inverses, and the
+ * only way to guarantee that is to let one file own both.
+ *
+ * @param feedUrl the value stored in `podcasts.feed_url`.
+ * @return the playlist id, or `null` when [feedUrl] is not a YouTube playlist feed URL.
+ */
+fun youTubePlaylistIdOrNull(feedUrl: String): String? =
+    if (feedUrl.startsWith(PLAYLIST_FEED_PREFIX)) {
+        feedUrl.substring(PLAYLIST_FEED_PREFIX.length).takeIf { it.isNotEmpty() }
+    } else {
+        null
+    }
+
+/**
+ * The playlist page URL for [playlistId], which is what the extractor is given.
+ *
+ * Deliberately not the same string as [youTubePlaylistFeedUrl]: that one is the show's stored
+ * identity and must never move, this one is an address that only ever exists in flight.
+ *
+ * @param playlistId the canonical playlist id.
+ */
+fun youTubePlaylistUrl(playlistId: String): String = PLAYLIST_PAGE_PREFIX + playlistId
+
+/**
+ * Pulls the video id out of a watch URL.
+ *
+ * The extractor identifies a playlist entry by its watch URL (`…/watch?v=niTJ2221aS8`, sometimes
+ * carrying `&list=` and `&index=` as well), while everything downstream is keyed by the bare id. The
+ * result is put through [isYouTubeVideoId] before it is returned, for the same reason the Atom
+ * parser did it: the id goes on to become a sentinel URI, a Media3 cache key and an extractor
+ * argument, and exactly one shape of id may exist below this line.
+ *
+ * @param watchUrl a YouTube watch URL, as the extractor reported it.
+ * @return the video id, or `null` when the URL carries no well-formed one.
+ */
+fun youTubeVideoIdFromWatchUrlOrNull(watchUrl: String): String? {
+    val query = watchUrl.substringAfter('?', missingDelimiterValue = "")
+    if (query.isEmpty()) return null
+    return query.splitToSequence('&')
+        .firstOrNull { it.startsWith(VIDEO_ID_PARAM) }
+        ?.substring(VIDEO_ID_PARAM.length)
+        ?.takeIf(::isYouTubeVideoId)
+}
+
+/** The query parameter a watch URL carries its video id in. */
+private const val VIDEO_ID_PARAM = "v="
 
 /**
  * Thumbnail URL for a video.
