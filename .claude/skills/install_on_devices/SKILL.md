@@ -62,7 +62,7 @@ For recognition only — do **not** match on these:
 | Device | `ro.product.model` | `adb devices -l` model | product | SDK |
 | --- | --- | --- | --- | --- |
 | Galaxy Watch Ultra 2 | `SM-L715F` | `SM_L715F` (underscores) | `projectv2ul` | 37 |
-| Galaxy Fold 7 | not yet observed connected — record it the first time it appears | | | |
+| Galaxy Fold 7 | `SM-F966B` | `SM_F966B` | `q7qxxx` (device `q7q`) | 36 (Android 16) |
 
 Note the two spellings: `adb devices -l` prints `model:SM_L715F` with an underscore while
 `getprop ro.product.model` returns `SM-L715F` with a hyphen. Another reason not to match on it.
