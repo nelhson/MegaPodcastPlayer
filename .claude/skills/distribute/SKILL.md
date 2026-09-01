@@ -69,19 +69,19 @@ initiative, and do not refuse to build — it is his call.
 
 ## 2 — Version
 
-`versionCode = 1` and `versionName = "1.0"` are hardcoded in both
-`AndroidApplicationConventionPlugin` and `AndroidApplicationWearConventionPlugin`. Every build ever
-produced therefore claims to be version 1.
+`versionCode` and `versionName` live in `gradle/libs.versions.toml` (the `[versions]` table), and
+both application convention plugins read them, so the phone and the watch always carry the same
+version. Check what they say:
 
-That matters for two reasons, and both are worth stating when handing over a build:
+```bash
+grep -n "^versionCode\|^versionName" gradle/libs.versions.toml
+```
 
-- A recipient updating in place may hit `INSTALL_FAILED_VERSION_DOWNGRADE`, or worse, silently keep
-  the old build because Android sees no upgrade.
-- "Which build is this?" cannot be answered from the app. Quote the **commit SHA** in the handover
-  message; it is the only real identifier.
-
-If Boris wants this fixed rather than worked around, bumping the version is a build-logic change,
-not something to patch per build.
+Before a build that will be handed over, ask whether to bump `versionCode` (and `versionName` if the
+change is user-visible). A recipient updating in place over the same `versionCode` may hit
+`INSTALL_FAILED_VERSION_DOWNGRADE`, or worse, silently keep the old build because Android sees no
+upgrade. Quote the **commit SHA** in the handover message as well; the version alone does not
+identify a build.
 
 ## 3 — Build
 
@@ -98,6 +98,28 @@ Outputs:
 | --- | --- |
 | Phone | `app/build/outputs/apk/release/app-release.apk` |
 | Watch | `wear/build/outputs/apk/release/wear-release.apk` |
+
+## 3a — Archive the R8 mapping files
+
+R8 keeps line numbers (`-keepattributes SourceFile,LineNumberTable` in both `proguard-rules.pro`
+files) but renames everything, so a stack trace from a distributed build is only readable with the
+mapping file from **that exact build**. There is no crash reporter and no upload, so the mapping
+must be kept by hand, next to the APKs, named by commit:
+
+```powershell
+$sha = git rev-parse --short HEAD
+New-Item -ItemType Directory -Force "dist\$sha" | Out-Null
+Copy-Item app\build\outputs\mapping\release\mapping.txt  "dist\$sha\app-mapping.txt"
+Copy-Item wear\build\outputs\mapping\release\mapping.txt "dist\$sha\wear-mapping.txt"
+```
+
+`dist/` is git-ignored. A trace is read back either in Android Studio (Analyze → Analyze Stack
+Trace, pointing it at the mapping file) or with `retrace` from the SDK command-line tools, which
+are **not** installed on this machine as of 2026-09-01 (`sdkmanager "cmdline-tools;latest"` adds
+`cmdline-tools\latest\bin\retrace.bat`).
+
+Skip this only if Boris says the build is throwaway; a mapping file that was not kept cannot be
+recreated.
 
 ## 4 — Verify the pair is actually signed with one key
 

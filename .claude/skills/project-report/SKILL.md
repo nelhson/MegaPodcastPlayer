@@ -11,15 +11,15 @@ Produce a dated, evidence-backed snapshot of the BPodcat codebase and write it t
 ## Phase 0 — Ground truth (do this yourself, before any agents)
 
 1. Get today's date: `Get-Date -Format yyyy-MM-dd` (PowerShell).
-2. **There is no `Agent.md` or `CLAUDE.md` in this repository.** The conventions are enforced by
+2. **The root `CLAUDE.md` is a lean pointer, not the rulebook.** The conventions are enforced by
    code, so read those instead: `build-logic/convention/` (the plugins every module applies),
    `config/detekt/detekt.yml` (each override carries its own stated reason), and
    `gradle/libs.versions.toml` (single source of truth for versions).
 3. Read `docs/REFACTORING_PLAN.md` — a substantive prior audit dated 2026-08-29 that CI itself
    references. Findings that repeat it should say so rather than being presented as new.
 4. Run `git log --oneline -25`, and note the branch. `versionCode`/`versionName` are **not** in
-   `app/build.gradle.kts`; they are hardcoded to `1` / `"1.0"` in the two application convention
-   plugins.
+   `app/build.gradle.kts`; they are the `versionCode` / `versionName` entries in
+   `gradle/libs.versions.toml`, read by both application convention plugins.
 5. Check `docs/reports/` for the most recent previous `*-project-report.md`. If one exists, read it —
    the new report must include a **"Changes since last report"** section (delta of commits and
    previously listed risks that were resolved or are still open).
@@ -50,7 +50,7 @@ Launch these agents **in a single message** so they run concurrently.
    pass/fail counts per module and any failures verbatim. Then map coverage by module and package —
    which have unit tests and which have none. Note that several modules render Compose through
    Robolectric rather than on a device, and that there is no instrumentation suite. Optionally run
-   `.\gradlew.bat koverLogDebug` for the headline coverage number, which CI already publishes. Do
+   `.\gradlew.bat koverLogUnit` for the headline coverage number, which CI already publishes. Do
    NOT fix anything — report only.
 
 3. **Delivery state** (`Explore`, thoroughness: medium)

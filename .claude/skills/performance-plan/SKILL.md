@@ -11,7 +11,7 @@ Audit performance across three lenses (plus optional on-device measurement) and 
 ## Phase 0 — Ground truth
 
 1. Get today's date: `Get-Date -Format yyyy-MM-dd`.
-2. **There is no `Agent.md`.** Read `build-logic/convention/`, `gradle.properties`,
+2. **The root `CLAUDE.md` is a lean pointer, not the rulebook.** Read `build-logic/convention/`, `gradle.properties`,
    `app/build.gradle.kts` and `gradle/libs.versions.toml`.
 3. **There are no baseline profiles in this project.** Do not go looking for
    `app/release/baselineProfiles/` — it does not exist. "Add a baseline profile" is therefore a

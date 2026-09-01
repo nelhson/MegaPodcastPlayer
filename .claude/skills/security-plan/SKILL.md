@@ -23,7 +23,7 @@ audit for those. Its real exposure is three things:
 ## Phase 0 — Ground truth
 
 1. Get today's date: `Get-Date -Format yyyy-MM-dd`.
-2. **There is no `Agent.md`.** Read `app/src/main/AndroidManifest.xml`,
+2. **The root `CLAUDE.md` is a lean pointer, not the rulebook.** Read `app/src/main/AndroidManifest.xml`,
    `wear/src/main/AndroidManifest.xml`, both `proguard-rules.pro`, `docs/RELEASE_SIGNING.md` and
    `docs/DEPENDENCY_VERIFICATION.md`.
 3. Read `docs/REFACTORING_PLAN.md` — it already names untrusted input reaching the media stack as

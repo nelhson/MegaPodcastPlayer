@@ -23,3 +23,13 @@ internal val Project.libs: VersionCatalog
  */
 internal fun VersionCatalog.int(alias: String): Int =
     findVersion(alias).get().requiredVersion.toInt()
+
+/**
+ * Reads a string version (the application `versionName`) from the catalog.
+ *
+ * @param alias catalog version alias, e.g. `versionName`.
+ * @return the version exactly as written in the catalog.
+ * @throws NoSuchElementException if the alias is missing from the catalog.
+ */
+internal fun VersionCatalog.string(alias: String): String =
+    findVersion(alias).get().requiredVersion

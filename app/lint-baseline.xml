@@ -2,17 +2,6 @@
 <issues format="6" by="lint 9.3.2" type="baseline" client="gradle" dependencies="false" name="AGP (9.3.2)" variant="all" version="9.3.2">
 
     <issue
-        id="OldTargetApi"
-        message="Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the `android.os.Build.VERSION_CODES` javadoc for details."
-        errorLine1="targetSdk = &quot;36&quot;"
-        errorLine2="            ~~~~">
-        <location
-            file="$HOME/Documents/projects/BPodcat/gradle/libs.versions.toml"
-            line="12"
-            column="13"/>
-    </issue>
-
-    <issue
         id="RedundantLabel"
         message="Redundant label can be removed"
         errorLine1="            android:label=&quot;@string/app_name&quot;"

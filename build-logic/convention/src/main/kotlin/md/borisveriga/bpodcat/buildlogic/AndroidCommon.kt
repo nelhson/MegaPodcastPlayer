@@ -63,6 +63,11 @@ internal fun Project.configureAndroidCommon(extension: CommonExtension) {
             // "newer version available" nag is not a build failure.
             disable += "GradleDependency"
             disable += "AndroidGradlePluginVersion"
+            // Same family: `targetSdk` is raised deliberately, after testing the behaviour changes
+            // that come with it, not because lint noticed a newer platform. The finding is also
+            // reported against the catalog, outside any module, so a baseline entry for it can
+            // only hold the absolute path of the machine that wrote it and matches nowhere else.
+            disable += "OldTargetApi"
         }
         packaging.resources.apply {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

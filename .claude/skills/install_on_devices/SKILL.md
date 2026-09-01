@@ -161,7 +161,7 @@ was skipped, and whether the pair is now on matching builds.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | installed copy was signed with a different key — a release build, another machine, or a rebuilt debug keystore | uninstall first; **see the warning below** |
-| `INSTALL_FAILED_VERSION_DOWNGRADE` | `versionCode` is hardcoded to `1` in both convention plugins, so this means the installed build came from CI with a higher code | uninstall first |
+| `INSTALL_FAILED_VERSION_DOWNGRADE` | `versionCode` comes from `gradle/libs.versions.toml` and both apps share it, so this means the installed build carried a higher code than the catalog does now | uninstall first |
 | App installs on both, watch shows nothing / controls do nothing | phone and watch have different certificates or build types | reinstall **both** from this machine, same build type |
 | `INSTALL_FAILED_INSUFFICIENT_STORAGE` on the watch | Wear devices have very little free space | uninstall unused watch apps; the `:wear` APK is small, so this usually means the watch is genuinely full |
 | Gradle installs to the wrong device | `ANDROID_SERIAL` unset or stale | set it per install, clear it after |

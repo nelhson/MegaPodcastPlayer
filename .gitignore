@@ -30,3 +30,6 @@ keystore.properties
 
 # Cygwin/MSYS crash dumps, produced by the bash used for tooling on Windows.
 *.stackdump
+
+# Signed builds and their R8 mapping files, archived per commit by the distribute skill.
+dist/

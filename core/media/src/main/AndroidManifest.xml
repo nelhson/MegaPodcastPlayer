@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application>
 
@@ -10,12 +11,20 @@
 
             exported="true" is required by Media3: the media button receiver, Android Auto and the
             system's media resumption UI all reach the session from outside the app.
+
+            Lint's ExportedService check wants a permission on it. There is no permission that the
+            notification shade, Bluetooth and Android Auto would all hold, so access control lives in
+            PlaybackService's SessionCallback.onConnect instead, which rejects every controller that
+            is not this app, the system, or one of a short list of trusted packages. Suppressed here,
+            next to the reason, rather than parked in lint-baseline.xml where it would read as a
+            leftover.
         -->
         <service
             android:name="md.borisveriga.bpodcat.core.media.PlaybackService"
             android:enabled="true"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ExportedService">
             <!--
                 Only the session action. `android.media.browse.MediaBrowserService` belongs to a
                 MediaLibraryService; advertising it here would invite Android Auto to bind a browser

@@ -987,15 +987,4 @@
             column="31"/>
     </issue>
 
-    <issue
-        id="ExportedService"
-        message="Exported service does not require permission"
-        errorLine1="        &lt;service"
-        errorLine2="         ~~~~~~~">
-        <location
-            file="src/main/AndroidManifest.xml"
-            line="14"
-            column="10"/>
-    </issue>
-
 </issues>

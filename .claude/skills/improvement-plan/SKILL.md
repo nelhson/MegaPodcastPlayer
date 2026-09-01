@@ -11,7 +11,7 @@ Audit the codebase across four lenses and write a prioritized roadmap to
 ## Phase 0 — Ground truth
 
 1. Get today's date: `Get-Date -Format yyyy-MM-dd`.
-2. **There is no `Agent.md` or `CLAUDE.md` here.** The conventions are enforced by code and are the
+2. **The root `CLAUDE.md` is a lean pointer, not the rulebook.** The conventions are enforced by code and are the
    yardstick; deviations from them are findings. Read:
    - `build-logic/convention/` — what every module is actually held to.
    - `config/detekt/detekt.yml` — every override states its reason; an override without one is

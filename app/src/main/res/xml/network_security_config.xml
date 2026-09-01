@@ -19,6 +19,24 @@
   which is what targetSdk 24+ gives us and what we want: nothing here should make interception
   easier than it already is.
 -->
-<network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <!-- Suppressed rather than baselined: the header above is the reason, and it belongs here. -->
+    <base-config
+        cleartextTrafficPermitted="true"
+        tools:ignore="InsecureBaseConfiguration" />
+
+    <!--
+      The hosts the app picks for itself, as opposed to the ones feeds pick for it, are HTTPS-only:
+      the iTunes search API, and YouTube for extraction, audio and thumbnails. Every request the app
+      makes to them is already written as https://, so a cleartext request to one of these could
+      only come from a redirect or a downgrade the app never asked for. The platform refuses it
+      here, before HttpsUpgradeInterceptor or anything else gets a say.
+    -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">itunes.apple.com</domain>
+        <domain includeSubdomains="true">youtube.com</domain>
+        <domain includeSubdomains="true">youtu.be</domain>
+        <domain includeSubdomains="true">googlevideo.com</domain>
+        <domain includeSubdomains="true">ytimg.com</domain>
+    </domain-config>
 </network-security-config>

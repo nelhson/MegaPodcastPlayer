@@ -7,7 +7,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   # Lets a maintainer re-run CI without pushing an empty commit.
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
         with:
           # Only the default branch writes the remote cache; PRs read it. Otherwise a PR could
           # poison the cache for everyone.
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
           validate-wrappers: true
 
       # Dependency verification (gradle/verification-metadata.xml) is enforced by every command
@@ -56,6 +56,13 @@ jobs:
       - name: Assemble
         run: ./gradlew assembleDebug
 
+      - name: Release smoke build
+        # Exercises R8, resource shrinking and the keep rules on every run, so that a shrinker
+        # breakage is found here rather than on the phone. Signed with the debug key because CI
+        # has no keystore by design (docs/RELEASE_SIGNING.md); the APKs are never uploaded, and a
+        # debug-signed release APK must never be handed to anyone — see the `distribute` skill.
+        run: ./gradlew :app:assembleRelease :wear:assembleRelease -PallowDebugSigningForRelease=true
+
       - name: Unit tests
         run: ./gradlew testDebugUnitTest test --continue
 
@@ -64,10 +71,10 @@ jobs:
 
       # Reporting only — no threshold, by design (T-3 in docs/REFACTORING_PLAN.md). The test
       # tasks it depends on are already up to date from the step above, so this costs only the
-      # report generation. `koverLogDebug` puts the headline number in the job log, where a
+      # report generation. `koverLogUnit` puts the headline number in the job log, where a
       # reviewer can see the trend without downloading anything.
       - name: Coverage
-        run: ./gradlew koverXmlReportDebug koverHtmlReportDebug koverLogDebug
+        run: ./gradlew koverXmlReportUnit koverHtmlReportUnit koverLogUnit
 
       - name: Upload reports
         # Reports are the whole point of a failed run, so publish them either way.

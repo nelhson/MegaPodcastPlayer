@@ -11,6 +11,11 @@ compileSdk = "37"
 minSdk = "34"
 targetSdk = "36"
 
+# --- Application version (shared by :app and :wear; the watch pairing needs both APKs from one
+# build, so they never diverge) ------------------------------------------------
+versionCode = "1"
+versionName = "1.0"
+
 # --- AndroidX / Compose ----------------------------------------------------
 composeBom = "2026.08.00"
 androidxCore = "1.19.0"
@@ -60,7 +65,7 @@ robolectric = "4.16.1"
 detekt = "2.0.0-alpha.6"
 
 # --- Coverage --------------------------------------------------------------
-kover = "0.9.2"
+kover = "0.9.9"
 
 [libraries]
 # --- AndroidX core ---------------------------------------------------------

@@ -4,6 +4,7 @@ import md.borisveriga.bpodcat.buildlogic.configureAndroidCommon
 import md.borisveriga.bpodcat.buildlogic.configureSharedSigning
 import md.borisveriga.bpodcat.buildlogic.int
 import md.borisveriga.bpodcat.buildlogic.libs
+import md.borisveriga.bpodcat.buildlogic.string
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
@@ -27,8 +28,8 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 targetSdk {
                     version = release(libs.int("targetSdk"))
                 }
-                versionCode = 1
-                versionName = "1.0"
+                versionCode = libs.int("versionCode")
+                versionName = libs.string("versionName")
                 testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
             }
 

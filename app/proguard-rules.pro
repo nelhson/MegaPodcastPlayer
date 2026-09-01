@@ -12,13 +12,13 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Line numbers survive shrinking so that a crash from a distributed build can be read back against
+# the source once mapping.txt has been applied. Without them a shrunk stack trace names only the
+# obfuscated class, and the `distribute` skill archives the mapping file for exactly this purpose.
+-keepattributes SourceFile,LineNumberTable
+# The original file names are folded into one placeholder; with the mapping file, line numbers are
+# enough to find the source, and the APK stays a little smaller.
+-renamesourcefileattribute SourceFile
 # --- BPodcat ---------------------------------------------------------------
 # Retrofit + kotlinx.serialization DTOs are only referenced reflectively at the HTTP boundary.
 -keepattributes Signature, InnerClasses, EnclosingMethod

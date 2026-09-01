@@ -17,7 +17,7 @@ Produce a feature implementation plan and write it to
 ## Phase 0 — Ground truth (always, before any agents)
 
 1. Get today's date: `Get-Date -Format yyyy-MM-dd`.
-2. **There is no `Agent.md` or `CLAUDE.md`.** The conventions a plan must follow are:
+2. **The root `CLAUDE.md` is a lean pointer, not the rulebook.** The conventions a plan must follow are:
    - `build-logic/convention/` — the module baseline every new module would inherit.
    - Boris's global standard: KDoc on every file, class and function, plus unit tests for new or
      changed logic, run before the work is considered done.

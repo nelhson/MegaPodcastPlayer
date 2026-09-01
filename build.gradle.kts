@@ -37,9 +37,10 @@ plugins {
  * `merge { subprojects() }` applies Kover to every module for us, so there is no per-module
  * convention plugin and a new module is covered the moment `settings.gradle.kts` includes it.
  *
- * Kover 0.9.2 emits one "Using a Project object as a dependency notation has been deprecated"
- * warning per module from inside its own `PrepareKover.kt`. It is not ours to fix; it is the reason
- * `./gradlew` reports deprecated feature usage, and it should disappear on a Kover bump.
+ * Kover 0.9.4 was the first line to understand AGP 9's built-in Kotlin. On 0.9.2 every Android
+ * module reported "No sources" and the headline number silently described only the two JVM
+ * modules. After a Kover or AGP bump, check that `koverLogUnit` still lists the Android packages
+ * before trusting the figure.
  */
 kover {
     merge {
@@ -49,9 +50,13 @@ kover {
         // the `release` variants: R8-shrunk bytecode, whose coverage describes the shrinker rather
         // than the source, built by tasks CI does not otherwise run.
         //
+        // Named "unit" rather than "debug": since Kover learned AGP 9 it provides the merged Android
+        // `debug` variant itself and rejects a custom variant of that name. This one is `debug`
+        // plus the JVM modules, which is what the unit-test tasks CI runs actually cover.
+        //
         // `optional = true` on both names because no module has both: the Android modules have
         // `debug`, the pure-Kotlin ones (`:core:model`, `:core:wearprotocol`) have `jvm`.
-        createVariant("debug") {
+        createVariant("unit") {
             add("debug", optional = true)
             add("jvm", optional = true)
         }
@@ -79,7 +84,7 @@ kover {
             }
         }
 
-        variant("debug") {
+        variant("unit") {
             // Both formats: HTML for a person, XML for whatever eventually reads a trend.
             html {
                 onCheck.set(false)

@@ -6,10 +6,7 @@ import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -142,7 +139,14 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(PlaybackSettings.DEFAULT_SKIP_BACK_MS)
             .build()
 
-        player.addListener(PlaybackPersistenceListener(player))
+        player.addListener(
+            PlaybackPersistenceListener(
+                player = player,
+                scope = serviceScope,
+                progressRecorder = progressRecorder,
+                userPreferences = userPreferences,
+            ),
+        )
 
         mediaSession = MediaSession.Builder(this, player)
             .setCallback(SessionCallback())
@@ -185,7 +189,7 @@ class PlaybackService : MediaSessionService() {
             // released on the very next line; the *write* is handed to [applicationScope], which
             // outlives the service. Blocking here instead would put disk IO on the main thread
             // during system-initiated shutdown — the moment disk contention is at its worst.
-            readPosition(player)?.let { position ->
+            player.positionReading()?.let { position ->
                 applicationScope.launch { position.recordInto(progressRecorder) }
             }
             player.release()
@@ -207,34 +211,9 @@ class PlaybackService : MediaSessionService() {
         serviceScope.launch {
             while (isActive) {
                 delay(POSITION_SAVE_INTERVAL_MS)
-                if (player.isPlaying) savePosition(player)
+                if (player.isPlaying) player.positionReading()?.recordInto(progressRecorder)
             }
         }
-    }
-
-    /** Writes the loaded episode's position, if an episode is loaded at all. */
-    private suspend fun savePosition(player: Player) {
-        readPosition(player)?.recordInto(progressRecorder)
-    }
-
-    /**
-     * Takes a position reading off the player, without writing it.
-     *
-     * Split out of [savePosition] so that [onDestroy] can read *before* releasing the player and
-     * write afterwards, on a scope that survives the service.
-     *
-     * @param player the player to read.
-     * @return null when no episode is loaded, which is not an error.
-     */
-    private fun readPosition(player: Player): PositionReading? {
-        val episodeId = player.currentMediaItem?.episodeId ?: return null
-        return PositionReading(
-            episodeId = episodeId,
-            positionMs = player.currentPosition.coerceAtLeast(0L),
-            // Feeds routinely misreport itunes:duration, so prefer what the decoder measured —
-            // but only once it knows.
-            durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L },
-        )
     }
 
     /**
@@ -253,57 +232,6 @@ class PlaybackService : MediaSessionService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         }
-
-    /**
-     * Mirrors what the player does into durable storage.
-     *
-     * @property player the player being observed; callbacks that need more than their arguments
-     *   (the queue, the current position) read it directly.
-     */
-    private inner class PlaybackPersistenceListener(private val player: Player) : Player.Listener {
-
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            serviceScope.launch { userPreferences.setLastPlayedEpisodeId(mediaItem?.episodeId) }
-        }
-
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int,
-        ) {
-            // An automatic transition is the only discontinuity that means "the previous episode
-            // finished". A seek, or a user tapping "next", must not mark anything played.
-            if (reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION) return
-            val finishedId = oldPosition.mediaItem?.episodeId ?: return
-            serviceScope.launch { progressRecorder.recordCompleted(finishedId) }
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            // STATE_ENDED is the last episode in the queue finishing; earlier ones arrive as an
-            // automatic transition instead.
-            if (playbackState != Player.STATE_ENDED) return
-            val episodeId = player.currentMediaItem?.episodeId ?: return
-            serviceScope.launch { progressRecorder.recordCompleted(episodeId) }
-        }
-
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            // Pausing is the moment the user is most likely to close the app, so flush now instead
-            // of waiting up to five seconds for the ticker.
-            if (!isPlaying) serviceScope.launch { savePosition(player) }
-        }
-
-        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            if (reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) return
-            val episodeIds = (0 until player.mediaItemCount)
-                .mapNotNull { index -> player.getMediaItemAt(index).episodeId }
-            serviceScope.launch { progressRecorder.recordQueue(episodeIds) }
-        }
-
-        override fun onPlayerError(error: PlaybackException) {
-            // The controller surfaces this to the user; log it where the cause is readable.
-            Log.w(TAG, "Playback failed for ${player.currentMediaItem?.episodeId}", error)
-        }
-    }
 
     /**
      * Handles Media3 failing to put this service in the foreground.
@@ -399,28 +327,6 @@ class PlaybackService : MediaSessionService() {
             // no-op on a future that has already been set.
             job.invokeOnCompletion { future.cancel(/* mayInterruptIfRunning = */ false) }
             return future
-        }
-    }
-
-    /**
-     * One position reading, detached from the player it came from.
-     *
-     * @property episodeId the episode the position belongs to.
-     * @property positionMs how far into it playback had reached.
-     * @property durationMs the decoder's measured duration, or null before it knows one.
-     */
-    private data class PositionReading(
-        val episodeId: String,
-        val positionMs: Long,
-        val durationMs: Long?,
-    ) {
-        /** Writes this reading through [recorder]. */
-        suspend fun recordInto(recorder: PlaybackProgressRecorder) {
-            recorder.recordPosition(
-                episodeId = episodeId,
-                positionMs = positionMs,
-                durationMs = durationMs,
-            )
         }
     }
 
