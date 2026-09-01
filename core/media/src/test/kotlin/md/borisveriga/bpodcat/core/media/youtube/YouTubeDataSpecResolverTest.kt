@@ -3,7 +3,9 @@ package md.borisveriga.bpodcat.core.media.youtube
 import androidx.core.net.toUri
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException
@@ -42,6 +44,7 @@ class YouTubeDataSpecResolverTest {
 
     private val audioResolver: YouTubeAudioResolver = mockk {
         every { resolve(any()) } returns resolved
+        every { invalidate(any()) } just Runs
     }
 
     private val resolver = YouTubeDataSpecResolver(audioResolver)
@@ -149,5 +152,29 @@ class YouTubeDataSpecResolverTest {
         } catch (e: IOException) {
             assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("private"))
         }
+    }
+
+    // --- invalidation -----------------------------------------------------
+
+    @Test
+    fun `invalidating a sentinel drops that video's resolution`() {
+        val spec = DataSpec.Builder().setUri("youtube://video/aHsi-OHI_i8".toUri()).build()
+
+        resolver.invalidate(spec)
+
+        // Case-sensitive here for the same reason resolution is.
+        verify { audioResolver.invalidate("aHsi-OHI_i8") }
+    }
+
+    @Test
+    fun `invalidating a podcast url does nothing`() {
+        // Failure invalidation is on the path for every download, not only for YouTube ones.
+        val spec = DataSpec.Builder()
+            .setUri("https://cdn.example.com/episode-42.mp3".toUri())
+            .build()
+
+        resolver.invalidate(spec)
+
+        verify(exactly = 0) { audioResolver.invalidate(any()) }
     }
 }

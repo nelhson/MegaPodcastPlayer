@@ -2,8 +2,13 @@ package md.borisveriga.bpodcat.core.youtube
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -12,6 +17,8 @@ import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
+import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.StreamType
 
 /**
  * Tests the decisions inside the resolver that can be made without a network.
@@ -21,6 +28,11 @@ import org.schabi.newpipe.extractor.stream.DeliveryMethod
  * nothing to do with this code. What *is* worth pinning down is the stream choice — which decides
  * how much disk every downloaded video costs and whether it seeks properly — and the expiry
  * arithmetic, which decides whether a long download survives to the end.
+ *
+ * The cache tests at the bottom are the exception, and stub `StreamInfo.getInfo` rather than reach
+ * the network. They are not testing extraction; they are counting how often it happens, which is the
+ * only way to show that a resolution really is reused and that invalidating one really does force
+ * another.
  */
 class NewPipeAudioResolverTest {
 
@@ -39,6 +51,72 @@ class NewPipeAudioResolverTest {
         every { getContent() } returns content
         every { audioTrackType } returns trackType
     }
+
+    // --- the resolution cache ---------------------------------------------
+
+    /**
+     * Runs [block] against a resolver whose extractor is stubbed out.
+     *
+     * The stub always succeeds and always returns the same video, so the only thing that varies
+     * between these tests is how many times it was asked — which is exactly the question.
+     */
+    private fun withStubbedExtractor(block: (NewPipeAudioResolver) -> Unit) {
+        mockkStatic(StreamInfo::class)
+        try {
+            val info: StreamInfo = mockk(relaxed = true) {
+                every { streamType } returns StreamType.VIDEO_STREAM
+                every { audioStreams } returns listOf(audioStream(bitrate = 128, content = URL))
+                every { duration } returns 3600L
+            }
+            every { StreamInfo.getInfo(any<String>()) } returns info
+
+            block(NewPipeAudioResolver(mockk(relaxed = true), CLOCK))
+        } finally {
+            unmockkStatic(StreamInfo::class)
+        }
+    }
+
+    @Test
+    fun `reuses a resolution that has not expired`() = withStubbedExtractor { resolver ->
+        // One download issues many opens as it chunks, resumes and retries, and one playback
+        // re-opens on every seek. Extracting for each of those would be unusable.
+        resolver.resolve(VIDEO_ID)
+        resolver.resolve(VIDEO_ID)
+
+        verify(exactly = 1) { StreamInfo.getInfo(any<String>()) }
+    }
+
+    @Test
+    fun `invalidate forces the next resolve to extract again`() = withStubbedExtractor { resolver ->
+        // The point of the whole mechanism: a googlevideo URL is bound to the IP that asked for it,
+        // so it can stop working while its stated expiry is still hours away. Without this, every
+        // retry replays the dead URL and the download fails over something one extraction fixes.
+        resolver.resolve(VIDEO_ID)
+        resolver.invalidate(VIDEO_ID)
+        resolver.resolve(VIDEO_ID)
+
+        verify(exactly = 2) { StreamInfo.getInfo(any<String>()) }
+    }
+
+    @Test
+    fun `invalidate leaves every other video alone`() = withStubbedExtractor { resolver ->
+        resolver.resolve(VIDEO_ID)
+        resolver.resolve(OTHER_VIDEO_ID)
+        resolver.invalidate(VIDEO_ID)
+        resolver.resolve(OTHER_VIDEO_ID)
+
+        // Two extractions, both from the first pair: the second video is still cached.
+        verify(exactly = 2) { StreamInfo.getInfo(any<String>()) }
+    }
+
+    @Test
+    fun `invalidating a video that was never resolved does nothing`() =
+        withStubbedExtractor { resolver ->
+            resolver.invalidate(VIDEO_ID)
+            resolver.resolve(VIDEO_ID)
+
+            verify(exactly = 1) { StreamInfo.getInfo(any<String>()) }
+        }
 
     // --- selectAudioStream ------------------------------------------------
 
@@ -216,5 +294,15 @@ class NewPipeAudioResolverTest {
             now.plus(Duration.ofHours(1)),
             expiryOf("https://rr3.googlevideo.com/videoplayback?noexpire=1234567890", now),
         )
+    }
+
+    private companion object {
+        const val VIDEO_ID = "niTJ2221aS8"
+        const val OTHER_VIDEO_ID = "aHsi-OHI_i8"
+
+        /** Expires in 2033, so it stays fresh against [CLOCK] however these tests are ordered. */
+        const val URL = "https://rr3.googlevideo.com/videoplayback?itag=140&expire=2000000000"
+
+        val CLOCK: Clock = Clock.fixed(Instant.parse("2026-09-01T00:00:00Z"), ZoneOffset.UTC)
     }
 }

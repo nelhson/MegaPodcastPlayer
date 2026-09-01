@@ -51,6 +51,25 @@ class YouTubeDataSpecResolver @Inject constructor(
             .build()
     }
 
+    /**
+     * Throws away the resolution [resolveDataSpec] handed out for [dataSpec], if it was a YouTube
+     * one, so the next open extracts a fresh URL.
+     *
+     * Called by [YouTubeInvalidatingDataSource] when a request built from a resolved spec fails. It
+     * takes the *original* spec rather than a video id so that the one place that knows how to read
+     * a sentinel stays the one place that reads a sentinel — the caller is a general-purpose data
+     * source and has no business parsing this app's URIs.
+     *
+     * Does nothing for an ordinary podcast URL, which is the common case: this is on the failure
+     * path for every download in the library, not just for YouTube ones.
+     *
+     * @param dataSpec the spec as it was opened, before resolution.
+     */
+    fun invalidate(dataSpec: DataSpec) {
+        val videoId = youTubeVideoIdOrNull(dataSpec.uri.toString()) ?: return
+        resolver.invalidate(videoId)
+    }
+
     // resolveReportedUri is deliberately not overridden. The default reports the URI unchanged,
     // which is what upstream components should see: the sentinel is the stable identity of this
     // media, and the resolved URL is an implementation detail that changes on every open.

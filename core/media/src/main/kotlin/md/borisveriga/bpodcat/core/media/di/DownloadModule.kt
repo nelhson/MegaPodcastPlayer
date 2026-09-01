@@ -1,6 +1,8 @@
 package md.borisveriga.bpodcat.core.media.di
 
 import android.content.Context
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.DatabaseProvider
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
@@ -21,7 +23,10 @@ import java.io.File
 import java.util.concurrent.Executors
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import md.borisveriga.bpodcat.core.media.datasource.ChunkedDataSource
 import md.borisveriga.bpodcat.core.media.youtube.YouTubeDataSpecResolver
+import md.borisveriga.bpodcat.core.media.youtube.YouTubeInvalidatingDataSource
+import md.borisveriga.bpodcat.core.model.youTubeVideoIdOrNull
 import md.borisveriga.bpodcat.core.network.di.BPodcatOkHttp
 import okhttp3.OkHttpClient
 
@@ -68,26 +73,58 @@ object DownloadModule {
     private const val MAX_PARALLEL_DOWNLOADS = 3
 
     /**
+     * How many bytes each YouTube range request asks for. See [ChunkedDataSource].
+     *
+     * Eight megabytes is a compromise between two costs that pull in opposite directions. Smaller
+     * chunks mean more round trips — nine for a typical hour-long talk at this size, against one
+     * before chunking existed — while larger ones give `googlevideo.com` more of a single response
+     * to apply its rate limit to, which is the entire thing being avoided. Anything in the range of
+     * a few megabytes to ten behaves much the same in practice; this is the middle of it.
+     */
+    private const val YOUTUBE_CHUNK_BYTES = 8L * 1024 * 1024
+
+    /**
      * The network end of both data source chains.
      *
-     * [ResolvingDataSource] wraps OkHttp rather than replacing it, so a `youtube://video/<id>` URI
-     * becomes a real audio URL immediately before the request goes out, while every ordinary
-     * podcast URL passes through untouched.
+     * Three layers, innermost first, each one doing a single thing:
+     *
+     *  1. [ResolvingDataSource] wraps OkHttp rather than replacing it, so a `youtube://video/<id>`
+     *     URI becomes a real audio URL immediately before the request goes out, while every ordinary
+     *     podcast URL passes through untouched.
+     *  2. [YouTubeInvalidatingDataSource] watches that request fail and drops the resolution behind
+     *     it, so a URL that died before its stated expiry is re-extracted on the retry instead of
+     *     being replayed until the download gives up.
+     *  3. [ChunkedDataSource] splits a YouTube read into bounded range requests. Media3 otherwise
+     *     fetches a whole episode with one un-ranged `GET`, which YouTube serves at roughly playback
+     *     speed — the reason a YouTube episode used to take an hour to download and a podcast of the
+     *     same length a minute. Podcast URLs are not chunked; they were never throttled, and the
+     *     extra round trips would be paid for nothing.
      *
      * Crucially this factory is only ever used as the *upstream* of a cache — never as the whole
      * chain. Both callers below put a [CacheDataSource] above it, which is what keeps cache keys
-     * and download ids anchored to the sentinel instead of to a URL that expires within hours.
+     * and download ids anchored to the sentinel instead of to a URL that expires within hours, and
+     * what keeps chunk boundaries from being visible to anything that matters.
      *
      * The client must be the [MediaOkHttp] one rather than the shared [BPodcatOkHttp] one, or every
      * episode fetched here is also written through OkHttp's response cache. See [mediaOkHttpClient].
      */
+    @OptIn(UnstableApi::class)
     private fun networkDataSourceFactory(
         context: Context,
         okHttpClient: OkHttpClient,
         youTubeResolver: YouTubeDataSpecResolver,
-    ): DataSource.Factory = ResolvingDataSource.Factory(
-        DefaultDataSource.Factory(context, OkHttpDataSource.Factory(okHttpClient)),
-        youTubeResolver,
+    ): DataSource.Factory = ChunkedDataSource.Factory(
+        upstreamFactory = YouTubeInvalidatingDataSource.Factory(
+            upstreamFactory = ResolvingDataSource.Factory(
+                DefaultDataSource.Factory(context, OkHttpDataSource.Factory(okHttpClient)),
+                youTubeResolver,
+            ),
+            resolver = youTubeResolver,
+        ),
+        chunkSizeBytes = YOUTUBE_CHUNK_BYTES,
+        // Tested against the spec as it was opened, which is still the sentinel at this level: the
+        // resolver sits below and has not run yet.
+        shouldChunk = { dataSpec -> youTubeVideoIdOrNull(dataSpec.uri.toString()) != null },
     )
 
     /**

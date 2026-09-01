@@ -101,6 +101,15 @@ internal class NewPipeAudioResolver @Inject constructor(
         }
     }
 
+    override fun invalidate(videoId: String) {
+        // Under the same lock as `resolve`, so a resolution in flight either completes before this
+        // removes it or starts after — never half of each. Dropping a resolution that has just been
+        // replaced by a good one costs a single extra extraction, which is the cheaper mistake.
+        synchronized(extractionLock) {
+            cache.remove(videoId)
+        }
+    }
+
     /** Runs the extractor and translates its failures into something a user can read. */
     private fun extract(videoId: String, now: Instant): ResolvedYouTubeAudio {
         bootstrap.ensureInitialised()

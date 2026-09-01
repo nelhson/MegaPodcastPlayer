@@ -54,6 +54,22 @@ interface YouTubeAudioResolver {
      */
     @WorkerThread
     fun resolve(videoId: String): ResolvedYouTubeAudio
+
+    /**
+     * Discards any cached resolution for [videoId], so the next [resolve] extracts again.
+     *
+     * Exists because [expiresAt][ResolvedYouTubeAudio.expiresAt] is not the only way a URL dies. It
+     * is also bound to the IP that asked for it, so a phone moving between Wi-Fi and mobile data
+     * invalidates every URL it holds while every stated expiry is still comfortably in the future —
+     * and YouTube revokes them on its own schedule besides. Without this, a `403` part way through a
+     * download is retried against the very URL that just produced it, as many times as Media3 is
+     * willing to retry, and the download fails for a reason a single re-extraction would have fixed.
+     *
+     * Calling this for a video that is not cached does nothing. Safe to call from any thread.
+     *
+     * @param videoId YouTube's video id, case-sensitive.
+     */
+    fun invalidate(videoId: String)
 }
 
 /**
