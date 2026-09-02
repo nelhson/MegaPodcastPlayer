@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.data.repository.RefreshSummary
 import md.borisveriga.bpodcat.core.data.repository.UiPreferencesRepository
@@ -59,11 +60,40 @@ sealed interface LibraryMessage {
     data class RefreshFinished(val summary: RefreshSummary) : LibraryMessage
 
     /**
-     * A show was removed, with the option to add it back.
+     * A show was removed.
      *
      * @property title the removed show's title.
      */
     data class Removed(val title: String) : LibraryMessage
+
+    /**
+     * A full swipe put a show's next episode in the queue.
+     *
+     * Names the episode rather than the show: the row said which show it was, and what the user
+     * cannot see from the gesture is *which* episode they just got.
+     *
+     * @property episodeTitle the queued episode.
+     */
+    data class Queued(val episodeTitle: String) : LibraryMessage
+
+    /**
+     * A full swipe found nothing to queue, because the show is finished.
+     *
+     * A distinct outcome rather than silence: a gesture that does nothing and says nothing is
+     * indistinguishable from one that did not register.
+     *
+     * @property showTitle the show that had nothing unplayed left in it.
+     */
+    data class NothingToQueue(val showTitle: String) : LibraryMessage
+
+    /**
+     * A whole show was marked played, and can be put back.
+     *
+     * @property showTitle the show.
+     * @property count how many episodes actually changed, which is what an undo would restore —
+     *   never the show's whole episode count.
+     */
+    data class MarkedAllPlayed(val showTitle: String, val count: Int) : LibraryMessage
 }
 
 /**
@@ -71,14 +101,25 @@ sealed interface LibraryMessage {
  *
  * @property repository the single source of podcast truth.
  * @property uiPreferences the stored grid-or-list choice.
+ * @property episodePlayer what turns "queue the next one from this show" into a queue entry; the
+ *   library knows shows, and this is the only thing here that touches an episode.
  */
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: PodcastRepository,
     private val uiPreferences: UiPreferencesRepository,
+    private val episodePlayer: EpisodePlayer,
 ) : ViewModel() {
 
     private val transientState = MutableStateFlow(TransientState())
+
+    /**
+     * The episodes the last "mark all played" changed, or null.
+     *
+     * The undo restores exactly these rather than un-playing the whole show, which would also
+     * reopen episodes the user had finished months ago.
+     */
+    private var pendingUnplay: List<String>? = null
 
     val uiState: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
@@ -175,6 +216,11 @@ class LibraryViewModel @Inject constructor(
     /**
      * Removes a show and everything stored for it.
      *
+     * Not offered back the way the other two gestures are, and deliberately not: putting a show
+     * back means re-fetching its feed, and what would come back is a subscription, not the one that
+     * was removed — every played flag, every position and every downloaded file went with it. The
+     * screen asks first instead, which is the honest place to put the friction.
+     *
      * @param podcast the show to remove; its title is echoed back in the confirmation message.
      */
     fun remove(podcast: PodcastWithCounts) {
@@ -184,6 +230,60 @@ class LibraryViewModel @Inject constructor(
                 message = LibraryMessage.Removed(podcast.podcast.title),
             )
         }
+    }
+
+    /**
+     * Queues the show's newest unplayed episode.
+     *
+     * What a full right-to-left swipe on a library row commits. "Newest unplayed" rather than
+     * "newest" because a row swiped twice should queue two different episodes, and because the
+     * episode a finished show would otherwise offer is one the user has already heard.
+     *
+     * @param podcast the show to take an episode from.
+     */
+    fun queueNewest(podcast: PodcastWithCounts) {
+        viewModelScope.launch {
+            val episode = repository.newestUnplayedEpisode(podcast.podcast.id)
+            val message = when {
+                episode == null -> LibraryMessage.NothingToQueue(podcast.podcast.title)
+
+                // The player refuses an episode it cannot resolve — one whose show has just been
+                // removed under the gesture. Reporting that as "nothing to queue" is wrong but
+                // harmless; claiming it was queued would be a lie the queue then contradicts.
+                !episodePlayer.addToQueue(episode.id) ->
+                    LibraryMessage.NothingToQueue(podcast.podcast.title)
+
+                else -> LibraryMessage.Queued(episode.title)
+            }
+            transientState.value = transientState.value.copy(message = message)
+        }
+    }
+
+    /**
+     * Marks every unplayed episode of a show played, and offers it back.
+     *
+     * @param podcast the show to mark off.
+     */
+    fun markAllPlayed(podcast: PodcastWithCounts) {
+        viewModelScope.launch {
+            val changed = repository.markPodcastPlayed(podcast.podcast.id)
+            pendingUnplay = changed.takeIf { it.isNotEmpty() }
+            transientState.value = transientState.value.copy(
+                message = LibraryMessage.MarkedAllPlayed(podcast.podcast.title, changed.size),
+            )
+        }
+    }
+
+    /**
+     * Un-plays whatever the last [markAllPlayed] marked.
+     *
+     * Consumed rather than kept, so an undo cannot be replayed against a library that has moved on.
+     */
+    fun undoMarkAllPlayed() {
+        val ids = pendingUnplay ?: return
+        pendingUnplay = null
+        transientState.value = transientState.value.copy(message = null)
+        viewModelScope.launch { repository.setEpisodesPlayed(ids, isPlayed = false) }
     }
 
     /**
@@ -201,6 +301,9 @@ class LibraryViewModel @Inject constructor(
     /** Clears the current [LibraryUiState.message] once the snackbar has been shown. */
     fun onMessageShown() {
         transientState.value = transientState.value.copy(message = null)
+        // The undo goes with the snackbar that offered it. Left armed, it would fire against the
+        // *next* message, un-playing a show the user never asked about.
+        pendingUnplay = null
     }
 
     /** State owned by the view model rather than the database. */

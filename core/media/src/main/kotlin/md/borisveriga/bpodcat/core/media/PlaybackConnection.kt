@@ -182,6 +182,24 @@ class PlaybackConnection @Inject constructor(
         if (player.mediaItemCount == 1) player.prepare()
     }
 
+    /**
+     * Puts [episode] back at a given index, which is what undoing a removal needs.
+     *
+     * Distinct from [addToQueue], which appends: an episode taken out of the middle of the queue
+     * and then restored to the end has not been restored. The index is clamped rather than
+     * rejected, because the queue may legitimately have shrunk since it was recorded — the player
+     * finished something — and appending in that case is right.
+     *
+     * @param episode the episode to insert.
+     * @param index where it should land.
+     */
+    suspend fun insertInQueue(episode: PlayableEpisode, index: Int) = onController { player ->
+        if (player.indexOfEpisode(episode.episode.id) != null) return@onController
+        val item = episode.toMediaItemOrNull() ?: return@onController
+        player.addMediaItem(index.coerceIn(0, player.mediaItemCount), item)
+        if (player.mediaItemCount == 1) player.prepare()
+    }
+
     /** Plays [episode] immediately after the current one, ahead of everything else queued. */
     suspend fun playNext(episode: PlayableEpisode) = onController { player ->
         val item = episode.toMediaItemOrNull() ?: return@onController

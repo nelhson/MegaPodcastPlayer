@@ -112,6 +112,66 @@ interface EpisodeDao {
     @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId")
     suspend fun getIdsForPodcast(podcastId: String): List<String>
 
+    /**
+     * The most recent episode of a show that has not been played, or null when there is none.
+     *
+     * Ordered exactly like [observeByPodcast], so "the newest one" means the row the user would
+     * find at the top of the show's page. Deliberately not [observeByPodcastOrdered]: a hand-made
+     * order says where the user likes to *see* an episode, not which one is newest, and a YouTube
+     * playlist arranged by hand would otherwise answer this question with whatever sits in position
+     * zero.
+     */
+    @Query(
+        """
+        SELECT * FROM episodes
+        WHERE podcast_id = :podcastId AND is_played = 0
+        ORDER BY published_at IS NULL, published_at DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun getNewestUnplayed(podcastId: String): EpisodeEntity?
+
+    /** Every unplayed episode of a show, which is the set [markPodcastPlayed] is about to change. */
+    @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId AND is_played = 0")
+    suspend fun getUnplayedIdsForPodcast(podcastId: String): List<String>
+
+    /**
+     * Marks a whole show played, and reports what it changed.
+     *
+     * The ids are read first so the caller can offer an undo; the update itself goes by
+     * `podcast_id` rather than by that list, because a show can hold hundreds of episodes and
+     * SQLite has a hard ceiling on how many parameters one statement may bind.
+     *
+     * Only `is_played` moves. [setPlayed] also resets `position_ms`, which is right for finishing
+     * one episode and wrong here: an undo could not put back a position this had thrown away, and
+     * a bulk gesture that silently lost the user's place in a half-listened episode would be a bad
+     * way to find that out.
+     *
+     * @param podcastId the show to mark.
+     * @return the ids that were unplayed beforehand, in no particular order.
+     */
+    @Transaction
+    suspend fun markPodcastPlayed(podcastId: String): List<String> {
+        val changed = getUnplayedIdsForPodcast(podcastId)
+        if (changed.isNotEmpty()) setPlayedForPodcast(podcastId)
+        return changed
+    }
+
+    @Query("UPDATE episodes SET is_played = 1 WHERE podcast_id = :podcastId AND is_played = 0")
+    suspend fun setPlayedForPodcast(podcastId: String)
+
+    /**
+     * Sets the played flag on specific episodes, leaving their positions alone.
+     *
+     * The undo of [markPodcastPlayed], and the only reason it takes a list. Callers chunk: see
+     * `OfflineFirstPodcastRepository`.
+     *
+     * @param ids the episodes to change.
+     * @param isPlayed the flag to write.
+     */
+    @Query("UPDATE episodes SET is_played = :isPlayed WHERE id IN (:ids)")
+    suspend fun setPlayedForIds(ids: List<String>, isPlayed: Boolean)
+
     /** Total bytes on disk for one show, used by the storage screen. */
     @Query(
         """

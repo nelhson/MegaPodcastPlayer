@@ -467,4 +467,69 @@ class EpisodeDaoTest {
             episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.id },
         )
     }
+
+    @Test
+    fun `the newest unplayed episode skips the ones already heard`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(
+                episode("old", publishedAt = 1_000L),
+                episode("middle", publishedAt = 2_000L),
+                episode("newest", publishedAt = 3_000L),
+            ),
+        )
+        episodeDao.setPlayed(id = "newest", isPlayed = true, positionMs = 0L)
+
+        // "Newest" alone would keep handing back an episode the user has already heard, so a row
+        // swiped twice would queue the same thing twice.
+        assertEquals("middle", episodeDao.getNewestUnplayed(podcast.id)?.id)
+    }
+
+    @Test
+    fun `a finished show has no newest unplayed episode`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a")))
+        episodeDao.setPlayed(id = "a", isPlayed = true, positionMs = 0L)
+
+        assertEquals(null, episodeDao.getNewestUnplayed(podcast.id))
+    }
+
+    @Test
+    fun `marking a show played reports only the episodes it changed`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b"), episode("c")))
+        episodeDao.setPlayed(id = "c", isPlayed = true, positionMs = 0L)
+
+        val changed = episodeDao.markPodcastPlayed(podcast.id)
+
+        // "c" was finished before the gesture, so an undo built from this must not reopen it.
+        assertEquals(listOf("a", "b"), changed.sorted())
+        assertTrue(episodeDao.observeByPodcast(podcast.id).first().all { it.isPlayed })
+    }
+
+    @Test
+    fun `marking a show played leaves playback positions alone`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a")))
+        episodeDao.updatePosition(id = "a", positionMs = 42_000L)
+
+        val changed = episodeDao.markPodcastPlayed(podcast.id)
+        episodeDao.setPlayedForIds(changed, isPlayed = false)
+
+        // The round trip has to be exact. Resetting the position on the way in would leave the undo
+        // with nothing to put back, and a bulk gesture that quietly lost the user's place in a
+        // half-listened episode is a bad way to find that out.
+        val restored = episodeDao.getById("a")
+        assertEquals(false, restored?.isPlayed)
+        assertEquals(42_000L, restored?.positionMs)
+    }
+
+    @Test
+    fun `marking an already finished show off changes nothing and reports nothing`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a")))
+        episodeDao.setPlayed(id = "a", isPlayed = true, positionMs = 0L)
+
+        assertEquals(emptyList<String>(), episodeDao.markPodcastPlayed(podcast.id))
+    }
 }

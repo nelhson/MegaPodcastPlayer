@@ -76,6 +76,28 @@ class EpisodePlayer @Inject constructor(
     }
 
     /**
+     * Puts a removed episode back where it was — the undo of [removeFromQueue].
+     *
+     * [orderedIds] is the whole queue as it stood *before* the removal, which serves as both the
+     * position to insert at and the durable order to write back. Taking the arrangement rather than
+     * an index is what makes the undo survive the queue having moved on in the meantime: the player
+     * clamps an index it can no longer honour, and the durable write is the arrangement the user is
+     * asking to get back either way.
+     *
+     * @param episodeId the episode to restore.
+     * @param orderedIds the queue as it was, first to play first; must contain [episodeId].
+     * @return true if the episode was found and handed to the player.
+     */
+    suspend fun restoreToQueue(episodeId: String, orderedIds: List<String>): Boolean {
+        val index = orderedIds.indexOf(episodeId)
+        if (index < 0) return false
+        val episode = playbackRepository.playableEpisode(episodeId) ?: return false
+        connection.insertInQueue(episode, index)
+        playbackRepository.reorderQueue(orderedIds)
+        return true
+    }
+
+    /**
      * Applies a drag-to-reorder to both the live player queue and the durable one.
      *
      * The two indices are the player's, not a list position on screen: what the queue screen shows

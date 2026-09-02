@@ -74,6 +74,9 @@ class QueueScreenTest {
         onPlay: (String) -> Unit = {},
         onRemove: (String) -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
+        onMarkPlayed: (String) -> Unit = {},
+        onUndo: () -> Unit = {},
+        onMessageShown: () -> Unit = {},
     ) {
         composeRule.setContent {
             BPodcatTheme {
@@ -81,7 +84,10 @@ class QueueScreenTest {
                     uiState = uiState,
                     onPlay = onPlay,
                     onRemove = onRemove,
+                    onMarkPlayed = onMarkPlayed,
                     onMove = onMove,
+                    onUndo = onUndo,
+                    onMessageShown = onMessageShown,
                 )
             }
         }
@@ -178,13 +184,112 @@ class QueueScreenTest {
         setContent(onRemove = { removed = it })
 
         composeRule.onNodeWithText("Episode c")
-            .performCustomAccessibilityActionWithLabel("Remove Episode c from the queue")
+            .performCustomAccessibilityActionWithLabel("Remove")
 
         assertEquals("c", removed)
+    }
+
+    @Test
+    fun `a queued episode can be marked played without a swipe`() {
+        var marked: String? = null
+        setContent(onMarkPlayed = { marked = it })
+
+        composeRule.onNodeWithText("Episode c")
+            .performCustomAccessibilityActionWithLabel("Mark played")
+
+        assertEquals("c", marked)
+    }
+
+    @Test
+    fun `dragging a row past half its width removes it`() {
+        var removed: String? = null
+        var marked: String? = null
+        setContent(onRemove = { removed = it }, onMarkPlayed = { marked = it })
+
+        composeRule.onNodeWithText("Episode b").performTouchInput {
+            down(centerRight)
+            // Slowly and in steps: the commit tier answers to distance rather than velocity, and
+            // one jump would be read as a fling and settled by the other rule.
+            repeat(SWIPE_STEPS) {
+                moveBy(Offset(-width / SWIPE_STEPS.toFloat(), 0f))
+                advanceEventTime(SWIPE_STEP_MS)
+            }
+            up()
+        }
+
+        assertEquals("b", removed)
+        assertEquals(null, marked)
+    }
+
+    @Test
+    fun `a short swipe reveals mark played rather than removing the row`() {
+        var removed: String? = null
+        var marked: String? = null
+        setContent(onRemove = { removed = it }, onMarkPlayed = { marked = it })
+
+        composeRule.onNodeWithText("Episode b").performTouchInput {
+            down(centerRight)
+            // Far enough to rest open, nowhere near the commit threshold. The two tiers sharing one
+            // gesture is the whole design, and a threshold set wrong would remove the row here.
+            repeat(SWIPE_STEPS) {
+                moveBy(Offset(-SHORT_SWIPE_PX / SWIPE_STEPS, 0f))
+                advanceEventTime(SWIPE_STEP_MS)
+            }
+            up()
+        }
+
+        assertEquals(null, removed)
+        composeRule.onNodeWithText("Mark played").performClick()
+        assertEquals("b", marked)
+    }
+
+    @Test
+    fun `the episode playing carries no swipe actions`() {
+        setContent()
+
+        // "Remove" and "mark played" both mean "stop playing this" for the current episode, which
+        // is what the player's own controls are for. Finding either here by accident would stop
+        // the audio with no warning.
+        val hasRemove = runCatching {
+            composeRule.onNodeWithText("Episode a")
+                .performCustomAccessibilityActionWithLabel("Remove")
+        }.isSuccess
+
+        assertEquals(false, hasRemove)
+    }
+
+    @Test
+    fun `a removal is offered back, and taking the offer undoes it`() {
+        var undone = 0
+        setContent(
+            uiState = playingFirst.copy(message = QueueMessage.Removed("Episode b")),
+            onUndo = { undone++ },
+        )
+
+        composeRule.onNodeWithText("Removed Episode b").assertIsDisplayed()
+        composeRule.onNodeWithText("Undo").performClick()
+
+        assertEquals(1, undone)
     }
 
     private companion object {
         /** Comfortably past the 500ms system long-press timeout the drag gesture waits out. */
         const val LONG_PRESS_MS = 1_000L
+
+        /** How many steps a driven swipe is broken into, so it reads as a drag rather than a fling. */
+        const val SWIPE_STEPS = 10
+
+        /** Milliseconds between those steps; slow enough to stay under the fling velocity. */
+        const val SWIPE_STEP_MS = 32L
+
+        /**
+         * Far enough to rest the row open, nowhere near half its width.
+         *
+         * Has to clear two floors, not one: Compose swallows a touch slop's worth of the first
+         * movement, and what is left must still pass half the revealed button's width. On the
+         * 411dp xxhdpi device this class configures, half the row — the commit threshold — is
+         * around 616px, so this sits comfortably between the two.
+         */
+        const val SHORT_SWIPE_PX = 300f
     }
 }

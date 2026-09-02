@@ -21,12 +21,16 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -37,7 +41,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -54,6 +60,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -70,7 +77,11 @@ import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
 import md.borisveriga.bpodcat.core.designsystem.component.ShowTile
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
+import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderableState
 import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
@@ -123,6 +134,10 @@ fun LibraryRoute(
         onPasteLinkClick = onPasteLinkClick,
         onOpenSettings = onOpenSettings,
         onMove = viewModel::move,
+        onQueueNewest = viewModel::queueNewest,
+        onMarkAllPlayed = viewModel::markAllPlayed,
+        onRemove = viewModel::remove,
+        onUndoMarkAllPlayed = viewModel::undoMarkAllPlayed,
         onLayoutChange = viewModel::setLayout,
         onRefresh = viewModel::refreshAll,
         onMessageShown = viewModel::onMessageShown,
@@ -140,6 +155,10 @@ fun LibraryRoute(
  * @param onOpenSettings opens the settings screen.
  * @param onMove applies a completed reorder, as positions within [LibraryUiState.podcasts].
  *   Called once on release rather than per frame: one gesture is one edit.
+ * @param onQueueNewest queues a show's newest unplayed episode; what a full swipe commits.
+ * @param onMarkAllPlayed marks a whole show played.
+ * @param onRemove removes a show, once the confirmation this screen owns has been accepted.
+ * @param onUndoMarkAllPlayed reverses the last mark-all-played.
  * @param onLayoutChange grid/list toggle handler.
  * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
@@ -154,6 +173,10 @@ fun LibraryScreen(
     onPasteLinkClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onMove: (Int, Int) -> Unit,
+    onQueueNewest: (PodcastWithCounts) -> Unit,
+    onMarkAllPlayed: (PodcastWithCounts) -> Unit,
+    onRemove: (PodcastWithCounts) -> Unit,
+    onUndoMarkAllPlayed: () -> Unit,
     onLayoutChange: (LibraryLayout) -> Unit,
     onRefresh: () -> Unit,
     onMessageShown: () -> Unit,
@@ -164,14 +187,37 @@ fun LibraryScreen(
     // composition, where `stringResource` is not available. `LocalResources` rather than
     // `LocalContext.current.resources`, so a configuration change invalidates the read.
     val resources = LocalResources.current
+    val undoLabel = stringResource(R.string.library_undo)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     // Saveable so the menu does not silently close when the Fold 7 is opened mid-decision.
     var addMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    // The show a removal is being confirmed for, held as an id rather than the object so it too
+    // survives the fold — and so a show that disappears under the dialog simply closes it.
+    var pendingRemovalId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingRemoval = pendingRemovalId?.let { id ->
+        uiState.podcasts.firstOrNull { it.podcast.id == id }
+    }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message.toText(resources))
-        onMessageShown()
+        val result = snackbarHostState.showSnackbar(
+            message = message.toText(resources),
+            // Only one of the outcomes can be taken back. Offering "Undo" beside a refresh summary
+            // would be a button that either does nothing or does something unrelated.
+            actionLabel = undoLabel.takeIf { message is LibraryMessage.MarkedAllPlayed },
+        )
+        if (result == SnackbarResult.ActionPerformed) onUndoMarkAllPlayed() else onMessageShown()
+    }
+
+    pendingRemoval?.let { podcast ->
+        RemoveShowDialog(
+            podcast = podcast,
+            onConfirm = {
+                pendingRemovalId = null
+                onRemove(podcast)
+            },
+            onDismiss = { pendingRemovalId = null },
+        )
     }
 
     Scaffold(
@@ -246,6 +292,9 @@ fun LibraryScreen(
                             podcasts = uiState.podcasts,
                             onPodcastClick = onPodcastClick,
                             onMove = onMove,
+                            onQueueNewest = onQueueNewest,
+                            onMarkAllPlayed = onMarkAllPlayed,
+                            onRemoveRequest = { pendingRemovalId = it.podcast.id },
                         )
                     }
                 }
@@ -325,23 +374,27 @@ private fun ShowGrid(
 /**
  * The shows as rows, for a library too long to recognise by cover alone.
  *
- * Rearrangeable by a long press on the row, the same gesture and the same code as the grid. The
- * rows used to end in a grip as well; it cost 48dp on every one of them to advertise a gesture
- * that turns out to be the one people reach for anyway.
+ * Rearrangeable by a long press on the row, the same gesture and the same code as the grid, and
+ * swipeable from right to left for the three things a show can be told to do. The grid gets none of
+ * the swipe: a tile is 148dp of artwork with nothing to spare, so half of one is not a distance a
+ * commit threshold can live at, and two revealed buttons would leave no tile.
  *
  * @param podcasts the library.
  * @param onPodcastClick row tap handler.
  * @param onMove reports a finished reorder as positions in [podcasts].
+ * @param onQueueNewest queues the show's newest unplayed episode; the full-swipe action.
+ * @param onMarkAllPlayed marks the whole show played.
+ * @param onRemoveRequest asks for the show to be removed; the screen confirms before it happens.
  */
 @Composable
 private fun ShowList(
     podcasts: List<PodcastWithCounts>,
     onPodcastClick: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onQueueNewest: (PodcastWithCounts) -> Unit,
+    onMarkAllPlayed: (PodcastWithCounts) -> Unit,
+    onRemoveRequest: (PodcastWithCounts) -> Unit,
 ) {
-    val resources = LocalResources.current
-    val moveUp = stringResource(R.string.library_move_up)
-    val moveDown = stringResource(R.string.library_move_down)
     val listState = rememberLazyListState()
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(listState),
@@ -359,45 +412,170 @@ private fun ShowList(
             items = drag.order,
             key = { _, entry -> entry.podcast.id },
         ) { index, entry ->
-            val isDragging = drag.draggingKey == entry.podcast.id
-
-            ShowRow(
-                modifier = Modifier
-                    // On the tile/row itself, which merges its children: that merged node is
-                    // what a screen reader lands on, and a drag is invisible to one.
-                    .semantics { customActions = drag.moveActions(index, moveUp, moveDown) }
-                    .graphicsLayer {
-                        translationY = if (isDragging) drag.offset.y else 0f
-                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-                    }
-                    // The same gesture the grid uses: a row is picked up wherever the finger
-                    // already is.
-                    .reorderableLongPressDrag(drag, entry.podcast.id),
-                title = entry.podcast.title,
-                author = entry.podcast.author,
-                metadata = entry.countsLine(resources),
-                artworkUrl = entry.podcast.artworkUrl,
-                source = entry.podcast.source,
-                stateDescription = entry.newEpisodeDescription(resources),
-                onClick = { onPodcastClick(entry.podcast.id) },
-                trailing = {
-                    // The same mark the grid puts on a cover. Without it the list would be the
-                    // layout that cannot answer "which of these has something new".
-                    if (entry.newEpisodeCount > 0) {
-                        Badge(
-                            containerColor = BPodcatTheme.colors.unplayed,
-                            contentColor = BPodcatTheme.colors.onUnplayed,
-                            // The row already announces "3 new episodes"; a bare number read out
-                            // after it would be the same fact, less usefully put.
-                            modifier = Modifier.clearAndSetSemantics {},
-                        ) {
-                            Text(text = entry.newEpisodeCount.toString())
-                        }
-                    }
-                },
+            ShowListRow(
+                entry = entry,
+                index = index,
+                drag = drag,
+                onPodcastClick = { onPodcastClick(entry.podcast.id) },
+                onQueueNewest = { onQueueNewest(entry) },
+                onMarkAllPlayed = { onMarkAllPlayed(entry) },
+                onRemoveRequest = { onRemoveRequest(entry) },
             )
         }
     }
+}
+
+/**
+ * One library row: draggable, swipeable, and tappable into the show.
+ *
+ * Queueing is the full swipe because it is the thing wanted most often and the only one of the
+ * three that adds rather than takes away — the gesture that costs no aim should be the one that
+ * cannot go wrong. Marking a show off and unsubscribing from it are both rare and both large, so
+ * they are behind the reveal, where they have to be read before they can be tapped.
+ *
+ * @param entry the show.
+ * @param index its position in the library, for the reorder actions.
+ * @param drag the shared drag state, which owns the visual offset and the pending move.
+ * @param onPodcastClick opens the show.
+ * @param onQueueNewest queues its newest unplayed episode.
+ * @param onMarkAllPlayed marks the whole show played.
+ * @param onRemoveRequest asks for it to be removed.
+ */
+@Composable
+private fun ShowListRow(
+    entry: PodcastWithCounts,
+    index: Int,
+    drag: ReorderableState<PodcastWithCounts>,
+    onPodcastClick: () -> Unit,
+    onQueueNewest: () -> Unit,
+    onMarkAllPlayed: () -> Unit,
+    onRemoveRequest: () -> Unit,
+) {
+    val resources = LocalResources.current
+    val moveUp = stringResource(R.string.library_move_up)
+    val moveDown = stringResource(R.string.library_move_down)
+    val isDragging = drag.draggingKey == entry.podcast.id
+
+    val queueNewest = SwipeAction(
+        icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+        label = stringResource(R.string.library_action_queue_next),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        onClick = onQueueNewest,
+    )
+    val markAllPlayed = SwipeAction(
+        icon = Icons.Rounded.DoneAll,
+        label = stringResource(R.string.library_action_mark_all_played),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        onClick = onMarkAllPlayed,
+    )
+    val remove = SwipeAction(
+        icon = Icons.Rounded.Delete,
+        label = stringResource(R.string.library_action_remove),
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        onClick = onRemoveRequest,
+    )
+
+    SwipeActionsRow(
+        actions = listOf(markAllPlayed, remove),
+        fullSwipeAction = queueNewest,
+        modifier = Modifier.graphicsLayer {
+            translationY = if (isDragging) drag.offset.y else 0f
+            shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+        },
+    ) {
+        ShowRow(
+            modifier = Modifier
+                // On the row itself, which merges its children: that merged node is what a screen
+                // reader lands on, and neither the drag nor the swipe is visible to one.
+                .semantics {
+                    customActions = drag.moveActions(index, moveUp, moveDown) +
+                        listOf(queueNewest, markAllPlayed, remove).asAccessibilityActions()
+                }
+                // Inside the swipe box rather than around it, so the row's two drags are settled by
+                // the pointer that started them: this one consumes movement only once the press has
+                // been held, and a horizontal swipe claims the gesture long before that.
+                .reorderableLongPressDrag(drag, entry.podcast.id),
+            title = entry.podcast.title,
+            author = entry.podcast.author,
+            metadata = entry.countsLine(resources),
+            artworkUrl = entry.podcast.artworkUrl,
+            source = entry.podcast.source,
+            stateDescription = entry.newEpisodeDescription(resources),
+            onClick = onPodcastClick,
+            trailing = {
+                // The same mark the grid puts on a cover. Without it the list would be the layout
+                // that cannot answer "which of these has something new".
+                if (entry.newEpisodeCount > 0) {
+                    Badge(
+                        containerColor = BPodcatTheme.colors.unplayed,
+                        contentColor = BPodcatTheme.colors.onUnplayed,
+                        // The row already announces "3 new episodes"; a bare number read out after
+                        // it would be the same fact, less usefully put.
+                        modifier = Modifier.clearAndSetSemantics {},
+                    ) {
+                        Text(text = entry.newEpisodeCount.toString())
+                    }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * The confirmation shown before a show leaves the library.
+ *
+ * The one gesture on this screen with no way back. Queueing and marking off are both offered back
+ * in a snackbar; a removal cannot be, because re-subscribing re-fetches the feed and what returns
+ * is a fresh show — the played flags, the positions and the downloaded files are gone. So the
+ * friction goes in front of the action rather than behind it.
+ *
+ * What is at stake is counted rather than described: nobody hesitates over a show they have never
+ * started, and everybody wants to know before they lose twelve downloads.
+ *
+ * @param podcast the show about to be removed.
+ * @param onConfirm proceed.
+ * @param onDismiss cancel.
+ */
+@Composable
+private fun RemoveShowDialog(
+    podcast: PodcastWithCounts,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(imageVector = Icons.Rounded.Delete, contentDescription = null) },
+        title = {
+            Text(text = stringResource(R.string.library_remove_dialog_title, podcast.podcast.title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.sm)) {
+                Text(text = stringResource(R.string.library_remove_dialog_text))
+                if (podcast.downloadedCount > 0) {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.library_remove_dialog_at_stake,
+                            podcast.downloadedCount,
+                            podcast.downloadedCount,
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = stringResource(R.string.library_action_remove))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.library_cancel))
+            }
+        },
+    )
 }
 
 /**
@@ -590,6 +768,19 @@ private fun PodcastWithCounts.newEpisodeDescription(resources: Resources): Strin
 private fun LibraryMessage.toText(resources: Resources): String = when (this) {
     is LibraryMessage.Removed -> resources.getString(R.string.library_message_removed, title)
 
+    is LibraryMessage.Queued -> resources.getString(R.string.library_message_queued, episodeTitle)
+
+    is LibraryMessage.NothingToQueue ->
+        resources.getString(R.string.library_message_nothing_to_queue, showTitle)
+
+    is LibraryMessage.MarkedAllPlayed -> if (count == 0) {
+        // "Marked 0 episodes played" reads as a failure. The show was already finished, and saying
+        // so is both the truth and the more useful sentence.
+        resources.getString(R.string.library_message_already_played, showTitle)
+    } else {
+        resources.getQuantityString(R.plurals.library_message_marked_played, count, count)
+    }
+
     is LibraryMessage.RefreshFinished -> with(summary) {
         val newEpisodes = resources.getQuantityString(
             R.plurals.library_message_new_episodes,
@@ -645,6 +836,10 @@ private fun LibraryScreenPreview() {
             onPasteLinkClick = {},
             onOpenSettings = {},
             onMove = { _, _ -> },
+            onQueueNewest = {},
+            onMarkAllPlayed = {},
+            onRemove = {},
+            onUndoMarkAllPlayed = {},
             onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},
@@ -667,6 +862,10 @@ private fun LibraryScreenListPreview() {
             onPasteLinkClick = {},
             onOpenSettings = {},
             onMove = { _, _ -> },
+            onQueueNewest = {},
+            onMarkAllPlayed = {},
+            onRemove = {},
+            onUndoMarkAllPlayed = {},
             onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},

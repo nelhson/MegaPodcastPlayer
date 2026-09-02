@@ -5,6 +5,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -79,6 +81,9 @@ class LibraryScreenTest {
         onPasteLinkClick: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
+        onQueueNewest: (PodcastWithCounts) -> Unit = {},
+        onMarkAllPlayed: (PodcastWithCounts) -> Unit = {},
+        onRemove: (PodcastWithCounts) -> Unit = {},
         podcasts: List<PodcastWithCounts> =
             listOf(entry("a", "Podlodka Podcast", newEpisodeCount = 3)),
     ) {
@@ -95,6 +100,10 @@ class LibraryScreenTest {
                     onPasteLinkClick = onPasteLinkClick,
                     onOpenSettings = onOpenSettings,
                     onMove = onMove,
+                    onQueueNewest = onQueueNewest,
+                    onMarkAllPlayed = onMarkAllPlayed,
+                    onRemove = onRemove,
+                    onUndoMarkAllPlayed = {},
                     onLayoutChange = onLayoutChange,
                     onRefresh = {},
                     onMessageShown = {},
@@ -266,7 +275,140 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("Acquired")
             .assertHasNoCustomAccessibilityAction("Move down")
     }
+
+    @Test
+    fun `dragging a row past half its width queues the show's next episode`() {
+        var queued: String? = null
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onQueueNewest = { queued = it.podcast.title },
+        )
+
+        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
+            down(centerRight)
+            // Slowly, in steps, and past the halfway mark. Slowly because the commit tier answers
+            // to distance rather than velocity, and in steps because one jump would be read as a
+            // fling and settle by the other rule.
+            repeat(SWIPE_STEPS) {
+                moveBy(Offset(-width / SWIPE_STEPS.toFloat(), 0f))
+                advanceEventTime(SWIPE_STEP_MS)
+            }
+            up()
+        }
+
+        assertEquals("Podlodka Podcast", queued)
+    }
+
+    @Test
+    fun `a short swipe reveals the buttons rather than queueing anything`() {
+        var queued: String? = null
+        var marked: String? = null
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onQueueNewest = { queued = it.podcast.title },
+            onMarkAllPlayed = { marked = it.podcast.title },
+        )
+
+        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
+            down(centerRight)
+            // A short pull: far enough to rest open, nowhere near the commit threshold. The two
+            // tiers sharing one gesture is the whole design, and a threshold set wrong would make
+            // this fire the full swipe.
+            repeat(SWIPE_STEPS) {
+                moveBy(Offset(-SHORT_SWIPE_PX / SWIPE_STEPS, 0f))
+                advanceEventTime(SWIPE_STEP_MS)
+            }
+            up()
+        }
+
+        assertEquals(null, queued)
+        composeRule.onNodeWithText("Mark all played").performClick()
+        assertEquals("Podlodka Podcast", marked)
+    }
+
+    @Test
+    fun `removing a show asks before it happens`() {
+        var removed: String? = null
+        setScreen(layout = LibraryLayout.LIST, onRemove = { removed = it.podcast.title })
+
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .performCustomAccessibilityAction("Remove")
+
+        // Nothing has gone yet: unlike the other two actions this one cannot be offered back, so
+        // the friction is in front of it rather than behind it.
+        assertEquals(null, removed)
+        composeRule.onNodeWithText("Remove Podlodka Podcast?").assertIsDisplayed()
+        // The count is what makes the warning decidable rather than merely alarming.
+        composeRule.onNodeWithText("2 downloaded episodes will be deleted.").assertIsDisplayed()
+
+        composeRule.onNodeWithText("Cancel").performClick()
+        assertEquals(null, removed)
+    }
+
+    @Test
+    fun `confirming the dialog removes the show`() {
+        var removed: String? = null
+        setScreen(layout = LibraryLayout.LIST, onRemove = { removed = it.podcast.title })
+
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .performCustomAccessibilityAction("Remove")
+        // "Remove" is both the swipe button and the dialog's confirm button. The dialog is on top,
+        // so its is the one this finds — and the assertion below is what would catch it if not.
+        composeRule.onAllNodesWithText("Remove").onLast().performClick()
+
+        assertEquals("Podlodka Podcast", removed)
+    }
+
+    @Test
+    fun `every swipe action is reachable without a swipe`() {
+        // A drag is invisible to a screen reader, so a row that only offered these as a gesture
+        // would be a row TalkBack cannot act on at all.
+        val queued = mutableListOf<String>()
+        val marked = mutableListOf<String>()
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onQueueNewest = { queued += it.podcast.title },
+            onMarkAllPlayed = { marked += it.podcast.title },
+        )
+
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .performCustomAccessibilityAction("Queue next")
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .performCustomAccessibilityAction("Mark all played")
+
+        assertEquals(listOf("Podlodka Podcast"), queued)
+        assertEquals(listOf("Podlodka Podcast"), marked)
+    }
+
+    @Test
+    fun `the cover grid keeps its long press and gains no swipe`() {
+        // A tile is 148dp of artwork: half of one is not a distance a commit threshold can live at,
+        // and two revealed buttons would leave no tile. The gesture is confined to the list, and
+        // this is what would catch it leaking into the grid.
+        var queued: String? = null
+        setScreen(layout = LibraryLayout.GRID, onQueueNewest = { queued = it.podcast.title })
+
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .assertHasNoCustomAccessibilityAction("Queue next")
+        assertEquals(null, queued)
+    }
 }
+
+/** How many steps a driven swipe is broken into, so it reads as a drag rather than a fling. */
+private const val SWIPE_STEPS = 10
+
+/** Milliseconds between those steps; slow enough to stay under the fling velocity. */
+private const val SWIPE_STEP_MS = 32L
+
+/**
+ * Far enough to rest the row open, nowhere near half its width.
+ *
+ * Has to clear two floors, not one: Compose swallows a touch slop's worth of the first movement,
+ * and what is left must still pass half the two revealed buttons' width. On the 411dp xxhdpi device
+ * this class configures, half the row — the commit threshold — is around 616px, so this sits
+ * comfortably between the two.
+ */
+private const val SHORT_SWIPE_PX = 400f
 
 /** Comfortably past the 500ms system long-press timeout the drag gesture waits out. */
 private const val LONG_PRESS_MS = 1_000L

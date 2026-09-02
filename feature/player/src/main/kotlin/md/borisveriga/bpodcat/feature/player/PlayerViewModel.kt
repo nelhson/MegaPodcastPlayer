@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -17,16 +18,20 @@ import md.borisveriga.bpodcat.core.media.PlaybackState
 import md.borisveriga.bpodcat.core.model.PlaybackSettings
 
 /**
- * State rendered by the mini player and the now-playing screen.
+ * State rendered by the mini player, the now-playing screen and the queue.
  *
  * @property playback what the player is doing right now.
  * @property settings the user's speed and skip preferences.
  * @property queue the durable "up next" queue, in play order, including the episode playing.
+ * @property message a one-off outcome for the queue screen's snackbar; cleared via
+ *   [PlayerViewModel.onQueueMessageShown]. The player surfaces do not read it — they share this
+ *   view model because they share the queue, not because they share every field of it.
  */
 data class PlayerUiState(
     val playback: PlaybackState = PlaybackState(),
     val settings: PlaybackSettings = PlaybackSettings(),
     val queue: List<PlayableEpisode> = emptyList(),
+    val message: QueueMessage? = null,
 ) {
     /** True when there is nothing to show — the mini player should not be on screen at all. */
     val isIdle: Boolean get() = playback.isIdle
@@ -37,6 +42,28 @@ data class PlayerUiState(
             val currentIndex = queue.indexOfFirst { it.episode.id == playback.episodeId }
             return if (currentIndex >= 0) queue.drop(currentIndex + 1) else queue
         }
+}
+
+/**
+ * Something a queue gesture did, to be shown once in a snackbar.
+ *
+ * Modelled as state rather than an event channel so it survives configuration changes and the
+ * unfold/fold transition on the Fold 7. Both cases are reversible, and both say so: the message
+ * names what happened, and [PlayerViewModel.undoQueueChange] is what puts it back. The undo payload
+ * itself is not here — it is the view model's, so that the UI state stays data a test can compare.
+ *
+ * @property episodeTitle the affected episode, named back to the user so a snackbar arriving after
+ *   two quick swipes is not ambiguous.
+ */
+sealed interface QueueMessage {
+
+    val episodeTitle: String
+
+    /** An episode was taken out of the queue by a full swipe. */
+    data class Removed(override val episodeTitle: String) : QueueMessage
+
+    /** An episode was marked played, which also took it out of the queue. */
+    data class MarkedPlayed(override val episodeTitle: String) : QueueMessage
 }
 
 /**
@@ -57,12 +84,30 @@ class PlayerViewModel @Inject constructor(
     private val episodePlayer: EpisodePlayer,
 ) : ViewModel() {
 
+    /**
+     * The undo the last queue gesture left behind, or null.
+     *
+     * Held here rather than in [PlayerUiState] so the state stays comparable data. Overwritten
+     * rather than stacked: a snackbar shows one message at a time, so only the newest gesture is
+     * ever reachable, and keeping the older ones would only let an undo fire for a message that has
+     * already gone.
+     */
+    private var pendingUndo: QueueUndo? = null
+
+    private val messageState = MutableStateFlow<QueueMessage?>(null)
+
     val uiState: StateFlow<PlayerUiState> = combine(
         connection.playbackState,
         playbackRepository.observePlaybackSettings(),
         playbackRepository.observeQueue(),
-    ) { playback, settings, queue ->
-        PlayerUiState(playback = playback, settings = settings, queue = queue)
+        messageState,
+    ) { playback, settings, queue, message ->
+        PlayerUiState(
+            playback = playback,
+            settings = settings,
+            queue = queue,
+            message = message,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
@@ -127,9 +172,84 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { episodePlayer.play(episodeId) }
     }
 
-    /** Removes an episode from the queue, in the player and in storage. */
+    /**
+     * Removes an episode from the queue, in the player and in storage, and offers it back.
+     *
+     * What a full right-to-left swipe on a queue row commits, and what the row's "remove"
+     * accessibility action does. The queue is captured *before* the removal, because that
+     * arrangement is the only description of where the episode belongs that survives it.
+     *
+     * @param episodeId the episode to drop.
+     */
     fun removeFromQueue(episodeId: String) {
-        viewModelScope.launch { episodePlayer.removeFromQueue(episodeId) }
+        val entry = uiState.value.queue.firstOrNull { it.episode.id == episodeId } ?: return
+        val orderedIds = uiState.value.queue.map { it.episode.id }
+
+        viewModelScope.launch {
+            episodePlayer.removeFromQueue(episodeId)
+            pendingUndo = QueueUndo(episodeId = episodeId, orderedIds = orderedIds)
+            messageState.value = QueueMessage.Removed(entry.episode.title)
+        }
+    }
+
+    /**
+     * Marks a queued episode played, which also takes it out of the queue.
+     *
+     * What a short swipe's "mark as played" button does. The removal is not a side effect worth
+     * hiding: a finished episode has no business sitting in "up next", and leaving it there would
+     * mean the gesture had to be followed by a second one every time.
+     *
+     * The position is read before the mark so an undo can put the user back where they were; see
+     * [PlaybackRepository.setPlayed].
+     *
+     * @param episodeId the episode to mark.
+     */
+    fun markQueuedPlayed(episodeId: String) {
+        val entry = uiState.value.queue.firstOrNull { it.episode.id == episodeId } ?: return
+        val orderedIds = uiState.value.queue.map { it.episode.id }
+
+        viewModelScope.launch {
+            playbackRepository.setPlayed(episodeId, isPlayed = true)
+            episodePlayer.removeFromQueue(episodeId)
+            pendingUndo = QueueUndo(
+                episodeId = episodeId,
+                orderedIds = orderedIds,
+                restorePositionMs = entry.episode.positionMs,
+                wasMarkedPlayed = true,
+            )
+            messageState.value = QueueMessage.MarkedPlayed(entry.episode.title)
+        }
+    }
+
+    /**
+     * Reverses the last queue gesture.
+     *
+     * Consumed rather than kept: an undo that could be tapped twice would insert the episode once
+     * and then attempt it again against a queue that already holds it.
+     */
+    fun undoQueueChange() {
+        val undo = pendingUndo ?: return
+        pendingUndo = null
+        messageState.value = null
+
+        viewModelScope.launch {
+            if (undo.wasMarkedPlayed) {
+                playbackRepository.setPlayed(
+                    episodeId = undo.episodeId,
+                    isPlayed = false,
+                    positionMs = undo.restorePositionMs,
+                )
+            }
+            episodePlayer.restoreToQueue(undo.episodeId, undo.orderedIds)
+        }
+    }
+
+    /** Clears the current [PlayerUiState.message] once its snackbar has been shown. */
+    fun onQueueMessageShown() {
+        messageState.value = null
+        // The message and its undo go together: an undo left armed past the snackbar that offered
+        // it would fire on the *next* one, restoring an episode the user never asked about.
+        pendingUndo = null
     }
 
     /**
@@ -175,6 +295,22 @@ class PlayerViewModel @Inject constructor(
     fun onErrorShown() {
         connection.clearError()
     }
+
+    /**
+     * Everything needed to reverse one queue gesture.
+     *
+     * @property episodeId the episode that left the queue.
+     * @property orderedIds the queue as it stood before it did, which is where it goes back.
+     * @property restorePositionMs the position to resume from; only read when [wasMarkedPlayed].
+     * @property wasMarkedPlayed true when the gesture also set the played flag, and the undo has to
+     *   clear it again. False for a plain removal, which never touched it.
+     */
+    private data class QueueUndo(
+        val episodeId: String,
+        val orderedIds: List<String>,
+        val restorePositionMs: Long = 0L,
+        val wasMarkedPlayed: Boolean = false,
+    )
 
     private companion object {
         /** Keeps the controller attached across a rotation or a fold. */

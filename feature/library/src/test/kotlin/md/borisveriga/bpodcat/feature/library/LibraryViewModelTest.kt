@@ -11,6 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.NewEpisode
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.data.repository.RefreshSummary
@@ -18,6 +19,7 @@ import md.borisveriga.bpodcat.core.data.repository.UiPreferencesRepository
 import md.borisveriga.bpodcat.core.model.LibraryLayout
 import md.borisveriga.bpodcat.core.model.PodcastWithCounts
 import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
+import md.borisveriga.bpodcat.core.testing.testEpisode
 import md.borisveriga.bpodcat.core.testing.testPodcast
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,6 +50,7 @@ class LibraryViewModelTest {
 
     private lateinit var repository: PodcastRepository
     private lateinit var uiPreferences: UiPreferencesRepository
+    private lateinit var episodePlayer: EpisodePlayer
     private lateinit var viewModel: LibraryViewModel
 
     private fun withCounts(
@@ -66,7 +69,8 @@ class LibraryViewModelTest {
         every { repository.observeLibrary() } returns library
         uiPreferences = mockk(relaxed = true)
         every { uiPreferences.observeLibraryLayout() } returns layout
-        viewModel = LibraryViewModel(repository, uiPreferences)
+        episodePlayer = mockk(relaxed = true)
+        viewModel = LibraryViewModel(repository, uiPreferences, episodePlayer)
     }
 
     @Test
@@ -341,6 +345,157 @@ class LibraryViewModelTest {
             runCurrent()
 
             coVerify(exactly = 0) { repository.reorderLibrary(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a full swipe queues the newest unplayed episode and names it back`() = runTest {
+        val podcast = withCounts("a")
+        library.value = listOf(podcast)
+        coEvery { repository.newestUnplayedEpisode("a") } returns
+            testEpisode(id = "ep-7", podcastId = "a").copy(title = "The AI bubble, revisited")
+        coEvery { episodePlayer.addToQueue("ep-7") } returns true
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.queueNewest(podcast)
+            runCurrent()
+
+            coVerify(exactly = 1) { episodePlayer.addToQueue("ep-7") }
+            // The episode rather than the show: the row said which show it was, and which episode
+            // was queued is the part the gesture leaves invisible.
+            assertEquals(
+                LibraryMessage.Queued("The AI bubble, revisited"),
+                expectMostRecentItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a full swipe on a finished show queues nothing and says so`() = runTest {
+        val podcast = withCounts("a")
+        library.value = listOf(podcast)
+        coEvery { repository.newestUnplayedEpisode("a") } returns null
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.queueNewest(podcast)
+            runCurrent()
+
+            coVerify(exactly = 0) { episodePlayer.addToQueue(any()) }
+            // Silence would be indistinguishable from a gesture that never registered.
+            assertEquals(
+                LibraryMessage.NothingToQueue("Show a"),
+                expectMostRecentItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an episode the player will not accept is not reported as queued`() = runTest {
+        val podcast = withCounts("a")
+        library.value = listOf(podcast)
+        coEvery { repository.newestUnplayedEpisode("a") } returns
+            testEpisode(id = "ep-7", podcastId = "a")
+        // The show was removed under the gesture, so the player cannot resolve the episode.
+        coEvery { episodePlayer.addToQueue("ep-7") } returns false
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.queueNewest(podcast)
+            runCurrent()
+
+            assertTrue(expectMostRecentItem().message is LibraryMessage.NothingToQueue)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `mark all played reports what changed, and the undo restores exactly that`() = runTest {
+        val podcast = withCounts("a")
+        library.value = listOf(podcast)
+        coEvery { repository.markPodcastPlayed("a") } returns listOf("ep-1", "ep-2")
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.markAllPlayed(podcast)
+            runCurrent()
+            assertEquals(
+                LibraryMessage.MarkedAllPlayed("Show a", count = 2),
+                expectMostRecentItem().message,
+            )
+
+            viewModel.undoMarkAllPlayed()
+            runCurrent()
+
+            // The two it marked, not the show. Un-playing the whole show would also reopen
+            // episodes the user finished months before the gesture.
+            coVerify(exactly = 1) {
+                repository.setEpisodesPlayed(listOf("ep-1", "ep-2"), isPlayed = false)
+            }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the undo is spent once, and does not survive its snackbar`() = runTest {
+        val podcast = withCounts("a")
+        library.value = listOf(podcast)
+        coEvery { repository.markPodcastPlayed("a") } returns listOf("ep-1")
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.markAllPlayed(podcast)
+            runCurrent()
+            viewModel.undoMarkAllPlayed()
+            runCurrent()
+            // A second tap on a snackbar that has already been acted on.
+            viewModel.undoMarkAllPlayed()
+            runCurrent()
+
+            coVerify(exactly = 1) { repository.setEpisodesPlayed(any(), any()) }
+
+            viewModel.markAllPlayed(podcast)
+            runCurrent()
+            // The snackbar timed out rather than being tapped. An undo still armed here would fire
+            // against whichever message came next.
+            viewModel.onMessageShown()
+            viewModel.undoMarkAllPlayed()
+            runCurrent()
+
+            coVerify(exactly = 1) { repository.setEpisodesPlayed(any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `marking an already finished show off says so rather than counting zero`() = runTest {
+        val podcast = withCounts("a")
+        library.value = listOf(podcast)
+        coEvery { repository.markPodcastPlayed("a") } returns emptyList()
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.markAllPlayed(podcast)
+            runCurrent()
+
+            assertEquals(
+                LibraryMessage.MarkedAllPlayed("Show a", count = 0),
+                expectMostRecentItem().message,
+            )
+            // Nothing changed, so there is nothing to offer back.
+            viewModel.undoMarkAllPlayed()
+            runCurrent()
+            coVerify(exactly = 0) { repository.setEpisodesPlayed(any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }

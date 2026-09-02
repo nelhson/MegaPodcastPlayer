@@ -458,6 +458,23 @@ class OfflineFirstPodcastRepository @Inject constructor(
         episodeDao.clearNewFlags(podcastId)
     }
 
+    override suspend fun newestUnplayedEpisode(podcastId: String): Episode? =
+        withContext(ioDispatcher) { episodeDao.getNewestUnplayed(podcastId)?.asExternalModel() }
+
+    override suspend fun markPodcastPlayed(podcastId: String): List<String> =
+        withContext(ioDispatcher) { episodeDao.markPodcastPlayed(podcastId) }
+
+    override suspend fun setEpisodesPlayed(episodeIds: List<String>, isPlayed: Boolean) =
+        withContext(ioDispatcher) {
+            // Chunked because the caller's list is however many episodes a show holds, and
+            // `IN (:ids)` binds one SQLite parameter per id. The ceiling is 999 on the oldest
+            // Android this app supports; a back catalogue passes it easily, and the failure would
+            // be an exception on an undo — the one moment the user is least able to afford one.
+            episodeIds.chunked(SQLITE_PARAMETER_CHUNK).forEach { chunk ->
+                episodeDao.setPlayedForIds(chunk, isPlayed)
+            }
+        }
+
     override suspend fun setAutoRefresh(podcastId: String, enabled: Boolean) =
         withContext(ioDispatcher) {
             podcastDao.setAutoRefresh(podcastId, enabled)
@@ -465,6 +482,14 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
     private companion object {
         private const val TAG = "PodcastRepository"
+
+        /**
+         * How many ids may go into one `IN (:ids)` statement.
+         *
+         * Comfortably under SQLite's 999-parameter ceiling, with room for whatever else the
+         * statement binds.
+         */
+        private const val SQLITE_PARAMETER_CHUNK = 500
     }
 }
 

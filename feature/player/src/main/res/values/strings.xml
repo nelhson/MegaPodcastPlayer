@@ -31,11 +31,24 @@
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>
 
     <!--
-        Reordering is a drag and removing is a swipe, and a screen reader can do neither, so both
-        are offered again as spoken actions on the row.
+        Reordering is a drag and the two edits are a swipe, and a screen reader can do neither, so
+        all of them are offered again as spoken actions on the row.
     -->
     <string name="queue_move_up">Move up</string>
     <string name="queue_move_down">Move down</string>
+
+    <!--
+        The swipe actions. These are button labels first and spoken labels second, so they are kept
+        to two words: they are drawn under an icon in a 76dp column, and the row a screen reader
+        reads them from has already said which episode it is talking about.
+    -->
+    <string name="queue_action_mark_played">Mark played</string>
+    <string name="queue_action_remove">Remove</string>
+
+    <!-- Snackbars after a swipe; %1$s is the episode title. Both are offered back. -->
+    <string name="queue_message_removed">Removed %1$s</string>
+    <string name="queue_message_marked_played">Marked %1$s as played</string>
+    <string name="queue_undo">Undo</string>
 
     <string name="player_scrubber">Playback position</string>
     <!-- Shown in place of a duration the player has not read yet; a wrong number would read as fact. -->
@@ -59,9 +72,6 @@
         <item quantity="one">Up next · %1$d episode</item>
         <item quantity="other">Up next · %1$d episodes</item>
     </plurals>
-
-    <!-- %1$s is the episode title; the button is reached out of the list's reading order. -->
-    <string name="player_remove_from_queue">Remove %1$s from the queue</string>
 
     <!-- %1$s is the player's own error text. -->
     <string name="player_error">Playback problem: %1$s</string>

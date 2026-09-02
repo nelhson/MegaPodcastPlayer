@@ -52,12 +52,19 @@ interface PlaybackRepository {
     suspend fun reorderQueue(episodeIds: List<String>)
 
     /**
-     * Marks an episode played or unplayed.
+     * Marks an episode played or unplayed, and says where it should resume from afterwards.
      *
-     * Marking played resets the stored position, so re-opening a finished episode starts it from
-     * the beginning rather than from its last second.
+     * The default resets the position, so re-opening a finished episode starts it from the
+     * beginning rather than from its last second. An undo is what the parameter exists for: putting
+     * back a played flag without putting back the position the user had reached would make the undo
+     * of an accidental "mark as played" cost them their place, which is most of what they were
+     * trying to save.
+     *
+     * @param episodeId the episode to mark.
+     * @param isPlayed the flag to write.
+     * @param positionMs where the episode should resume from.
      */
-    suspend fun setPlayed(episodeId: String, isPlayed: Boolean)
+    suspend fun setPlayed(episodeId: String, isPlayed: Boolean, positionMs: Long = 0L)
 
     /** Sets the playback rate, clamped to [PlaybackSettings.SPEED_RANGE]. */
     suspend fun setSpeed(speed: Float)

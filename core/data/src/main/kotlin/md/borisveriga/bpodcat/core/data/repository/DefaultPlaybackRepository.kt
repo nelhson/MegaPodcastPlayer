@@ -70,11 +70,11 @@ class DefaultPlaybackRepository @Inject constructor(
         queueDao.replaceAll(episodeIds)
     }
 
-    override suspend fun setPlayed(episodeId: String, isPlayed: Boolean) =
+    override suspend fun setPlayed(episodeId: String, isPlayed: Boolean, positionMs: Long) =
         withContext(ioDispatcher) {
-            // Finishing an episode resets its position; un-marking one leaves it at the start too,
-            // which is the only sensible place to restart from.
-            episodeDao.setPlayed(id = episodeId, isPlayed = isPlayed, positionMs = 0L)
+            // Finishing an episode resets its position, which is what the caller's default asks
+            // for; an undo passes back the position it saved before the mark.
+            episodeDao.setPlayed(id = episodeId, isPlayed = isPlayed, positionMs = positionMs)
         }
 
     override suspend fun setSpeed(speed: Float) = userPreferences.setSpeed(speed)

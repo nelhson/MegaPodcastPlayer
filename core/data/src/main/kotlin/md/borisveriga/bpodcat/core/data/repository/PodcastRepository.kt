@@ -223,6 +223,40 @@ interface PodcastRepository {
     /** Clears the "new" badges for a show once its episode list has been opened. */
     suspend fun markEpisodesSeen(podcastId: String)
 
+    /**
+     * The newest episode of a show that has not been played yet.
+     *
+     * What "queue the next one from this show" resolves to, from a row that knows only the show.
+     *
+     * @param podcastId the show to look in.
+     * @return the episode, or null when the show is finished or empty.
+     */
+    suspend fun newestUnplayedEpisode(podcastId: String): Episode?
+
+    /**
+     * Marks every unplayed episode of a show played.
+     *
+     * Returns what it changed rather than nothing, so the caller can offer an undo that puts back
+     * exactly the episodes this touched — not "everything in the show", which would also unplay
+     * episodes the user had finished long before.
+     *
+     * Playback positions are left alone; see `EpisodeDao.markPodcastPlayed`.
+     *
+     * @param podcastId the show to mark.
+     * @return the ids that were unplayed beforehand.
+     */
+    suspend fun markPodcastPlayed(podcastId: String): List<String>
+
+    /**
+     * Sets the played flag on specific episodes, without touching their positions.
+     *
+     * The undo of [markPodcastPlayed].
+     *
+     * @param episodeIds the episodes to change; an empty list is a no-op.
+     * @param isPlayed the flag to write.
+     */
+    suspend fun setEpisodesPlayed(episodeIds: List<String>, isPlayed: Boolean)
+
     /** Enables or disables background refresh for one show. */
     suspend fun setAutoRefresh(podcastId: String, enabled: Boolean)
 }

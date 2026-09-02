@@ -59,8 +59,45 @@
     <!-- Joins the episode count (%1$s) with the downloaded count (%2$s). -->
     <string name="library_counts_combined">%1$s · %2$s</string>
 
+    <!--
+        The swipe actions on a row. Button labels first and spoken labels second, so they are kept
+        short: they are drawn under an icon in a 76dp column, and the row a screen reader reads them
+        from has already said which show it is talking about.
+    -->
+    <string name="library_action_queue_next">Queue next</string>
+    <string name="library_action_mark_all_played">Mark all played</string>
+    <string name="library_action_remove">Remove</string>
+    <string name="library_cancel">Cancel</string>
+    <string name="library_undo">Undo</string>
+
+    <!--
+        Removing a show cannot be undone — re-subscribing re-fetches the feed and loses every played
+        flag, position and download — so it asks first. %1$s is the show title.
+    -->
+    <string name="library_remove_dialog_title">Remove %1$s?</string>
+    <string name="library_remove_dialog_text">The show and everything stored for it are deleted. Adding it back later starts from scratch.</string>
+    <plurals name="library_remove_dialog_at_stake">
+        <item quantity="one">%1$d downloaded episode will be deleted.</item>
+        <item quantity="other">%1$d downloaded episodes will be deleted.</item>
+    </plurals>
+
     <!-- Snackbar after a show is removed; %1$s is the show title. -->
     <string name="library_message_removed">Removed %1$s</string>
+
+    <!-- Snackbar after a full swipe queues an episode; %1$s is the episode title. -->
+    <string name="library_message_queued">Queued %1$s</string>
+
+    <!-- Shown when a full swipe found the show already finished; %1$s is the show title. -->
+    <string name="library_message_nothing_to_queue">Nothing unplayed left in %1$s</string>
+
+    <!-- Snackbar after "mark all played"; the count is what an undo would restore. -->
+    <plurals name="library_message_marked_played">
+        <item quantity="one">Marked %1$d episode played</item>
+        <item quantity="other">Marked %1$d episodes played</item>
+    </plurals>
+
+    <!-- The same gesture on a show with nothing left to mark; %1$s is the show title. -->
+    <string name="library_message_already_played">%1$s was already finished</string>
 
     <plurals name="library_message_new_episodes">
         <item quantity="one">%1$d new episode</item>

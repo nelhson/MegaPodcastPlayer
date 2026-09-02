@@ -267,4 +267,101 @@ class PlayerViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `a removal is offered back, and the undo puts the episode where it was`() = runTest {
+        queue.value = listOf(playable("a"), playable("b"), playable("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.removeFromQueue("b")
+
+            coVerify { episodePlayer.removeFromQueue("b") }
+            assertEquals(QueueMessage.Removed("Episode b"), expectMostRecentItem().message)
+
+            // The queue as it stood *before* the removal, which is the only description of where
+            // "b" belongs that survives it. Restoring it by appending would put it after "c".
+            viewModel.undoQueueChange()
+            coVerify { episodePlayer.restoreToQueue("b", listOf("a", "b", "c")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `marking a queued episode played drops it, and the undo restores its position`() = runTest {
+        val partlyHeard = playable("b").let {
+            it.copy(episode = it.episode.copy(positionMs = 42_000L))
+        }
+        queue.value = listOf(playable("a"), partlyHeard, playable("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.markQueuedPlayed("b")
+
+            coVerify { playbackRepository.setPlayed("b", true) }
+            // A finished episode has no business sitting in "up next"; leaving it there would make
+            // the gesture need a second one every time.
+            coVerify { episodePlayer.removeFromQueue("b") }
+            assertEquals(QueueMessage.MarkedPlayed("Episode b"), expectMostRecentItem().message)
+
+            viewModel.undoQueueChange()
+
+            // Both halves, and the position with them: an undo that put the flag back but left the
+            // user at zero would cost them the 42 seconds they were trying to save.
+            coVerify {
+                playbackRepository.setPlayed(
+                    episodeId = "b",
+                    isPlayed = false,
+                    positionMs = 42_000L,
+                )
+            }
+            coVerify { episodePlayer.restoreToQueue("b", listOf("a", "b", "c")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the undo is spent once, and does not survive its snackbar`() = runTest {
+        queue.value = listOf(playable("a"), playable("b"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.removeFromQueue("b")
+            viewModel.undoQueueChange()
+            // A second tap on a snackbar that has already been acted on.
+            viewModel.undoQueueChange()
+
+            coVerify(exactly = 1) { episodePlayer.restoreToQueue(any(), any()) }
+
+            viewModel.removeFromQueue("a")
+            // The snackbar timed out rather than being tapped. An undo still armed here would fire
+            // against whichever message came next.
+            viewModel.onQueueMessageShown()
+            viewModel.undoQueueChange()
+
+            coVerify(exactly = 1) { episodePlayer.restoreToQueue(any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `removing an episode the queue does not hold reports nothing`() = runTest {
+        queue.value = listOf(playable("a"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            // The gesture raced the player finishing the episode.
+            viewModel.removeFromQueue("gone")
+
+            coVerify(exactly = 0) { episodePlayer.removeFromQueue(any()) }
+            // Nothing changed, so nothing is emitted and there is no snackbar to dismiss.
+            expectNoEvents()
+            assertEquals(null, viewModel.uiState.value.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }
