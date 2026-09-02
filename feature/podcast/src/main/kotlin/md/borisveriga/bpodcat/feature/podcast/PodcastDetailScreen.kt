@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
@@ -78,15 +77,12 @@ import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
-import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
-import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
-import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
-import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
 import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
-import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -132,8 +128,6 @@ fun PodcastDetailRoute(
         onBack = onBack,
         onEpisodeClick = { episodeId -> viewModel.playEpisode(episodeId, onEpisodePlaying) },
         onEpisodeDownloadToggle = viewModel::toggleDownload,
-        onEpisodeMarkPlayed = viewModel::markPlayed,
-        onEpisodeRemove = viewModel::removeEpisode,
         onEpisodeMove = viewModel::moveEpisode,
         onRefresh = viewModel::refresh,
         onAutoRefreshChange = viewModel::setAutoRefresh,
@@ -153,8 +147,6 @@ fun PodcastDetailRoute(
  * @param onEpisodeClick episode tap handler; a tap starts playback.
  * @param onEpisodeDownloadToggle download/remove handler; one action, because the button's
  *   meaning follows the episode's download state.
- * @param onEpisodeMarkPlayed marks one episode played, from its swipe actions.
- * @param onEpisodeRemove takes one episode off this list for good, from its swipe actions.
  * @param onEpisodeMove applies a completed reorder on a hand-ordered show. Takes the ids currently
  *   on screen alongside the two positions, because a filter means those are a subset and the
  *   positions alone would name the wrong episodes.
@@ -174,8 +166,6 @@ fun PodcastDetailScreen(
     onBack: () -> Unit,
     onEpisodeClick: (String) -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
-    onEpisodeMarkPlayed: (String) -> Unit,
-    onEpisodeRemove: (String) -> Unit,
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onRefresh: () -> Unit,
     onAutoRefreshChange: (Boolean) -> Unit,
@@ -327,131 +317,46 @@ fun PodcastDetailScreen(
                             items = drag.order,
                             key = { _, episode -> episode.id },
                         ) { index, episode ->
-                            EpisodeListRow(
-                                episode = episode,
-                                index = index,
-                                fallbackArtworkUrl = podcast.artworkUrl,
+                            val isDragging = drag.draggingKey == episode.id
+
+                            EpisodeRow(
+                                modifier = Modifier
+                                    .semantics {
+                                        if (isReorderable) {
+                                            customActions =
+                                                drag.moveActions(index, moveUp, moveDown)
+                                        }
+                                    }
+                                    .graphicsLayer {
+                                        translationY = if (isDragging) drag.offset.y else 0f
+                                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+                                    },
+                                title = episode.title,
                                 metadata = episode.metadataLine(now, resources),
-                                drag = drag,
-                                isReorderable = isReorderable,
-                                moveUpLabel = moveUp,
-                                moveDownLabel = moveDown,
+                                artworkUrl = episode.artworkUrl ?: podcast.artworkUrl,
+                                isUnplayed = episode.isNew,
+                                isPlayed = episode.isPlayed,
+                                playedFraction = episode.playedFraction,
                                 onClick = { onEpisodeClick(episode.id) },
-                                onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
-                                onMarkPlayed = { onEpisodeMarkPlayed(episode.id) },
-                                onRemove = { onEpisodeRemove(episode.id) },
+                                trailing = {
+                                    DownloadButton(
+                                        state = episode.downloadState,
+                                        progressPercent = episode.downloadPercent,
+                                        onClick = { onEpisodeDownloadToggle(episode.id) },
+                                    )
+                                    if (isReorderable) {
+                                        ReorderHandle(
+                                            modifier = Modifier
+                                                .reorderableHandle(drag, episode.id),
+                                        )
+                                    }
+                                },
                             )
                         }
                     }
                 }
             }
         }
-    }
-}
-
-/**
- * One episode row: what it is, what it costs, and the two things a swipe offers to do with it.
- *
- * Extracted from the list body rather than left inline, because the row now carries three gestures
- * - tap, hold to reorder, swipe for actions - and reading them next to a `LazyColumn`'s own
- * bookkeeping made it hard to see which belonged to which.
- *
- * A hand-ordered show is dragged by holding the row itself; there is no grip, and the width that
- * used to hold one goes to the title. Every show, ordered or not, can be swiped.
- *
- * @param episode the episode to draw.
- * @param index its position among the episodes currently on screen, which the reorder actions need.
- * @param fallbackArtworkUrl the show's cover, for an episode that publishes none of its own.
- * @param metadata the line under the title.
- * @param drag the shared drag state; read for the visual offset even when [isReorderable] is false,
- *   where it never moves.
- * @param isReorderable whether this show's episodes can be arranged by hand. Only a YouTube
- *   playlist can: an RSS show is a chronology, and offering to rearrange one would promise an order
- *   the next refresh could not keep.
- * @param moveUpLabel spoken label for the reorder-up accessibility action.
- * @param moveDownLabel spoken label for the reorder-down accessibility action.
- * @param onClick plays the episode.
- * @param onDownloadToggle downloads it, or gives the file back.
- * @param onMarkPlayed marks it played.
- * @param onRemove takes it off this list for good.
- * @param modifier layout modifier.
- */
-@Composable
-private fun EpisodeListRow(
-    episode: Episode,
-    index: Int,
-    fallbackArtworkUrl: String?,
-    metadata: String,
-    drag: ReorderableState<Episode>,
-    isReorderable: Boolean,
-    moveUpLabel: String,
-    moveDownLabel: String,
-    onClick: () -> Unit,
-    onDownloadToggle: () -> Unit,
-    onMarkPlayed: () -> Unit,
-    onRemove: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val isDragging = drag.draggingKey == episode.id
-
-    val actions = listOf(
-        SwipeAction(
-            icon = Icons.Rounded.DoneAll,
-            label = stringResource(R.string.podcast_action_mark_played),
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            onClick = onMarkPlayed,
-        ),
-        SwipeAction(
-            icon = Icons.Rounded.Delete,
-            label = stringResource(R.string.podcast_action_remove),
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            onClick = onRemove,
-        ),
-    )
-
-    SwipeActionsRow(
-        actions = actions,
-        modifier = modifier.graphicsLayer {
-            translationY = if (isDragging) drag.offset.y else 0f
-            shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-        },
-    ) {
-        EpisodeRow(
-            // On the row itself, which merges its children: that merged node is what a screen
-            // reader lands on, and neither a drag nor a swipe is visible to one.
-            modifier = Modifier
-                .semantics {
-                    customActions = if (isReorderable) {
-                        drag.moveActions(index, moveUpLabel, moveDownLabel) +
-                            actions.asAccessibilityActions()
-                    } else {
-                        actions.asAccessibilityActions()
-                    }
-                }
-                .then(
-                    if (isReorderable) {
-                        Modifier.reorderableLongPressDrag(drag, episode.id)
-                    } else {
-                        Modifier
-                    },
-                ),
-            title = episode.title,
-            metadata = metadata,
-            artworkUrl = episode.artworkUrl ?: fallbackArtworkUrl,
-            isUnplayed = episode.isNew,
-            isPlayed = episode.isPlayed,
-            playedFraction = episode.playedFraction,
-            onClick = onClick,
-            trailing = {
-                DownloadButton(
-                    state = episode.downloadState,
-                    progressPercent = episode.downloadPercent,
-                    onClick = onDownloadToggle,
-                )
-            },
-        )
     }
 }
 
@@ -865,9 +770,6 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 
     is PodcastDetailMessage.DownloadRemoved ->
         resources.getString(R.string.podcast_message_download_removed, title)
-
-    is PodcastDetailMessage.EpisodeRemoved ->
-        resources.getString(R.string.podcast_message_episode_removed, title)
 }
 
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
@@ -921,8 +823,6 @@ private fun PodcastDetailScreenPreview() {
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
-            onEpisodeMarkPlayed = {},
-            onEpisodeRemove = {},
             onEpisodeMove = { _, _, _ -> },
             onRefresh = {},
             onAutoRefreshChange = {},

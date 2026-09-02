@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
-import md.borisveriga.bpodcat.core.data.repository.PlaybackRepository
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.EpisodeWithShow
 
@@ -108,7 +107,6 @@ sealed interface DownloadsMessage {
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
-    private val playbackRepository: PlaybackRepository,
     private val episodePlayer: EpisodePlayer,
 ) : ViewModel() {
 
@@ -229,19 +227,6 @@ class DownloadsViewModel @Inject constructor(
             transientState.value = DownloadsMessage.Removed(title)
             refreshFreeBytes()
         }
-    }
-
-    /**
-     * Marks one episode played, and forgets where it was left.
-     *
-     * The download is deliberately left alone. This screen is a view of what is on disk, and
-     * "I have listened to this" is not the same statement as "I want the space back" — the swipe's
-     * other button is there for that.
-     *
-     * @param episodeId the episode to mark.
-     */
-    fun markPlayed(episodeId: String) {
-        viewModelScope.launch { playbackRepository.setPlayed(episodeId, isPlayed = true) }
     }
 
     /**

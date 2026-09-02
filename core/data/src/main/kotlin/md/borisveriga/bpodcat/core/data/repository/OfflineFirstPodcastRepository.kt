@@ -463,18 +463,6 @@ class OfflineFirstPodcastRepository @Inject constructor(
             podcastDao.setAutoRefresh(podcastId, enabled)
         }
 
-    override suspend fun setPinned(podcastId: String, pinned: Boolean) = withContext(ioDispatcher) {
-        podcastDao.setPinned(podcastId, pinned)
-    }
-
-    override suspend fun markAllPlayed(podcastId: String) = withContext(ioDispatcher) {
-        episodeDao.markAllPlayed(podcastId)
-    }
-
-    override suspend fun hideEpisode(episodeId: String) = withContext(ioDispatcher) {
-        episodeDao.hide(episodeId)
-    }
-
     private companion object {
         private const val TAG = "PodcastRepository"
     }

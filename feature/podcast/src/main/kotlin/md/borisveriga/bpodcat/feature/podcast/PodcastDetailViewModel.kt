@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
-import md.borisveriga.bpodcat.core.data.repository.PlaybackRepository
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -63,16 +62,6 @@ sealed interface PodcastDetailMessage {
      * @property reason short explanation for the snackbar.
      */
     data class RefreshFailed(val reason: String) : PodcastDetailMessage
-
-    /**
-     * One episode was taken off the show's list.
-     *
-     * Worth a snackbar where marking one played is not: the row vanishes either way, but only one
-     * of the two is a decision the user might want to see confirmed in words.
-     *
-     * @property title the episode that went.
-     */
-    data class EpisodeRemoved(val title: String) : PodcastDetailMessage
 
     /**
      * The episode list was deleted and imported again.
@@ -133,7 +122,6 @@ class PodcastDetailViewModel @Inject constructor(
     private val repository: PodcastRepository,
     private val episodePlayer: EpisodePlayer,
     private val downloadRepository: DownloadRepository,
-    private val playbackRepository: PlaybackRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -357,38 +345,6 @@ class PodcastDetailViewModel @Inject constructor(
                     )
                 }
             }
-        }
-    }
-
-    /**
-     * Marks one episode played, and forgets where it was left.
-     *
-     * @param episodeId the episode to mark.
-     */
-    fun markPlayed(episodeId: String) {
-        viewModelScope.launch { playbackRepository.setPlayed(episodeId, isPlayed = true) }
-    }
-
-    /**
-     * Takes one episode off this show's list, for good.
-     *
-     * Its download goes first, because the row is about to stop being reachable and a file nothing
-     * can point at is the worst kind of storage to leak. The removal itself is recorded rather than
-     * carried out — see `PodcastRepository.hideEpisode` — since deleting the row would only invite
-     * the next refresh to insert it again.
-     *
-     * @param episodeId the episode to remove.
-     */
-    fun removeEpisode(episodeId: String) {
-        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
-        viewModelScope.launch {
-            if (episode.downloadState != DownloadState.NOT_DOWNLOADED) {
-                downloadRepository.removeDownload(episodeId)
-            }
-            repository.hideEpisode(episodeId)
-            transientState.value = transientState.value.copy(
-                message = PodcastDetailMessage.EpisodeRemoved(episode.title),
-            )
         }
     }
 

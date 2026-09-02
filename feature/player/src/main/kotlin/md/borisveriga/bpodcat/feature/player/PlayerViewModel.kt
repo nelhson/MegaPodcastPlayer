@@ -162,22 +162,6 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { episodePlayer.moveInQueue(playerFrom, playerTo, orderedIds) }
     }
 
-    /**
-     * Marks a queued episode played, which also drops it from the queue.
-     *
-     * The removal is not a side effect worth debating: the queue is what the user intends to
-     * listen to next, and an episode they have just declared finished has no business still being
-     * in it. [markCurrentPlayed] does the same to the episode that is playing.
-     *
-     * @param episodeId the episode to mark.
-     */
-    fun markPlayed(episodeId: String) {
-        viewModelScope.launch {
-            playbackRepository.setPlayed(episodeId, isPlayed = true)
-            episodePlayer.removeFromQueue(episodeId)
-        }
-    }
-
     /** Marks the current episode played, which also drops it from the queue and skips on. */
     fun markCurrentPlayed() {
         val episodeId = uiState.value.playback.episodeId ?: return

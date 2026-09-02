@@ -84,8 +84,4 @@
     <string name="downloads_message_retry_queued_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="downloads_message_unavailable">That episode is no longer in your library</string>
 
-
-    <!-- Swipe actions on a download. "Delete" frees the file; the episode stays in the library. -->
-    <string name="downloads_action_mark_played">Mark played</string>
-    <string name="downloads_action_delete">Delete</string>
 </resources>

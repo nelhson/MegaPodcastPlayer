@@ -7,8 +7,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -46,12 +44,7 @@ class LibraryScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun entry(
-        id: String,
-        title: String,
-        newEpisodeCount: Int = 0,
-        isPinned: Boolean = false,
-    ) = PodcastWithCounts(
+    private fun entry(id: String, title: String, newEpisodeCount: Int = 0) = PodcastWithCounts(
         podcast = Podcast(
             id = id,
             itunesId = null,
@@ -65,7 +58,6 @@ class LibraryScreenTest {
             etag = null,
             lastModified = null,
             autoRefresh = true,
-            isPinned = isPinned,
         ),
         episodeCount = 412,
         newEpisodeCount = newEpisodeCount,
@@ -79,9 +71,6 @@ class LibraryScreenTest {
         onPasteLinkClick: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
-        onMarkAllPlayed: (PodcastWithCounts) -> Unit = {},
-        onRemove: (PodcastWithCounts) -> Unit = {},
-        onTogglePin: (PodcastWithCounts) -> Unit = {},
         podcasts: List<PodcastWithCounts> =
             listOf(entry("a", "Podlodka Podcast", newEpisodeCount = 3)),
     ) {
@@ -98,9 +87,6 @@ class LibraryScreenTest {
                     onPasteLinkClick = onPasteLinkClick,
                     onOpenSettings = onOpenSettings,
                     onMove = onMove,
-                    onMarkAllPlayed = onMarkAllPlayed,
-                    onRemove = onRemove,
-                    onTogglePin = onTogglePin,
                     onLayoutChange = onLayoutChange,
                     onRefresh = {},
                     onMessageShown = {},
@@ -229,67 +215,6 @@ class LibraryScreenTest {
             .assertHasNoCustomAccessibilityAction("Move up")
         composeRule.onNodeWithText("Acquired")
             .assertHasNoCustomAccessibilityAction("Move down")
-    }
-
-    @Test
-    fun `a show row can be pinned without a swipe`() {
-        var pinned: PodcastWithCounts? = null
-        setScreen(layout = LibraryLayout.LIST, onTogglePin = { pinned = it })
-
-        composeRule.onNodeWithText("Podlodka Podcast")
-            .performCustomAccessibilityAction("Pin")
-
-        assertEquals("a", pinned?.podcast?.id)
-    }
-
-    @Test
-    fun `an already pinned show offers to unpin instead`() {
-        setScreen(
-            layout = LibraryLayout.LIST,
-            podcasts = listOf(
-                entry("a", "Podlodka Podcast", newEpisodeCount = 3, isPinned = true),
-            ),
-        )
-
-        // One button, two meanings: the label has to say which way the toggle will go, not which
-        // state the show is in.
-        composeRule.onNodeWithText("Podlodka Podcast")
-            .performCustomAccessibilityAction("Unpin")
-    }
-
-    @Test
-    fun `swiping a show row open reveals all three of the things it can do`() {
-        setScreen(layout = LibraryLayout.LIST)
-
-        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput { swipeLeft() }
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("Pin").assertIsDisplayed()
-        composeRule.onNodeWithText("Mark all played").assertIsDisplayed()
-        composeRule.onNodeWithText("Remove").assertIsDisplayed()
-    }
-
-    @Test
-    fun `tapping the revealed remove button unsubscribes from the show`() {
-        var removed: PodcastWithCounts? = null
-        setScreen(layout = LibraryLayout.LIST, onRemove = { removed = it })
-
-        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput { swipeLeft() }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("Remove").performClick()
-
-        assertEquals("a", removed?.podcast?.id)
-    }
-
-    @Test
-    fun `a show row can be marked played without a swipe`() {
-        var marked: PodcastWithCounts? = null
-        setScreen(layout = LibraryLayout.LIST, onMarkAllPlayed = { marked = it })
-
-        composeRule.onNodeWithText("Podlodka Podcast")
-            .performCustomAccessibilityAction("Mark all played")
-
-        assertEquals("a", marked?.podcast?.id)
     }
 }
 

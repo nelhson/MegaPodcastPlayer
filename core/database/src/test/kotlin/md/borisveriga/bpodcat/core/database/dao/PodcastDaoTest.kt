@@ -131,41 +131,4 @@ class PodcastDaoTest {
 
         assertEquals(listOf("Zeitgeist", "Acquired", "Podlodka Podcast"), titles())
     }
-
-    @Test
-    fun `a pinned show rises above the hand-made order`() = runTest {
-        subscribe("a", "Acquired")
-        subscribe("p", "Podlodka Podcast")
-        subscribe("z", "Zeitgeist")
-
-        podcastDao.setPinned("z", pinned = true)
-
-        assertEquals(listOf("Zeitgeist", "Acquired", "Podlodka Podcast"), titles())
-    }
-
-    @Test
-    fun `pinned shows keep the hand-made order among themselves`() = runTest {
-        subscribe("a", "Acquired")
-        subscribe("p", "Podlodka Podcast")
-        subscribe("z", "Zeitgeist")
-
-        podcastDao.setPinned("z", pinned = true)
-        podcastDao.setPinned("p", pinned = true)
-
-        // Pinning is a second, coarser sort — not a move. Within the pinned block the library's
-        // own order still decides, so Podlodka precedes Zeitgeist exactly as it did before.
-        assertEquals(listOf("Podlodka Podcast", "Zeitgeist", "Acquired"), titles())
-    }
-
-    @Test
-    fun `unpinning drops a show back where it was`() = runTest {
-        subscribe("a", "Acquired")
-        subscribe("p", "Podlodka Podcast")
-        subscribe("z", "Zeitgeist")
-        podcastDao.setPinned("z", pinned = true)
-
-        podcastDao.setPinned("z", pinned = false)
-
-        assertEquals(listOf("Acquired", "Podlodka Podcast", "Zeitgeist"), titles())
-    }
 }

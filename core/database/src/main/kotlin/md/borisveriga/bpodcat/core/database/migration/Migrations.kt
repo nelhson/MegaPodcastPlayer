@@ -154,30 +154,3 @@ val MIGRATION_4_5: Migration = object : Migration(4, 5) {
         )
     }
 }
-
-/**
- * Adds `podcasts.is_pinned` and `episodes.is_hidden`, the two flags behind the new row gestures.
- *
- * `is_pinned` is the library's coarse ordering: a pinned show sorts above every unpinned one, and
- * `sort_order` still decides within each group. Nothing is seeded, because nothing was pinned
- * before this version existed and `0` says exactly that.
- *
- * `is_hidden` is a tombstone rather than a deletion. An episode id is derived from the feed's GUID,
- * so deleting a row only tells the next refresh to insert it again; flagging it keeps the row
- * around for `insertIgnoringExisting` to recognise and skip, which is what makes "remove from the
- * list" stick for an RSS show. Every query that backs a list filters on it. Again nothing is
- * seeded: no episode was dismissed before the gesture existed.
- *
- * Both `DEFAULT 0`s must stay in step with `@ColumnInfo(defaultValue = "0")` on
- * [md.borisveriga.bpodcat.core.database.model.PodcastEntity] and
- * [md.borisveriga.bpodcat.core.database.model.EpisodeEntity]: Room compares the migrated schema
- * against the entity definitions at open time and refuses to start if they disagree.
- *
- * Purely additive — no row is read or rewritten, so the migration is instant on any library size.
- */
-val MIGRATION_5_6: Migration = object : Migration(5, 6) {
-    override fun migrate(connection: SQLiteConnection) {
-        connection.execSQL("ALTER TABLE podcasts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
-        connection.execSQL("ALTER TABLE episodes ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0")
-    }
-}

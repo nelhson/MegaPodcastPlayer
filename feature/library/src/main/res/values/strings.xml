@@ -80,16 +80,4 @@
 
     <string name="library_message_no_new_episodes">No new episodes</string>
 
-
-    <!-- Swipe actions on a show. "Mark played" acts on every episode of the show, which is why it
-         is worded for the whole show rather than for one episode. -->
-    <string name="library_action_mark_played">Mark all played</string>
-    <string name="library_action_remove">Remove</string>
-    <string name="library_action_pin">Pin</string>
-    <string name="library_action_unpin">Unpin</string>
-    <!-- Snackbar after a show's episodes are all marked played; %1$s is the show title. -->
-    <string name="library_message_marked_played">Marked %1$s as played</string>
-    <!-- Snackbars after pinning and unpinning; %1$s is the show title. -->
-    <string name="library_message_pinned">Pinned %1$s to the top</string>
-    <string name="library_message_unpinned">Unpinned %1$s</string>
 </resources>

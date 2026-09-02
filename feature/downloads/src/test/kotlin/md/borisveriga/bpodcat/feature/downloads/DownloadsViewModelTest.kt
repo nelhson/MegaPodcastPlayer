@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
-import md.borisveriga.bpodcat.core.data.repository.PlaybackRepository
 import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -43,7 +42,6 @@ class DownloadsViewModelTest {
     private val downloadSettings = MutableStateFlow(DownloadSettings())
 
     private lateinit var downloadRepository: DownloadRepository
-    private lateinit var playbackRepository: PlaybackRepository
     private lateinit var episodePlayer: EpisodePlayer
     private lateinit var viewModel: DownloadsViewModel
 
@@ -77,11 +75,10 @@ class DownloadsViewModelTest {
     fun setUp() {
         downloadRepository = mockk(relaxed = true)
         episodePlayer = mockk(relaxed = true)
-        playbackRepository = mockk(relaxed = true)
         every { downloadRepository.observeDownloads() } returns downloads
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.freeBytes() } returns FREE_BYTES
-        viewModel = DownloadsViewModel(downloadRepository, playbackRepository, episodePlayer)
+        viewModel = DownloadsViewModel(downloadRepository, episodePlayer)
     }
 
     @Test
@@ -382,18 +379,6 @@ class DownloadsViewModelTest {
             coVerify(exactly = 0) { downloadRepository.removeAllDownloads() }
             expectNoEvents()
         }
-    }
-
-    @Test
-    fun `marking a download played leaves the file where it is`() = runTest {
-        downloads.value = listOf(download("a"))
-        viewModel.uiState.test { awaitItem() }
-
-        viewModel.markPlayed("a")
-
-        coVerify { playbackRepository.setPlayed("a", true) }
-        // This screen is about disk. Having listened to something is not a request to delete it.
-        coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
     }
 }
 

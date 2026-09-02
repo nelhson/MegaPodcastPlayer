@@ -4,7 +4,6 @@ import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import java.time.Duration
@@ -17,7 +16,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.data.playback.EpisodePlayer
 import md.borisveriga.bpodcat.core.data.repository.DownloadRepository
-import md.borisveriga.bpodcat.core.data.repository.PlaybackRepository
 import md.borisveriga.bpodcat.core.data.repository.PodcastRepository
 import md.borisveriga.bpodcat.core.model.DownloadSettings
 import md.borisveriga.bpodcat.core.model.DownloadState
@@ -55,7 +53,6 @@ class PodcastDetailViewModelTest {
     private lateinit var repository: PodcastRepository
     private lateinit var episodePlayer: EpisodePlayer
     private lateinit var downloadRepository: DownloadRepository
-    private lateinit var playbackRepository: PlaybackRepository
     private lateinit var viewModel: PodcastDetailViewModel
 
     private val podcast = Podcast(
@@ -92,7 +89,6 @@ class PodcastDetailViewModelTest {
         repository = mockk(relaxed = true)
         episodePlayer = mockk(relaxed = true)
         downloadRepository = mockk(relaxed = true)
-        playbackRepository = mockk(relaxed = true)
 
         every { repository.observePodcast(any()) } returns flowOf(podcast)
         every { repository.observeEpisodes(any()) } returns episodes
@@ -103,7 +99,6 @@ class PodcastDetailViewModelTest {
             repository = repository,
             episodePlayer = episodePlayer,
             downloadRepository = downloadRepository,
-            playbackRepository = playbackRepository,
             savedStateHandle = SavedStateHandle(
                 mapOf(PodcastDetailViewModel.PODCAST_ID_ARG to podcast.id),
             ),
@@ -485,59 +480,6 @@ class PodcastDetailViewModelTest {
             runCurrent()
 
             coVerify(exactly = 0) { repository.reorderEpisodes(any(), any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `marking an episode played records it`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-        viewModel.uiState.test { awaitItem() }
-
-        viewModel.markPlayed("a")
-
-        coVerify { playbackRepository.setPlayed("a", true) }
-    }
-
-    @Test
-    fun `removing an episode frees its download first, then dismisses it`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.COMPLETED))
-        viewModel.uiState.test { awaitItem() }
-
-        viewModel.removeEpisode("a")
-
-        // Order matters: once the row is dismissed nothing points at the file any more, so the
-        // download has to go while the episode is still reachable.
-        coVerifyOrder {
-            downloadRepository.removeDownload("a")
-            repository.hideEpisode("a")
-        }
-    }
-
-    @Test
-    fun `removing an episode that was never downloaded touches no download`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-        viewModel.uiState.test { awaitItem() }
-
-        viewModel.removeEpisode("a")
-
-        coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
-        coVerify { repository.hideEpisode("a") }
-    }
-
-    @Test
-    fun `removing an episode names it in the message`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.removeEpisode("a")
-
-            assertEquals(
-                PodcastDetailMessage.EpisodeRemoved("Episode a"),
-                awaitItem().message,
-            )
             cancelAndIgnoreRemainingEvents()
         }
     }

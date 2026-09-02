@@ -21,9 +21,6 @@ import java.time.Instant
  * @property autoRefresh whether the periodic refresh worker should include this show.
  * @property source where the episode list comes from. Defaults to [PodcastSource.RSS] so the
  *   many places that build a [Podcast] for a preview or a test need no change.
- * @property isPinned whether the user has pinned the show to the top of the library. Pinned shows
- *   sort above every unpinned one; within each group the hand-made order still decides. Defaults to
- *   false so the many places that build a [Podcast] for a preview or a test need no change.
  */
 data class Podcast(
     val id: String,
@@ -39,7 +36,6 @@ data class Podcast(
     val lastModified: String?,
     val autoRefresh: Boolean,
     val source: PodcastSource = PodcastSource.RSS,
-    val isPinned: Boolean = false,
 )
 
 /**

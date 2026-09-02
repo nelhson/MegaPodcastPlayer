@@ -64,22 +64,6 @@ data class EpisodeEntity(
      */
     @ColumnInfo(name = "sort_order", defaultValue = "0")
     val sortOrder: Int = 0,
-    /**
-     * Whether the user removed this episode from the show's list.
-     *
-     * The row is kept rather than deleted, and that is the whole point of the column. An episode id
-     * is derived from the feed's GUID, so `EpisodeDao.insertIgnoringExisting` recognises a row that
-     * is still there and leaves it alone; a deleted row would simply be inserted again by the next
-     * refresh, and the episode the user dismissed would reappear. A tombstone is what makes the
-     * dismissal stick.
-     *
-     * Every query that backs a list filters on it. `replaceForPodcast` is the one thing that clears
-     * it, because a rebuild throws the stored episodes away and starts from the feed.
-     *
-     * The `defaultValue` has to match the `DEFAULT 0` in `MIGRATION_5_6` exactly.
-     */
-    @ColumnInfo(name = "is_hidden", defaultValue = "0")
-    val isHidden: Boolean = false,
 )
 
 /** Maps a Room row to the domain model. */

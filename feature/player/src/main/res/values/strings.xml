@@ -58,13 +58,10 @@
         <item quantity="other">Up next · %1$d episodes</item>
     </plurals>
 
+    <!-- %1$s is the episode title; the button is reached out of the list's reading order. -->
+    <string name="player_remove_from_queue">Remove %1$s from the queue</string>
+
     <!-- %1$s is the player's own error text. -->
     <string name="player_error">Playback problem: %1$s</string>
 
-
-    <!-- Swipe actions on a queued episode. Short, because they are drawn as labels on the
-         revealed buttons, and doubled as TalkBack actions on a row that has already said which
-         episode it is. -->
-    <string name="queue_action_mark_played">Mark played</string>
-    <string name="queue_action_remove">Remove</string>
 </resources>

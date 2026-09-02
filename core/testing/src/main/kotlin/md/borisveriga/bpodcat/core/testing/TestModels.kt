@@ -87,7 +87,6 @@ fun testPodcast(
     lastModified: String? = null,
     autoRefresh: Boolean = true,
     source: PodcastSource = PodcastSource.RSS,
-    isPinned: Boolean = false,
 ): Podcast = Podcast(
     id = id,
     itunesId = itunesId,
@@ -102,5 +101,4 @@ fun testPodcast(
     lastModified = lastModified,
     autoRefresh = autoRefresh,
     source = source,
-    isPinned = isPinned,
 )

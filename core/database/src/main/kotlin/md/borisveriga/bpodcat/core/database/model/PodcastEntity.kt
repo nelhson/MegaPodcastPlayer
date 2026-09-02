@@ -53,17 +53,6 @@ data class PodcastEntity(
      */
     @ColumnInfo(name = "sort_order", defaultValue = "0")
     val sortOrder: Int = 0,
-    /**
-     * Whether the user pinned this show to the top of the library.
-     *
-     * A second, coarser ordering above [sortOrder] rather than a reserved block of positions: a
-     * library the user drags around would have to renumber every row to keep such a block intact,
-     * and a refresh or a new subscription could walk into the middle of it. A flag cannot drift.
-     *
-     * As with [source], the `defaultValue` has to match the `DEFAULT 0` in `MIGRATION_5_6` exactly.
-     */
-    @ColumnInfo(name = "is_pinned", defaultValue = "0")
-    val isPinned: Boolean = false,
 )
 
 /**
@@ -96,7 +85,6 @@ fun PodcastEntity.asExternalModel(): Podcast = Podcast(
     lastModified = lastModified,
     autoRefresh = autoRefresh,
     source = source,
-    isPinned = isPinned,
 )
 
 /** Maps a joined row to the domain model. */
@@ -122,5 +110,4 @@ fun Podcast.asEntity(): PodcastEntity = PodcastEntity(
     lastModified = lastModified,
     autoRefresh = autoRefresh,
     source = source,
-    isPinned = isPinned,
 )
