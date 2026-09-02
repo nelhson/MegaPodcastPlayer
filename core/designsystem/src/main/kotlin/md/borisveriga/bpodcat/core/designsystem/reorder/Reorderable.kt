@@ -1,6 +1,5 @@
 package md.borisveriga.bpodcat.core.designsystem.reorder
 
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -26,6 +25,9 @@ import androidx.compose.ui.unit.IntSize
  * show's episode list needed the same gesture. Two things had to widen: the hit test, which was a
  * scalar comparison against [LazyListState]'s one-dimensional offsets and is now a rectangle test
  * so a grid works too, and the way a drag is started, since a grid tile has no room for a handle.
+ *
+ * The handle has since gone entirely; [reorderableLongPressDrag] is the one way to start a drag,
+ * for the reasons given there.
  *
  * Everything else is unchanged, and all of it is load-bearing — see [ReorderableState].
  */
@@ -292,34 +294,17 @@ private fun ReorderableItem.contains(point: Offset): Boolean =
         point.y < offset.y + size.height
 
 /**
- * Starts a reorder drag from a dedicated handle.
- *
- * Preferred wherever there is room for one: a handle gives the gesture a visible target, and it
- * leaves the item itself free to be a button. See [reorderableLongPressDrag] for the case where
- * there is no room.
- *
- * @param state the reorder state to drive.
- * @param key the dragged item's key.
- */
-fun <T> Modifier.reorderableHandle(state: ReorderableState<T>, key: Any): Modifier =
-    pointerInput(key) {
-        detectDragGestures(
-            onDragStart = { state.onDragStart(key) },
-            onDragEnd = { state.onDragEnd() },
-            onDragCancel = { state.onDragCancel() },
-            onDrag = { change, amount ->
-                change.consume()
-                state.onDrag(amount)
-            },
-        )
-    }
-
-/**
  * Starts a reorder drag from a long press on the item itself.
  *
- * For items with nowhere to put a handle — a grid tile is artwork edge to edge, and carving a grip
- * out of it would cost the cover the space it exists to show. The long press is what keeps the
- * gesture from fighting the grid's own scrolling.
+ * The only way in. There used to be a second one — a `ReorderHandle`, a grip drawn at the end of
+ * every reorderable row — and it was removed because it cost every row a permanent 48dp of width
+ * to advertise a gesture most taps on that row are not. A grid tile never had room for one anyway,
+ * so the long press already existed and already worked; rows now share it, and the width it frees
+ * goes to the title.
+ *
+ * The long press is also what keeps the gesture from fighting the list's own scrolling, and what
+ * lets a row carry a swipe gesture as well: a swipe starts on movement, a reorder starts on
+ * holding still, so neither can be mistaken for the other.
  *
  * @param state the reorder state to drive.
  * @param key the dragged item's key.

@@ -12,6 +12,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,7 +43,12 @@ import org.robolectric.annotation.Config
  * the interesting half. A seed that got the ranking wrong would not fail to open — it would
  * silently scramble the library the first time anyone dragged anything.
  *
- * Every open here chains the whole migration list, which also proves the three compose.
+ * `MIGRATION_5_6` only adds two flag columns, so — like `MIGRATION_3_4` — the real test is Room's
+ * own schema validation at open, which every case here performs. The one assertion worth making
+ * beyond that is that both flags start clear, since a default that came out wrong would pin or
+ * hide rows nobody asked to pin or hide.
+ *
+ * Every open here chains the whole migration list, which also proves the five compose.
  *
  * `MigrationTestHelper` is deliberately not used: under Robolectric it wants the exported schema
  * JSON on the asset path, which means extra source-set plumbing for no extra safety, since the
@@ -69,7 +75,13 @@ class MigrationTest {
         writeVersion1Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -98,7 +110,13 @@ class MigrationTest {
         writeVersion1Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -178,7 +196,13 @@ class MigrationTest {
         writeVersion2Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -211,7 +235,13 @@ class MigrationTest {
         writeVersion2Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -228,7 +258,13 @@ class MigrationTest {
         writeVersion3Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -258,7 +294,13 @@ class MigrationTest {
         )
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -329,7 +371,13 @@ class MigrationTest {
         writeVersion4Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -352,7 +400,13 @@ class MigrationTest {
         writeVersion4Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {
@@ -367,11 +421,48 @@ class MigrationTest {
     }
 
     @Test
+    fun `a library that predates the row flags arrives with both of them clear`() = runTest {
+        writeVersion4Database()
+
+        val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
+            .build()
+
+        try {
+            val library = database.podcastDao().observeAllWithCounts().first()
+            assertTrue(library.none { it.podcast.isPinned })
+
+            // Every episode still visible is the same statement as "nothing was hidden": the show
+            // queries filter dismissed rows out, so a wrong default would show up as a short list.
+            assertEquals(
+                listOf("yt-mid", "yt-new", "yt-old", "yt-undated"),
+                database.episodeDao().observeByPodcast("podcast-yt").first()
+                    .map { it.id }
+                    .sorted(),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun `the seed leaves rss shows alone`() = runTest {
         writeVersion4Database()
 
         val database = Room.databaseBuilder(context, BPodcatDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
             .build()
 
         try {

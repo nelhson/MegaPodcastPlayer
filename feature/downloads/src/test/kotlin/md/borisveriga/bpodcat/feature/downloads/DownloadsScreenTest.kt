@@ -1,11 +1,15 @@
 package md.borisveriga.bpodcat.feature.downloads
 
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -27,6 +31,7 @@ import org.robolectric.annotation.Config
  * Wi-Fi appeared nowhere at all — and the selection has to act on exactly what was picked, since
  * the action it leads to deletes files.
  */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class DownloadsScreenTest {
@@ -62,6 +67,8 @@ class DownloadsScreenTest {
         downloads: List<EpisodeWithShow>,
         unmeteredOnly: Boolean = true,
         onRemoveSelected: (Set<String>) -> Unit = {},
+        onEpisodeRemove: (String) -> Unit = {},
+        onEpisodeMarkPlayed: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             BPodcatTheme {
@@ -79,7 +86,8 @@ class DownloadsScreenTest {
                     onEpisodeClick = {},
                     onEpisodeQueue = {},
                     onEpisodeRetry = {},
-                    onEpisodeRemove = {},
+                    onEpisodeRemove = onEpisodeRemove,
+                    onEpisodeMarkPlayed = onEpisodeMarkPlayed,
                     onRemoveSelected = onRemoveSelected,
                     onBrowseLibrary = {},
                     onMessageShown = {},
@@ -90,21 +98,21 @@ class DownloadsScreenTest {
 
     @Test
     fun `a download waiting for wi-fi says which kind of waiting it is doing`() {
-        setScreen(listOf(download("a", state = DownloadState.QUEUED)))
+        setScreen(downloads = listOf(download("a", state = DownloadState.QUEUED)))
 
         composeRule.onNodeWithText("Waiting for Wi-Fi").assertExists()
     }
 
     @Test
     fun `with wi-fi-only off, a queued download says only that it is waiting`() {
-        setScreen(listOf(download("a", state = DownloadState.QUEUED)), unmeteredOnly = false)
+        setScreen(downloads = listOf(download("a", state = DownloadState.QUEUED)), unmeteredOnly = false)
 
         composeRule.onNodeWithText("Waiting to download").assertExists()
     }
 
     @Test
     fun `a failed download is visible and names the way out`() {
-        setScreen(listOf(download("a", state = DownloadState.FAILED)))
+        setScreen(downloads = listOf(download("a", state = DownloadState.FAILED)))
 
         composeRule.onNodeWithText("Download failed — tap to try again").assertExists()
     }
@@ -112,7 +120,7 @@ class DownloadsScreenTest {
     @Test
     fun `a transfer in progress shows how far it has got`() {
         setScreen(
-            listOf(download("a", state = DownloadState.DOWNLOADING, downloadPercent = 42f)),
+            downloads = listOf(download("a", state = DownloadState.DOWNLOADING, downloadPercent = 42f)),
         )
 
         composeRule.onNodeWithText("Downloading 42%").assertExists()
@@ -120,7 +128,7 @@ class DownloadsScreenTest {
 
     @Test
     fun `the storage card draws what is stored against what is left`() {
-        setScreen(listOf(download("a")))
+        setScreen(downloads = listOf(download("a")))
 
         composeRule.onNodeWithText("1 episode · 90 MB").assertExists()
         composeRule.onNodeWithContentDescription("90 MB downloaded, 4.0 GB free").assertExists()
@@ -128,7 +136,7 @@ class DownloadsScreenTest {
 
     @Test
     fun `a long press starts a selection and offers what to do with it`() {
-        setScreen(listOf(download("a"), download("b")))
+        setScreen(downloads = listOf(download("a"), download("b")))
 
         // Nothing is selected to begin with, so the bar is not there.
         composeRule.onNodeWithText("1 selected").assertDoesNotExist()
@@ -142,7 +150,7 @@ class DownloadsScreenTest {
     @Test
     fun `removing a selection confirms first, then acts on exactly what was picked`() {
         var removed: Set<String>? = null
-        setScreen(listOf(download("a"), download("b")), onRemoveSelected = { removed = it })
+        setScreen(downloads = listOf(download("a"), download("b")), onRemoveSelected = { removed = it })
 
         composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
         composeRule.onNodeWithContentDescription("Remove the selected downloads").performClick()
@@ -159,7 +167,7 @@ class DownloadsScreenTest {
     @Test
     fun `cancelling the confirmation leaves the downloads alone`() {
         var removed: Set<String>? = null
-        setScreen(listOf(download("a")), onRemoveSelected = { removed = it })
+        setScreen(downloads = listOf(download("a")), onRemoveSelected = { removed = it })
 
         composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
         composeRule.onNodeWithContentDescription("Remove the selected downloads").performClick()
@@ -175,7 +183,7 @@ class DownloadsScreenTest {
     fun `select all picks up every row`() {
         var removed: Set<String>? = null
         setScreen(
-            listOf(download("a"), download("b"), download("c")),
+            downloads = listOf(download("a"), download("b"), download("c")),
             onRemoveSelected = { removed = it },
         )
 
@@ -192,7 +200,7 @@ class DownloadsScreenTest {
 
     @Test
     fun `clearing the selection puts the row actions back`() {
-        setScreen(listOf(download("a")))
+        setScreen(downloads = listOf(download("a")))
 
         composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
         // While a selection exists every row means "add me to it", so its own buttons stand down.
@@ -203,5 +211,47 @@ class DownloadsScreenTest {
 
         composeRule.onNodeWithText("1 selected").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Downloaded, remove from device").assertExists()
+    }
+
+    @Test
+    fun `a finished download can be marked played without a swipe`() {
+        var marked: String? = null
+        setScreen(
+            downloads = listOf(download("a", state = DownloadState.COMPLETED)),
+            onEpisodeMarkPlayed = { marked = it },
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Mark played")
+
+        assertEquals("a", marked)
+    }
+
+    @Test
+    fun `a download still in flight offers only deletion`() {
+        // Nothing has been listened to yet, so "mark played" would be an action about an episode
+        // the user has not been able to hear.
+        setScreen(downloads = listOf(download("a", state = DownloadState.DOWNLOADING)))
+
+        composeRule.onNodeWithText("Episode a").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Delete").assertIsDisplayed()
+        composeRule.onNodeWithText("Mark played").assertDoesNotExist()
+    }
+
+    @Test
+    fun `tapping the revealed delete button frees the download`() {
+        var removed: String? = null
+        setScreen(
+            downloads = listOf(download("a", state = DownloadState.COMPLETED)),
+            onEpisodeRemove = { removed = it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Delete").performClick()
+
+        assertEquals("a", removed)
     }
 }

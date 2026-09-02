@@ -53,8 +53,10 @@ class LibraryViewModelTest {
     private fun withCounts(
         id: String,
         newEpisodeCount: Int = 0,
+        title: String = "Show $id",
+        isPinned: Boolean = false,
     ) = PodcastWithCounts(
-        podcast = testPodcast(id = id),
+        podcast = testPodcast(id = id, title = title, isPinned = isPinned),
         episodeCount = 10,
         newEpisodeCount = newEpisodeCount,
         downloadedCount = 0,
@@ -341,6 +343,54 @@ class LibraryViewModelTest {
             runCurrent()
 
             coVerify(exactly = 0) { repository.reorderLibrary(any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `pinning a show records the new state and says which way it went`() = runTest {
+        val entry = withCounts("a", title = "Acquired")
+        library.value = listOf(entry)
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.togglePin(entry)
+
+            coVerify { repository.setPinned("a", true) }
+            assertEquals(LibraryMessage.PinChanged("Acquired", pinned = true), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `unpinning an already pinned show releases it`() = runTest {
+        val entry = withCounts("a", title = "Acquired", isPinned = true)
+        library.value = listOf(entry)
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.togglePin(entry)
+
+            coVerify { repository.setPinned("a", false) }
+            assertEquals(LibraryMessage.PinChanged("Acquired", pinned = false), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `marking a show played names it in the message`() = runTest {
+        val entry = withCounts("a", title = "Acquired")
+        library.value = listOf(entry)
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.markAllPlayed(entry)
+
+            coVerify { repository.markAllPlayed("a") }
+            assertEquals(LibraryMessage.MarkedPlayed("Acquired"), awaitItem().message)
             cancelAndIgnoreRemainingEvents()
         }
     }

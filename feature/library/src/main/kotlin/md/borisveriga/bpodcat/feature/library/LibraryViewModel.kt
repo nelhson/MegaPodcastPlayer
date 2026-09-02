@@ -64,6 +64,24 @@ sealed interface LibraryMessage {
      * @property title the removed show's title.
      */
     data class Removed(val title: String) : LibraryMessage
+
+    /**
+     * Every episode of a show was marked played.
+     *
+     * @property title the show's title.
+     */
+    data class MarkedPlayed(val title: String) : LibraryMessage
+
+    /**
+     * A show was pinned to the top of the library, or released.
+     *
+     * One message for both directions rather than two, because the pair only ever differ in a
+     * verb and the screen has to choose the wording from [pinned] either way.
+     *
+     * @property title the show's title.
+     * @property pinned true when the show is now pinned.
+     */
+    data class PinChanged(val title: String, val pinned: Boolean) : LibraryMessage
 }
 
 /**
@@ -182,6 +200,39 @@ class LibraryViewModel @Inject constructor(
             repository.remove(podcast.podcast.id)
             transientState.value = transientState.value.copy(
                 message = LibraryMessage.Removed(podcast.podcast.title),
+            )
+        }
+    }
+
+    /**
+     * Marks every episode of a show as played.
+     *
+     * @param podcast the show to mark; its title is echoed back in the confirmation message.
+     */
+    fun markAllPlayed(podcast: PodcastWithCounts) {
+        viewModelScope.launch {
+            repository.markAllPlayed(podcast.podcast.id)
+            transientState.value = transientState.value.copy(
+                message = LibraryMessage.MarkedPlayed(podcast.podcast.title),
+            )
+        }
+    }
+
+    /**
+     * Pins a show to the top of the library, or releases one that is already pinned.
+     *
+     * The new state is derived from what the caller was looking at rather than read back from the
+     * database, which is what makes a double tap land on the state the second tap asked for rather
+     * than undoing itself.
+     *
+     * @param podcast the show to pin or release.
+     */
+    fun togglePin(podcast: PodcastWithCounts) {
+        val pinned = !podcast.podcast.isPinned
+        viewModelScope.launch {
+            repository.setPinned(podcast.podcast.id, pinned)
+            transientState.value = transientState.value.copy(
+                message = LibraryMessage.PinChanged(podcast.podcast.title, pinned),
             )
         }
     }

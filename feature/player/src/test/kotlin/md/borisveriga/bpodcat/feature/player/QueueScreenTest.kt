@@ -6,6 +6,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -68,6 +70,7 @@ class QueueScreenTest {
         onPlay: (String) -> Unit = {},
         onRemove: (String) -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
+        onMarkPlayed: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             BPodcatTheme {
@@ -76,6 +79,7 @@ class QueueScreenTest {
                     onBack = {},
                     onPlay = onPlay,
                     onRemove = onRemove,
+                    onMarkPlayed = onMarkPlayed,
                     onMove = onMove,
                 )
             }
@@ -142,7 +146,41 @@ class QueueScreenTest {
         setContent(onRemove = { removed = it })
 
         composeRule.onNodeWithText("Episode c")
-            .performCustomAccessibilityActionWithLabel("Remove Episode c from the queue")
+            .performCustomAccessibilityActionWithLabel("Remove")
+
+        assertEquals("c", removed)
+    }
+
+    @Test
+    fun `a queued episode can be marked played without a swipe`() {
+        var marked: String? = null
+        setContent(onMarkPlayed = { marked = it })
+
+        composeRule.onNodeWithText("Episode c")
+            .performCustomAccessibilityActionWithLabel("Mark played")
+
+        assertEquals("c", marked)
+    }
+
+    @Test
+    fun `swiping a queued row open reveals both of the things it can do`() {
+        setContent()
+
+        composeRule.onNodeWithText("Episode c").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Mark played").assertIsDisplayed()
+        composeRule.onNodeWithText("Remove").assertIsDisplayed()
+    }
+
+    @Test
+    fun `tapping the revealed remove button drops the episode`() {
+        var removed: String? = null
+        setContent(onRemove = { removed = it })
+
+        composeRule.onNodeWithText("Episode c").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Remove").performClick()
 
         assertEquals("c", removed)
     }

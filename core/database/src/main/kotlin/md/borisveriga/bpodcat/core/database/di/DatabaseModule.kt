@@ -16,6 +16,7 @@ import md.borisveriga.bpodcat.core.database.migration.MIGRATION_1_2
 import md.borisveriga.bpodcat.core.database.migration.MIGRATION_2_3
 import md.borisveriga.bpodcat.core.database.migration.MIGRATION_3_4
 import md.borisveriga.bpodcat.core.database.migration.MIGRATION_4_5
+import md.borisveriga.bpodcat.core.database.migration.MIGRATION_5_6
 
 /** Provides the Room database and its DAOs. */
 @Module
@@ -33,7 +34,13 @@ object DatabaseModule {
     )
         // Deliberately no fallbackToDestructiveMigration(): a forgotten schema change must fail
         // loudly at open rather than silently wipe the user's library and playback positions.
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        .addMigrations(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+        )
         .build()
 
     @Provides

@@ -225,4 +225,32 @@ interface PodcastRepository {
 
     /** Enables or disables background refresh for one show. */
     suspend fun setAutoRefresh(podcastId: String, enabled: Boolean)
+
+    /**
+     * Pins a show to the top of the library, or releases it.
+     *
+     * Pinning is an ordering above the hand-made one rather than a move within it, so unpinning
+     * puts the show back exactly where it was.
+     *
+     * @param podcastId the show to pin or release.
+     * @param pinned true to pin.
+     */
+    suspend fun setPinned(podcastId: String, pinned: Boolean)
+
+    /**
+     * Marks every episode of one show as played, and forgets their positions.
+     *
+     * @param podcastId the show to mark.
+     */
+    suspend fun markAllPlayed(podcastId: String)
+
+    /**
+     * Removes one episode from its show's list, for good.
+     *
+     * Recorded as a tombstone rather than a deletion: the row has to survive so the next refresh
+     * recognises the episode and does not insert it again. The queue entry goes with it.
+     *
+     * @param episodeId the episode to dismiss.
+     */
+    suspend fun hideEpisode(episodeId: String)
 }

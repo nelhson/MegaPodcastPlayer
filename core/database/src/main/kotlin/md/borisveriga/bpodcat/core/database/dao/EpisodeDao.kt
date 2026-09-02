@@ -18,11 +18,16 @@ import md.borisveriga.bpodcat.core.model.DownloadState
 @Dao
 interface EpisodeDao {
 
-    /** Observes one show's episodes, newest first; episodes with no date sort last. */
+    /**
+     * Observes one show's episodes, newest first; episodes with no date sort last.
+     *
+     * Dismissed episodes are excluded. Their rows survive so a refresh recognises them and does not
+     * insert them again — see [EpisodeEntity.isHidden] — but nothing is meant to draw them.
+     */
     @Query(
         """
         SELECT * FROM episodes
-        WHERE podcast_id = :podcastId
+        WHERE podcast_id = :podcastId AND is_hidden = 0
         ORDER BY published_at IS NULL, published_at DESC
         """,
     )
@@ -39,7 +44,7 @@ interface EpisodeDao {
     @Query(
         """
         SELECT * FROM episodes
-        WHERE podcast_id = :podcastId
+        WHERE podcast_id = :podcastId AND is_hidden = 0
         ORDER BY sort_order ASC
         """,
     )
@@ -49,7 +54,7 @@ interface EpisodeDao {
     @Query(
         """
         SELECT * FROM episodes
-        WHERE download_state = 'COMPLETED'
+        WHERE download_state = 'COMPLETED' AND is_hidden = 0
         ORDER BY published_at IS NULL, published_at DESC
         """,
     )
@@ -75,6 +80,7 @@ interface EpisodeDao {
         FROM episodes e
         INNER JOIN podcasts p ON p.id = e.podcast_id
         WHERE e.download_state IN ('FAILED', 'DOWNLOADING', 'QUEUED', 'COMPLETED')
+          AND e.is_hidden = 0
         ORDER BY
             CASE e.download_state
                 WHEN 'FAILED' THEN 0
@@ -238,6 +244,9 @@ interface EpisodeDao {
         episodes: List<EpisodeEntity>,
         handOrdered: Boolean = false,
     ) {
+        // Every tombstone goes with the rows, which is correct: a rebuild is the user saying the
+        // stored list is wrong, and a dismissal recorded against the old list has nothing to say
+        // about the new one.
         deleteByPodcast(podcastId)
         // Not badged as new, for the same reason a freshly added show is not: everything arrived at
         // once, so marking the whole list unseen would say nothing about any of it.
@@ -318,6 +327,45 @@ interface EpisodeDao {
     suspend fun setPlayed(id: String, isPlayed: Boolean, positionMs: Long)
 
     /**
+     * Marks every episode of one show as played.
+     *
+     * `position_ms` is zeroed with it, for the same reason [setPlayed] takes a position: a finished
+     * episode that still remembers where it was left would offer to resume something the user has
+     * just declared done.
+     *
+     * One statement rather than a read followed by a write per episode: a show can hold a few
+     * thousand rows, and this is one tap.
+     */
+    @Query("UPDATE episodes SET is_played = 1, position_ms = 0 WHERE podcast_id = :podcastId")
+    suspend fun markAllPlayed(podcastId: String)
+
+    @Query("UPDATE episodes SET is_hidden = :hidden WHERE id = :id")
+    suspend fun setHidden(id: String, hidden: Boolean)
+
+    @Query("DELETE FROM queue WHERE episode_id = :episodeId")
+    suspend fun deleteQueueEntry(episodeId: String)
+
+    /**
+     * Removes one episode from the show's list.
+     *
+     * A flag rather than a `DELETE`, because an episode id is derived from the feed's GUID: the row
+     * has to stay for [insertIgnoringExisting] to recognise it and skip it, or the next refresh
+     * would put the episode straight back. See [EpisodeEntity.isHidden].
+     *
+     * The queue entry goes explicitly. Nothing deletes the episode row, so the `ON DELETE CASCADE`
+     * on `queue.episode_id` never fires, and an episode the user has just removed from a list would
+     * otherwise still play its way to the front of the queue. Reaching into `queue` from here — and
+     * not through `QueueDao` — is what lets both statements share one transaction.
+     *
+     * @param id the episode to dismiss.
+     */
+    @Transaction
+    suspend fun hide(id: String) {
+        setHidden(id, hidden = true)
+        deleteQueueEntry(id)
+    }
+
+    /**
      * One show's downloaded episodes, newest first — the order the keep-limit sweep expects.
      *
      * Matches [observeDownloaded]'s ordering so that "the oldest downloads" means the same thing
@@ -326,7 +374,7 @@ interface EpisodeDao {
     @Query(
         """
         SELECT * FROM episodes
-        WHERE podcast_id = :podcastId AND download_state = 'COMPLETED'
+        WHERE podcast_id = :podcastId AND download_state = 'COMPLETED' AND is_hidden = 0
         ORDER BY published_at IS NULL, published_at DESC
         """,
     )

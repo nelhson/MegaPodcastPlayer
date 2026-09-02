@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.AlertDialog
@@ -53,6 +54,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -69,6 +72,9 @@ import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.SelectionToolbar
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
+import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -100,6 +106,7 @@ fun DownloadsRoute(
         onEpisodeQueue = viewModel::addToQueue,
         onEpisodeRetry = viewModel::retry,
         onEpisodeRemove = viewModel::remove,
+        onEpisodeMarkPlayed = viewModel::markPlayed,
         onRemoveSelected = viewModel::removeSelected,
         onBrowseLibrary = onBrowseLibrary,
         onMessageShown = viewModel::onMessageShown,
@@ -117,6 +124,7 @@ fun DownloadsRoute(
  * @param onEpisodeRetry retry handler for a failed download.
  * @param onEpisodeRemove delete-this-download handler; cancels the transfer when it has not
  *   finished.
+ * @param onEpisodeMarkPlayed marks one episode played, from its swipe actions.
  * @param onRemoveSelected delete-these-downloads handler; the screen confirms first.
  * @param onBrowseLibrary empty-state action handler.
  * @param onMessageShown called once a snackbar message has been displayed.
@@ -130,6 +138,7 @@ fun DownloadsScreen(
     onEpisodeQueue: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
     onEpisodeRemove: (String) -> Unit,
+    onEpisodeMarkPlayed: (String) -> Unit,
     onRemoveSelected: (Set<String>) -> Unit,
     onBrowseLibrary: () -> Unit,
     onMessageShown: () -> Unit,
@@ -213,6 +222,7 @@ fun DownloadsScreen(
                     onEpisodeRetry = onEpisodeRetry,
                     onEpisodeQueue = onEpisodeQueue,
                     onEpisodeRemove = onEpisodeRemove,
+                    onEpisodeMarkPlayed = onEpisodeMarkPlayed,
                     onToggleSelected = { id ->
                         selection = if (id in selectedIds) selectedIds - id else selectedIds + id
                     },
@@ -265,6 +275,7 @@ fun DownloadsScreen(
  * @param onEpisodeRetry tap handler for a failed download.
  * @param onEpisodeQueue add-to-queue handler.
  * @param onEpisodeRemove delete-or-cancel handler.
+ * @param onEpisodeMarkPlayed marks one episode played.
  * @param onToggleSelected adds or removes one row from the selection.
  */
 @Composable
@@ -276,6 +287,7 @@ private fun DownloadList(
     onEpisodeRetry: (String) -> Unit,
     onEpisodeQueue: (String) -> Unit,
     onEpisodeRemove: (String) -> Unit,
+    onEpisodeMarkPlayed: (String) -> Unit,
     onToggleSelected: (String) -> Unit,
 ) {
     val resources = LocalResources.current
@@ -298,58 +310,89 @@ private fun DownloadList(
             val isCompleted = episode.downloadState == DownloadState.COMPLETED
             val isFailed = episode.downloadState == DownloadState.FAILED
 
-            EpisodeRow(
-                title = episode.title,
-                showTitle = download.showTitle,
-                metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
-                artworkUrl = download.artworkUrl,
-                isPlayed = isCompleted && episode.isPlayed,
-                playedFraction = if (isCompleted) episode.playedFraction else 0f,
-                isSelected = episode.id in selectedIds,
-                // What a tap does follows the state, because that is the only thing a tap could
-                // sensibly mean: a finished episode plays, a failed one retries, and a transfer in
-                // progress does nothing at all — there is no local audio to play, and streaming
-                // instead would spend mobile data nobody asked to spend. While a selection exists,
-                // every row means "add me to it" instead; that is what selection mode is.
-                onClick = when {
-                    selecting -> ({ onToggleSelected(episode.id) })
-                    isCompleted -> ({ onEpisodeClick(episode.id) })
-                    isFailed -> ({ onEpisodeRetry(episode.id) })
-                    else -> null
-                },
-                onLongClick = { onToggleSelected(episode.id) },
-                longClickLabel = stringResource(R.string.downloads_select),
-                trailing = {
-                    // Nothing to queue until the audio is on the device, and nothing to press at
-                    // all while the row is standing in for a selection.
-                    if (isCompleted && !selecting) {
-                        IconButton(onClick = { onEpisodeQueue(episode.id) }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                // These buttons are reached out of the list's reading order, so
-                                // each one names the episode it acts on.
-                                contentDescription = stringResource(
-                                    R.string.downloads_queue_episode,
-                                    episode.title,
-                                ),
+            // "Delete" rather than "remove from list": this screen is a view of what is on disk,
+            // so what a swipe offers to throw away is the file, and the episode stays in its
+            // show. Marking played is offered only where it means something — an episode still
+            // downloading has not been listened to.
+            val actions = listOfNotNull(
+                SwipeAction(
+                    icon = Icons.Rounded.DoneAll,
+                    label = stringResource(R.string.downloads_action_mark_played),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    onClick = { onEpisodeMarkPlayed(episode.id) },
+                ).takeIf { isCompleted },
+                SwipeAction(
+                    icon = Icons.Rounded.Delete,
+                    label = stringResource(R.string.downloads_action_delete),
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    onClick = { onEpisodeRemove(episode.id) },
+                ),
+            )
+
+            SwipeActionsRow(
+                actions = actions,
+                // A selection owns every row while it exists: a swipe during one would be a
+                // gesture aimed at a single episode in a mode that is about several.
+                enabled = !selecting,
+            ) {
+                EpisodeRow(
+                    modifier = Modifier.semantics {
+                        customActions = actions.asAccessibilityActions()
+                    },
+                    title = episode.title,
+                    showTitle = download.showTitle,
+                    metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
+                    artworkUrl = download.artworkUrl,
+                    isPlayed = isCompleted && episode.isPlayed,
+                    playedFraction = if (isCompleted) episode.playedFraction else 0f,
+                    isSelected = episode.id in selectedIds,
+                    // What a tap does follows the state, because that is the only thing a tap could
+                    // sensibly mean: a finished episode plays, a failed one retries, and a transfer in
+                    // progress does nothing at all — there is no local audio to play, and streaming
+                    // instead would spend mobile data nobody asked to spend. While a selection exists,
+                    // every row means "add me to it" instead; that is what selection mode is.
+                    onClick = when {
+                        selecting -> ({ onToggleSelected(episode.id) })
+                        isCompleted -> ({ onEpisodeClick(episode.id) })
+                        isFailed -> ({ onEpisodeRetry(episode.id) })
+                        else -> null
+                    },
+                    onLongClick = { onToggleSelected(episode.id) },
+                    longClickLabel = stringResource(R.string.downloads_select),
+                    trailing = {
+                        // Nothing to queue until the audio is on the device, and nothing to press at
+                        // all while the row is standing in for a selection.
+                        if (isCompleted && !selecting) {
+                            IconButton(onClick = { onEpisodeQueue(episode.id) }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                                    // These buttons are reached out of the list's reading order, so
+                                    // each one names the episode it acts on.
+                                    contentDescription = stringResource(
+                                        R.string.downloads_queue_episode,
+                                        episode.title,
+                                    ),
+                                )
+                            }
+                        }
+                        if (!selecting) {
+                            DownloadButton(
+                                state = episode.downloadState,
+                                progressPercent = episode.downloadPercent,
+                                // The button means what its own label says, which is not the same
+                                // action in every state: a failure asks to be tried again, and
+                                // anything else asks to be given back. Removing a failed download —
+                                // the one case neither control covers — is what the selection is for.
+                                onClick = {
+                                    if (isFailed) onEpisodeRetry(episode.id) else onEpisodeRemove(episode.id)
+                                },
                             )
                         }
-                    }
-                    if (!selecting) {
-                        DownloadButton(
-                            state = episode.downloadState,
-                            progressPercent = episode.downloadPercent,
-                            // The button means what its own label says, which is not the same
-                            // action in every state: a failure asks to be tried again, and
-                            // anything else asks to be given back. Removing a failed download —
-                            // the one case neither control covers — is what the selection is for.
-                            onClick = {
-                                if (isFailed) onEpisodeRetry(episode.id) else onEpisodeRemove(episode.id)
-                            },
-                        )
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
     }
 }
@@ -650,6 +693,7 @@ private fun DownloadsScreenPreview() {
             onEpisodeQueue = {},
             onEpisodeRetry = {},
             onEpisodeRemove = {},
+            onEpisodeMarkPlayed = {},
             onRemoveSelected = {},
             onBrowseLibrary = {},
             onMessageShown = {},

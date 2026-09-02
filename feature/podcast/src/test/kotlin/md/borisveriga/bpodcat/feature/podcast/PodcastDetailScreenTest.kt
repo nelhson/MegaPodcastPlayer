@@ -2,10 +2,13 @@ package md.borisveriga.bpodcat.feature.podcast
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -85,6 +88,8 @@ class PodcastDetailScreenTest {
         onAutoRefreshChange: (Boolean) -> Unit = {},
         onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
+        onEpisodeMarkPlayed: (String) -> Unit = {},
+        onEpisodeRemove: (String) -> Unit = {},
         isRebuilding: Boolean = false,
     ) {
         composeRule.setContent {
@@ -99,6 +104,8 @@ class PodcastDetailScreenTest {
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
                     onEpisodeDownloadToggle = {},
+                    onEpisodeMarkPlayed = onEpisodeMarkPlayed,
+                    onEpisodeRemove = onEpisodeRemove,
                     onEpisodeMove = onEpisodeMove,
                     onRefresh = {},
                     onAutoRefreshChange = onAutoRefreshChange,
@@ -129,7 +136,7 @@ class PodcastDetailScreenTest {
 
     @Test
     fun `a filter that matches nothing offers the full list back`() {
-        setScreen(listOf(episode("a")))
+        setScreen(episodes = listOf(episode("a")))
 
         composeRule.onNodeWithText("In progress").performClick()
 
@@ -143,7 +150,7 @@ class PodcastDetailScreenTest {
 
     @Test
     fun `an abandoned episode is in progress rather than unplayed`() {
-        setScreen(listOf(episode("started", positionMs = 600_000L), episode("fresh")))
+        setScreen(episodes = listOf(episode("started", positionMs = 600_000L), episode("fresh")))
 
         composeRule.onNodeWithText("Unplayed").performClick()
 
@@ -167,7 +174,7 @@ class PodcastDetailScreenTest {
     @Test
     fun `removing the show is behind the overflow, not next to the back arrow`() {
         var removals = 0
-        setScreen(listOf(episode("a")), onRemove = { removals++ })
+        setScreen(episodes = listOf(episode("a")), onRemove = { removals++ })
 
         composeRule.onNodeWithText("Remove this podcast").assertDoesNotExist()
 
@@ -180,7 +187,7 @@ class PodcastDetailScreenTest {
     @Test
     fun `the overflow can turn background refresh off, which nothing could before`() {
         var enabled: Boolean? = null
-        setScreen(listOf(episode("a")), autoRefresh = true, onAutoRefreshChange = { enabled = it })
+        setScreen(episodes = listOf(episode("a")), autoRefresh = true, onAutoRefreshChange = { enabled = it })
 
         composeRule.onNodeWithContentDescription("More actions").performClick()
         composeRule.onNodeWithContentDescription("Refreshing in the background").performClick()
@@ -191,7 +198,7 @@ class PodcastDetailScreenTest {
     @Test
     fun `rebuilding the list is behind the overflow and asks before it deletes`() {
         var rebuilds = 0
-        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
+        setScreen(episodes = listOf(episode("a")), onRebuild = { rebuilds++ })
 
         composeRule.onNodeWithText("Delete and reload all episodes").assertDoesNotExist()
 
@@ -210,7 +217,7 @@ class PodcastDetailScreenTest {
     @Test
     fun `cancelling the confirmation deletes nothing`() {
         var rebuilds = 0
-        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
+        setScreen(episodes = listOf(episode("a")), onRebuild = { rebuilds++ })
 
         composeRule.onNodeWithContentDescription("More actions").performClick()
         composeRule.onNodeWithText("Delete and reload all episodes").performClick()
@@ -257,7 +264,7 @@ class PodcastDetailScreenTest {
 
     @Test
     fun `a rebuild in flight leaves the list readable and says what it is doing`() {
-        setScreen(listOf(episode("a")), isRebuilding = true)
+        setScreen(episodes = listOf(episode("a")), isRebuilding = true)
 
         // The point of announcing it separately from an ordinary refresh: this one is about to
         // replace the very rows still on screen.
@@ -268,7 +275,7 @@ class PodcastDetailScreenTest {
 
     @Test
     fun `the description can be opened out and closed again`() {
-        setScreen(listOf(episode("a")))
+        setScreen(episodes = listOf(episode("a")))
 
         composeRule.onNodeWithText("Show more").performClick()
         composeRule.onNodeWithText("Show less").assertExists()
@@ -301,6 +308,41 @@ class PodcastDetailScreenTest {
             .assertHasNoCustomAccessibilityAction("Move up")
         composeRule.onNodeWithText("Episode b")
             .assertHasNoCustomAccessibilityAction("Move down")
+    }
+
+    @Test
+    fun `an episode can be removed from the list without a swipe`() {
+        var removed: String? = null
+        setScreen(episodes = listOf(episode("a")), onEpisodeRemove = { removed = it })
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityAction("Remove")
+
+        assertEquals("a", removed)
+    }
+
+    @Test
+    fun `an episode can be marked played without a swipe`() {
+        var marked: String? = null
+        setScreen(episodes = listOf(episode("a")), onEpisodeMarkPlayed = { marked = it })
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityAction("Mark played")
+
+        assertEquals("a", marked)
+    }
+
+    @Test
+    fun `swiping an rss episode open still offers both actions`() {
+        // An RSS show cannot be reordered, which used to mean its rows carried no gesture at all.
+        // The swipe is not tied to that.
+        setScreen(episodes = listOf(episode("a")), source = PodcastSource.RSS)
+
+        composeRule.onNodeWithText("Episode a").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Mark played").assertIsDisplayed()
+        composeRule.onNodeWithText("Remove").assertIsDisplayed()
     }
 }
 

@@ -467,4 +467,84 @@ class EpisodeDaoTest {
             episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.id },
         )
     }
+
+    @Test
+    fun `a dismissed episode leaves the show's list`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+
+        episodeDao.hide("a")
+
+        assertEquals(
+            listOf("b"),
+            episodeDao.observeByPodcast(podcast.id).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `a refresh does not bring a dismissed episode back`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        episodeDao.hide("a")
+
+        // The feed still lists it, because the publisher has not withdrawn it — which is exactly
+        // the case a deletion could not survive. The row is still there for the insert to skip.
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+
+        assertEquals(
+            listOf("b"),
+            episodeDao.observeByPodcast(podcast.id).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `dismissing an episode also takes it out of the queue`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        database.queueDao().replaceAll(listOf("a", "b"))
+
+        episodeDao.hide("a")
+
+        assertEquals(listOf("b"), database.queueDao().observeQueuedEpisodes().first().map { it.id })
+    }
+
+    @Test
+    fun `a dismissed episode is hidden from the ordered list too`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")), handOrdered = true)
+
+        episodeDao.hide("b")
+
+        assertEquals(
+            listOf("a"),
+            episodeDao.observeByPodcastOrdered(podcast.id).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `a rebuild clears the dismissals along with the rows they described`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        episodeDao.hide("a")
+
+        episodeDao.replaceForPodcast(podcast.id, listOf(episode("a"), episode("b")))
+
+        assertEquals(
+            listOf("a", "b"),
+            episodeDao.observeByPodcast(podcast.id).first().map { it.id }.sorted(),
+        )
+    }
+
+    @Test
+    fun `marking a show played finishes every episode and forgets their positions`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        episodeDao.updatePosition("a", 42_000L)
+
+        episodeDao.markAllPlayed(podcast.id)
+
+        val stored = episodeDao.observeByPodcast(podcast.id).first()
+        assertTrue(stored.all { it.isPlayed })
+        assertEquals(listOf(0L, 0L), stored.map { it.positionMs })
+    }
 }

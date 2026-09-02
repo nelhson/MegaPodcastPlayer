@@ -23,8 +23,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Badge
@@ -70,12 +73,13 @@ import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
 import md.borisveriga.bpodcat.core.designsystem.component.ShowTile
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
-import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
+import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
-import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
 import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.designsystem.theme.Motion
@@ -125,6 +129,9 @@ fun LibraryRoute(
         onPasteLinkClick = onPasteLinkClick,
         onOpenSettings = onOpenSettings,
         onMove = viewModel::move,
+        onMarkAllPlayed = viewModel::markAllPlayed,
+        onRemove = viewModel::remove,
+        onTogglePin = viewModel::togglePin,
         onLayoutChange = viewModel::setLayout,
         onRefresh = viewModel::refreshAll,
         onMessageShown = viewModel::onMessageShown,
@@ -142,6 +149,9 @@ fun LibraryRoute(
  * @param onOpenSettings opens the settings screen.
  * @param onMove applies a completed reorder, as positions within [LibraryUiState.podcasts].
  *   Called once on release rather than per frame: one gesture is one edit.
+ * @param onMarkAllPlayed marks every episode of one show played, from its swipe actions.
+ * @param onRemove unsubscribes from one show, from its swipe actions.
+ * @param onTogglePin pins one show to the top of the library, or releases it.
  * @param onLayoutChange grid/list toggle handler.
  * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
@@ -156,6 +166,9 @@ fun LibraryScreen(
     onPasteLinkClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onMove: (Int, Int) -> Unit,
+    onMarkAllPlayed: (PodcastWithCounts) -> Unit,
+    onRemove: (PodcastWithCounts) -> Unit,
+    onTogglePin: (PodcastWithCounts) -> Unit,
     onLayoutChange: (LibraryLayout) -> Unit,
     onRefresh: () -> Unit,
     onMessageShown: () -> Unit,
@@ -248,6 +261,9 @@ fun LibraryScreen(
                             podcasts = uiState.podcasts,
                             onPodcastClick = onPodcastClick,
                             onMove = onMove,
+                            onMarkAllPlayed = onMarkAllPlayed,
+                            onRemove = onRemove,
+                            onTogglePin = onTogglePin,
                         )
                     }
                 }
@@ -328,19 +344,33 @@ private fun ShowGrid(
 /**
  * The shows as rows, for a library too long to recognise by cover alone.
  *
+ * A row is held to move it and swiped left for the things there is no room to put on it. The grip
+ * that used to end every row is gone: it cost each one 48dp of permanent width to advertise a
+ * gesture, and the tiles above already proved a long press does the job without it.
+ *
  * @param podcasts the library.
  * @param onPodcastClick row tap handler.
  * @param onMove reports a finished reorder as positions in [podcasts].
+ * @param onMarkAllPlayed marks every episode of one show played.
+ * @param onRemove unsubscribes from one show.
+ * @param onTogglePin pins one show to the top, or releases it.
  */
 @Composable
 private fun ShowList(
     podcasts: List<PodcastWithCounts>,
     onPodcastClick: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onMarkAllPlayed: (PodcastWithCounts) -> Unit,
+    onRemove: (PodcastWithCounts) -> Unit,
+    onTogglePin: (PodcastWithCounts) -> Unit,
 ) {
     val resources = LocalResources.current
     val moveUp = stringResource(R.string.library_move_up)
     val moveDown = stringResource(R.string.library_move_down)
+    val markAllPlayed = stringResource(R.string.library_action_mark_played)
+    val remove = stringResource(R.string.library_action_remove)
+    val pin = stringResource(R.string.library_action_pin)
+    val unpin = stringResource(R.string.library_action_unpin)
     val listState = rememberLazyListState()
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(listState),
@@ -360,41 +390,83 @@ private fun ShowList(
         ) { index, entry ->
             val isDragging = drag.draggingKey == entry.podcast.id
 
-            ShowRow(
-                modifier = Modifier
-                    // On the tile/row itself, which merges its children: that merged node is
-                    // what a screen reader lands on, and a drag is invisible to one.
-                    .semantics { customActions = drag.moveActions(index, moveUp, moveDown) }
-                    .graphicsLayer {
-                        translationY = if (isDragging) drag.offset.y else 0f
-                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-                    },
-                title = entry.podcast.title,
-                author = entry.podcast.author,
-                metadata = entry.countsLine(resources),
-                artworkUrl = entry.podcast.artworkUrl,
-                source = entry.podcast.source,
-                stateDescription = entry.newEpisodeDescription(resources),
-                onClick = { onPodcastClick(entry.podcast.id) },
-                trailing = {
-                    // The same mark the grid puts on a cover. Without it the list would be the
-                    // layout that cannot answer "which of these has something new".
-                    if (entry.newEpisodeCount > 0) {
-                        Badge(
-                            containerColor = BPodcatTheme.colors.unplayed,
-                            contentColor = BPodcatTheme.colors.onUnplayed,
-                            // The row already announces "3 new episodes"; a bare number read out
-                            // after it would be the same fact, less usefully put.
-                            modifier = Modifier.clearAndSetSemantics {},
-                        ) {
-                            Text(text = entry.newEpisodeCount.toString())
-                        }
-                    }
-                    ReorderHandle(
-                        modifier = Modifier.reorderableHandle(drag, entry.podcast.id),
-                    )
-                },
+            val actions = listOf(
+                SwipeAction(
+                    icon = Icons.Rounded.PushPin,
+                    // One button, two meanings, because it is a toggle and the label has to say
+                    // which way it will go rather than what the show currently is.
+                    label = if (entry.podcast.isPinned) unpin else pin,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    onClick = { onTogglePin(entry) },
+                ),
+                SwipeAction(
+                    icon = Icons.Rounded.DoneAll,
+                    label = markAllPlayed,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    onClick = { onMarkAllPlayed(entry) },
+                ),
+                SwipeAction(
+                    icon = Icons.Rounded.Delete,
+                    label = remove,
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    onClick = { onRemove(entry) },
+                ),
             )
+
+            SwipeActionsRow(
+                actions = actions,
+                modifier = Modifier.graphicsLayer {
+                    translationY = if (isDragging) drag.offset.y else 0f
+                    shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+                },
+            ) {
+                ShowRow(
+                    modifier = Modifier
+                        // On the row itself, which merges its children: that merged node is
+                        // what a screen reader lands on, and neither gesture is visible to one.
+                        .semantics {
+                            customActions = drag.moveActions(index, moveUp, moveDown) +
+                                actions.asAccessibilityActions()
+                        }
+                        .reorderableLongPressDrag(drag, entry.podcast.id),
+                    title = entry.podcast.title,
+                    author = entry.podcast.author,
+                    metadata = entry.countsLine(resources),
+                    artworkUrl = entry.podcast.artworkUrl,
+                    source = entry.podcast.source,
+                    stateDescription = entry.newEpisodeDescription(resources),
+                    onClick = { onPodcastClick(entry.podcast.id) },
+                    trailing = {
+                        // The mark a pinned show carries in the list. The grid says the same thing
+                        // by position alone, but a row is a row and needs telling apart.
+                        if (entry.podcast.isPinned) {
+                            Icon(
+                                imageVector = Icons.Rounded.PushPin,
+                                // The row's own swipe action already says "Unpin", which is both
+                                // the state and the way out of it.
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // The same mark the grid puts on a cover. Without it the list would be the
+                        // layout that cannot answer "which of these has something new".
+                        if (entry.newEpisodeCount > 0) {
+                            Badge(
+                                containerColor = BPodcatTheme.colors.unplayed,
+                                contentColor = BPodcatTheme.colors.onUnplayed,
+                                // The row already announces "3 new episodes"; a bare number read
+                                // out after it would be the same fact, less usefully put.
+                                modifier = Modifier.clearAndSetSemantics {},
+                            ) {
+                                Text(text = entry.newEpisodeCount.toString())
+                            }
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -589,6 +661,14 @@ private fun PodcastWithCounts.newEpisodeDescription(resources: Resources): Strin
 private fun LibraryMessage.toText(resources: Resources): String = when (this) {
     is LibraryMessage.Removed -> resources.getString(R.string.library_message_removed, title)
 
+    is LibraryMessage.MarkedPlayed ->
+        resources.getString(R.string.library_message_marked_played, title)
+
+    is LibraryMessage.PinChanged -> resources.getString(
+        if (pinned) R.string.library_message_pinned else R.string.library_message_unpinned,
+        title,
+    )
+
     is LibraryMessage.RefreshFinished -> with(summary) {
         val newEpisodes = resources.getQuantityString(
             R.plurals.library_message_new_episodes,
@@ -644,6 +724,9 @@ private fun LibraryScreenPreview() {
             onPasteLinkClick = {},
             onOpenSettings = {},
             onMove = { _, _ -> },
+            onMarkAllPlayed = {},
+            onRemove = {},
+            onTogglePin = {},
             onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},
@@ -666,6 +749,9 @@ private fun LibraryScreenListPreview() {
             onPasteLinkClick = {},
             onOpenSettings = {},
             onMove = { _, _ -> },
+            onMarkAllPlayed = {},
+            onRemove = {},
+            onTogglePin = {},
             onLayoutChange = {},
             onRefresh = {},
             onMessageShown = {},

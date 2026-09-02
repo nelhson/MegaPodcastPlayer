@@ -18,21 +18,24 @@ interface PodcastDao {
      *
      * Ordered by [PodcastEntity.sortOrder] rather than by title: the library is arranged by hand,
      * and `MIGRATION_4_5` seeded the column from the alphabetical order this used to impose, so an
-     * untouched library still reads alphabetically.
+     * untouched library still reads alphabetically. [PodcastEntity.isPinned] sorts ahead of it, so
+     * pinned shows form a block at the top and the hand-made order decides within each block.
      *
      * The counts are computed as correlated sub-selects rather than joins so that a show with no
-     * episodes still appears (with zeroes) instead of disappearing.
+     * episodes still appears (with zeroes) instead of disappearing. All three exclude episodes the
+     * user has dismissed, so a badge never counts a row no screen will draw.
      */
     @Query(
         """
         SELECT p.*,
-            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id) AS episode_count,
-            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.is_new = 1)
-                AS new_episode_count,
-            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id
+            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.is_hidden = 0)
+                AS episode_count,
+            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.is_hidden = 0
+                AND e.is_new = 1) AS new_episode_count,
+            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.is_hidden = 0
                 AND e.download_state = 'COMPLETED') AS downloaded_count
         FROM podcasts p
-        ORDER BY p.sort_order ASC
+        ORDER BY p.is_pinned DESC, p.sort_order ASC
         """,
     )
     fun observeAllWithCounts(): Flow<List<PodcastWithCountsEntity>>
@@ -89,6 +92,16 @@ interface PodcastDao {
     suspend fun setAutoRefresh(id: String, enabled: Boolean)
 
     /**
+     * Pins a show to the top of the library, or releases it.
+     *
+     * Only the flag is written; [setSortOrder] is untouched, so unpinning drops the show straight
+     * back to the position it held before — which is the behaviour that makes pinning feel like a
+     * view over the library rather than an edit to it.
+     */
+    @Query("UPDATE podcasts SET is_pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: String, pinned: Boolean)
+
+    /**
      * The position a newly subscribed show should take: the end of the library.
      *
      * `COALESCE` covers the empty library, where `MAX` is null and the first show belongs at 0.
@@ -108,6 +121,12 @@ interface PodcastDao {
      *
      * Ids the library no longer contains are simply no-ops, which is what makes a drag that raced a
      * removal harmless.
+     *
+     * Pinning is not consulted here. The caller passes the shows in the order they were drawn, and
+     * that order already has the pinned block first, so writing positions straight down the list
+     * keeps both groups internally consistent. Dragging an unpinned show above a pinned one gives
+     * it the lower position it asked for and it still draws below, because
+     * [observeAllWithCounts] sorts on the flag first.
      *
      * @param ids every show, in the order they should appear.
      */

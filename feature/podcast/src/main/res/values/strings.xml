@@ -106,4 +106,10 @@
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>
     <string name="podcast_message_download_removed">Removed \"%1$s\" from this device</string>
 
+
+    <!-- Swipe actions on an episode row. -->
+    <string name="podcast_action_mark_played">Mark played</string>
+    <string name="podcast_action_remove">Remove</string>
+    <!-- Snackbar after an episode is removed from the show's list; %1$s is the episode title. -->
+    <string name="podcast_message_episode_removed">Removed \"%1$s\" from this list</string>
 </resources>
