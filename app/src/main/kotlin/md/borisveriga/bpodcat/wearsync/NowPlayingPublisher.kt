@@ -81,6 +81,7 @@ internal fun shouldPublish(
  * @property connection the phone's player.
  * @property playbackRepository the durable queue and the user's playback preferences.
  * @property dataClient the Data Layer.
+ * @property artworkAssets downscales cover art for the watch, which cannot fetch it itself.
  * @property clock the phone's wall clock, injected so the publish decision can be tested.
  * @property scope application scope: playback outlives every screen, and so must this.
  */
@@ -89,6 +90,7 @@ internal class NowPlayingPublisher @Inject constructor(
     private val connection: PlaybackConnection,
     private val playbackRepository: PlaybackRepository,
     private val dataClient: DataClient,
+    private val artworkAssets: ArtworkAssets,
     private val clock: Clock,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
@@ -151,8 +153,13 @@ internal class NowPlayingPublisher @Inject constructor(
      * neither is a reason to disturb playback on the phone.
      */
     private suspend fun publish(snapshot: NowPlayingSnapshot) {
+        // Resolved before the request is built, and allowed to fail: artwork is decoration, and an
+        // image that will not load must never stop the watch being told what is playing.
+        val artwork = artworkAssets.assetFor(snapshot.artworkUrl)
+
         val request = PutDataMapRequest.create(WearPaths.NOW_PLAYING).apply {
             dataMap.putByteArray(WearPaths.PAYLOAD_KEY, WearMessages.encodeSnapshot(snapshot))
+            artwork?.let { dataMap.putAsset(WearPaths.ARTWORK_KEY, it) }
         }.asPutDataRequest().setUrgent()
 
         val sent = suspendRunCatching { dataClient.putDataItem(request).await() }.isSuccess

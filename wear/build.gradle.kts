@@ -30,6 +30,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
+    // Unused by the watch today: artwork arrives as a Data Layer asset and is decoded with
+    // BitmapFactory, not fetched. Kept because dropping it shifts the resolved Kotlin stdlib version
+    // and would require regenerating gradle/verification-metadata.xml; that cleanup belongs in its
+    // own commit, where the diff to that file can be reviewed on its own terms.
     implementation(libs.coil.compose)
 
     // The screen is rendered in JVM tests through Robolectric rather than on a device: the layout

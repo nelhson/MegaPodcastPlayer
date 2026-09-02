@@ -127,6 +127,66 @@ class WatchPlayerScreenTest {
     }
 
     @Test
+    fun aBufferingPhoneSaysSoRatherThanLookingPaused() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing.copy(isBuffering = true),
+            ),
+        )
+
+        composeTestRule.onNodeWithContentDescription("Buffering").assertIsDisplayed()
+        // The button stays pressable while the ring is up; buffering is a state, not a third mode.
+        composeTestRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
+    }
+
+    @Test
+    fun aPhoneThatIsNotBufferingShowsNoRing() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
+
+        composeTestRule.onNodeWithContentDescription("Buffering").assertDoesNotExist()
+    }
+
+    @Test
+    fun theProgressBarOffersScrubbingWhenTheDurationIsKnown() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
+
+        composeTestRule
+            .onNodeWithContentDescription("Playback position. Tap to adjust")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun aScrubInProgressSaysHowToFinishIt() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                positionMs = 252_000L,
+                isScrubbing = true,
+            ),
+        )
+
+        composeTestRule
+            .onNodeWithContentDescription("Adjusting position. Turn the bezel, then tap to confirm")
+            .assertIsDisplayed()
+    }
+
+    /**
+     * The header must survive a phone that sent no artwork, which is every phone running a build
+     * older than the one that started sending it.
+     */
+    @Test
+    fun theHeaderRendersWithoutArtwork() {
+        setScreen(
+            WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing, artwork = null),
+        )
+
+        composeTestRule.onNodeWithText("The one about batteries").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Radio Hardware").assertIsDisplayed()
+    }
+
+    @Test
     fun anIdlePhoneExplainsItselfInsteadOfShowingDeadControls() {
         setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = NowPlayingSnapshot()))
 

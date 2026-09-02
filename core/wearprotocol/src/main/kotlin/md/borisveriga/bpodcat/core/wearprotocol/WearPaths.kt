@@ -33,6 +33,23 @@ object WearPaths {
     const val PAYLOAD_KEY = "payload"
 
     /**
+     * The `DataMap` key carrying downscaled cover art, as a Data Layer **asset**.
+     *
+     * The snapshot also carries an [NowPlayingSnapshot.artworkUrl], but the watch must not fetch it:
+     * its only route to the network is a proxy through the phone's Bluetooth link, and a full-size
+     * cover is hundreds of kilobytes pulled over a link measured in kilobytes per second. The phone
+     * has the image in its Coil disk cache already, so it downscales once and sends the bytes.
+     *
+     * An asset rather than another byte array in the `DataMap`: a data item is capped at 100 KB and
+     * already carries the queue, whereas assets are transferred out of band and cached by content
+     * digest, so republishing an unchanged image costs nothing.
+     *
+     * Optional in both directions. A phone too old to send it leaves the key absent and the watch
+     * draws no artwork; a watch too old to read it ignores the key. Neither is an error.
+     */
+    const val ARTWORK_KEY = "artwork"
+
+    /**
      * Capability the phone app advertises, declared in its `res/values/wear.xml`.
      *
      * The watch looks this up to tell "the phone is not reachable" apart from "the phone is

@@ -42,6 +42,32 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Keeps the watch-face chip in step with the phone. Play Services binds this - starting the
+          watch app's process if necessary - when the phone publishes playback state, which is what
+          lets the chip stay correct while the app itself is closed. It also listens for the phone
+          app's capability, so the chip can be cleared when the phone goes out of range and no
+          further data item can arrive to correct it.
+        -->
+        <service
+            android:name=".ongoing.NowPlayingChipService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/bpodcat" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/bpodcat_phone_player" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

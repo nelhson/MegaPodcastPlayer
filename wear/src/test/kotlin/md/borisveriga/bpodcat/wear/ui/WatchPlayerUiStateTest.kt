@@ -94,6 +94,73 @@ class WatchPlayerUiStateTest {
     }
 
     @Test
+    fun `a scrub in progress overrides the extrapolated position`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+
+        val uiState = watchPlayerUiState(
+            link = PhoneLink.CONNECTED,
+            received = received,
+            nowElapsedMs = 11_000L,
+            scrub = ScrubState(positionMs = 200_000L),
+        )
+
+        assertEquals(200_000L, uiState.positionMs)
+        assertEquals(200_000f / 300_000f, uiState.progress, 0.001f)
+        assertTrue(uiState.isScrubbing)
+    }
+
+    @Test
+    fun `a committed seek holds the position across the round trip`() {
+        // The phone's last word still describes the old position; extrapolating it would walk the
+        // bar back to where the user just dragged it away from.
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+
+        val uiState = watchPlayerUiState(
+            link = PhoneLink.CONNECTED,
+            received = received,
+            nowElapsedMs = 3_000L,
+            scrub = ScrubState(positionMs = 200_000L, committedAtElapsedMs = 2_000L),
+        )
+
+        assertEquals(200_000L, uiState.positionMs)
+        // Held, but no longer being dragged: the user has let go.
+        assertFalse(uiState.isScrubbing)
+    }
+
+    @Test
+    fun `the hold releases once the phone confirms`() {
+        val confirmation = ReceivedSnapshot(
+            playing.copy(positionMs = 200_000L),
+            receivedAtElapsedMs = 2_500L,
+        )
+
+        val uiState = watchPlayerUiState(
+            link = PhoneLink.CONNECTED,
+            received = confirmation,
+            nowElapsedMs = 3_500L,
+            scrub = ScrubState(positionMs = 200_000L, committedAtElapsedMs = 2_000L),
+        )
+
+        // Back to extrapolating, from the confirmed snapshot rather than the held value.
+        assertEquals(201_000L, uiState.positionMs)
+    }
+
+    @Test
+    fun `the hold releases on its own if the phone never confirms`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+
+        val uiState = watchPlayerUiState(
+            link = PhoneLink.CONNECTED,
+            received = received,
+            nowElapsedMs = 2_000L + SEEK_HOLD_MS,
+            scrub = ScrubState(positionMs = 200_000L, committedAtElapsedMs = 2_000L),
+        )
+
+        // A phone that went silent must not freeze the bar where the user left it forever.
+        assertEquals(playing.positionAfter(1_000L + SEEK_HOLD_MS), uiState.positionMs)
+    }
+
+    @Test
     fun `a failed command is carried into the state`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
 

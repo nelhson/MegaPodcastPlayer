@@ -13,6 +13,7 @@ import md.borisveriga.bpodcat.core.wearprotocol.WearCommand
 import md.borisveriga.bpodcat.wear.data.PhoneLink
 import md.borisveriga.bpodcat.wear.data.PhonePlayerClient
 import md.borisveriga.bpodcat.wear.data.ReceivedSnapshot
+import md.borisveriga.bpodcat.wear.data.WatchArtwork
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,6 +28,17 @@ class WatchPlayerViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val client = mockk<PhonePlayerClient>(relaxed = true)
+    private val artwork = mockk<WatchArtwork>(relaxed = true)
+
+    /** Paused, so the scrub tests are not racing the position ticker while they assert on it. */
+    private val playing = NowPlayingSnapshot(
+        episodeId = "ep-1",
+        title = "Episode one",
+        isPlaying = false,
+        positionMs = 30_000L,
+        durationMs = 300_000L,
+        speed = 1f,
+    )
 
     @Before
     fun setUp() {
@@ -35,18 +47,23 @@ class WatchPlayerViewModelTest {
         // emits would leave it pinned to its initial value forever.
         every { client.snapshots } returns flowOf<ReceivedSnapshot?>(null)
         coEvery { client.send(any()) } returns true
+        // Same reasoning as the snapshots flow: a flow that never emits would stall the combine.
+        every { artwork.artwork } returns flowOf(null)
     }
+
+    /** Builds the view model under test with both of its sources stubbed. */
+    private fun viewModel() = WatchPlayerViewModel(client, artwork)
 
     @Test
     fun `opening the app asks the phone to republish its state`() = runTest {
-        WatchPlayerViewModel(client)
+        viewModel()
 
         coVerify(exactly = 1) { client.send(WearCommand.RequestState) }
     }
 
     @Test
     fun `each control sends its own command`() = runTest {
-        val viewModel = WatchPlayerViewModel(client)
+        val viewModel = viewModel()
 
         viewModel.togglePlayPause()
         viewModel.skipForward()
@@ -79,7 +96,7 @@ class WatchPlayerViewModelTest {
         )
         every { client.snapshots } returns flowOf(ReceivedSnapshot(snapshot, 0L))
 
-        val viewModel = WatchPlayerViewModel(client)
+        val viewModel = viewModel()
 
         viewModel.uiState.test {
             val state = awaitItem()
@@ -91,10 +108,98 @@ class WatchPlayerViewModelTest {
     }
 
     @Test
+    fun `scrubbing sends one seek, on commit, and not before`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginScrub()
+            viewModel.scrubBy(10_000L)
+            viewModel.scrubBy(5_000L)
+            // Dragging along an hour-long episode would otherwise put a seek on the link per frame.
+            coVerify(exactly = 0) { client.send(ofType<WearCommand.SeekTo>()) }
+
+            viewModel.commitScrub()
+
+            coVerify(exactly = 1) { client.send(WearCommand.SeekTo(45_000L)) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the scrub position is clamped to the episode`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginScrub()
+            viewModel.scrubBy(-5_000_000L)
+            viewModel.commitScrub()
+
+            coVerify(exactly = 1) { client.send(WearCommand.SeekTo(0L)) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the scrub position is clamped to the duration`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginScrub()
+            viewModel.scrubBy(5_000_000L)
+            viewModel.commitScrub()
+
+            coVerify(exactly = 1) { client.send(WearCommand.SeekTo(300_000L)) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an abandoned scrub seeks nowhere`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginScrub()
+            viewModel.scrubBy(10_000L)
+            viewModel.cancelScrub()
+            viewModel.commitScrub()
+
+            coVerify(exactly = 0) { client.send(ofType<WearCommand.SeekTo>()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an episode of unknown length cannot be scrubbed`() = runTest {
+        val unknownLength = playing.copy(durationMs = 0L)
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(unknownLength, 0L))
+        val viewModel = viewModel()
+
+        viewModel.uiState.test {
+            assertFalse(awaitItem().canScrub)
+
+            viewModel.beginScrub()
+            viewModel.scrubBy(10_000L)
+            viewModel.commitScrub()
+
+            // There is no scale to seek along, so the gesture must not invent one.
+            coVerify(exactly = 0) { client.send(ofType<WearCommand.SeekTo>()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `an undeliverable command is reported rather than swallowed`() = runTest {
         coEvery { client.send(any()) } returns false
 
-        val viewModel = WatchPlayerViewModel(client)
+        val viewModel = viewModel()
         viewModel.togglePlayPause()
 
         viewModel.uiState.test {
@@ -106,7 +211,7 @@ class WatchPlayerViewModelTest {
     @Test
     fun `a command that gets through clears an earlier failure`() = runTest {
         coEvery { client.send(any()) } returns false
-        val viewModel = WatchPlayerViewModel(client)
+        val viewModel = viewModel()
         viewModel.togglePlayPause()
 
         coEvery { client.send(any()) } returns true

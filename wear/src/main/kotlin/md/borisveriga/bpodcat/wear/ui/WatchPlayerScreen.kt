@@ -1,5 +1,11 @@
 package md.borisveriga.bpodcat.wear.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,12 +31,27 @@ import androidx.compose.material.icons.rounded.Replay5
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,6 +59,7 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.FilledTonalIconButton
 import androidx.wear.compose.material3.Icon
@@ -48,6 +70,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import kotlinx.coroutines.delay
 import md.borisveriga.bpodcat.core.common.format.formatSpeed
 import md.borisveriga.bpodcat.core.wearprotocol.QueuedEpisode
 import md.borisveriga.bpodcat.wear.R
@@ -72,6 +95,9 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onCycleSpeed = viewModel::cycleSpeed,
         onPlayQueued = viewModel::playQueued,
         onRetry = viewModel::retry,
+        onBeginScrub = viewModel::beginScrub,
+        onScrubBy = viewModel::scrubBy,
+        onCommitScrub = viewModel::commitScrub,
     )
 }
 
@@ -93,6 +119,9 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onCycleSpeed invoked by the speed button.
  * @param onPlayQueued invoked with the episode id when a queue row is tapped.
  * @param onRetry invoked when the user retries a failed connection.
+ * @param onBeginScrub invoked when the user takes hold of the progress bar.
+ * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
+ * @param onCommitScrub invoked when they settle, which is what actually seeks.
  */
 @Composable
 fun WatchPlayerScreen(
@@ -105,6 +134,9 @@ fun WatchPlayerScreen(
     onCycleSpeed: () -> Unit,
     onPlayQueued: (String) -> Unit,
     onRetry: () -> Unit,
+    onBeginScrub: () -> Unit = {},
+    onScrubBy: (Long) -> Unit = {},
+    onCommitScrub: () -> Unit = {},
 ) {
     // A phone we cannot reach makes every control below meaningless, so it replaces the screen
     // rather than sitting on top of it as a banner the user would tap straight through.
@@ -126,7 +158,14 @@ fun WatchPlayerScreen(
         ) {
             if (uiState.showsControls) {
                 item { NowPlayingHeader(uiState) }
-                item { ProgressRow(uiState) }
+                item {
+                    ProgressRow(
+                        uiState = uiState,
+                        onBeginScrub = onBeginScrub,
+                        onScrubBy = onScrubBy,
+                        onCommitScrub = onCommitScrub,
+                    )
+                }
                 item {
                     TransportRow(
                         uiState = uiState,
@@ -161,27 +200,58 @@ fun WatchPlayerScreen(
     }
 }
 
-/** Title, show and buffering state for whatever the phone has loaded. */
+/**
+ * Title and show, over the cover art when the phone sent any.
+ *
+ * The artwork is a wash rather than a picture: it is arbitrary third-party imagery and the title has
+ * to stay readable on top of it, so a fixed scrim darkens whatever arrives. A fixed amount, not one
+ * derived from the theme, because nothing about the image is known in advance.
+ */
 @Composable
 private fun NowPlayingHeader(uiState: WatchPlayerUiState) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Box(
+        modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = uiState.snapshot.title,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-        )
-        if (uiState.snapshot.showTitle.isNotBlank()) {
-            Text(
-                text = uiState.snapshot.showTitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
+        uiState.artwork?.let { artwork ->
+            Image(
+                bitmap = artwork,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    // Takes its size from the text on top rather than claiming the viewport, which
+                    // in a scrolling list would push everything below it off the screen.
+                    .matchParentSize()
+                    // Decorative: the episode title is right there, in words.
+                    .clearAndSetSemantics { }
+                    .drawWithCache {
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(Color.Black.copy(alpha = ARTWORK_SCRIM_ALPHA))
+                        }
+                    },
             )
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = uiState.snapshot.title,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+            )
+            if (uiState.snapshot.showTitle.isNotBlank()) {
+                Text(
+                    text = uiState.snapshot.showTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -191,13 +261,94 @@ private fun NowPlayingHeader(uiState: WatchPlayerUiState) {
  *
  * A linear indicator rather than the round one: this list scrolls, and a progress ring pinned to the
  * bezel would keep sliding away from the episode it describes.
+ *
+ * Scrubbing is an explicit mode, entered by tapping the bar. The alternative — a bar that is always
+ * draggable — would fight the list it sits in, because the same horizontal-ish gesture also scrolls,
+ * and rotary input has only one focus owner. Tapping first makes the choice unambiguous: while
+ * scrubbing, the bezel moves the position; otherwise it scrolls the list, as everywhere else.
+ *
+ * @param uiState what to draw, including the scrub preview position.
+ * @param onBeginScrub takes hold of the bar.
+ * @param onScrubBy moves it by a signed offset in milliseconds.
+ * @param onCommitScrub seeks to where it was left.
  */
 @Composable
-private fun ProgressRow(uiState: WatchPlayerUiState) {
+private fun ProgressRow(
+    uiState: WatchPlayerUiState,
+    onBeginScrub: () -> Unit,
+    onScrubBy: (Long) -> Unit,
+    onCommitScrub: () -> Unit,
+) {
+    val durationMs = uiState.snapshot.knownDurationMs
+    var barWidthPx by remember { mutableIntStateOf(0) }
+    val focusRequester = remember { FocusRequester() }
+
+    // Dragging the full width of the bar covers the whole episode, which is the scale the bar itself
+    // suggests. Rotary uses the same scale, so the two gestures agree.
+    val msPerPixel: Float = if (durationMs != null && barWidthPx > 0) {
+        durationMs.toFloat() / barWidthPx
+    } else {
+        0f
+    }
+
+    // Rotary events go to whatever holds focus, so the bar has to claim it on entering scrub mode
+    // and give it back on leaving, or the list would keep consuming the bezel.
+    LaunchedEffect(uiState.isScrubbing) {
+        if (uiState.isScrubbing) focusRequester.requestFocus()
+    }
+
+    // Committing on a pause rather than on release: rotary has no "release", and a bezel turn
+    // arrives as a burst of events. Re-keyed on the position, so each movement restarts the wait.
+    if (uiState.isScrubbing) {
+        // Where the bar stood when it was grabbed. Until that changes the user has only tapped into
+        // scrub mode without moving anything, and committing then would seek to where playback
+        // already is and drop them straight back out of the mode they just deliberately entered.
+        // Remembered inside this branch, so leaving scrub mode forgets it.
+        val grabbedAtMs = remember { uiState.positionMs }
+
+        LaunchedEffect(uiState.positionMs) {
+            if (uiState.positionMs != grabbedAtMs) {
+                delay(SCRUB_COMMIT_DELAY_MS)
+                onCommitScrub()
+            }
+        }
+    }
+
+    val scrubLabel = stringResource(
+        if (uiState.isScrubbing) R.string.watch_scrub_active else R.string.watch_scrub,
+    )
+
     Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
         LinearProgressIndicator(
             progress = { uiState.progress },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (uiState.isScrubbing) SCRUB_BAR_HEIGHT else PROGRESS_BAR_HEIGHT)
+                .onSizeChanged { barWidthPx = it.width }
+                .semantics { contentDescription = scrubLabel }
+                .then(
+                    if (uiState.canScrub) {
+                        Modifier
+                            .clickable { if (uiState.isScrubbing) onCommitScrub() else onBeginScrub() }
+                            .focusRequester(focusRequester)
+                            .focusable()
+                            .onRotaryScrollEvent { event ->
+                                if (!uiState.isScrubbing) return@onRotaryScrollEvent false
+                                onScrubBy((event.verticalScrollPixels * msPerPixel).toLong())
+                                true
+                            }
+                            .draggable(
+                                state = rememberDraggableState { delta ->
+                                    onScrubBy((delta * msPerPixel).toLong())
+                                },
+                                orientation = Orientation.Horizontal,
+                                onDragStarted = { onBeginScrub() },
+                                onDragStopped = { onCommitScrub() },
+                            )
+                    } else {
+                        Modifier
+                    },
+                ),
         )
         Spacer(modifier = Modifier.height(2.dp))
         Row(
@@ -207,7 +358,11 @@ private fun ProgressRow(uiState: WatchPlayerUiState) {
             Text(
                 text = formatPlaybackTime(uiState.positionMs),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (uiState.isScrubbing) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
             Text(
                 // Nothing is shown rather than "0:00" while the phone has not read the duration:
@@ -228,6 +383,9 @@ private fun TransportRow(
     onSkipForward: () -> Unit,
     onSkipBack: () -> Unit,
 ) {
+    // Resolved here rather than inside the semantics lambda below, which is not composable.
+    val bufferingLabel = stringResource(R.string.watch_buffering)
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
@@ -240,20 +398,32 @@ private fun TransportRow(
             )
         }
 
-        FilledIconButton(
-            onClick = onTogglePlayPause,
-            modifier = Modifier.size(PLAY_BUTTON_SIZE),
-        ) {
-            Icon(
-                imageVector = if (uiState.snapshot.isPlaying) {
-                    Icons.Rounded.Pause
-                } else {
-                    Icons.Rounded.PlayArrow
-                },
-                contentDescription = stringResource(
-                    if (uiState.snapshot.isPlaying) R.string.watch_pause else R.string.watch_play,
-                ),
-            )
+        Box(contentAlignment = Alignment.Center) {
+            // A ring around the button rather than a changed glyph: buffering is a state playback is
+            // *in*, not a third thing the button could do, and the button must stay pressable.
+            if (uiState.snapshot.isBuffering) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(BUFFERING_RING_SIZE)
+                        .semantics { contentDescription = bufferingLabel },
+                )
+            }
+
+            FilledIconButton(
+                onClick = onTogglePlayPause,
+                modifier = Modifier.size(PLAY_BUTTON_SIZE),
+            ) {
+                Icon(
+                    imageVector = if (uiState.snapshot.isPlaying) {
+                        Icons.Rounded.Pause
+                    } else {
+                        Icons.Rounded.PlayArrow
+                    },
+                    contentDescription = stringResource(
+                        if (uiState.snapshot.isPlaying) R.string.watch_pause else R.string.watch_play,
+                    ),
+                )
+            }
         }
 
         FilledTonalIconButton(onClick = onSkipForward) {
@@ -450,3 +620,23 @@ private fun skipContentDescription(skipMs: Long, forward: Boolean): String {
 
 /** The play button is deliberately larger than its neighbours: it is the one pressed blind. */
 private val PLAY_BUTTON_SIZE = 60.dp
+
+/** Sized to clear the play button so the ring reads as around it rather than on it. */
+private val BUFFERING_RING_SIZE = 72.dp
+
+/** The bar at rest: thin, because it is only being read. */
+private val PROGRESS_BAR_HEIGHT = 6.dp
+
+/** The bar while scrubbing: thick enough to be a target for a fingertip. */
+private val SCRUB_BAR_HEIGHT = 14.dp
+
+/** Scrim over the artwork. High, because the title has to survive a white cover. */
+private const val ARTWORK_SCRIM_ALPHA = 0.6f
+
+/**
+ * How long the scrub position must hold still before it is sent.
+ *
+ * Long enough to span the gap between two deliberate bezel detents, short enough that letting go
+ * feels like it seeked immediately.
+ */
+private const val SCRUB_COMMIT_DELAY_MS = 600L

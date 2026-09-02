@@ -30,6 +30,12 @@
         <item quantity="other">Skip back %1$d seconds</item>
     </plurals>
 
+    <!-- The progress bar doubles as a scrubber; these name it for TalkBack in each of its modes. -->
+    <string name="watch_scrub">Playback position. Tap to adjust</string>
+    <string name="watch_scrub_active">Adjusting position. Turn the bezel, then tap to confirm</string>
+
+    <string name="watch_buffering">Buffering</string>
+
     <string name="watch_nothing_playing_title">Nothing playing</string>
     <string name="watch_nothing_playing_with_queue">Pick an episode below to start it on your phone.</string>
     <string name="watch_nothing_playing_empty">Start an episode on your phone and it will show up here.</string>
@@ -44,5 +50,13 @@
     <string name="watch_link_disconnected_description">Bring your phone closer, or turn Bluetooth back on.</string>
 
     <string name="watch_retry">Retry</string>
+
+    <!--
+      The watch-face chip. The channel name is what the user sees in the system's notification
+      settings, so it names the thing rather than the mechanism.
+    -->
+    <string name="watch_ongoing_channel_name">Now playing</string>
+    <string name="watch_ongoing_channel_description">Keeps playback controls on your watch face while an episode is playing.</string>
+    <string name="watch_ongoing_status">Playing on your phone</string>
 
 </resources>

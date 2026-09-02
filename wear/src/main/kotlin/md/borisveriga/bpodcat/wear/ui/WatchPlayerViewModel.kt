@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.bpodcat.core.wearprotocol.WearCommand
 import md.borisveriga.bpodcat.wear.data.PhoneLink
 import md.borisveriga.bpodcat.wear.data.PhonePlayerClient
+import md.borisveriga.bpodcat.wear.data.WatchArtwork
 
 /**
  * Drives the watch's remote control.
@@ -26,26 +27,36 @@ import md.borisveriga.bpodcat.wear.data.PhonePlayerClient
  * Holds no playback state of its own — it cannot, since the audio is on the phone. Every button
  * turns into a [WearCommand] and the screen only changes once the phone has said it did.
  *
- * The one thing computed locally is the playback position, which ticks between the phone's
- * publishes so the progress ring moves smoothly without a Bluetooth write per second.
+ * Two things are computed locally. The playback position ticks between the phone's publishes so the
+ * progress bar moves smoothly without a Bluetooth write per second. And a scrub in progress is held
+ * here rather than sent continuously: dragging along a one-hour episode would otherwise put hundreds
+ * of seeks on the link, so only the position the user settles on is sent.
  *
  * @property client the connection to the phone.
+ * @property artworkSource cover art the phone published, decoded off the same data item.
  */
 @HiltViewModel
 class WatchPlayerViewModel @Inject constructor(
     private val client: PhonePlayerClient,
+    artworkSource: WatchArtwork,
 ) : ViewModel() {
 
     /** Set when a command could not be delivered; cleared as soon as one gets through. */
     private val lastCommandFailed = MutableStateFlow(false)
 
+    /** Where the user has dragged the progress bar, or null when they are not touching it. */
+    private val scrub = MutableStateFlow<ScrubState?>(null)
+
     val uiState: StateFlow<WatchPlayerUiState> = combine(
         client.phoneLink.onStart { emit(PhoneLink.CHECKING) },
-        client.snapshots,
+        // Paired up because both read the same data item, and combining them here keeps the outer
+        // `combine` within the arity kotlinx.coroutines gives typed lambdas for.
+        combine(client.snapshots, artworkSource.artwork) { received, artwork -> received to artwork },
         elapsedRealtimeTicker(),
         lastCommandFailed,
-    ) { link, received, nowElapsedMs, failed ->
-        watchPlayerUiState(link, received, nowElapsedMs, failed)
+        scrub,
+    ) { link, (received, artwork), nowElapsedMs, failed, scrubState ->
+        watchPlayerUiState(link, received, nowElapsedMs, failed, scrubState, artwork)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
@@ -84,6 +95,64 @@ class WatchPlayerViewModel @Inject constructor(
     fun seekTo(positionMs: Long) = send(WearCommand.SeekTo(positionMs))
 
     /**
+     * Takes hold of the progress bar, starting from wherever it currently reads.
+     *
+     * Seeding from the displayed position rather than the last snapshot is deliberate: the bar has
+     * been ticking forward locally since that snapshot, and starting anywhere else would make the
+     * bar jump the instant it is touched.
+     */
+    fun beginScrub() {
+        if (!uiState.value.canScrub) return
+        scrub.value = ScrubState(positionMs = uiState.value.positionMs)
+    }
+
+    /**
+     * Moves the scrub position, clamped to the episode.
+     *
+     * Nothing is sent to the phone here. The command goes out once, on [commitScrub].
+     *
+     * @param deltaMs how far to move; negative rewinds.
+     */
+    fun scrubBy(deltaMs: Long) {
+        val duration = uiState.value.snapshot.knownDurationMs ?: return
+        val current = scrub.value ?: return
+        if (current.committedAtElapsedMs != null) return
+
+        scrub.value = current.copy(
+            positionMs = (current.positionMs + deltaMs).coerceIn(0L, duration),
+        )
+    }
+
+    /** Abandons a scrub without seeking, leaving playback where it was. */
+    fun cancelScrub() {
+        scrub.value = null
+    }
+
+    /**
+     * Sends the scrubbed position to the phone.
+     *
+     * The scrub is kept, stamped with the moment the command went out, so the bar stays where the
+     * user put it across the Bluetooth round trip instead of bouncing back; see [SEEK_HOLD_MS]. It
+     * is dropped once the hold expires, by which point either the phone has confirmed or it never
+     * will.
+     */
+    fun commitScrub() {
+        val current = scrub.value ?: return
+        if (current.committedAtElapsedMs != null) return
+
+        val committed = current.copy(committedAtElapsedMs = SystemClock.elapsedRealtime())
+        scrub.value = committed
+        seekTo(committed.positionMs)
+
+        viewModelScope.launch {
+            delay(SEEK_HOLD_MS)
+            // Compared by identity of the whole value: a scrub the user has since restarted is a
+            // different one, and must not be cleared out from under them.
+            scrub.compareAndSet(expect = committed, update = null)
+        }
+    }
+
+    /**
      * Plays a queued episode.
      *
      * @param episodeId the episode, as it arrived in the snapshot's queue.
@@ -115,7 +184,7 @@ class WatchPlayerViewModel @Inject constructor(
         /**
          * Emits the watch's elapsed-realtime clock once a second.
          *
-         * This is what advances the progress ring between the phone's publishes. It runs regardless
+         * This is what advances the progress bar between the phone's publishes. It runs regardless
          * of whether anything is playing, because a paused snapshot simply extrapolates to itself,
          * and one timer is cheaper to reason about than one that has to be started and stopped.
          */

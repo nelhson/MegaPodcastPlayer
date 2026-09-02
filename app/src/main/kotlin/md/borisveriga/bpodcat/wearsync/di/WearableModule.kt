@@ -1,6 +1,8 @@
 package md.borisveriga.bpodcat.wearsync.di
 
 import android.content.Context
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.NodeClient
 import com.google.android.gms.wearable.Wearable
@@ -35,4 +37,20 @@ object WearableModule {
     @Singleton
     fun providesNodeClient(@ApplicationContext context: Context): NodeClient =
         Wearable.getNodeClient(context)
+
+    /**
+     * The app's one Coil loader, for
+     * [md.borisveriga.bpodcat.wearsync.ArtworkAssets].
+     *
+     * Deliberately the *singleton* loader that
+     * [md.borisveriga.bpodcat.BPodcatApplication.newImageLoader] built, not a second one: artwork
+     * bound for the watch is nearly always artwork a screen has already shown, so sharing the loader
+     * means sharing its disk cache and the fetch usually never leaves the device. Exposed through
+     * Hilt rather than looked up statically so a test can substitute a loader that resolves without
+     * a network.
+     */
+    @Provides
+    @Singleton
+    fun providesImageLoader(@ApplicationContext context: Context): ImageLoader =
+        SingletonImageLoader.get(context)
 }
