@@ -97,7 +97,16 @@ fun BPodcatApp(
     ) {
         PlayerSheetScaffold(
             sheetState = playerSheetState,
-            onOpenQueue = { navController.navigate(Route.Queue) { launchSingleTop = true } },
+            // The queue is a tab now, so the link out of the player switches to it rather than
+            // pushing a second copy on top of the sheet. The sheet has to come down with it: it is
+            // covering the screen the user just asked to see, and it hides the navigation bar they
+            // would need to get back out.
+            onOpenQueue = {
+                scope.launch {
+                    playerSheetState.collapse()
+                    navController.navigateToTopLevel(TopLevelDestination.QUEUE)
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         ) { playerPadding ->
             NavHost(
@@ -165,7 +174,7 @@ fun BPodcatApp(
                 }
 
                 composable<Route.Queue> {
-                    QueueRoute(onBack = { navController.popBackStack() })
+                    QueueRoute()
                 }
             }
         }
@@ -177,6 +186,7 @@ private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
     this?.hierarchy?.any { node ->
         when (destination) {
             TopLevelDestination.LIBRARY -> node.hasRoute(Route.Library::class)
+            TopLevelDestination.QUEUE -> node.hasRoute(Route.Queue::class)
             TopLevelDestination.DOWNLOADS -> node.hasRoute(Route.Downloads::class)
         }
     } == true

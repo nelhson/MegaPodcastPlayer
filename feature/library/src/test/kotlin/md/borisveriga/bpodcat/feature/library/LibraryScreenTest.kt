@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.feature.library
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -7,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -32,10 +34,15 @@ import org.robolectric.annotation.Config
  * The settings action is covered for a third reason: it is the app's only way into Settings now
  * that the Latest tab it used to live on is gone, so losing it would strand the whole screen.
  *
- * Reordering is covered through its accessibility actions rather than by driving a drag. That is
- * not a compromise: the actions are the only way the library is arrangeable with TalkBack on, so
- * they are worth pinning in their own right, and the drag arithmetic behind them belongs to
+ * Reordering is mostly covered through its accessibility actions rather than by driving a drag.
+ * That is not a compromise: the actions are the only way the library is arrangeable with TalkBack
+ * on, so they are worth pinning in their own right, and the drag arithmetic behind them belongs to
  * `ReorderableStateTest` in `:core:designsystem`.
+ *
+ * One real drag is driven all the same. A row is picked up by a long press anywhere on it, and
+ * that gesture shares the row with a tap that opens the show and with the list's own scrolling —
+ * three things that a plain unit test cannot tell apart, and that a modifier applied in the wrong
+ * place would silently reduce to one.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -67,6 +74,7 @@ class LibraryScreenTest {
     private fun setScreen(
         layout: LibraryLayout,
         onLayoutChange: (LibraryLayout) -> Unit = {},
+        onPodcastClick: (String) -> Unit = {},
         onSearchClick: () -> Unit = {},
         onPasteLinkClick: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
@@ -82,7 +90,7 @@ class LibraryScreenTest {
                         layout = layout,
                         isLoading = false,
                     ),
-                    onPodcastClick = {},
+                    onPodcastClick = onPodcastClick,
                     onSearchClick = onSearchClick,
                     onPasteLinkClick = onPasteLinkClick,
                     onOpenSettings = onOpenSettings,
@@ -204,6 +212,48 @@ class LibraryScreenTest {
     }
 
     @Test
+    fun `a long press anywhere on a row picks it up, and the drag moves the show`() {
+        val moves = mutableListOf<Pair<Int, Int>>()
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onMove = { from, to -> moves += from to to },
+            podcasts = listOf(
+                entry("a", "Podlodka Podcast"),
+                entry("b", "Acquired"),
+                entry("c", "Zeitgeist"),
+            ),
+        )
+
+        composeRule.onNodeWithText("Acquired").performTouchInput {
+            down(center)
+            // Held past the system's long-press timeout, which is what separates picking the row
+            // up from tapping it or flicking the list.
+            advanceEventTime(LONG_PRESS_MS)
+            // One row up puts the dragged row's centre inside the row above it.
+            moveBy(Offset(0f, -height.toFloat()))
+            up()
+        }
+
+        assertEquals(listOf(1 to 0), moves)
+    }
+
+    @Test
+    fun `a tap on a row still opens the show`() {
+        var opened: String? = null
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onPodcastClick = { opened = it },
+            podcasts = listOf(entry("a", "Podlodka Podcast"), entry("b", "Acquired")),
+        )
+
+        // The long press sits on the same row as the click; a gesture detector that claimed the
+        // press outright would leave the library unable to open anything.
+        composeRule.onNodeWithText("Acquired").performClick()
+
+        assertEquals("b", opened)
+    }
+
+    @Test
     fun `the ends of the library offer only the move that exists`() {
         setScreen(
             layout = LibraryLayout.LIST,
@@ -217,6 +267,9 @@ class LibraryScreenTest {
             .assertHasNoCustomAccessibilityAction("Move down")
     }
 }
+
+/** Comfortably past the 500ms system long-press timeout the drag gesture waits out. */
+private const val LONG_PRESS_MS = 1_000L
 
 /**
  * Invokes a custom accessibility action by its label.

@@ -21,9 +21,11 @@
 
     <string name="player_up_next">Up next</string>
 
-    <!-- The queue screen. Its title names the whole list; "Up next" heads the editable part. -->
+    <!--
+        The queue screen. Its title names the whole list; "Up next" heads the editable part. It is a
+        top-level tab, so there is no back arrow and no label for one.
+    -->
     <string name="queue_title">Queue</string>
-    <string name="queue_back">Leave the queue</string>
     <string name="queue_now_playing">Now playing</string>
     <string name="queue_empty_title">Nothing queued</string>
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>

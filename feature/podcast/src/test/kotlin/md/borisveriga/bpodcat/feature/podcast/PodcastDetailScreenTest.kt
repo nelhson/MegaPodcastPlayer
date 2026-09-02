@@ -1,11 +1,13 @@
 package md.borisveriga.bpodcat.feature.podcast
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -31,7 +33,10 @@ import org.robolectric.annotation.Config
  *
  * Reordering is the third thing here, and what is worth pinning is which shows offer it at all: a
  * YouTube playlist is arranged by hand, an RSS feed is a chronology, and offering to rearrange the
- * latter would promise an order the next refresh could not keep.
+ * latter would promise an order the next refresh could not keep. That line has to hold for the
+ * long press as much as for the accessibility actions, and the press is the harder half: it is the
+ * one gesture that leaves nothing on screen to say whether it applies, and a row that lifts under
+ * the finger and then refuses to go anywhere is worse than a row that never lifts.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -294,6 +299,46 @@ class PodcastDetailScreenTest {
     }
 
     @Test
+    fun `a long press on a video picks it up, and the drag moves it`() {
+        val moves = mutableListOf<Triple<List<String>, Int, Int>>()
+        setScreen(
+            episodes = listOf(episode("a"), episode("b"), episode("c")),
+            source = PodcastSource.YOUTUBE,
+            onEpisodeMove = { ids, from, to -> moves += Triple(ids, from, to) },
+        )
+
+        composeRule.onNodeWithText("Episode b").performTouchInput {
+            down(center)
+            // Held past the system's long-press timeout, which is what separates picking the row
+            // up from tapping it or scrolling the list.
+            advanceEventTime(LONG_PRESS_MS)
+            // One row up puts the dragged row's centre inside the row above it.
+            moveBy(Offset(0f, -height.toFloat()))
+            up()
+        }
+
+        assertEquals(listOf(Triple(listOf("a", "b", "c"), 1, 0)), moves)
+    }
+
+    @Test
+    fun `the same long press on an rss episode moves nothing`() {
+        val moves = mutableListOf<Triple<List<String>, Int, Int>>()
+        setScreen(
+            episodes = listOf(episode("a"), episode("b"), episode("c")),
+            onEpisodeMove = { ids, from, to -> moves += Triple(ids, from, to) },
+        )
+
+        composeRule.onNodeWithText("Episode b").performTouchInput {
+            down(center)
+            advanceEventTime(LONG_PRESS_MS)
+            moveBy(Offset(0f, -height.toFloat()))
+            up()
+        }
+
+        assertEquals(emptyList<Triple<List<String>, Int, Int>>(), moves)
+    }
+
+    @Test
     fun `an rss show does not offer to move its episodes`() {
         setScreen(episodes = listOf(episode("a"), episode("b"), episode("c")))
 
@@ -303,6 +348,9 @@ class PodcastDetailScreenTest {
             .assertHasNoCustomAccessibilityAction("Move down")
     }
 }
+
+/** Comfortably past the 500ms system long-press timeout the drag gesture waits out. */
+private const val LONG_PRESS_MS = 1_000L
 
 /**
  * Invokes a custom accessibility action by its label.

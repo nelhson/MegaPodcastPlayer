@@ -78,11 +78,10 @@ import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
-import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
 import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
-import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -330,7 +329,17 @@ fun PodcastDetailScreen(
                                     .graphicsLayer {
                                         translationY = if (isDragging) drag.offset.y else 0f
                                         shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-                                    },
+                                    }
+                                    // Only where the order is the user's to keep: a long press
+                                    // on a row of an RSS show would pick it up and then refuse to
+                                    // put it anywhere.
+                                    .then(
+                                        if (isReorderable) {
+                                            Modifier.reorderableLongPressDrag(drag, episode.id)
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
                                 title = episode.title,
                                 metadata = episode.metadataLine(now, resources),
                                 artworkUrl = episode.artworkUrl ?: podcast.artworkUrl,
@@ -344,12 +353,6 @@ fun PodcastDetailScreen(
                                         progressPercent = episode.downloadPercent,
                                         onClick = { onEpisodeDownloadToggle(episode.id) },
                                     )
-                                    if (isReorderable) {
-                                        ReorderHandle(
-                                            modifier = Modifier
-                                                .reorderableHandle(drag, episode.id),
-                                        )
-                                    }
                                 },
                             )
                         }

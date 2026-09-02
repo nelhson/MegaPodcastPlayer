@@ -7,17 +7,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -33,27 +31,25 @@ import androidx.compose.ui.semantics.semantics
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.SectionHeader
-import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
 import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderableState
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
-import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.media.PlayableEpisode
 
 /**
  * The play queue.
  *
- * @param onBack invoked when the user leaves the screen.
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt; shared with the player, because it is the same queue.
  */
 @Composable
 fun QueueRoute(
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
@@ -61,7 +57,6 @@ fun QueueRoute(
 
     QueueScreen(
         uiState = uiState,
-        onBack = onBack,
         onPlay = viewModel::playQueued,
         onRemove = viewModel::removeFromQueue,
         onMove = viewModel::moveInUpNext,
@@ -74,10 +69,11 @@ fun QueueRoute(
  *
  * The queue used to live at the bottom of the now-playing screen, below the artwork and the
  * transport controls, where it could only be reached by scrolling past everything else and could
- * not be edited beyond removing a row. It is a list the user manages, so it gets a screen.
+ * not be edited beyond removing a row. It is a list the user manages, so it gets a screen — and,
+ * since it is one of the three lists the app is made of, a tab. It carries no back arrow for that
+ * reason: a top-level destination has nothing behind it.
  *
  * @param uiState what to render; [PlayerUiState.upNext] is the editable part.
- * @param onBack dismiss handler.
  * @param onPlay plays a queued episode immediately.
  * @param onRemove drops a queued episode.
  * @param onMove applies a completed drag, as positions within [PlayerUiState.upNext]. Called once
@@ -89,13 +85,15 @@ fun QueueRoute(
 @Composable
 fun QueueScreen(
     uiState: PlayerUiState,
-    onBack: () -> Unit,
     onPlay: (String) -> Unit,
     onRemove: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    // Matches the other tabs: the screen opens on its name and gives the height back to the list
+    // as soon as the user scrolls.
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(listState),
         items = uiState.upNext,
@@ -104,18 +102,13 @@ fun QueueScreen(
     )
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.queue_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.queue_back),
-                        )
-                    }
-                },
+            BPodcatLargeTopAppBar(
+                title = stringResource(R.string.queue_title),
+                scrollBehavior = scrollBehavior,
             )
         },
     ) { padding ->
@@ -174,9 +167,14 @@ fun QueueScreen(
 /**
  * One reorderable, removable queue row.
  *
- * Both gestures the row offers are invisible to a screen reader, so both are also published as
- * custom accessibility actions. That is not a nicety here: without them the queue would be
- * readable and completely uneditable with TalkBack on.
+ * Three gestures share it, and they stay out of each other's way by asking for different things: a
+ * tap plays the episode, a horizontal swipe removes the row, and a long press picks it up. The
+ * press is the one that has to be held, which is what leaves the other two — and the queue's own
+ * scrolling — free to happen first.
+ *
+ * Every one of them is invisible to a screen reader, so all of them are also published as custom
+ * accessibility actions. That is not a nicety here: without them the queue would be readable and
+ * completely uneditable with TalkBack on.
  *
  * @param entry the queued episode.
  * @param index its position in the "up next" list.
@@ -221,43 +219,43 @@ private fun QueueEntry(
         EpisodeRow(
             // The actions go on the row rather than on the box around it: the row merges its
             // children into one node, and that merged node is what a screen reader lands on.
-            modifier = Modifier.semantics {
-                customActions = buildList {
-                    if (index > 0) {
+            modifier = Modifier
+                // Inside the swipe box rather than around it, so the row's two drags are settled
+                // by the pointer that started them: this one consumes movement only once the
+                // press has been held, and a swipe claims the gesture long before that.
+                .reorderableLongPressDrag(drag, entry.episode.id)
+                .semantics {
+                    customActions = buildList {
+                        if (index > 0) {
+                            add(
+                                CustomAccessibilityAction(moveUp) {
+                                    drag.move(index, index - 1)
+                                    true
+                                },
+                            )
+                        }
+                        if (index < drag.order.lastIndex) {
+                            add(
+                                CustomAccessibilityAction(moveDown) {
+                                    drag.move(index, index + 1)
+                                    true
+                                },
+                            )
+                        }
                         add(
-                            CustomAccessibilityAction(moveUp) {
-                                drag.move(index, index - 1)
+                            CustomAccessibilityAction(remove) {
+                                onRemove()
                                 true
                             },
                         )
                     }
-                    if (index < drag.order.lastIndex) {
-                        add(
-                            CustomAccessibilityAction(moveDown) {
-                                drag.move(index, index + 1)
-                                true
-                            },
-                        )
-                    }
-                    add(
-                        CustomAccessibilityAction(remove) {
-                            onRemove()
-                            true
-                        },
-                    )
-                }
-            },
+                },
             title = entry.episode.title,
             showTitle = entry.showTitle,
             artworkUrl = entry.artworkUrl,
             artworkSize = ArtworkSize.Row,
             playedFraction = entry.episode.playedFraction,
             onClick = onPlay,
-            trailing = {
-                ReorderHandle(
-                    modifier = Modifier.reorderableHandle(drag, entry.episode.id),
-                )
-            },
         )
     }
 }

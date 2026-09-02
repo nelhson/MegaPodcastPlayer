@@ -71,11 +71,9 @@ import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
 import md.borisveriga.bpodcat.core.designsystem.component.ShowTile
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
-import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderHandle
 import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
-import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableHandle
 import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.designsystem.theme.Motion
@@ -262,9 +260,8 @@ fun LibraryScreen(
  * Adaptive rather than a fixed column count, so the same code fills a phone, a rail-width pane and
  * the Fold 7 opened out without any of them being a special case.
  *
- * A long press rather than a handle: a tile is artwork edge to edge, and carving a grip out of it
- * would cost the cover the space it exists to show. The list layout, whose rows have somewhere to
- * put one, uses a handle instead.
+ * A long press: a tile is artwork edge to edge, and carving a grip out of it would cost the cover
+ * the space it exists to show. The list layout is picked up the same way.
  *
  * @param podcasts the library.
  * @param onPodcastClick tile tap handler.
@@ -328,6 +325,10 @@ private fun ShowGrid(
 /**
  * The shows as rows, for a library too long to recognise by cover alone.
  *
+ * Rearrangeable by a long press on the row, the same gesture and the same code as the grid. The
+ * rows used to end in a grip as well; it cost 48dp on every one of them to advertise a gesture
+ * that turns out to be the one people reach for anyway.
+ *
  * @param podcasts the library.
  * @param onPodcastClick row tap handler.
  * @param onMove reports a finished reorder as positions in [podcasts].
@@ -368,7 +369,10 @@ private fun ShowList(
                     .graphicsLayer {
                         translationY = if (isDragging) drag.offset.y else 0f
                         shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-                    },
+                    }
+                    // The same gesture the grid uses: a row is picked up wherever the finger
+                    // already is.
+                    .reorderableLongPressDrag(drag, entry.podcast.id),
                 title = entry.podcast.title,
                 author = entry.podcast.author,
                 metadata = entry.countsLine(resources),
@@ -390,9 +394,6 @@ private fun ShowList(
                             Text(text = entry.newEpisodeCount.toString())
                         }
                     }
-                    ReorderHandle(
-                        modifier = Modifier.reorderableHandle(drag, entry.podcast.id),
-                    )
                 },
             )
         }

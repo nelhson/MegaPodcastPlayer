@@ -1,11 +1,14 @@
 package md.borisveriga.bpodcat.feature.player
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -21,12 +24,15 @@ import org.robolectric.annotation.Config
 /**
  * Tests for [QueueScreen].
  *
- * The reorder gesture itself is not exercised here — a synthetic drag over a `LazyColumn` proves
- * little that `ReorderableStateTest` in `:core:designsystem` does not prove directly. What is
- * worth pinning on the screen is the part a drag test would not reach anyway: that the queue is
- * editable *without* a gesture, via the custom accessibility actions, and that those actions
- * report positions in the "up next" list rather than including the episode that is playing. That
- * off-by-one is the whole reason [PlayerViewModel.moveInUpNext] exists.
+ * Most of what is worth pinning on the screen is the part a drag test would not reach anyway:
+ * that the queue is editable *without* a gesture, via the custom accessibility actions, and that
+ * those actions report positions in the "up next" list rather than including the episode that is
+ * playing. That off-by-one is the whole reason [PlayerViewModel.moveInUpNext] exists.
+ *
+ * One real drag is driven all the same, because the row is the busiest in the app: a tap plays it,
+ * a horizontal swipe removes it, and a long press picks it up. The arithmetic behind the drag
+ * belongs to `ReorderableStateTest` in `:core:designsystem`; what this pins is that the long press
+ * reaches it at all from under the swipe box, and still reports its positions in "up next".
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -73,7 +79,6 @@ class QueueScreenTest {
             BPodcatTheme {
                 QueueScreen(
                     uiState = uiState,
-                    onBack = {},
                     onPlay = onPlay,
                     onRemove = onRemove,
                     onMove = onMove,
@@ -90,6 +95,17 @@ class QueueScreenTest {
         composeRule.onNodeWithText("Up next").assertIsDisplayed()
         composeRule.onNodeWithText("Episode a").assertIsDisplayed()
         composeRule.onNodeWithText("Episode b").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the screen is titled and carries no back arrow, because it is a tab`() {
+        setContent()
+
+        composeRule.onNodeWithText("Queue").assertIsDisplayed()
+        // A back arrow here would offer to leave a top-level destination for whichever tab
+        // happened to precede it. `BPodcatLargeTopAppBar` draws one only when given a handler,
+        // and the queue no longer has one to give.
+        composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
     }
 
     @Test
@@ -123,6 +139,26 @@ class QueueScreenTest {
     }
 
     @Test
+    fun `a long press anywhere on a row picks it up, and the drag reorders up next`() {
+        var move: Pair<Int, Int>? = null
+        setContent(onMove = { from, to -> move = from to to })
+
+        composeRule.onNodeWithText("Episode b").performTouchInput {
+            down(center)
+            // Held past the system's long-press timeout, which is what separates picking the row
+            // up from tapping it, swiping it away, or scrolling the queue.
+            advanceEventTime(LONG_PRESS_MS)
+            // One row down puts the dragged row's centre inside the row below it.
+            moveBy(Offset(0f, height.toFloat()))
+            up()
+        }
+
+        // "b" is the second episode in the queue but the first in "up next": a drag has to be
+        // reported the same way the accessibility actions are.
+        assertEquals(0 to 1, move)
+    }
+
+    @Test
     fun `the first queued episode cannot be moved up`() {
         setContent()
 
@@ -145,5 +181,10 @@ class QueueScreenTest {
             .performCustomAccessibilityActionWithLabel("Remove Episode c from the queue")
 
         assertEquals("c", removed)
+    }
+
+    private companion object {
+        /** Comfortably past the 500ms system long-press timeout the drag gesture waits out. */
+        const val LONG_PRESS_MS = 1_000L
     }
 }

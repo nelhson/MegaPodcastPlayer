@@ -1,6 +1,5 @@
 package md.borisveriga.bpodcat.core.designsystem.reorder
 
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -25,7 +24,8 @@ import androidx.compose.ui.unit.IntSize
  * This started as the play queue's own reorder and was generalised when the library and a YouTube
  * show's episode list needed the same gesture. Two things had to widen: the hit test, which was a
  * scalar comparison against [LazyListState]'s one-dimensional offsets and is now a rectangle test
- * so a grid works too, and the way a drag is started, since a grid tile has no room for a handle.
+ * so a grid works too, and the way a drag is started, which used to be a grip at the end of a row
+ * and is now a long press on the item — the one gesture a grid tile has room for.
  *
  * Everything else is unchanged, and all of it is load-bearing — see [ReorderableState].
  */
@@ -198,7 +198,7 @@ class ReorderableState<T> internal constructor(
     /**
      * Begins a drag.
      *
-     * @param key the key of the item whose handle was grabbed, or that was long-pressed.
+     * @param key the key of the long-pressed item.
      */
     fun onDragStart(key: Any) {
         startIndex = order.indexOfFirst { keyOf(it) == key }
@@ -292,34 +292,16 @@ private fun ReorderableItem.contains(point: Offset): Boolean =
         point.y < offset.y + size.height
 
 /**
- * Starts a reorder drag from a dedicated handle.
- *
- * Preferred wherever there is room for one: a handle gives the gesture a visible target, and it
- * leaves the item itself free to be a button. See [reorderableLongPressDrag] for the case where
- * there is no room.
- *
- * @param state the reorder state to drive.
- * @param key the dragged item's key.
- */
-fun <T> Modifier.reorderableHandle(state: ReorderableState<T>, key: Any): Modifier =
-    pointerInput(key) {
-        detectDragGestures(
-            onDragStart = { state.onDragStart(key) },
-            onDragEnd = { state.onDragEnd() },
-            onDragCancel = { state.onDragCancel() },
-            onDrag = { change, amount ->
-                change.consume()
-                state.onDrag(amount)
-            },
-        )
-    }
-
-/**
  * Starts a reorder drag from a long press on the item itself.
  *
- * For items with nowhere to put a handle — a grid tile is artwork edge to edge, and carving a grip
- * out of it would cost the cover the space it exists to show. The long press is what keeps the
- * gesture from fighting the grid's own scrolling.
+ * The only way a drag begins, in every layout. A grid tile never had anywhere to put a grip — it
+ * is artwork edge to edge, and carving one out would cost the cover the space it exists to show —
+ * and once the press worked there, the rows were spending 48dp each on a second way to do the same
+ * thing.
+ *
+ * Safe on an item that is also a button, and on one inside a scrolling container: nothing is
+ * consumed until the press has been held, so a tap still taps and a flick still scrolls — either
+ * of them cancels the long press long before it fires.
  *
  * @param state the reorder state to drive.
  * @param key the dragged item's key.

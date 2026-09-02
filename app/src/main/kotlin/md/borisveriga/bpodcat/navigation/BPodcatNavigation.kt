@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.navigation
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,8 +65,11 @@ sealed interface Route {
     /**
      * The play queue, with drag-to-reorder.
      *
-     * Pushed like [Search] rather than shown as a tab: it is reached from the player, and is empty
-     * most of the time.
+     * A [TopLevelDestination] rather than a screen pushed from the player. The queue is a list the
+     * user builds and edits, not something read once on the way past: reaching it used to mean
+     * opening the player first, which put two taps and a full-screen sheet in front of the one
+     * screen that answers "what am I listening to next". The player's "up next" link still leads
+     * here; it now switches tabs instead of pushing a copy.
      *
      * The player itself is deliberately *not* a route. It is a sheet that grows out of the bar
      * above the navigation bar, so there is no destination to navigate to and nothing for the back
@@ -94,5 +98,11 @@ enum class TopLevelDestination(
     val icon: ImageVector,
 ) {
     LIBRARY(Route.Library, R.string.destination_library, Icons.Rounded.LibraryMusic),
+
+    /**
+     * Sits between the library and the downloads because that is the order the three are used in:
+     * pick a show, line up what follows, and only then go looking at what is stored on the device.
+     */
+    QUEUE(Route.Queue, R.string.destination_queue, Icons.AutoMirrored.Rounded.QueueMusic),
     DOWNLOADS(Route.Downloads, R.string.destination_downloads, Icons.Rounded.DownloadDone),
 }
