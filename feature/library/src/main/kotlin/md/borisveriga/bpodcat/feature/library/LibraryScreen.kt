@@ -72,7 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
-import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatTopAppBar
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.ShowRow
@@ -188,7 +188,11 @@ fun LibraryScreen(
     // `LocalContext.current.resources`, so a configuration change invalidates the read.
     val resources = LocalResources.current
     val undoLabel = stringResource(R.string.library_undo)
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Pinned rather than collapsing: this is one of three tabs, and the bar is what tells the user
+    // which of them they are on. A large bar would spend the top third of the screen restating the
+    // tab the navigation bar already highlights, and then scroll the name away exactly when a fast
+    // scroll makes it easiest to lose track of.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     // Saveable so the menu does not silently close when the Fold 7 is opened mid-decision.
     var addMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // The show a removal is being confirmed for, held as an id rather than the object so it too
@@ -223,7 +227,7 @@ fun LibraryScreen(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            BPodcatLargeTopAppBar(
+            BPodcatTopAppBar(
                 title = stringResource(R.string.library_title),
                 scrollBehavior = scrollBehavior,
                 actions = {

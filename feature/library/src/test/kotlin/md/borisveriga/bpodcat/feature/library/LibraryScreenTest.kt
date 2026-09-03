@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -110,6 +112,22 @@ class LibraryScreenTest {
                 )
             }
         }
+    }
+
+    /**
+     * The bar is what says which of the three tabs the user is on, so it has to survive the
+     * scrolling. It used to be a large bar that took the name with it on the way up.
+     */
+    @Test
+    fun `the tab name stays in the bar once the library is scrolled`() {
+        setScreen(
+            layout = LibraryLayout.LIST,
+            podcasts = List(size = 30) { index -> entry("p$index", "Show $index") },
+        )
+
+        composeRule.onNode(hasScrollAction()).performTouchInput { swipeUp() }
+
+        composeRule.onNodeWithText("Library").assertIsDisplayed()
     }
 
     @Test

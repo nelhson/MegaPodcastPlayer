@@ -32,7 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
-import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatTopAppBar
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
@@ -110,9 +110,11 @@ fun QueueScreen(
     // `LocalContext.current.resources`, so a configuration change invalidates the read.
     val resources = LocalResources.current
     val undoLabel = stringResource(R.string.queue_undo)
-    // Matches the other tabs: the screen opens on its name and gives the height back to the list
-    // as soon as the user scrolls.
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Pinned rather than collapsing: this is one of three tabs, and the bar is what tells the user
+    // which of them they are on. A large bar would spend the top third of the screen restating the
+    // tab the navigation bar already highlights, and then scroll the name away exactly when a fast
+    // scroll makes it easiest to lose track of.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(listState),
         items = uiState.upNext,
@@ -137,7 +139,7 @@ fun QueueScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            BPodcatLargeTopAppBar(
+            BPodcatTopAppBar(
                 title = stringResource(R.string.queue_title),
                 scrollBehavior = scrollBehavior,
             )

@@ -60,7 +60,7 @@ import md.borisveriga.bpodcat.core.common.format.formatBytes
 import md.borisveriga.bpodcat.core.common.format.formatDuration
 import md.borisveriga.bpodcat.core.common.format.formatPublishedDate
 import md.borisveriga.bpodcat.core.common.format.formatRemaining
-import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
+import md.borisveriga.bpodcat.core.designsystem.component.BPodcatTopAppBar
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
@@ -149,7 +149,11 @@ fun DownloadsScreen(
     // change invalidates the read.
     val resources = LocalResources.current
     val now = remember { Instant.now() }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Pinned rather than collapsing: this is one of three tabs, and the bar is what tells the user
+    // which of them they are on. A large bar would spend the top third of the screen restating the
+    // tab the navigation bar already highlights, and then scroll the name away exactly when a fast
+    // scroll makes it easiest to lose track of.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     // Saveable so a decision half-made does not vanish when the Fold 7 is opened mid-thought. The
     // id rather than the episode: the row it names is re-read from the list below, which is what
     // makes a confirmation for an episode that has since gone resolve to no dialog at all.
@@ -177,7 +181,7 @@ fun DownloadsScreen(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            BPodcatLargeTopAppBar(
+            BPodcatTopAppBar(
                 title = stringResource(R.string.downloads_title),
                 scrollBehavior = scrollBehavior,
             )

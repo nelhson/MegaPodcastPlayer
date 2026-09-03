@@ -2,12 +2,15 @@ package md.borisveriga.bpodcat.feature.downloads
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -98,6 +101,19 @@ class DownloadsScreenTest {
                 )
             }
         }
+    }
+
+    /**
+     * The bar is what says which of the three tabs the user is on, so it has to survive the
+     * scrolling. It used to be a large bar that took the name with it on the way up.
+     */
+    @Test
+    fun `the tab name stays in the bar once the list is scrolled`() {
+        setScreen(List(size = 30) { index -> download("e$index") })
+
+        composeRule.onNode(hasScrollAction()).performTouchInput { swipeUp() }
+
+        composeRule.onNodeWithText("Downloads").assertIsDisplayed()
     }
 
     @Test

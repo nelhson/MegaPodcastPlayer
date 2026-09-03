@@ -3,12 +3,14 @@ package md.borisveriga.bpodcat.feature.player
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
@@ -103,8 +105,8 @@ class QueueScreenTest {
         setContent()
 
         composeRule.onNodeWithText("Episode b").assertIsDisplayed()
-        // No section header over the rows: the large app bar already says Queue, and a heading
-        // under it said the same thing twice.
+        // No section header over the rows: the app bar already says Queue, and a heading under
+        // it said the same thing twice.
         composeRule.onNodeWithText("Up next").assertDoesNotExist()
         // The player is what says this, on whichever screen the user is on. A second copy of it
         // here was a row that could not be played, reordered or swiped away.
@@ -137,9 +139,26 @@ class QueueScreenTest {
 
         composeRule.onNodeWithText("Queue").assertIsDisplayed()
         // A back arrow here would offer to leave a top-level destination for whichever tab
-        // happened to precede it. `BPodcatLargeTopAppBar` draws one only when given a handler,
-        // and the queue no longer has one to give.
+        // happened to precede it. `BPodcatTopAppBar` draws one only when given a handler, and the
+        // queue no longer has one to give.
         composeRule.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    /**
+     * The bar is what says which of the three tabs the user is on, so it has to survive the
+     * scrolling. It used to be a large bar that took the name with it on the way up.
+     */
+    @Test
+    fun `the tab name stays in the bar once the queue is scrolled`() {
+        setContent(
+            playingFirst.copy(
+                queue = List(size = 30) { index -> playable("e$index") },
+            ),
+        )
+
+        composeRule.onNode(hasScrollAction()).performTouchInput { swipeUp() }
+
+        composeRule.onNodeWithText("Queue").assertIsDisplayed()
     }
 
     @Test
