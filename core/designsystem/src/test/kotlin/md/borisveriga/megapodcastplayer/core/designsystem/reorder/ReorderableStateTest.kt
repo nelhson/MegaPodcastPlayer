@@ -96,6 +96,64 @@ class ReorderableStateTest {
     }
 
     @Test
+    fun `a change refused mid-drag is applied the moment the finger lifts`() {
+        val state = state(FakeLayout(isLinear = true))
+        state.adopt(listOf("a", "b"))
+
+        state.onDragStart("b")
+        // The collection shrinks under the finger — in the queue, the episode playing finished and
+        // took its row with it.
+        state.adopt(listOf("b"))
+        state.onDragEnd()
+
+        // Without this the refused list would be the last one the state ever heard about: the call
+        // site only adopts when *its* list changes, so "a" would stay on screen indefinitely.
+        assertEquals(listOf("b"), state.order)
+    }
+
+    @Test
+    fun `a change refused mid-drag is applied when the drag is cancelled too`() {
+        val state = state(FakeLayout(isLinear = true))
+        state.adopt(listOf("a", "b"))
+
+        state.onDragStart("b")
+        state.adopt(listOf("b"))
+        state.onDragCancel()
+
+        assertEquals(listOf("b"), state.order)
+    }
+
+    @Test
+    fun `a collection emptied under the finger leaves nothing drawn`() {
+        val state = state(FakeLayout(isLinear = true))
+        state.adopt(listOf("a"))
+
+        state.onDragStart("a")
+        state.adopt(emptyList())
+        state.onDragEnd()
+
+        // The bug this pins: a single row left stranded in a queue the user has emptied.
+        assertEquals(emptyList<String>(), state.order)
+    }
+
+    @Test
+    fun `a drag whose collection changed underneath reports nothing`() {
+        val layout = FakeLayout(isLinear = true, items = rows("a", "b", "c"))
+        val state = state(layout)
+        state.adopt(listOf("a", "b", "c"))
+
+        state.onDragStart("a")
+        state.onDrag(Offset(0f, ROW_HEIGHT.toFloat()))
+        state.adopt(listOf("b", "c"))
+        state.onDragEnd()
+
+        // The two positions named items in a collection that no longer exists. Applying them to
+        // whatever has taken their place would reorder episodes the user never touched.
+        assertEquals(emptyList<Pair<Int, Int>>(), moves)
+        assertEquals(listOf("b", "c"), state.order)
+    }
+
+    @Test
     fun `a row dragged over its neighbour trades places with it`() {
         val layout = FakeLayout(isLinear = true, items = rows("a", "b", "c"))
         val state = state(layout)

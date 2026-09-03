@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
-    <bytecodeTargetLevel target="17" />
+    <bytecodeTargetLevel target="17">
+      <module name="MegaPodcastPlayer.app" target="25" />
+      <module name="MegaPodcastPlayer.core.common" target="25" />
+      <module name="MegaPodcastPlayer.core.data" target="25" />
+      <module name="MegaPodcastPlayer.core.database" target="25" />
+      <module name="MegaPodcastPlayer.core.datastore" target="25" />
+      <module name="MegaPodcastPlayer.core.designsystem" target="25" />
+      <module name="MegaPodcastPlayer.core.media" target="25" />
+      <module name="MegaPodcastPlayer.core.network" target="25" />
+      <module name="MegaPodcastPlayer.core.testing" target="25" />
+      <module name="MegaPodcastPlayer.core.youtube" target="25" />
+      <module name="MegaPodcastPlayer.feature.downloads" target="25" />
+      <module name="MegaPodcastPlayer.feature.library" target="25" />
+      <module name="MegaPodcastPlayer.feature.player" target="25" />
+      <module name="MegaPodcastPlayer.feature.podcast" target="25" />
+      <module name="MegaPodcastPlayer.feature.search" target="25" />
+      <module name="MegaPodcastPlayer.feature.settings" target="25" />
+      <module name="MegaPodcastPlayer.wear" target="25" />
+    </bytecodeTargetLevel>
   </component>
 </project>

@@ -25,7 +25,7 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
  * @property publisher used to answer
  *   [WearCommand.RequestState] and to confirm the outcome of the rest.
  * @property libraryPublisher republishes what the phone holds offline, for the same reason.
- * @property audioSender copies an episode's audio to the watch that asked for it.
+ * @property audioTransfers starts, and stops, a copy of an episode's audio to the watch that asked.
  */
 @Singleton
 internal class WearCommandExecutor @Inject constructor(
@@ -34,7 +34,7 @@ internal class WearCommandExecutor @Inject constructor(
     private val episodePlayer: EpisodePlayer,
     private val publisher: NowPlayingPublisher,
     private val libraryPublisher: OfflineLibraryPublisher,
-    private val audioSender: EpisodeAudioSender,
+    private val audioTransfers: EpisodeAudioTransfers,
 ) {
 
     /**
@@ -78,7 +78,11 @@ internal class WearCommandExecutor @Inject constructor(
             // asks for state gets both, which is the moment it needs both.
             WearCommand.RequestState -> libraryPublisher.publishCurrent()
 
-            is WearCommand.CopyToWatch -> audioSender.send(sourceNodeId, command.episodeId)
+            is WearCommand.CopyToWatch -> audioTransfers.start(sourceNodeId, command.episodeId)
+
+            // The watch has already stopped listening by the time this arrives; this is only about
+            // stopping the phone from spending the next few minutes sending bytes into nothing.
+            is WearCommand.CancelCopyToWatch -> audioTransfers.cancel(command.episodeId)
 
             // Audio the watch played is audio the phone did not, so this is the one command that
             // writes playback state rather than asking for it. A finished episode goes back to the

@@ -13,7 +13,14 @@
 
     <string name="app_name">MegaPodcastPlayer</string>
 
-    <string name="watch_up_next">Up next</string>
+    <!--
+      Section headers for the two lists that describe the *phone*, as opposed to watch_on_this_watch
+      below. Each names the list rather than the action its rows perform: the watch shows three lists
+      one under another, and on a 45 mm screen the header is the only thing saying whose episodes
+      these are.
+    -->
+    <string name="watch_phone_queue">Phone queue</string>
+    <string name="watch_downloaded_on_phone">Downloaded on phone</string>
 
     <string name="watch_play">Play</string>
     <string name="watch_pause">Pause</string>
@@ -56,8 +63,11 @@
       phone out of range, so its copy says "on this watch" rather than naming the phone at all.
     -->
     <string name="watch_on_this_watch">On this watch</string>
+    <!-- The action a downloaded-on-phone row performs; read by TalkBack from its icon. -->
     <string name="watch_copy_to_watch">Copy to watch</string>
     <string name="watch_copying">Copying…</string>
+    <!-- The action beside an arriving episode's bar; read by TalkBack from its icon. -->
+    <string name="watch_cancel_copy">Cancel copy</string>
     <string name="watch_remove_from_watch">Remove from watch</string>
     <string name="watch_free_up_space">Remove all from watch</string>
     <string name="watch_nothing_to_copy">Download an episode on your phone to copy it here.</string>

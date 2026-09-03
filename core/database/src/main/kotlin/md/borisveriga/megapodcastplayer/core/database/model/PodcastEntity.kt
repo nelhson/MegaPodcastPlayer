@@ -36,9 +36,8 @@ data class PodcastEntity(
     /**
      * Where this show's episode list comes from.
      *
-     * The `defaultValue` is mandatory, not decorative: it has to match the `DEFAULT 'RSS'` in
-     * `MIGRATION_1_2` exactly, or Room's schema validation rejects the migrated database at open
-     * with "Migration didn't properly handle podcasts".
+     * The `defaultValue` is the column's `DEFAULT 'RSS'` in the created table, which is what an
+     * `INSERT` that names no source relies on.
      */
     @ColumnInfo(name = "source", defaultValue = "RSS")
     val source: PodcastSource = PodcastSource.RSS,
@@ -49,7 +48,7 @@ data class PodcastEntity(
      * than a property of the row, and a title sort cannot stand in for it. New subscriptions are
      * appended at `MAX(sort_order) + 1`; see `PodcastDao.nextSortOrder`.
      *
-     * As with [source], the `defaultValue` has to match the `DEFAULT 0` in `MIGRATION_4_5` exactly.
+     * As with [source], the `defaultValue` is the column's own `DEFAULT 0`.
      */
     @ColumnInfo(name = "sort_order", defaultValue = "0")
     val sortOrder: Int = 0,

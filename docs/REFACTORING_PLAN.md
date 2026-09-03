@@ -57,7 +57,8 @@ other apps' exported providers under MegaPodcastPlayer's identity.
    items never enter the database. This is the primary gate.
 3. Re-check in `PlayableEpisode.toMediaItem()` as defence in depth — the database may already
    hold rows written before the fix.
-4. Migration: one-off sweep deleting existing episode rows whose `audio_url` fails the guard.
+4. ~~Migration: one-off sweep deleting existing episode rows whose `audio_url` fails the guard.~~
+   Superseded 2026-09-03: the database is no longer migrated, so a schema reset does the sweeping.
 
 **Tests:** parser test with `file:`/`content:`/`javascript:` enclosures asserting the item is
 dropped; `MediaItemsTest` case asserting a non-HTTP URI never becomes a `MediaItem`.
@@ -533,7 +534,7 @@ Each phase is independently shippable. Phase 0 exists so that later phases are v
 | # | Item |
 |---|---|
 | S-3 | `.gitignore` the keystore and its properties file *(do this first — it is one line)* |
-| S-1 | URL scheme allowlist in parser + `toMediaItem`, plus the cleanup migration |
+| S-1 | URL scheme allowlist in parser + `toMediaItem` (the cleanup migration is superseded by the schema reset) |
 | S-2 | Fail the release build rather than signing with the debug key |
 | S-4 | Verify `sourceNodeId` in `WearCommandService` |
 | S-5 | Restrict `MediaSession.Callback.onConnect` |
@@ -590,5 +591,6 @@ and posts nothing without the runtime permission — all three covered by tests 
   three real-world fixtures and its skip-the-item failure mode is correct for podcast feeds.
 - Introducing a use-case/domain layer (Q-5). Not justified at this size.
 - Replacing NewPipeExtractor. The R8 rules are hard-won and documented; leave them alone.
-- Any change to the Wear Data Layer *protocol*. It is versioned by `@SerialName`, tolerates
-  unknown fields on both sides, and is the most carefully built part of the codebase.
+- Any change to the Wear Data Layer *protocol*. Both sides are compiled from `:core:wearprotocol`
+  and installed from one build, so the shape is free to change — but it is the most carefully built
+  part of the codebase, and a change means reinstalling phone and watch together.

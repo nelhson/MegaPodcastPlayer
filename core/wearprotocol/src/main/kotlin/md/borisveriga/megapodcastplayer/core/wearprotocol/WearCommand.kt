@@ -11,8 +11,8 @@ import kotlinx.serialization.Serializable
  * decide what happens next, it only asks, and learns the result from the next
  * [NowPlayingSnapshot].
  *
- * Each variant carries an explicit [SerialName] so that renaming a Kotlin class cannot break a
- * watch running an older build of the app.
+ * Each variant carries an explicit [SerialName] so that a command read straight out of
+ * `adb shell dumpsys` names itself, whatever the Kotlin class is called.
  */
 @Serializable
 sealed interface WearCommand {
@@ -93,6 +93,23 @@ sealed interface WearCommand {
     @Serializable
     @SerialName("copy_to_watch")
     data class CopyToWatch(val episodeId: String) : WearCommand
+
+    /**
+     * Asks the phone to stop a copy that is under way.
+     *
+     * The watch stops reading on its own the moment the wearer taps cancel — it does not need
+     * permission to throw away bytes it is receiving. This exists for the other half: without it the
+     * phone would keep pouring an episode nobody is catching down the Bluetooth link, holding a
+     * foreground service up for the minutes that takes.
+     *
+     * Naming an episode rather than meaning "stop everything" because the phone may be sending more
+     * than one, and cancelling the row the wearer tapped must not cancel the row they did not.
+     *
+     * @property episodeId the episode whose transfer to abandon.
+     */
+    @Serializable
+    @SerialName("cancel_copy_to_watch")
+    data class CancelCopyToWatch(val episodeId: String) : WearCommand
 
     /**
      * Tells the phone where an episode played *on the watch* got to.

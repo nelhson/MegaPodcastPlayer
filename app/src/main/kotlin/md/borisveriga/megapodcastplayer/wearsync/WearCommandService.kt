@@ -54,8 +54,8 @@ class WearCommandService : WearableListenerService() {
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
         if (messageEvent.path != WearPaths.COMMAND) return
-        // A payload this build cannot parse comes from a newer watch app; ignoring it is the whole
-        // of the compatibility policy, and is preferable to crashing a Play Services callback.
+        // The watch ships from this same build, so a payload that will not parse is a corrupt one;
+        // ignoring it is preferable to crashing a Play Services callback.
         val command = WearMessages.decodeCommand(messageEvent.data) ?: return
         val sourceNodeId = messageEvent.sourceNodeId
 

@@ -17,6 +17,18 @@ interface PlaybackRepository {
     /** Observes the durable queue in play order, ready to hand to the player. */
     fun observeQueue(): Flow<List<PlayableEpisode>>
 
+    /**
+     * Observes the id of the episode the player most recently loaded, or null if it never has.
+     *
+     * The durable answer to "which queue entry is the current one". The live answer is the
+     * player's, and it is the better one — but it is null until a
+     * [md.borisveriga.megapodcastplayer.core.media.PlaybackConnection] has attached to the service,
+     * and it is null again whenever the service has been killed. This one survives both, which is
+     * what lets a queue screen tell the episode that is loaded from the episodes waiting behind it
+     * before the player has said a word.
+     */
+    fun observeLastPlayedEpisodeId(): Flow<String?>
+
     /** Observes the user's playback preferences. */
     fun observePlaybackSettings(): Flow<PlaybackSettings>
 

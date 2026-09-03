@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.wearprotocol
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -72,6 +73,7 @@ class WearMessagesTest {
     @Test
     fun `the commands that carry an episode between the devices survive a round trip`() {
         val copy = WearCommand.CopyToWatch(episodeId = "ep-1")
+        val cancel = WearCommand.CancelCopyToWatch(episodeId = "ep-1")
         val report = WearCommand.ReportPosition(
             episodeId = "ep-1",
             positionMs = 900_000L,
@@ -79,7 +81,20 @@ class WearMessagesTest {
         )
 
         assertEquals(copy, WearMessages.decodeCommand(WearMessages.encodeCommand(copy)))
+        assertEquals(cancel, WearMessages.decodeCommand(WearMessages.encodeCommand(cancel)))
         assertEquals(report, WearMessages.decodeCommand(WearMessages.encodeCommand(report)))
+    }
+
+    /**
+     * Starting a copy and stopping one carry the same argument, so a mixed-up [SerialName] would
+     * still decode — into the opposite instruction. This is the assertion that catches that.
+     */
+    @Test
+    fun `starting a copy and cancelling one are told apart on the wire`() {
+        val start = WearMessages.encodeCommand(WearCommand.CopyToWatch(episodeId = "ep-1"))
+        val stop = WearMessages.encodeCommand(WearCommand.CancelCopyToWatch(episodeId = "ep-1"))
+
+        assertNotEquals(start.decodeToString(), stop.decodeToString())
     }
 
     /**
@@ -111,20 +126,21 @@ class WearMessagesTest {
     }
 
     @Test
-    fun `a command variant this build does not know decodes to null`() {
-        val fromANewerApp = """{"type":"start_a_fire"}""".encodeToByteArray()
+    fun `a command variant that is not one of ours decodes to null`() {
+        val corrupt = """{"type":"start_a_fire"}""".encodeToByteArray()
 
-        assertNull(WearMessages.decodeCommand(fromANewerApp))
+        assertNull(WearMessages.decodeCommand(corrupt))
     }
 
+    /**
+     * Both sides ship from one build, so a field these classes do not declare can only be damage.
+     * Decoding is strict about it rather than quietly dropping it.
+     */
     @Test
-    fun `unknown snapshot fields from a newer app are ignored`() {
-        val fromANewerApp =
+    fun `a field the snapshot does not declare decodes to null`() {
+        val corrupt =
             """{"episodeId":"ep-1","title":"One","chapterCount":7}""".encodeToByteArray()
 
-        val decoded = WearMessages.decodeSnapshot(fromANewerApp)
-
-        assertEquals("ep-1", decoded?.episodeId)
-        assertEquals("One", decoded?.title)
+        assertNull(WearMessages.decodeSnapshot(corrupt))
     }
 }

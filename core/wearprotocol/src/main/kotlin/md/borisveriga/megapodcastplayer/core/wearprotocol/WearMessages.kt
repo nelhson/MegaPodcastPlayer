@@ -9,19 +9,15 @@ import kotlinx.serialization.json.Json
  * rather than a binary format because a payload is a few hundred bytes at most, and being able to
  * read one straight out of `adb shell dumpsys` is worth more here than the bytes saved.
  *
- * Decoding never throws. A watch running an older build will meet fields it does not know, and a
- * corrupt or truncated payload is always possible over Bluetooth; in both cases the right answer is
- * "ignore this one and wait for the next", not a crash inside a Data Layer callback.
+ * Both sides are compiled from the same source and installed from the same build, so a payload is
+ * either exactly what these classes describe or it is damaged. Decoding is therefore strict — an
+ * unknown field is corruption, not a newer peer — but it never throws: a truncated or garbled
+ * payload over Bluetooth returns null, because "ignore this one and wait for the next" beats a
+ * crash inside a Data Layer callback.
  */
 object WearMessages {
 
-    private val json = Json {
-        // An older peer must survive fields added by a newer one; this is the whole reason the two
-        // APKs can be updated independently.
-        ignoreUnknownKeys = true
-        // Defaults are written out so that a peer whose defaults differ still reads the real value.
-        encodeDefaults = true
-    }
+    private val json = Json
 
     /** Serialises a command for [WearPaths.COMMAND]. */
     fun encodeCommand(command: WearCommand): ByteArray =
@@ -30,7 +26,7 @@ object WearMessages {
     /**
      * Parses a command received on [WearPaths.COMMAND].
      *
-     * @return the command, or null if the payload was not one this build understands.
+     * @return the command, or null if the payload was corrupt.
      */
     fun decodeCommand(bytes: ByteArray): WearCommand? = runCatching {
         json.decodeFromString(WearCommand.serializer(), bytes.decodeToString())

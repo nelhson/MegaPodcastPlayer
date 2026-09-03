@@ -36,4 +36,16 @@
         <item quantity="other">and %1$d more</item>
     </plurals>
 
+    <!--
+      The notification that keeps the phone working on a copy to the watch.
+
+      It carries no progress and no tap target on purpose: the phone only knows what it has handed
+      to the Bluetooth stack, and the watch already draws the honest bar. The text exists to answer
+      the one question the card provokes — why is this taking so long.
+    -->
+    <string name="watch_transfer_channel_name">Copying to watch</string>
+    <string name="watch_transfer_channel_description">Shown while an episode is being sent to your watch</string>
+    <string name="watch_transfer_title">Copying to your watch</string>
+    <string name="watch_transfer_text">Episodes cross over Bluetooth, which takes a few minutes.</string>
+
 </resources>

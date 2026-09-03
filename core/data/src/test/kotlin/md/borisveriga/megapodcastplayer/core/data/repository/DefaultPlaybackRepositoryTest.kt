@@ -207,6 +207,14 @@ class DefaultPlaybackRepositoryTest {
     }
 
     @Test
+    fun `the last played episode is observed, which is what the queue screen falls back to`() =
+        runTest {
+            preferences.setLastPlayedEpisodeId("b")
+
+            assertEquals("b", repository.observeLastPlayedEpisodeId().first())
+        }
+
+    @Test
     fun `the resumable queue is the stored queue when there is one`() = runTest {
         preferences.setLastPlayedEpisodeId("c")
         repository.enqueue("a")

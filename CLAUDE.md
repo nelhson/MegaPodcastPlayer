@@ -54,6 +54,10 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
 - **The watch's copy of an episode is the watch's.** It keeps its own index and its own position,
   and reports that position back with `ReportPosition`; a run out of Bluetooth range is reconciled
   when the phone is next reachable, not lost.
+- **No version compatibility.** Phone and watch are always installed from the same build and the
+  database is never migrated, so a schema or protocol change is free: JSON decoding is strict (an
+  unknown field is corruption, not a newer peer) and Room's destructive fallback is on, which wipes
+  and recreates on any schema change.
 - **Never swallow `CancellationException`.** Use `suspendRunCatching` from `:core:common`; detekt's
   `TooGenericExceptionCaught` and `SwallowedException` enforce it.
 - **Dependency verification is on.** A bump needs `gradle/verification-metadata.xml` refreshed;

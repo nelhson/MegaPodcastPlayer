@@ -30,11 +30,16 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Tests for [PodcastDetailViewModel]'s download button and its two refreshes.
+ * Tests for [PodcastDetailViewModel]'s download button, its queueing and its two refreshes.
  *
  * The download button carries one action whose meaning follows the episode's state, so the branch
  * it picks is the whole behaviour — and getting it wrong means a tap that deletes an episode the
  * user meant to fetch.
+ *
+ * Queueing is the other action a row carries. What is worth pinning is that the confirmation names
+ * the episode — a swipe closes over a row that looks exactly as it did, so the snackbar is the only
+ * thing that says anything happened — and that a refusal is reported as a refusal rather than as a
+ * queueing that silently did nothing.
  *
  * The refreshes differ in what they ask for and what they say. Entering the screen checks the feed
  * only if it is stale and reports nothing either way; pulling the list down always checks and
@@ -203,6 +208,44 @@ class PodcastDetailViewModelTest {
         viewModel.uiState.test {
             assertEquals(PodcastDetailMessage.EpisodeUnavailable, awaitItem().message)
         }
+    }
+
+    @Test
+    fun `queueing an episode to play next names it in the confirmation`() = runTest {
+        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
+        coEvery { episodePlayer.playNext("a") } returns true
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.playNext("a")
+
+        coVerify(exactly = 1) { episodePlayer.playNext("a") }
+        viewModel.uiState.test {
+            assertEquals(PodcastDetailMessage.QueuedNext("Episode a"), awaitItem().message)
+        }
+    }
+
+    @Test
+    fun `queueing an episode the player cannot resolve reports it as unavailable`() = runTest {
+        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
+        // The show was removed between the swipe starting and the queue answering.
+        coEvery { episodePlayer.playNext("a") } returns false
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.playNext("a")
+
+        viewModel.uiState.test {
+            assertEquals(PodcastDetailMessage.EpisodeUnavailable, awaitItem().message)
+        }
+    }
+
+    @Test
+    fun `queueing an episode the list no longer holds does nothing`() = runTest {
+        episodes.value = emptyList()
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.playNext("missing")
+
+        coVerify(exactly = 0) { episodePlayer.playNext(any()) }
     }
 
     @Test

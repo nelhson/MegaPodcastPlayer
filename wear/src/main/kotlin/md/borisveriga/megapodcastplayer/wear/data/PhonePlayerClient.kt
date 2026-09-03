@@ -142,7 +142,7 @@ class PhonePlayerClient @Inject constructor(
      * @return true if at least one node accepted the message.
      */
     suspend fun send(command: WearCommand): Boolean {
-        val nodeIds = phoneNodeIds()
+        val nodeIds = capablePhoneNodeIds()
         if (nodeIds.isEmpty()) return false
 
         val payload = WearMessages.encodeCommand(command)
@@ -178,17 +178,12 @@ class PhonePlayerClient @Inject constructor(
     }
 
     /**
-     * Node ids to send a command to.
+     * Ids of reachable nodes that advertise the phone app's capability.
      *
-     * Prefers nodes advertising MegaPodcastPlayer's capability. Falls back to every connected node, which
-     * covers a phone running a build old enough not to advertise it — sending to a node that cannot
-     * handle the path is harmless, and beats refusing to work at all.
+     * These are the only nodes worth sending to, and the only ones [currentLink] calls
+     * [PhoneLink.CONNECTED]: a connected node that does not advertise the capability is a phone
+     * without the app on it.
      */
-    private suspend fun phoneNodeIds(): List<String> = capablePhoneNodeIds().ifEmpty {
-        suspendRunCatching { nodeClient.connectedNodes.await() }.getOrNull().orEmpty().map { it.id }
-    }
-
-    /** Ids of reachable nodes that advertise the phone app's capability. */
     private suspend fun capablePhoneNodeIds(): List<String> = suspendRunCatching {
         capabilityClient
             .getCapability(WearPaths.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
@@ -216,8 +211,7 @@ class PhonePlayerClient @Inject constructor(
     /**
      * Turns a data item into a stamped snapshot.
      *
-     * @return null when the item carries no payload, or one this build cannot read — which is how a
-     *   watch survives meeting a phone running a newer version of the app.
+     * @return null when the item carries no payload, or a corrupt one.
      */
     private fun decode(item: DataItem): ReceivedSnapshot? {
         val bytes = DataMapItem.fromDataItem(item).dataMap.getByteArray(WearPaths.PAYLOAD_KEY)

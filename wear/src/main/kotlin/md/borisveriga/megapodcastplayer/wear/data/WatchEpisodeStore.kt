@@ -61,7 +61,7 @@ data class StoredEpisode(
             ?: 0f
 }
 
-/** The index file's contents; a wrapper so the format can gain fields without becoming a list. */
+/** The index file's contents. */
 @Serializable
 private data class StoredIndex(val episodes: List<StoredEpisode> = emptyList())
 
@@ -92,11 +92,7 @@ class WatchEpisodeStore @Inject constructor(
     /** Serialises writes to the index and to [episodes], which arrive from several callers. */
     private val mutex = Mutex()
 
-    private val json = Json {
-        // A watch downgraded to an older build must still read an index a newer one wrote.
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val json = Json
 
     private val directory: File get() = File(context.filesDir, DIRECTORY).apply { mkdirs() }
 
@@ -116,6 +112,16 @@ class WatchEpisodeStore @Inject constructor(
 
     /** Transfers currently arriving, by episode id. */
     val transfers: StateFlow<Map<String, TransferProgress>> = _transfers.asStateFlow()
+
+    /**
+     * The arriving transfers that can still be stopped, by episode id; guarded by [mutex].
+     *
+     * Parallel to [_transfers] rather than folded into it because the two are read by different
+     * people: that one is the screen's and holds numbers a bar can draw, while this one is
+     * [cancel]'s and holds the handle a transfer is abandoned by. A stream is not something a UI
+     * state should be carrying.
+     */
+    private val incoming = mutableMapOf<String, IncomingTransfer>()
 
     /**
      * Reads the index from disk into [episodes].
@@ -152,27 +158,47 @@ class WatchEpisodeStore @Inject constructor(
      * @param offer what the phone said it was sending, from the published library. Null when the
      *   watch has no record of the offer, in which case the episode is stored under its id alone and
      *   nothing can be checked against.
-     * @param input the channel's stream; closed by the caller, which owns it.
-     * @return true when a complete episode landed.
+     * @param input the channel's stream; closed by the caller, which owns it — except when [cancel]
+     *   closes it early, which is how a transfer waiting on a link that has gone quiet is let go of.
+     * @return true when a complete episode landed. A cancelled one returns false: it is a transfer
+     *   that did not finish, like any other.
      */
     suspend fun receive(offer: OfflineEpisode, input: InputStream): Boolean {
         val partial = File(directory, "${offer.id}$PARTIAL_SUFFIX")
+        val transfer = IncomingTransfer(input)
+        // Registered before the bar appears: a row the wearer can see is a row they can cancel.
+        mutex.withLock { incoming[offer.id] = transfer }
         _transfers.update { it + (offer.id to TransferProgress(0L, offer.sizeBytes)) }
 
         val written = withContext(ioDispatcher) {
             suspendRunCatching {
-                partial.outputStream().use { sink ->
+                // Buffered because the channel decides the read size, not this loop: a Bluetooth
+                // stream hands back whatever has arrived, often a couple of kilobytes, and an
+                // unbuffered sink turns each of those into its own write to the watch's flash.
+                partial.outputStream().buffered(COPY_BUFFER_BYTES).use { sink ->
                     val buffer = ByteArray(COPY_BUFFER_BYTES)
                     var total = 0L
-                    while (true) {
+                    var reported = 0L
+                    // A transfer the wearer cancelled stops within a block rather than at the end
+                    // of the episode. Closing the stream would end it too — and does, for a link
+                    // that has gone quiet mid-read — but while bytes are still flowing, leaving the
+                    // loop is the tidier of the two: no exception, and the sink is still closed by
+                    // its own `use`.
+                    while (!transfer.isCancelled) {
                         // A transfer the wearer walked away from must stop taking the radio with it.
                         currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
                         sink.write(buffer, 0, read)
                         total += read
-                        _transfers.update {
-                            it + (offer.id to TransferProgress(total, offer.sizeBytes))
+                        // Published in steps rather than per read, for the same reason: each update
+                        // copies the map and wakes every collector, and no bar on a 45 mm screen
+                        // moves a visible amount for two kilobytes.
+                        if (total - reported >= PROGRESS_STEP_BYTES) {
+                            reported = total
+                            _transfers.update {
+                                it + (offer.id to TransferProgress(total, offer.sizeBytes))
+                            }
                         }
                     }
                     total
@@ -183,12 +209,19 @@ class WatchEpisodeStore @Inject constructor(
             }
         }
 
+        mutex.withLock { incoming.remove(offer.id) }
         _transfers.update { it - offer.id }
 
-        val complete = written != null && isComplete(written, offer.sizeBytes)
+        // A cancelled transfer is never complete, however much of it happened to arrive: the wearer
+        // asked for it to stop, and an episode appearing in the list anyway would read as the button
+        // not having worked.
+        val complete = !transfer.isCancelled &&
+            written != null &&
+            isComplete(written, offer.sizeBytes)
         if (!complete) {
             // A short file is the ordinary shape of a dropped Bluetooth link, and it would otherwise
-            // sit in the list looking playable and stop halfway through.
+            // sit in the list looking playable and stop halfway through. It is also what a cancelled
+            // transfer leaves behind, and there the wearer is owed the space back at once.
             withContext(ioDispatcher) { partial.delete() }
             return false
         }
@@ -270,6 +303,31 @@ class WatchEpisodeStore @Inject constructor(
     }
 
     /**
+     * Abandons a transfer that is arriving.
+     *
+     * The bytes so far are thrown away rather than kept for a later resume: the Data Layer has no
+     * way to reopen a channel part way through a file, so a partial copy could only ever be started
+     * again from zero, and keeping it would mean holding megabytes on a watch against a transfer
+     * that will never use them.
+     *
+     * The row disappears here rather than when the copy loop unwinds. Usually those are the same
+     * moment; but a transfer blocked on a link that has stopped delivering is precisely the one a
+     * wearer cancels, and it is the one where waiting for the loop would leave the button looking
+     * broken. Stopping the *phone* from sending is a separate errand, and the caller's — see
+     * [md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand.CancelCopyToWatch].
+     *
+     * Cancelling something that is not arriving does nothing, which is the ordinary race when a
+     * transfer finishes under the tapping finger.
+     *
+     * @param episodeId the episode to stop receiving.
+     */
+    suspend fun cancel(episodeId: String) {
+        val transfer = mutex.withLock { incoming.remove(episodeId) } ?: return
+        transfer.cancel()
+        _transfers.update { it - episodeId }
+    }
+
+    /**
      * Deletes one episode's audio and forgets it.
      *
      * @param episodeId the episode to remove.
@@ -328,6 +386,37 @@ class WatchEpisodeStore @Inject constructor(
     private fun isComplete(written: Long, expected: Long): Boolean =
         if (expected > 0L) written >= expected else written > 0L
 
+    /**
+     * One transfer in flight, and the two ways of stopping it.
+     *
+     * Both are needed, because a stalled transfer and a flowing one fail differently. A flowing one
+     * notices [isCancelled] on its next block and leaves the loop cleanly; a stalled one is sitting
+     * inside a blocking `read` that no flag can reach, and only closing the stream underneath it
+     * returns. The copy treats either outcome as "did not finish", which it did not.
+     *
+     * @property input the channel's stream, closed to unblock a read that has stopped returning.
+     */
+    private class IncomingTransfer(private val input: InputStream) {
+
+        /**
+         * Whether the wearer has given up on this transfer.
+         *
+         * Volatile because it is written on whichever thread the tap arrived on and read on the one
+         * doing the copy, and a value cached in a register would let the loop run to the end of the
+         * episode after being told to stop.
+         */
+        @Volatile
+        var isCancelled: Boolean = false
+            private set
+
+        /** Stops the transfer, both ways. */
+        fun cancel() {
+            isCancelled = true
+            runCatching { input.close() }
+                .onFailure { Log.d(TAG, "Closing a cancelled transfer's stream threw", it) }
+        }
+    }
+
     private companion object {
         const val TAG = "WatchEpisodeStore"
 
@@ -342,6 +431,15 @@ class WatchEpisodeStore @Inject constructor(
 
         /** Matches the phone's send buffer; the link between them is the slow part either way. */
         const val COPY_BUFFER_BYTES = 64 * 1024
+
+        /**
+         * How much has to arrive before the progress bar is told again.
+         *
+         * A quarter of the send buffer: frequent enough that the bar never looks stuck on a link
+         * moving tens of kilobytes a second, rare enough that a stream handed back in small pieces
+         * does not put a map copy behind every one of them.
+         */
+        const val PROGRESS_STEP_BYTES = 16 * 1024L
     }
 }
 

@@ -6,10 +6,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
@@ -49,13 +51,17 @@ internal class EpisodeAudioSender @Inject constructor(
     private val mutex = Mutex()
 
     /**
-     * Episodes already on their way to a watch.
+     * Episodes already on their way to a watch, and the jobs sending them.
      *
      * A watch whose app was killed mid-transfer asks again on its next open, and the user can tap a
      * row twice. Either would otherwise open a second channel for the same episode and interleave
      * two copies of it into one file.
+     *
+     * The jobs are kept, rather than only the ids, so that [cancel] has something to stop: a watch
+     * that has given up on an episode is the one case where the phone should abandon a copy it has
+     * already started.
      */
-    private val inFlight = mutableSetOf<String>()
+    private val inFlight = mutableMapOf<String, Job>()
 
     /**
      * Starts sending an episode, if it is not already going.
@@ -64,11 +70,13 @@ internal class EpisodeAudioSender @Inject constructor(
      * @param episodeId the episode it asked for.
      * @return the job doing the work, or null when that episode is already being sent.
      */
-    suspend fun send(nodeId: String, episodeId: String): Job? {
-        val started = mutex.withLock { inFlight.add(episodeId) }
-        if (!started) return null
+    suspend fun send(nodeId: String, episodeId: String): Job? = mutex.withLock {
+        if (inFlight.containsKey(episodeId)) return@withLock null
 
-        return scope.launch {
+        // Launched under the lock, and the job recorded before it is released: the coroutine's own
+        // finally takes the same lock, so a transfer that finishes immediately waits to be recorded
+        // before it removes itself rather than leaving a dead job behind in the map.
+        val job = scope.launch {
             try {
                 transfer(nodeId, episodeId)
             } finally {
@@ -77,6 +85,25 @@ internal class EpisodeAudioSender @Inject constructor(
                 mutex.withLock { inFlight.remove(episodeId) }
             }
         }
+        inFlight[episodeId] = job
+        job
+    }
+
+    /**
+     * Stops sending an episode, if it is going.
+     *
+     * Cancellation reaches the copy between blocks — see [DownloadedAudio.copyTo] — so the phone
+     * stops within one 64 KB write rather than at the end of the episode. The channel is closed on
+     * the way out of [transfer], which is what tells the watch the stream has ended; the watch has
+     * already thrown its partial file away by then.
+     *
+     * Asking for an episode that is not being sent does nothing, which is the ordinary case when the
+     * transfer finished in the time the watch's message took to arrive.
+     *
+     * @param episodeId the episode to abandon.
+     */
+    suspend fun cancel(episodeId: String) {
+        mutex.withLock { inFlight[episodeId] }?.cancel()
     }
 
     /**
@@ -86,6 +113,10 @@ internal class EpisodeAudioSender @Inject constructor(
      * transfer has ended. A short file is not flagged here: the watch knows how many bytes to expect
      * from the published library and discards anything shorter, which is a check that also catches
      * the case this side cannot see — a link that dropped mid-copy.
+     *
+     * "Whatever happened" includes being cancelled, which is why the close sits in a `finally` and
+     * runs [NonCancellable]. A cancelled copy that left the channel open would be the worst of both:
+     * the phone stops sending, and the watch waits on a stream that never ends.
      */
     private suspend fun transfer(nodeId: String, episodeId: String) {
         val episode = playbackRepository.playableEpisode(episodeId)?.episode
@@ -105,15 +136,20 @@ internal class EpisodeAudioSender @Inject constructor(
             return
         }
 
-        val written = suspendRunCatching {
-            val stream = channelClient.getOutputStream(channel).await()
-            stream.use { downloadedAudio.copyTo(episode.audioUrl, it) }
-        }.getOrNull()
+        try {
+            val written = suspendRunCatching {
+                val stream = channelClient.getOutputStream(channel).await()
+                stream.use { downloadedAudio.copyTo(episode.audioUrl, it) }
+            }.getOrNull()
 
-        if (written == null) {
-            Log.w(TAG, "Sending $episodeId to the watch failed part way")
+            if (written == null) {
+                Log.w(TAG, "Sending $episodeId to the watch failed part way")
+            }
+        } finally {
+            withContext(NonCancellable) {
+                suspendRunCatching { channelClient.close(channel).await() }
+            }
         }
-        suspendRunCatching { channelClient.close(channel).await() }
     }
 
     private companion object {

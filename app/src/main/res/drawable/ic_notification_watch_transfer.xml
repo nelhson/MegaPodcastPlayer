@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Small icon for the "copying to watch" foreground service notification.
+
+    A single opaque silhouette on transparency, because the platform masks a notification's small
+    icon to its alpha channel and tints the result: anything with colour or interior detail would be
+    thrown away. Drawn as a watch with its straps, and an arrow into it punched out of the body with
+    evenOdd rather than drawn on top, so it survives that masking as a hole rather than as a shape
+    the tint would swallow.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <!-- The straps, drawn separately so that overlapping the body cannot cancel it out. -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M9,2h6v4h-6z M9,18h6v4h-6z" />
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M9,5L15,5A4,4 0 0 1 19,9L19,15A4,4 0 0 1 15,19L9,19A4,4 0 0 1 5,15L5,9A4,4 0 0 1 9,5Z M11,8L13,8L13,11L15,11L12,14.5L9,11L11,11Z" />
+</vector>

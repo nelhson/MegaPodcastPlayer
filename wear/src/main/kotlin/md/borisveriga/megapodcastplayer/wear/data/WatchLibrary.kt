@@ -87,8 +87,7 @@ class WatchLibrary @Inject constructor(
     /**
      * Turns a data item into a library.
      *
-     * @return null when the item carries no payload, or one this build cannot read — which is how a
-     *   watch survives meeting a phone running a newer version of the app.
+     * @return null when the item carries no payload, or a corrupt one.
      */
     private fun decode(item: DataItem): OfflineLibrary? {
         val bytes = DataMapItem.fromDataItem(item).dataMap.getByteArray(WearPaths.PAYLOAD_KEY)

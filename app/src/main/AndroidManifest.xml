@@ -73,6 +73,23 @@
                     android:pathPrefix="/megapodcastplayer" />
             </intent-filter>
         </service>
+
+        <!--
+          Keeps the process at foreground priority while an episode is copied to the watch.
+
+          Without it the app has no component at all once WearCommandService is destroyed, and a
+          copy that takes minutes over Bluetooth runs out of a cached process — background cgroup,
+          and frozen outright from Android 12. dataSync is the honest type: this is a file crossing
+          to another device, not playback.
+
+          Unexported, and started only by explicit intent from ForegroundEpisodeAudioTransfers:
+          nothing outside the app may ask this phone to open a channel to a watch.
+        -->
+        <service
+            android:name=".wearsync.EpisodeTransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!--
           MegaPodcastPlayerApplication supplies WorkManager's Configuration so that @HiltWorker workers can be
           injected. On-demand initialisation and the default androidx.startup initializer are

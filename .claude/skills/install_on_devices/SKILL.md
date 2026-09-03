@@ -163,6 +163,7 @@ was skipped, and whether the pair is now on matching builds.
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | installed copy was signed with a different key — a release build, another machine, or a rebuilt debug keystore | uninstall first; **see the warning below** |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` | `versionCode` comes from `gradle/libs.versions.toml` and both apps share it, so this means the installed build carried a higher code than the catalog does now | uninstall first |
 | App installs on both, watch shows nothing / controls do nothing | phone and watch have different certificates or build types | reinstall **both** from this machine, same build type |
+| Watch shows "phone app not installed" after the application ID changed | the rename made it a *different* app, so the new build never upgraded the old one: the pre-rename APK is still on the watch, still advertising and addressing the old names | uninstall the **old** package from the watch by its old id, then install `:wear`; see *Reading the Data Layer* below |
 | `INSTALL_FAILED_INSUFFICIENT_STORAGE` on the watch | Wear devices have very little free space | uninstall unused watch apps; the `:wear` APK is small, so this usually means the watch is genuinely full |
 | Gradle installs to the wrong device | `ANDROID_SERIAL` unset or stale | set it per install, clear it after |
 | `adb` hangs on first use | it is starting its server | expected once; give it a few seconds |
@@ -174,6 +175,39 @@ was skipped, and whether the pair is now on matching builds.
 subscription, queue entry and playback position — and the `episode_downloads` cache, which is the
 user's entire offline library. That is a real loss on his own daily-driver phone, not a test device.
 Say it plainly and let him decide; never uninstall pre-emptively to make an install succeed.
+
+## Reading the Data Layer when the two sides cannot see each other
+
+A pairing failure looks exactly like a watch-side bug: both apps launch, neither complains, and
+nothing crosses between them. The phone's Play Services keeps the answer, and it is the fastest way
+to tell the two apart without touching either app:
+
+```powershell
+& $adb -s <phone-serial> shell dumpsys activity service com.google.android.gms.wearable
+```
+
+Three things in that dump settle it:
+
+- **`N connected out of M`** and each `ConnectionConfiguration`'s `IsConnected` / `PeerNodeId`. This
+  is the transport alone. `Type=BTD` with `IsConnected=true` is a real watch on Bluetooth;
+  `Type=Network` with `PeerNodeId=null` is an emulator that was never paired. If this is down, no
+  app-level check means anything yet.
+- **The per-package accounting**, one line per package that has used the Data Layer
+  (`md.borisveriga....: writes/reads (...)`). A package listed here that is *not* installed on the
+  phone any more is the fingerprint of a half-updated pair — something on the other side is still
+  talking under a name this side retired.
+- **The message log and the capability list.** Inbound lines carry the path
+  (`8a8a7585 -> 6fd175bd ... /megapodcastplayer/command`), and the capability list names the node
+  advertising each capability. A watch sending a path prefix the phone no longer filters on, or
+  looking up a capability the phone no longer advertises, is a name mismatch and nothing else.
+
+Diagnosed this way on 2026-09-03: the phone was advertising `megapodcastplayer_phone_player` and
+publishing data items normally while the watch was still sending `/bpodcat/command`, which named the
+cause — a stale pre-rename APK on the wrist — without needing adb on the watch at all. Worth
+remembering, because the watch is usually the device you cannot reach.
+
+Note that the watch declares **no** capability of its own, so the absence of a watch-side capability
+in that list proves nothing. The paths it sends are the evidence.
 
 ## Notes
 

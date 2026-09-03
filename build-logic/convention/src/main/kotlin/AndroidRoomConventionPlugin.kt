@@ -6,8 +6,10 @@ import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 
 /**
- * Wires Room + KSP into a module and exports the generated schemas to `schemas/` so that
- * migrations can be diffed and tested.
+ * Wires Room + KSP into a module.
+ *
+ * No schema is exported and no migration testing is set up: the database is never migrated (see
+ * `MegaPodcastPlayerDatabase`).
  *
  * Registered as `megapodcastplayer.android.room`.
  */
@@ -17,14 +19,12 @@ class AndroidRoomConventionPlugin : Plugin<Project> {
 
         extensions.configure<KspExtension> {
             arg("room.generateKotlin", "true")
-            arg("room.schemaLocation", "${projectDir}/schemas")
         }
 
         dependencies {
             add("implementation", libs.findLibrary("androidx-room-runtime").get())
             add("implementation", libs.findLibrary("androidx-room-ktx").get())
             add("ksp", libs.findLibrary("androidx-room-compiler").get())
-            add("testImplementation", libs.findLibrary("androidx-room-testing").get())
         }
     }
 }

@@ -37,6 +37,7 @@ class PlayerViewModelTest {
     private val playbackState = MutableStateFlow(PlaybackState())
     private val settings = MutableStateFlow(PlaybackSettings())
     private val queue = MutableStateFlow(emptyList<PlayableEpisode>())
+    private val lastPlayedEpisodeId = MutableStateFlow<String?>(null)
 
     private lateinit var connection: PlaybackConnection
     private lateinit var playbackRepository: PlaybackRepository
@@ -69,6 +70,7 @@ class PlayerViewModelTest {
         every { connection.playbackState } returns playbackState
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeQueue() } returns queue
+        every { playbackRepository.observeLastPlayedEpisodeId() } returns lastPlayedEpisodeId
 
         viewModel = PlayerViewModel(connection, playbackRepository, episodePlayer)
     }
@@ -100,6 +102,58 @@ class PlayerViewModelTest {
 
         viewModel.uiState.test {
             assertEquals(listOf("c"), awaitItem().upNext.map { it.episode.id })
+        }
+    }
+
+    @Test
+    fun `up next hides the loaded episode before the player has said what it is`() = runTest {
+        // A cold start, or the service having been killed: binding a controller takes long enough
+        // that the queue is on screen first, and until it lands the player reports no episode at
+        // all. The durable queue mirrors the player's timeline, so it holds that episode — and
+        // without the stored fallback it would be drawn as a queued row in an empty queue.
+        playbackState.value = PlaybackState(isConnected = false, episodeId = null)
+        lastPlayedEpisodeId.value = "a"
+        queue.value = listOf(playable("a"), playable("b"))
+
+        viewModel.uiState.test {
+            assertEquals(listOf("b"), awaitItem().upNext.map { it.episode.id })
+        }
+    }
+
+    @Test
+    fun `the loaded episode is the only queue entry, so up next is empty`() = runTest {
+        // The shape the bug was reported in: one episode played straight from a show, nothing
+        // queued behind it, and a queue screen showing a row the user never added.
+        playbackState.value = PlaybackState(isConnected = false, episodeId = null)
+        lastPlayedEpisodeId.value = "a"
+        queue.value = listOf(playable("a"))
+
+        viewModel.uiState.test {
+            assertEquals(emptyList<String>(), awaitItem().upNext.map { it.episode.id })
+        }
+    }
+
+    @Test
+    fun `the player's own episode wins over the stored one`() = runTest {
+        // The stored id is only a fallback: it lags a transition by a write, and following it once
+        // the player has answered would hide the wrong row.
+        playbackState.value = PlaybackState(episodeId = "b")
+        lastPlayedEpisodeId.value = "a"
+        queue.value = listOf(playable("a"), playable("b"), playable("c"))
+
+        viewModel.uiState.test {
+            assertEquals(listOf("c"), awaitItem().upNext.map { it.episode.id })
+        }
+    }
+
+    @Test
+    fun `a queue built without playing anything is entirely up next`() = runTest {
+        // Nothing loaded and nothing played recently that is still queued: every row is waiting.
+        lastPlayedEpisodeId.value = "played-and-gone"
+        queue.value = listOf(playable("a"), playable("b"))
+
+        viewModel.uiState.test {
+            assertEquals(listOf("a", "b"), awaitItem().upNext.map { it.episode.id })
         }
     }
 

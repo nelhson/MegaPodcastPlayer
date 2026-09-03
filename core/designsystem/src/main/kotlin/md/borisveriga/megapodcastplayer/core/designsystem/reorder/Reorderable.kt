@@ -183,16 +183,29 @@ class ReorderableState<T> internal constructor(
     /** Where the dragged item sat when the gesture began, in the upstream ordering. */
     private var startIndex: Int = NO_INDEX
 
+    /**
+     * An upstream ordering that arrived mid-drag and was refused, or null.
+     *
+     * [adopt] cannot overwrite the collection under the user's finger, and the call site only calls
+     * it when its own list changes — so a change that lands during a gesture would otherwise be the
+     * last one this state ever hears about, and [order] would keep drawing rows the source of truth
+     * has dropped long after the finger is gone. Holding the refused list and applying it on
+     * release is what closes that: the queue's currently playing episode finishing mid-drag takes
+     * its row with it, rather than leaving it stranded in a queue that is now empty.
+     */
+    private var refusedItems: List<T>? = null
+
     /** True while a drag is in flight, which is what suspends [adopt]. */
     val isDragging: Boolean get() = draggingKey != null
 
     /**
-     * Takes the upstream ordering, unless a drag is in progress.
+     * Takes the upstream ordering, unless a drag is in progress — in which case it is held and
+     * applied when the gesture ends.
      *
      * @param items the collection as its source of truth reports it.
      */
     fun adopt(items: List<T>) {
-        if (draggingKey == null) order = items
+        if (draggingKey == null) order = items else refusedItems = items
     }
 
     /**
@@ -249,12 +262,18 @@ class ReorderableState<T> internal constructor(
         val key = draggingKey
         val endIndex = order.indexOfFirst { keyOf(it) == key }
         val from = startIndex
+        // Read before the reset, which is what consumes it.
+        val changedUnderneath = refusedItems != null
         reset()
 
         // Either end of the gesture may have gone missing: the drag never took hold, or the item
         // left the collection while it was in flight.
         if (key == null || from == NO_INDEX || endIndex == NO_INDEX) return
         if (endIndex == from) return
+        // The collection the gesture described is not the collection that exists now, so the two
+        // positions no longer name the items the user was holding. Dropped rather than applied to
+        // whatever has taken their place: the reordering they get is the one they can see.
+        if (changedUnderneath) return
         onMove(from, endIndex)
     }
 
@@ -276,6 +295,9 @@ class ReorderableState<T> internal constructor(
     private fun reset() {
         draggingKey = null
         offset = Offset.Zero
+        // Whatever arrived while the finger was down is the truth now; see [refusedItems].
+        refusedItems?.let { order = it }
+        refusedItems = null
     }
 
     private companion object {

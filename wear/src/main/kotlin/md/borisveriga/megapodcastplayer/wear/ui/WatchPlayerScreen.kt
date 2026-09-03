@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FastForward
@@ -118,6 +119,7 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onCommitScrub = viewModel::commitScrub,
         onPlayOnWatch = viewModel::playOnWatch,
         onCopyToWatch = viewModel::copyToWatch,
+        onCancelCopyToWatch = viewModel::cancelCopyToWatch,
         onRemoveFromWatch = viewModel::removeFromWatch,
         onRemoveAllFromWatch = viewModel::removeAllFromWatch,
         onBackToPhone = viewModel::backToPhone,
@@ -147,6 +149,7 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onCommitScrub invoked when they settle, which is what actually seeks.
  * @param onPlayOnWatch invoked with a stored episode to play it on the watch itself.
  * @param onCopyToWatch invoked with an episode id to ask the phone to send its audio over.
+ * @param onCancelCopyToWatch invoked with an episode id to abandon a copy that is arriving.
  * @param onRemoveFromWatch invoked with an episode id to delete it from the watch.
  * @param onRemoveAllFromWatch invoked to delete everything the watch holds.
  * @param onBackToPhone invoked to stop local playback and go back to controlling the phone.
@@ -167,6 +170,7 @@ fun WatchPlayerScreen(
     onCommitScrub: () -> Unit = {},
     onPlayOnWatch: (StoredEpisode) -> Unit = {},
     onCopyToWatch: (String) -> Unit = {},
+    onCancelCopyToWatch: (String) -> Unit = {},
     onRemoveFromWatch: (String) -> Unit = {},
     onRemoveAllFromWatch: () -> Unit = {},
     onBackToPhone: () -> Unit = {},
@@ -229,11 +233,27 @@ fun WatchPlayerScreen(
                 item { CommandFailedNote() }
             }
 
+            // Two lists describing the phone, then one describing the watch. Each header names the
+            // list rather than the action its rows perform: on a screen this small the header is the
+            // only thing that says *whose* episodes these are, and "up next" and "downloaded" are
+            // both true of the phone at once.
+
             // The phone's queue, which only means anything while the phone is the one playing.
             if (uiState.source == PlaybackSource.PHONE && uiState.snapshot.upNext.isNotEmpty()) {
-                item { ListHeader { Text(text = stringResource(R.string.watch_up_next)) } }
+                item { ListHeader { Text(text = stringResource(R.string.watch_phone_queue)) } }
                 items(uiState.snapshot.upNext) { episode ->
                     QueueRow(episode = episode, onClick = { onPlayQueued(episode.id) })
+                }
+            }
+
+            // What the phone holds offline and has not sent here. Directly below the queue because
+            // the two answer the same question — what is on the phone — and a wrist scrolls once.
+            if (uiState.copyable.isNotEmpty()) {
+                item {
+                    ListHeader { Text(text = stringResource(R.string.watch_downloaded_on_phone)) }
+                }
+                items(uiState.copyable) { episode ->
+                    CopyableRow(episode = episode, onClick = { onCopyToWatch(episode.id) })
                 }
             }
 
@@ -249,21 +269,17 @@ fun WatchPlayerScreen(
                     )
                 }
                 items(uiState.arriving) { arriving ->
-                    ArrivingRow(arriving = arriving)
+                    ArrivingRow(
+                        arriving = arriving,
+                        onCancel = { onCancelCopyToWatch(arriving.episode.id) },
+                    )
                 }
                 if (uiState.stored.isNotEmpty()) {
                     item { RemoveAllRow(onClick = onRemoveAllFromWatch) }
                 }
-            }
-
-            if (uiState.copyable.isNotEmpty()) {
-                item {
-                    ListHeader { Text(text = stringResource(R.string.watch_copy_to_watch)) }
-                }
-                items(uiState.copyable) { episode ->
-                    CopyableRow(episode = episode, onClick = { onCopyToWatch(episode.id) })
-                }
             } else if (uiState.showsNothingToCopy) {
+                // Nothing here and nothing offered: the note explains the empty screen, under the
+                // heading of the list it would have filled.
                 item {
                     ListHeader { Text(text = stringResource(R.string.watch_on_this_watch)) }
                 }
@@ -726,35 +742,49 @@ private fun storedSubtitle(episode: StoredEpisode): String = when {
 }
 
 /**
- * An episode arriving over Bluetooth.
+ * An episode arriving over Bluetooth, and the one thing worth doing to it: stopping it.
  *
- * Not a button: there is nothing useful to do to a transfer in progress, and a row that looked
- * pressable would invite a tap that asked for the same episode a second time.
+ * The row itself is still not pressable — a tap on it could only mean "send this again", which is
+ * already happening — so the only target is the cancel button beside the bar. That button is the
+ * answer to the wrong episode having been tapped, and to a copy that has plainly stalled: an episode
+ * is tens of megabytes over Bluetooth, which is minutes of a wearer's radio to get back.
  *
  * @param arriving what is coming and how much of it has landed.
+ * @param onCancel invoked to abandon the transfer.
  */
 @Composable
-private fun ArrivingRow(arriving: ArrivingEpisode) {
-    Column(
+private fun ArrivingRow(arriving: ArrivingEpisode, onCancel: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = arriving.episode.title,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-        )
-        LinearProgressIndicator(
-            progress = { arriving.progress.fraction },
-            modifier = Modifier.fillMaxWidth().height(PROGRESS_BAR_HEIGHT),
-        )
-        Text(
-            text = stringResource(R.string.watch_copying),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = arriving.episode.title,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+            )
+            LinearProgressIndicator(
+                progress = { arriving.progress.fraction },
+                modifier = Modifier.fillMaxWidth().height(PROGRESS_BAR_HEIGHT),
+            )
+            Text(
+                text = stringResource(R.string.watch_copying),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onCancel) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = stringResource(R.string.watch_cancel_copy),
+            )
+        }
     }
 }
 
@@ -770,9 +800,12 @@ private fun CopyableRow(episode: OfflineEpisode, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         icon = {
+            // Described rather than decorative: the header above now names the list ("Downloaded on
+            // phone") instead of the action, so this glyph is the only thing left saying what a tap
+            // does — and TalkBack cannot see a glyph.
             Icon(
                 imageVector = Icons.Rounded.Download,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.watch_copy_to_watch),
             )
         },
         label = { Text(text = episode.title, maxLines = 2) },

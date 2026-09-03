@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FileDownload
@@ -130,6 +131,7 @@ fun PodcastDetailRoute(
         onBack = onBack,
         onEpisodeClick = { episodeId -> viewModel.playEpisode(episodeId, onEpisodePlaying) },
         onEpisodeDownloadToggle = viewModel::toggleDownload,
+        onEpisodePlayNext = viewModel::playNext,
         onEpisodeMove = viewModel::moveEpisode,
         onRefresh = viewModel::refresh,
         onRebuild = viewModel::rebuild,
@@ -148,6 +150,8 @@ fun PodcastDetailRoute(
  * @param onEpisodeClick episode tap handler; a tap starts playback.
  * @param onEpisodeDownloadToggle download/remove handler; one action, because the button's
  *   meaning follows the episode's download state.
+ * @param onEpisodePlayNext queues an episode to play after the current one, without interrupting
+ *   it — which is the half of "what shall I listen to" that a tap on the row cannot express.
  * @param onEpisodeMove applies a completed reorder on a hand-ordered show. Takes the ids currently
  *   on screen alongside the two positions, because a filter means those are a subset and the
  *   positions alone would name the wrong episodes.
@@ -166,6 +170,7 @@ fun PodcastDetailScreen(
     onBack: () -> Unit,
     onEpisodeClick: (String) -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
+    onEpisodePlayNext: (String) -> Unit,
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onRefresh: () -> Unit,
     onRebuild: () -> Unit,
@@ -325,6 +330,7 @@ fun PodcastDetailScreen(
                                 moveDown = moveDown,
                                 onClick = { onEpisodeClick(episode.id) },
                                 onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
+                                onPlayNext = { onEpisodePlayNext(episode.id) },
                             )
                         }
                     }
@@ -346,6 +352,12 @@ fun PodcastDetailScreen(
  * and which one follows the state it is in. That is the same rule the button had; only its shape
  * has changed.
  *
+ * Queueing sits on the short pull instead, as a button to tap. A tap on the row already means "play
+ * this now", and the other half of choosing what to listen to — "play this *after* what I am
+ * listening to" — had nowhere to live on this screen at all. It is the revealed tier rather than
+ * the committed one because it is the rarer of the two: someone opens a show's page to hear
+ * something, and queues from it only when something is already playing.
+ *
  * @param episode the episode.
  * @param metadata the line under the title, already assembled.
  * @param artworkUrl the episode's own artwork, or the show's.
@@ -357,6 +369,7 @@ fun PodcastDetailScreen(
  * @param onClick plays the episode.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
+ * @param onPlayNext queues it to play after whatever is playing now.
  */
 @Composable
 private fun EpisodeListRow(
@@ -370,14 +383,23 @@ private fun EpisodeListRow(
     moveDown: String,
     onClick: () -> Unit,
     onDownloadToggle: () -> Unit,
+    onPlayNext: () -> Unit,
 ) {
     val isDragging = drag.draggingKey == episode.id
     val download = episode.downloadSwipeAction(onDownloadToggle)
+    val playNext = SwipeAction(
+        icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+        label = stringResource(R.string.podcast_action_play_next),
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        onClick = onPlayNext,
+    )
 
     SwipeActionsRow(
-        // Nothing to reveal: the row offers one thing, so it is the pull itself rather than a
-        // button behind it that would need a second tap to mean anything.
-        actions = emptyList(),
+        // Revealed rather than committed: queueing changes what happens after the thing the user is
+        // listening to, which is worth a deliberate tap rather than a gesture that fires on release
+        // — and the pull that would fire it is already spoken for by the download.
+        actions = listOf(playNext),
         fullSwipeAction = download,
         modifier = Modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the order
@@ -394,7 +416,7 @@ private fun EpisodeListRow(
                 .semantics {
                     customActions = (
                         if (isReorderable) drag.moveActions(index, moveUp, moveDown) else emptyList()
-                        ) + listOf(download).asAccessibilityActions()
+                        ) + listOf(playNext, download).asAccessibilityActions()
                 }
                 // Inside the swipe box rather than around it, so the row's two drags are settled
                 // by the pointer that started them: this one consumes movement only once the
@@ -847,6 +869,9 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 
     is PodcastDetailMessage.DownloadRemoved ->
         resources.getString(R.string.podcast_message_download_removed, title)
+
+    is PodcastDetailMessage.QueuedNext ->
+        resources.getString(R.string.podcast_message_queued_next, title)
 }
 
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
@@ -900,6 +925,7 @@ private fun PodcastDetailScreenPreview() {
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
+            onEpisodePlayNext = {},
             onEpisodeMove = { _, _, _ -> },
             onRefresh = {},
             onRebuild = {},

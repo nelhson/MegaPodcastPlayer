@@ -102,9 +102,8 @@ class MediaItemsTest {
 
     @Test
     fun `an episode whose audio url is not http never becomes a media item`() {
-        // Defence in depth behind the parser guard: a row written before the allowlist shipped, or
-        // one the migration has not swept yet, must still never reach the player. Each scheme here
-        // is one DefaultDataSource.Factory resolves.
+        // Defence in depth behind the parser guard: whatever reaches the database, none of this
+        // may reach the player. Each scheme here is one DefaultDataSource.Factory resolves.
         val hostile = listOf(
             "file:///data/data/md.borisveriga.megapodcastplayer/databases/megapodcastplayer.db",
             "content://com.other.app.provider/secret",

@@ -90,6 +90,16 @@ sealed interface PodcastDetailMessage {
     data object EpisodeUnavailable : PodcastDetailMessage
 
     /**
+     * An episode was put at the head of the queue.
+     *
+     * Worth confirming because the queue is on another screen: the swipe otherwise closes over a
+     * row that looks exactly as it did, and nothing on this screen says where the episode went.
+     *
+     * @property title the episode's title.
+     */
+    data class QueuedNext(val title: String) : PodcastDetailMessage
+
+    /**
      * An episode was queued for download.
      *
      * Worth confirming because the download itself may not start for a while — "Wi-Fi only" is on
@@ -272,6 +282,36 @@ class PodcastDetailViewModel @Inject constructor(
                     message = PodcastDetailMessage.EpisodeUnavailable,
                 )
             }
+        }
+    }
+
+    /**
+     * Puts an episode at the head of the queue, to play when the current one ends.
+     *
+     * Distinct from tapping the row, which interrupts whatever is playing. Both belong on this
+     * screen for the same reason: a list of a show's episodes is where someone decides what to
+     * listen to next, and until now the only thing it could do with that decision was act on it
+     * immediately.
+     *
+     * Nothing is playing? Then the queue is empty, the episode lands in it alone, and it plays on
+     * the next tap of play — which is what "next" means from an empty queue.
+     *
+     * @param episodeId the episode to queue.
+     */
+    fun playNext(episodeId: String) {
+        // Read before the suspend, and from the state rather than from the player: it is the only
+        // place the title is, and the episode may be gone from both by the time the queue answers.
+        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        viewModelScope.launch {
+            transientState.value = transientState.value.copy(
+                message = if (episodePlayer.playNext(episodeId)) {
+                    PodcastDetailMessage.QueuedNext(episode.title)
+                } else {
+                    // The player refuses an episode it cannot resolve — one whose show was removed
+                    // under the gesture. Saying it was queued would be a lie the queue contradicts.
+                    PodcastDetailMessage.EpisodeUnavailable
+                },
+            )
         }
     }
 

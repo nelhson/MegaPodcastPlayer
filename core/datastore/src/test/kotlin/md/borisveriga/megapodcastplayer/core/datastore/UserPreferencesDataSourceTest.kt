@@ -1,6 +1,5 @@
 package md.borisveriga.megapodcastplayer.core.datastore
 
-import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -148,18 +147,5 @@ class UserPreferencesDataSourceTest {
         dataSource.setLibraryLayout(LibraryLayout.LIST)
 
         assertEquals(LibraryLayout.LIST, dataSource.libraryLayout.first())
-    }
-
-    @Test
-    fun `a layout this build does not know falls back rather than throwing`() = runTest {
-        // What a downgrade looks like: the file was written by a build that offered a third
-        // layout. Reading it must not take the library screen down.
-        store.updateData { preferences ->
-            preferences.toMutablePreferences().apply {
-                set(stringPreferencesKey("library_layout"), "CAROUSEL")
-            }
-        }
-
-        assertEquals(LibraryLayout.DEFAULT, dataSource.libraryLayout.first())
     }
 }

@@ -47,6 +47,9 @@ class DefaultPlaybackRepository @Inject constructor(
     override fun observeQueue(): Flow<List<PlayableEpisode>> =
         queueDao.observeQueuedWithShow().map { rows -> rows.map { it.asPlayableEpisode() } }
 
+    override fun observeLastPlayedEpisodeId(): Flow<String?> =
+        userPreferences.lastPlayedEpisodeId
+
     override fun observePlaybackSettings(): Flow<PlaybackSettings> =
         userPreferences.playbackSettings
 

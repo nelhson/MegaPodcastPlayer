@@ -13,8 +13,9 @@ import md.borisveriga.megapodcastplayer.core.database.model.QueueEntryEntity
 /**
  * The app's single Room database.
  *
- * Schemas are exported to `core/database/schemas` (see the Room convention plugin) so that every
- * future migration can be diffed and tested against the committed JSON.
+ * The version stays at 1 and no schema is exported: this is a personal build with nothing to
+ * migrate from, so a schema change recreates the tables (see the destructive fallback in
+ * `DatabaseModule`) rather than being carried forward.
  */
 @Database(
     entities = [
@@ -22,8 +23,8 @@ import md.borisveriga.megapodcastplayer.core.database.model.QueueEntryEntity
         EpisodeEntity::class,
         QueueEntryEntity::class,
     ],
-    version = 5,
-    exportSchema = true,
+    version = 1,
+    exportSchema = false,
 )
 @TypeConverters(MegaPodcastPlayerTypeConverters::class)
 abstract class MegaPodcastPlayerDatabase : RoomDatabase() {

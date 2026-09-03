@@ -31,6 +31,10 @@ import org.robolectric.annotation.Config
  * newest episode is now a button on the header, and removing the show is behind an overflow
  * instead of sitting one mis-tap from the back arrow.
  *
+ * The row's two swipe tiers are the fourth: the pull downloads, and the button it reveals queues.
+ * Neither is visible to a screen reader as a gesture, so both are published as actions on the row,
+ * and those actions are what these tests reach for.
+ *
  * Reordering is the third thing here, and what is worth pinning is which shows offer it at all: a
  * YouTube playlist is arranged by hand, an RSS feed is a chronology, and offering to rearrange the
  * latter would promise an order the next refresh could not keep. That line has to hold for the
@@ -89,6 +93,7 @@ class PodcastDetailScreenTest {
         onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
         onEpisodeDownloadToggle: (String) -> Unit = {},
+        onEpisodePlayNext: (String) -> Unit = {},
         isRebuilding: Boolean = false,
     ) {
         composeRule.setContent {
@@ -103,6 +108,7 @@ class PodcastDetailScreenTest {
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
                     onEpisodeDownloadToggle = onEpisodeDownloadToggle,
+                    onEpisodePlayNext = onEpisodePlayNext,
                     onEpisodeMove = onEpisodeMove,
                     onRefresh = {},
                     onRebuild = onRebuild,
@@ -374,6 +380,37 @@ class PodcastDetailScreenTest {
             .performCustomAccessibilityAction("Cancel download")
         composeRule.onNodeWithText("Episode broken")
             .performCustomAccessibilityAction("Download")
+    }
+
+    @Test
+    fun `a row also offers to play an episode next, without interrupting what is playing`() {
+        val queued = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a")),
+            onEpisodePlayNext = { queued += it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Play next")
+
+        assertEquals(listOf("a"), queued)
+    }
+
+    @Test
+    fun `queueing is offered whatever the offline copy is doing`() {
+        // The two tiers are independent: the pull's meaning follows the download state, and the
+        // button behind it does not. A downloaded episode that could no longer be queued would be
+        // the odd one out for no reason the user could see.
+        setScreen(
+            episodes = listOf(
+                episode("stored", downloadState = DownloadState.COMPLETED),
+                episode("busy", downloadState = DownloadState.DOWNLOADING),
+            ),
+        )
+
+        composeRule.onNodeWithText("Episode stored")
+            .performCustomAccessibilityAction("Play next")
+        composeRule.onNodeWithText("Episode busy")
+            .performCustomAccessibilityAction("Play next")
     }
 
     @Test

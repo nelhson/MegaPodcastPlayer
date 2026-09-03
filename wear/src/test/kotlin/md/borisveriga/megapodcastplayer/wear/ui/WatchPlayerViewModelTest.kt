@@ -215,6 +215,40 @@ class WatchPlayerViewModelTest {
         }
     }
 
+    /**
+     * Cancelling is two errands, and the order matters: the watch owns the bytes it is receiving and
+     * stops on its own, then the phone is asked to stop sending the rest.
+     */
+    @Test
+    fun `cancelling a copy stops the watch receiving it and asks the phone to stop sending`() =
+        runTest {
+            val viewModel = viewModel()
+
+            viewModel.cancelCopyToWatch("ep-7")
+
+            coVerify(exactly = 1) { store.cancel("ep-7") }
+            coVerify(exactly = 1) { client.send(WearCommand.CancelCopyToWatch("ep-7")) }
+        }
+
+    /**
+     * A phone out of range is a phone whose transfer has already stopped, so telling it is
+     * housekeeping. Reporting the failure would put "could not reach your phone" over a button that
+     * did exactly what it said.
+     */
+    @Test
+    fun `cancelling a copy the phone cannot be told about is not reported as a failure`() = runTest {
+        val viewModel = viewModel()
+        coEvery { client.send(WearCommand.CancelCopyToWatch("ep-7")) } returns false
+
+        viewModel.cancelCopyToWatch("ep-7")
+
+        coVerify(exactly = 1) { store.cancel("ep-7") }
+        viewModel.uiState.test {
+            assertFalse(awaitItem().lastCommandFailed)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     @Test
     fun `an undeliverable command is reported rather than swallowed`() = runTest {
         coEvery { client.send(any()) } returns false

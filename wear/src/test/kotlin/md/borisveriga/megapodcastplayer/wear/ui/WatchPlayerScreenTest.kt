@@ -14,6 +14,7 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineEpisode
 import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
+import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -307,6 +308,93 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithContentDescription("Next episode").assertDoesNotExist()
     }
 
+    /**
+     * Three lists run down this screen one after another, and the only thing separating them is a
+     * header. Each therefore has to name the list rather than the action its rows perform: "up next"
+     * and "downloaded" are both true of the phone at once, and neither is true of the watch.
+     */
+    @Test
+    fun `each list names whose episodes it holds`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = listOf(stored),
+                offered = listOf(
+                    OfflineEpisode(
+                        id = "ep-8",
+                        title = "The one about resistors",
+                        showTitle = "Radio Hardware",
+                    ),
+                ),
+            ),
+        )
+
+        scrollTo("Phone queue")
+        composeTestRule.onNodeWithText("Phone queue").assertIsDisplayed()
+
+        scrollTo("Downloaded on phone")
+        composeTestRule.onNodeWithText("Downloaded on phone").assertIsDisplayed()
+
+        scrollTo("On this watch")
+        composeTestRule.onNodeWithText("On this watch").assertIsDisplayed()
+    }
+
+    /**
+     * With the header naming the list rather than the action, the row's icon is the only thing left
+     * saying what a tap does — and TalkBack cannot see an icon.
+     */
+    @Test
+    fun `a downloaded-on-phone row announces that tapping it copies the episode`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                offered = listOf(
+                    OfflineEpisode(
+                        id = "ep-8",
+                        title = "The one about resistors",
+                        showTitle = "Radio Hardware",
+                    ),
+                ),
+            ),
+        )
+
+        scrollTo("The one about resistors")
+        composeTestRule.onNodeWithContentDescription("Copy to watch").assertIsDisplayed()
+    }
+
+    /**
+     * An episode is minutes of Bluetooth, so the wrong one tapped — or one that has plainly stalled
+     * — needs a way out that is not "wait for it".
+     */
+    @Test
+    fun `a copy that is arriving can be cancelled`() {
+        var cancelled: String? = null
+        val coming = OfflineEpisode(
+            id = "ep-8",
+            title = "The one about resistors",
+            showTitle = "Radio Hardware",
+            sizeBytes = 20_000_000L,
+        )
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                offered = listOf(coming),
+                transfers = mapOf(
+                    "ep-8" to TransferProgress(receivedBytes = 5_000_000L, expectedBytes = 20_000_000L),
+                ),
+            ),
+            onCancelCopyToWatch = { cancelled = it },
+        )
+
+        scrollTo("The one about resistors")
+        composeTestRule.onNodeWithContentDescription("Cancel copy").performClick()
+
+        assertEquals("ep-8", cancelled)
+    }
+
     /** An episode on the watch, distinct from everything else on screen. */
     private val stored = StoredEpisode(
         id = "ep-9",
@@ -324,6 +412,7 @@ class WatchPlayerScreenTest {
         onRetry: () -> Unit = {},
         onPlayOnWatch: (StoredEpisode) -> Unit = {},
         onCopyToWatch: (String) -> Unit = {},
+        onCancelCopyToWatch: (String) -> Unit = {},
     ) {
         composeTestRule.setContent {
             androidx.wear.compose.material3.MaterialTheme {
@@ -340,6 +429,7 @@ class WatchPlayerScreenTest {
                         onRetry = onRetry,
                         onPlayOnWatch = onPlayOnWatch,
                         onCopyToWatch = onCopyToWatch,
+                        onCancelCopyToWatch = onCancelCopyToWatch,
                     )
                 }
             }

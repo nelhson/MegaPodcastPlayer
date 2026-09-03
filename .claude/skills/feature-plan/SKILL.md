@@ -73,11 +73,11 @@ Launch these agents **in a single message**:
    the feature would cut across a module boundary the graph currently forbids.
 
 2. **Data & media impact** (`Explore`, thoroughness: very thorough)
-   Assess impact on: the Room schema (`:core:database` — entities, DAOs, and whether a migration in
-   `Migrations.kt` is needed, since real installations hold real data), the media stack
+   Assess impact on: the Room schema (`:core:database` — entities and DAOs; there are no migrations,
+   a schema change recreates the tables and loses on-device data), the media stack
    (`:core:media` — the data source chain, download cache keys, `PlaybackService`), preferences, and
-   the watch contract (`:core:wearprotocol` — a change here is a two-sided release, because the
-   phone and watch update independently). Cite `file:line`.
+   the watch contract (`:core:wearprotocol` — free to change, but both APKs must be reinstalled from
+   the one build, which is what `install_on_devices` does). Cite `file:line`.
 
 3. **UX & platform integration** (`Explore`, thoroughness: medium)
    How it fits the current navigation and screens, which new components are needed and whether
@@ -102,9 +102,9 @@ Write `docs/reports/<date>-feature-plan-<slug>.md`:
 ## Out of scope
 ```
 
-Every milestone names the files it creates or modifies. Anything touching stored identities, a Room
-migration, or the watch contract must be called out explicitly — those are the changes that cannot be
-undone by shipping again.
+Every milestone names the files it creates or modifies. Anything touching stored identities, the
+Room schema, or the watch contract must be called out explicitly — a stored identity cannot be undone
+by shipping again, and the other two cost the on-device data or a reinstall of both sides.
 
 Finish by giving Boris a summary in chat plus the report file path. Do not implement and do not
 commit unless asked.

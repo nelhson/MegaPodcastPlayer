@@ -89,6 +89,13 @@
     <string name="podcast_action_cancel_download">Cancel download</string>
     <string name="podcast_action_remove_download">Remove download</string>
 
+    <!--
+        The button the same swipe reveals, a tap rather than a pull. "Play next" rather than "Add to
+        queue": it names where in the queue the episode lands, which is the whole difference between
+        this and the queueing the downloads screen offers.
+    -->
+    <string name="podcast_action_play_next">Play next</string>
+
     <!-- Snackbars. -->
     <plurals name="podcast_message_new_episodes">
         <item quantity="one">%1$d new episode</item>
@@ -111,5 +118,7 @@
     <string name="podcast_message_download_waiting_for_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>
     <string name="podcast_message_download_removed">Removed \"%1$s\" from this device</string>
+    <!-- %1$s is the episode's title. Says where it went, because the queue is another screen. -->
+    <string name="podcast_message_queued_next">\"%1$s\" plays next</string>
 
 </resources>

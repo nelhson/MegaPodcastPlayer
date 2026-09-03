@@ -32,8 +32,8 @@ class UserPreferencesDataSource @Inject constructor(
     /** Observes the current playback settings, falling back to [PlaybackSettings]'s defaults. */
     val playbackSettings: Flow<PlaybackSettings> = dataStore.data.map { preferences ->
         PlaybackSettings(
-            // Clamped on read as well as on write: a value written by an older build (or a corrupt
-            // file) must never be handed to ExoPlayer, which throws on a non-positive speed.
+            // Clamped on read as well as on write so that a corrupt file can never hand ExoPlayer
+            // a non-positive speed, which it throws on.
             speed = (preferences[Keys.SPEED] ?: PlaybackSettings.DEFAULT_SPEED)
                 .coerceIn(PlaybackSettings.SPEED_RANGE),
             skipForwardMs = preferences[Keys.SKIP_FORWARD_MS]
@@ -47,9 +47,8 @@ class UserPreferencesDataSource @Inject constructor(
     /**
      * Observes the download rules, falling back to [DownloadSettings]'s defaults.
      *
-     * The keep-limit is clamped to the offered steps on read as well as on write: a value from a
-     * future build that this one does not offer would otherwise be invisible in the settings screen
-     * while still quietly deleting episodes.
+     * The keep-limit is clamped on read as well as on write: a value below [DownloadSettings.KEEP_ALL]
+     * would be invisible in the settings screen while still quietly deleting episodes.
      */
     val downloadSettings: Flow<DownloadSettings> = dataStore.data.map { preferences ->
         DownloadSettings(
@@ -62,16 +61,10 @@ class UserPreferencesDataSource @Inject constructor(
         )
     }
 
-    /**
-     * Observes how the library screen draws its shows.
-     *
-     * An unrecognised value falls back to the default rather than throwing: the stored string is
-     * an enum name, and a build that offered a third layout would otherwise crash this one on
-     * start-up.
-     */
+    /** Observes how the library screen draws its shows; the default until one is chosen. */
     val libraryLayout: Flow<LibraryLayout> = dataStore.data.map { preferences ->
         preferences[Keys.LIBRARY_LAYOUT]
-            ?.let { name -> LibraryLayout.entries.firstOrNull { it.name == name } }
+            ?.let(LibraryLayout::valueOf)
             ?: LibraryLayout.DEFAULT
     }
 

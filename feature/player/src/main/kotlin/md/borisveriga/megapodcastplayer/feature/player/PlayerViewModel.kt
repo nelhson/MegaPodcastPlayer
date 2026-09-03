@@ -23,6 +23,8 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * @property playback what the player is doing right now.
  * @property settings the user's speed and skip preferences.
  * @property queue the durable "up next" queue, in play order, including the episode playing.
+ * @property lastPlayedEpisodeId the episode the player last loaded, as stored. Only read while
+ *   [playback] has no episode of its own; see [currentEpisodeId].
  * @property message a one-off outcome for the queue screen's snackbar; cleared via
  *   [PlayerViewModel.onQueueMessageShown]. The player surfaces do not read it — they share this
  *   view model because they share the queue, not because they share every field of it.
@@ -31,15 +33,29 @@ data class PlayerUiState(
     val playback: PlaybackState = PlaybackState(),
     val settings: PlaybackSettings = PlaybackSettings(),
     val queue: List<PlayableEpisode> = emptyList(),
+    val lastPlayedEpisodeId: String? = null,
     val message: QueueMessage? = null,
 ) {
     /** True when there is nothing to show — the mini player should not be on screen at all. */
     val isIdle: Boolean get() = playback.isIdle
 
+    /**
+     * The episode the queue's head belongs to: what the player has loaded, or failing that what it
+     * loaded last.
+     *
+     * The fallback is not cosmetic. The durable queue *includes* the episode playing — the service
+     * mirrors its whole timeline into it — so telling that entry apart from the ones waiting behind
+     * it is the only thing that keeps it out of "up next". The player's own answer is null for as
+     * long as it takes a `MediaController` to bind, and null again after the service has been
+     * killed, and in both of those windows the queue screen would otherwise list the loaded episode
+     * as though it were queued: one row, in a queue the user has emptied.
+     */
+    val currentEpisodeId: String? get() = playback.episodeId ?: lastPlayedEpisodeId
+
     /** The queue entries after the one playing, which is what "Up next" lists. */
     val upNext: List<PlayableEpisode>
         get() {
-            val currentIndex = queue.indexOfFirst { it.episode.id == playback.episodeId }
+            val currentIndex = queue.indexOfFirst { it.episode.id == currentEpisodeId }
             return if (currentIndex >= 0) queue.drop(currentIndex + 1) else queue
         }
 }
@@ -100,12 +116,14 @@ class PlayerViewModel @Inject constructor(
         connection.playbackState,
         playbackRepository.observePlaybackSettings(),
         playbackRepository.observeQueue(),
+        playbackRepository.observeLastPlayedEpisodeId(),
         messageState,
-    ) { playback, settings, queue, message ->
+    ) { playback, settings, queue, lastPlayedEpisodeId, message ->
         PlayerUiState(
             playback = playback,
             settings = settings,
             queue = queue,
+            lastPlayedEpisodeId = lastPlayedEpisodeId,
             message = message,
         )
     }.stateIn(

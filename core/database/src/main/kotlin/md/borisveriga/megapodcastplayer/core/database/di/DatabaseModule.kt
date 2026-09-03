@@ -12,10 +12,6 @@ import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
 import md.borisveriga.megapodcastplayer.core.database.dao.PodcastDao
 import md.borisveriga.megapodcastplayer.core.database.dao.QueueDao
-import md.borisveriga.megapodcastplayer.core.database.migration.MIGRATION_1_2
-import md.borisveriga.megapodcastplayer.core.database.migration.MIGRATION_2_3
-import md.borisveriga.megapodcastplayer.core.database.migration.MIGRATION_3_4
-import md.borisveriga.megapodcastplayer.core.database.migration.MIGRATION_4_5
 
 /** Provides the Room database and its DAOs. */
 @Module
@@ -31,9 +27,9 @@ object DatabaseModule {
         klass = MegaPodcastPlayerDatabase::class.java,
         name = "megapodcastplayer.db",
     )
-        // Deliberately no fallbackToDestructiveMigration(): a forgotten schema change must fail
-        // loudly at open rather than silently wipe the user's library and playback positions.
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        // Personal build: a schema change wipes and recreates rather than migrating. Shows are
+        // re-added and downloads re-fetched, which is cheaper than a migration path nobody needs.
+        .fallbackToDestructiveMigration(dropAllTables = true)
         .build()
 
     @Provides

@@ -278,6 +278,28 @@ class WatchPlayerViewModel @Inject constructor(
     fun copyToWatch(episodeId: String) = send(WearCommand.CopyToWatch(episodeId))
 
     /**
+     * Gives up on an episode that is arriving.
+     *
+     * The watch is told first, and it is what the wearer sees: the row goes and the partial file is
+     * deleted whether or not there is a phone in range to be told. The phone is told second so that
+     * it stops pouring the rest of the episode down a link nobody is reading — a copy that would
+     * otherwise hold its foreground service up for minutes.
+     *
+     * That second half is deliberately not reported as a failure when it does not get through.
+     * Cancelling has already succeeded from where the wearer stands, and a phone out of range is one
+     * whose transfer has stopped anyway; "could not reach your phone" over a button that plainly
+     * worked would just be wrong.
+     *
+     * @param episodeId the arriving episode to abandon.
+     */
+    fun cancelCopyToWatch(episodeId: String) {
+        viewModelScope.launch {
+            store.cancel(episodeId)
+            client.send(WearCommand.CancelCopyToWatch(episodeId))
+        }
+    }
+
+    /**
      * Deletes an episode from the watch.
      *
      * Stops it first if it is the one playing: removing the file underneath a running player would

@@ -22,7 +22,7 @@ class WearCommandExecutorTest {
     private val episodePlayer = mockk<EpisodePlayer>(relaxed = true)
     private val publisher = mockk<NowPlayingPublisher>(relaxed = true)
     private val libraryPublisher = mockk<OfflineLibraryPublisher>(relaxed = true)
-    private val audioSender = mockk<EpisodeAudioSender>(relaxed = true)
+    private val audioTransfers = mockk<EpisodeAudioTransfers>(relaxed = true)
 
     private lateinit var executor: WearCommandExecutor
 
@@ -37,7 +37,7 @@ class WearCommandExecutorTest {
             episodePlayer,
             publisher,
             libraryPublisher,
-            audioSender,
+            audioTransfers,
         )
     }
 
@@ -125,7 +125,19 @@ class WearCommandExecutorTest {
     fun `a copy request is addressed to the watch that asked`() = runTest {
         executor.execute(WearCommand.CopyToWatch(episodeId = "ep-7"), WATCH_NODE)
 
-        coVerify(exactly = 1) { audioSender.send(WATCH_NODE, "ep-7") }
+        coVerify(exactly = 1) { audioTransfers.start(WATCH_NODE, "ep-7") }
+    }
+
+    /**
+     * A cancel is not addressed to a node: the copy is already going to exactly one watch, and the
+     * episode names it.
+     */
+    @Test
+    fun `a cancelled copy stops the transfer rather than starting another`() = runTest {
+        executor.execute(WearCommand.CancelCopyToWatch(episodeId = "ep-7"), WATCH_NODE)
+
+        coVerify(exactly = 1) { audioTransfers.cancel("ep-7") }
+        coVerify(exactly = 0) { audioTransfers.start(any(), any()) }
     }
 
     @Test

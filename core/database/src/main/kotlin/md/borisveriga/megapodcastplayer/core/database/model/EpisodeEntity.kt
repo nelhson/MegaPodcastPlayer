@@ -60,7 +60,7 @@ data class EpisodeEntity(
      * `MIN(sort_order) - 1` so a refresh puts them on top without rewriting every existing row,
      * which is why the column is signed and why negative values are ordinary rather than a bug.
      *
-     * The `defaultValue` has to match the `DEFAULT 0` in `MIGRATION_4_5` exactly.
+     * The `defaultValue` is the column's own `DEFAULT 0`, for inserts that name no order.
      */
     @ColumnInfo(name = "sort_order", defaultValue = "0")
     val sortOrder: Int = 0,

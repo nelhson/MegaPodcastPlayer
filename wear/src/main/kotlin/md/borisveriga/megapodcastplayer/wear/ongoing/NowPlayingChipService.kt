@@ -64,8 +64,7 @@ class NowPlayingChipService : WearableListenerService() {
     /**
      * Decodes the snapshot carried by a data event.
      *
-     * @return null when the item has no payload, or one this build cannot read — which is how a
-     *   watch survives meeting a phone running a newer version of the app.
+     * @return null when the item has no payload, or a corrupt one.
      */
     private fun snapshotFrom(event: DataEvent): NowPlayingSnapshot? {
         val bytes = DataMapItem.fromDataItem(event.dataItem)
