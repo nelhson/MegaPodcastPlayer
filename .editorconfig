@@ -1,4 +1,4 @@
-# Editor defaults for BPodcat. Matches `kotlin.code.style=official` in gradle.properties, which is
+# Editor defaults for MegaPodcastPlayer. Matches `kotlin.code.style=official` in gradle.properties, which is
 # what the IDE's Kotlin formatter and detekt's formatting rules both assume.
 root = true
 

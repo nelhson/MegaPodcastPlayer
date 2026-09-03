@@ -29,25 +29,29 @@ object WearPaths {
      */
     const val COMMAND = "$PREFIX/command"
 
-    /** The `DataMap` key both sides use for the serialised payload. */
-    const val PAYLOAD_KEY = "payload"
+    /**
+     * Phone -> watch: the episodes the phone holds offline, published as a **data item**.
+     *
+     * Separate from [NOW_PLAYING] because the two change on completely different clocks — playback
+     * state several times a minute, the download list a few times a week — and a watch that had to
+     * re-read one to learn the other would spend its Bluetooth budget on the wrong one.
+     */
+    const val OFFLINE_LIBRARY = "$PREFIX/offline_library"
 
     /**
-     * The `DataMap` key carrying downscaled cover art, as a Data Layer **asset**.
+     * Phone -> watch: one episode's audio, over a **channel**.
      *
-     * The snapshot also carries an [NowPlayingSnapshot.artworkUrl], but the watch must not fetch it:
-     * its only route to the network is a proxy through the phone's Bluetooth link, and a full-size
-     * cover is hundreds of kilobytes pulled over a link measured in kilobytes per second. The phone
-     * has the image in its Coil disk cache already, so it downscales once and sends the bytes.
+     * Neither a message nor a data item: an episode is tens of megabytes, a message is capped at
+     * 100 KB, and a data item is replicated to *every* connected node whether it wants it or not. A
+     * channel is a plain socket to one node, opened for the transfer and closed after it, which is
+     * exactly what a file wants.
      *
-     * An asset rather than another byte array in the `DataMap`: a data item is capped at 100 KB and
-     * already carries the queue, whereas assets are transferred out of band and cached by content
-     * digest, so republishing an unchanged image costs nothing.
-     *
-     * Optional in both directions. A phone too old to send it leaves the key absent and the watch
-     * draws no artwork; a watch too old to read it ignores the key. Neither is an error.
+     * The episode's id is the last path segment; see [episodeAudioPath].
      */
-    const val ARTWORK_KEY = "artwork"
+    const val EPISODE_AUDIO = "$PREFIX/episode_audio"
+
+    /** The `DataMap` key both sides use for the serialised payload. */
+    const val PAYLOAD_KEY = "payload"
 
     /**
      * Capability the phone app advertises, declared in its `res/values/wear.xml`.
@@ -56,4 +60,25 @@ object WearPaths {
      * reachable but BPodcat is not installed on it" — two very different things to show the user.
      */
     const val PHONE_CAPABILITY = "bpodcat_phone_player"
+
+    /**
+     * The channel path carrying one episode's audio.
+     *
+     * The id travels in the path rather than in a preamble on the stream, so the receiving side
+     * knows what it is being sent before the first byte arrives — and so a transfer that dies
+     * halfway can be attributed to an episode rather than discarded as unidentifiable.
+     *
+     * @param episodeId the episode; ids are hex digests, so nothing needs escaping.
+     */
+    fun episodeAudioPath(episodeId: String): String = "$EPISODE_AUDIO/$episodeId"
+
+    /**
+     * Reads the episode id back out of a channel path.
+     *
+     * @param path the path the channel was opened on.
+     * @return the id, or null when the path is not one of ours — which is normal, since a
+     *   `WearableListenerService` is offered every channel the phone opens.
+     */
+    fun episodeIdFromAudioPath(path: String): String? =
+        path.removePrefix("$EPISODE_AUDIO/").takeIf { it.isNotEmpty() && it != path }
 }

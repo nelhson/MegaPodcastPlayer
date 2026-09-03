@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-feature android:name="android.hardware.type.watch" />
 
@@ -7,11 +8,17 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Keeps playback controls reachable from the watch face via an OngoingActivity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Playing an episode the watch holds, with the screen off and the phone at home. The media
+      playback type is what lets that service keep running while the wrist is down.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!--
-      No backup: the watch app is a remote control and persists nothing of its own — no database, no
-      DataStore, no preferences. Everything it shows arrives from the phone over the Data Layer. An
-      empty backup is not harmful, but declaring the truth is better than leaving the template on.
+      No backup. What the watch keeps of its own is episode audio the phone sent it and how far
+      through each one the wearer got — tens of megabytes that would be pointless to back up and are
+      replaceable in one tap, and positions that are reported back to the phone anyway.
     -->
     <application
         android:name=".WearApplication"
@@ -68,6 +75,84 @@
                     android:pathPrefix="/bpodcat_phone_player" />
             </intent-filter>
         </service>
+        <!--
+          Receives an episode's audio from the phone. Play Services starts this - and with it the
+          watch app's process - when the phone opens the channel, which is what lets a transfer
+          begin while the app is closed and finish while it stays closed.
+        -->
+        <service
+            android:name=".data.EpisodeAudioReceiverService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/bpodcat/episode_audio" />
+            </intent-filter>
+        </service>
+
+        <!--
+          The watch's own player, for episodes it holds. A MediaSessionService rather than a player
+          owned by the screen: the audio has to survive the wrist dropping, and a Bluetooth headset's
+          buttons have to reach it.
+
+          exported="true" is required by Media3 - the system's media controls bind the session from
+          outside the app - and lint's ExportedService check wants a permission on it that no system
+          surface would hold. Access control lives in the session's onConnect instead, which rejects
+          every controller that is not this app or the system. Suppressed here, next to the reason,
+          exactly as :core:media does for the phone's player.
+        -->
+        <service
+            android:name=".playback.WatchPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!--
+          The now-playing tile. The permission is the system's own: only the tile host may bind
+          this, which is why it can be exported without being reachable by any other app.
+        -->
+        <service
+            android:name=".tile.NowPlayingTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_ongoing_playing"
+            android:label="@string/watch_tile_label"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/ic_ongoing_playing" />
+        </service>
+
+        <!--
+          The watch-face complication. UPDATE_PERIOD_SECONDS is zero on purpose: a periodic refresh
+          would wake this up to redraw something that had not changed, and every change it *could*
+          draw arrives as a data item, which NowPlayingChipService turns into a push.
+        -->
+        <service
+            android:name=".complication.NowPlayingComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_ongoing_playing"
+            android:label="@string/watch_complication_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="RANGED_VALUE,SHORT_TEXT,LONG_TEXT,MONOCHROMATIC_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
     </application>
 
 </manifest>

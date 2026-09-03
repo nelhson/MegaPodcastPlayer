@@ -80,4 +80,36 @@ sealed interface WearCommand {
     @Serializable
     @SerialName("play_episode")
     data class PlayEpisode(val episodeId: String) : WearCommand
+
+    /**
+     * Asks the phone to copy a downloaded episode's audio onto the watch.
+     *
+     * The phone answers on a channel rather than in a reply — see [WearPaths.EPISODE_AUDIO] — so
+     * nothing here says how it went. The watch learns that from bytes arriving, or from their
+     * absence.
+     *
+     * @property episodeId the episode, as sent in [OfflineEpisode.id].
+     */
+    @Serializable
+    @SerialName("copy_to_watch")
+    data class CopyToWatch(val episodeId: String) : WearCommand
+
+    /**
+     * Tells the phone where an episode played *on the watch* got to.
+     *
+     * The one command that carries state in the other direction, and it has to: audio the watch
+     * played is audio the phone did not, so without this an episode listened to on a run would
+     * still be waiting at zero on the phone afterwards.
+     *
+     * @property episodeId the episode that was played.
+     * @property positionMs where it was left.
+     * @property isPlayed whether it reached the end.
+     */
+    @Serializable
+    @SerialName("report_position")
+    data class ReportPosition(
+        val episodeId: String,
+        val positionMs: Long,
+        val isPlayed: Boolean = false,
+    ) : WearCommand
 }

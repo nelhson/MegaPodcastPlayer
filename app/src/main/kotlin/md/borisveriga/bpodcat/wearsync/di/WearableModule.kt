@@ -1,8 +1,7 @@
 package md.borisveriga.bpodcat.wearsync.di
 
 import android.content.Context
-import coil3.ImageLoader
-import coil3.SingletonImageLoader
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.NodeClient
 import com.google.android.gms.wearable.Wearable
@@ -18,7 +17,8 @@ import javax.inject.Singleton
  *
  * The phone publishes state and never initiates a message — the watch does the asking, and its
  * messages arrive through [md.borisveriga.bpodcat.wearsync.WearCommandService] rather than through
- * a client — so there is no `MessageClient` here. The [NodeClient] is not for sending either: it is
+ * a client — so there is no `MessageClient` here. It does initiate one thing: a channel, when the
+ * watch asks for an episode's audio. The [NodeClient] is not for sending either: it is
  * how [md.borisveriga.bpodcat.wearsync.WearSenderVerifier] answers "is this sender a node we are
  * actually paired with" before a command reaches the player.
  *
@@ -39,18 +39,14 @@ object WearableModule {
         Wearable.getNodeClient(context)
 
     /**
-     * The app's one Coil loader, for
-     * [md.borisveriga.bpodcat.wearsync.ArtworkAssets].
+     * The channel client, which carries episode audio to the watch.
      *
-     * Deliberately the *singleton* loader that
-     * [md.borisveriga.bpodcat.BPodcatApplication.newImageLoader] built, not a second one: artwork
-     * bound for the watch is nearly always artwork a screen has already shown, so sharing the loader
-     * means sharing its disk cache and the fetch usually never leaves the device. Exposed through
-     * Hilt rather than looked up statically so a test can substitute a loader that resolves without
-     * a network.
+     * A channel rather than a data item because an episode is tens of megabytes and a data item is
+     * replicated to every connected node whether it wants it or not; see
+     * [md.borisveriga.bpodcat.core.wearprotocol.WearPaths.EPISODE_AUDIO].
      */
     @Provides
     @Singleton
-    fun providesImageLoader(@ApplicationContext context: Context): ImageLoader =
-        SingletonImageLoader.get(context)
+    fun providesChannelClient(@ApplicationContext context: Context): ChannelClient =
+        Wearable.getChannelClient(context)
 }

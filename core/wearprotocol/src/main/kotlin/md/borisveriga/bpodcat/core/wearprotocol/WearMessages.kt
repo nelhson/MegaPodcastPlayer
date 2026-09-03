@@ -48,4 +48,19 @@ object WearMessages {
     fun decodeSnapshot(bytes: ByteArray): NowPlayingSnapshot? = runCatching {
         json.decodeFromString(NowPlayingSnapshot.serializer(), bytes.decodeToString())
     }.getOrNull()
+
+    /** Serialises the phone's offline library for [WearPaths.OFFLINE_LIBRARY]. */
+    fun encodeLibrary(library: OfflineLibrary): ByteArray =
+        json.encodeToString(OfflineLibrary.serializer(), library).encodeToByteArray()
+
+    /**
+     * Parses an offline library received on [WearPaths.OFFLINE_LIBRARY].
+     *
+     * @return the library, or null if the payload was unreadable. A watch that cannot read the list
+     *   offers nothing to copy, which is the same as a phone with nothing downloaded — and is a
+     *   great deal better than a crash inside a Data Layer callback.
+     */
+    fun decodeLibrary(bytes: ByteArray): OfflineLibrary? = runCatching {
+        json.decodeFromString(OfflineLibrary.serializer(), bytes.decodeToString())
+    }.getOrNull()
 }

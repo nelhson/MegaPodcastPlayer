@@ -24,6 +24,8 @@ import md.borisveriga.bpodcat.core.wearprotocol.WearCommand
  * @property episodePlayer resolves an episode id into something the player can accept.
  * @property publisher used to answer
  *   [WearCommand.RequestState] and to confirm the outcome of the rest.
+ * @property libraryPublisher republishes what the phone holds offline, for the same reason.
+ * @property audioSender copies an episode's audio to the watch that asked for it.
  */
 @Singleton
 internal class WearCommandExecutor @Inject constructor(
@@ -31,14 +33,19 @@ internal class WearCommandExecutor @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val episodePlayer: EpisodePlayer,
     private val publisher: NowPlayingPublisher,
+    private val libraryPublisher: OfflineLibraryPublisher,
+    private val audioSender: EpisodeAudioSender,
 ) {
 
     /**
      * Runs one command.
      *
      * @param command what the watch asked for.
+     * @param sourceNodeId the watch that asked. Only the commands that send something *back* to a
+     *   particular device need it; everything else acts on the phone, where there is nobody to
+     *   address.
      */
-    suspend fun execute(command: WearCommand) {
+    suspend fun execute(command: WearCommand, sourceNodeId: String) {
         when (command) {
             WearCommand.TogglePlayPause -> connection.togglePlayPause()
 
@@ -66,8 +73,21 @@ internal class WearCommandExecutor @Inject constructor(
 
             is WearCommand.PlayEpisode -> episodePlayer.play(command.episodeId)
 
-            // Answered by the publish below, which every command does anyway.
-            WearCommand.RequestState -> Unit
+            // The snapshot is answered by the publish below, which every command does anyway. The
+            // offline library is not — it is published on its own clock — so an opening watch that
+            // asks for state gets both, which is the moment it needs both.
+            WearCommand.RequestState -> libraryPublisher.publishCurrent()
+
+            is WearCommand.CopyToWatch -> audioSender.send(sourceNodeId, command.episodeId)
+
+            // Audio the watch played is audio the phone did not, so this is the one command that
+            // writes playback state rather than asking for it. A finished episode goes back to the
+            // start, exactly as finishing it on the phone would.
+            is WearCommand.ReportPosition -> playbackRepository.setPlayed(
+                episodeId = command.episodeId,
+                isPlayed = command.isPlayed,
+                positionMs = if (command.isPlayed) 0L else command.positionMs,
+            )
         }
 
         // The state flow would eventually carry the change to the watch on its own, but only once

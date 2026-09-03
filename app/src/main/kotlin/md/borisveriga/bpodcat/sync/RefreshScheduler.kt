@@ -16,7 +16,7 @@ import javax.inject.Singleton
 /**
  * Puts [RefreshWorker] on WorkManager's schedule.
  *
- * Called from `BPodcatApplication.onCreate`, which is the only place that runs whether the user
+ * Called from `MegaPodcastPlayerApplication.onCreate`, which is the only place that runs whether the user
  * opened the app, the system restarted the process, or the device rebooted.
  *
  * @property context application context; WorkManager is a per-process singleton keyed on it.

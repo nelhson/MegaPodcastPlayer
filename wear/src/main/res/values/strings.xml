@@ -52,6 +52,46 @@
     <string name="watch_retry">Retry</string>
 
     <!--
+      Episodes carried over to the watch itself. This is the one part of the app that works with the
+      phone out of range, so its copy says "on this watch" rather than naming the phone at all.
+    -->
+    <string name="watch_on_this_watch">On this watch</string>
+    <string name="watch_copy_to_watch">Copy to watch</string>
+    <string name="watch_copying">Copying…</string>
+    <string name="watch_remove_from_watch">Remove from watch</string>
+    <string name="watch_free_up_space">Remove all from watch</string>
+    <string name="watch_nothing_to_copy">Download an episode on your phone to copy it here.</string>
+    <string name="watch_playing_on_watch">Playing on this watch</string>
+    <!-- Second line of a stored row: the show, and how far through it the wearer is. -->
+    <string name="watch_stored_remaining">%1$s · %2$s left</string>
+    <string name="watch_stored_played">%1$s · Played</string>
+    <string name="watch_back_to_phone">Back to the phone</string>
+    <string name="watch_phone_out_of_range">Phone out of range. Episodes on this watch still play.</string>
+    <!-- Stands in for a title when audio arrives without the offer that described it. -->
+    <string name="watch_unknown_episode">Episode</string>
+
+    <!--
+      The tile, one swipe from the watch face. Its skip labels are deliberately unnumbered: the tile
+      is built before the phone's configured interval is known, and a button that said "30" while
+      the phone jumps 45 would be a small lie pressed daily.
+    -->
+    <string name="watch_tile_label">Now playing</string>
+    <string name="watch_tile_idle_body">Start an episode on your phone.</string>
+    <string name="watch_tile_skip_back">Skip back</string>
+    <string name="watch_tile_skip_forward">Skip ahead</string>
+
+    <!--
+      The complication, on the watch face itself. It gets about four characters, so `empty` is a
+      dash rather than a sentence; the description is what TalkBack reads instead.
+    -->
+    <string name="watch_complication_label">Now playing</string>
+    <string name="watch_complication_empty">—</string>
+    <string name="watch_complication_description">%1$s, %2$s</string>
+    <!-- Shown in the complication picker, before the watch has asked the phone anything. -->
+    <string name="watch_complication_preview_episode">The one about batteries</string>
+    <string name="watch_complication_preview_show">Radio Hardware</string>
+
+    <!--
       The watch-face chip. The channel name is what the user sees in the system's notification
       settings, so it names the thing rather than the mechanism.
     -->

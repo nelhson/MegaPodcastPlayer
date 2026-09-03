@@ -42,7 +42,6 @@ internal fun nowPlayingSnapshot(
         episodeId = playback.episodeId,
         title = playback.title,
         showTitle = playback.showTitle,
-        artworkUrl = playback.artworkUrl,
         isPlaying = playback.isPlaying,
         isBuffering = playback.isBuffering,
         positionMs = playback.positionMs,

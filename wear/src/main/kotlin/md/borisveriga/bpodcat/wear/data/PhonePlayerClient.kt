@@ -156,6 +156,17 @@ class PhonePlayerClient @Inject constructor(
         } > 0
     }
 
+    /**
+     * The last thing the phone published, read once.
+     *
+     * For the surfaces that draw a picture and stop — the tile and the complication — rather than
+     * collecting [snapshots] for as long as a screen is up. Both are asked for a layout, build one
+     * and are torn down, so a flow would be subscribed and disposed in the same breath.
+     *
+     * @return the snapshot the Data Layer holds, or null if it holds none or it is unreadable.
+     */
+    suspend fun cachedSnapshot(): NowPlayingSnapshot? = readCachedSnapshot()?.snapshot
+
     /** Classifies the link; see [PhoneLink] for why the three failures are kept apart. */
     private suspend fun currentLink(): PhoneLink {
         if (capablePhoneNodeIds().isNotEmpty()) return PhoneLink.CONNECTED

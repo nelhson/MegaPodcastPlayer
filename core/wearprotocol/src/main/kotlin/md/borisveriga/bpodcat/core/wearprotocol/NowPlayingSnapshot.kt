@@ -31,8 +31,6 @@ data class QueuedEpisode(
  * @property episodeId the episode loaded on the phone, or null when nothing is.
  * @property title the episode title.
  * @property showTitle the owning podcast's title.
- * @property artworkUrl artwork for the episode, already resolved to the show's when the episode has
- *   none of its own.
  * @property isPlaying true only while audio is actually coming out of the phone.
  * @property isBuffering true while the phone is loading and cannot produce audio yet.
  * @property positionMs playback position when the phone captured this snapshot.
@@ -45,16 +43,18 @@ data class QueuedEpisode(
  * @property hasPrevious whether an episode precedes the current one in the queue.
  * @property upNext the queue after the current episode, in play order.
  * @property publishedAtMs the phone's wall clock when it published, in epoch milliseconds.
- *   Not used for timing — the two devices' clocks are independent — but it makes every publish
- *   unique, which matters because the Data Layer silently drops a data item whose bytes are
- *   unchanged.
+ *   Its first job is to make every publish unique, which matters because the Data Layer silently
+ *   drops a data item whose bytes are unchanged. The watch app's screen does not time anything with
+ *   it — it stamps arrivals with its own clock instead, which needs no agreement between the two
+ *   devices. The watch-face surfaces have no arrival to stamp and do use it; see
+ *   `extrapolatedPositionMs` in `:wear`, and the cap that keeps a day-old reading from becoming a
+ *   confident lie.
  */
 @Serializable
 data class NowPlayingSnapshot(
     val episodeId: String? = null,
     val title: String = "",
     val showTitle: String = "",
-    val artworkUrl: String? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
     val positionMs: Long = 0L,

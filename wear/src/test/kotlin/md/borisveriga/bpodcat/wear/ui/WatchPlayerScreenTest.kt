@@ -10,8 +10,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.bpodcat.core.wearprotocol.NowPlayingSnapshot
+import md.borisveriga.bpodcat.core.wearprotocol.OfflineEpisode
 import md.borisveriga.bpodcat.core.wearprotocol.QueuedEpisode
 import md.borisveriga.bpodcat.wear.data.PhoneLink
+import md.borisveriga.bpodcat.wear.data.StoredEpisode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -173,17 +175,21 @@ class WatchPlayerScreenTest {
     }
 
     /**
-     * The header must survive a phone that sent no artwork, which is every phone running a build
-     * older than the one that started sending it.
+     * The header draws a waveform and a colour where cover art used to be, and both are decorative.
+     * The words are what has to survive: a phone that sends no show title must not cost the episode
+     * its own line, and TalkBack must not be handed a bar chart to read out.
      */
     @Test
-    fun theHeaderRendersWithoutArtwork() {
+    fun theHeaderShowsTheEpisodeWithNoShowTitleToDecorateItWith() {
         setScreen(
-            WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing, artwork = null),
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing.copy(showTitle = ""),
+            ),
         )
 
         composeTestRule.onNodeWithText("The one about batteries").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Radio Hardware").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Radio Hardware").assertDoesNotExist()
     }
 
     @Test
@@ -222,12 +228,102 @@ class WatchPlayerScreenTest {
         composeTestRule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
     }
 
+    // ---- Episodes the watch holds ---------------------------------------------------------------
+
+    @Test
+    fun `episodes on the watch are listed and can be played from here`() {
+        var played: StoredEpisode? = null
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = listOf(stored),
+            ),
+            onPlayOnWatch = { played = it },
+        )
+
+        scrollTo("The one about capacitors")
+        composeTestRule.onNodeWithText("The one about capacitors").performClick()
+
+        assertEquals("ep-9", played?.id)
+    }
+
+    @Test
+    fun `an episode the phone has and the watch does not can be asked for`() {
+        var copied: String? = null
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                offered = listOf(
+                    OfflineEpisode(id = "ep-8", title = "The one about resistors", showTitle = "Radio Hardware"),
+                ),
+            ),
+            onCopyToWatch = { copied = it },
+        )
+
+        scrollTo("The one about resistors")
+        composeTestRule.onNodeWithText("The one about resistors").performClick()
+
+        assertEquals("ep-8", copied)
+    }
+
+    /**
+     * The whole point of carrying episodes over: the phone is at home and the watch still plays. The
+     * unreachable-phone screen must not stand in front of that.
+     */
+    @Test
+    fun `an unreachable phone still shows what the watch can play by itself`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.DISCONNECTED,
+                snapshot = NowPlayingSnapshot(),
+                stored = listOf(stored),
+            ),
+        )
+
+        composeTestRule.onNodeWithText("Phone not connected").assertDoesNotExist()
+        scrollTo("The one about capacitors")
+        composeTestRule.onNodeWithText("The one about capacitors").assertIsDisplayed()
+    }
+
+    /**
+     * While the watch is playing its own audio the phone's queue is not what "next" means, so the
+     * button that would skip through it is replaced by the way back to the phone.
+     */
+    @Test
+    fun `local playback swaps the queue controls for the way back to the phone`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                source = PlaybackSource.WATCH,
+                stored = listOf(stored),
+            ),
+        )
+
+        scrollTo("1.5x")
+        composeTestRule.onNodeWithContentDescription("Back to the phone").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Next episode").assertDoesNotExist()
+    }
+
+    /** An episode on the watch, distinct from everything else on screen. */
+    private val stored = StoredEpisode(
+        id = "ep-9",
+        title = "The one about capacitors",
+        showTitle = "Radio Hardware",
+        durationMs = 1_800_000L,
+        sizeBytes = 14_000_000L,
+    )
+
     /** Renders the screen with no-op callbacks except the ones a test cares about. */
     private fun setScreen(
         uiState: WatchPlayerUiState,
         onTogglePlayPause: () -> Unit = {},
         onPlayQueued: (String) -> Unit = {},
         onRetry: () -> Unit = {},
+        onPlayOnWatch: (StoredEpisode) -> Unit = {},
+        onCopyToWatch: (String) -> Unit = {},
     ) {
         composeTestRule.setContent {
             androidx.wear.compose.material3.MaterialTheme {
@@ -242,6 +338,8 @@ class WatchPlayerScreenTest {
                         onCycleSpeed = {},
                         onPlayQueued = onPlayQueued,
                         onRetry = onRetry,
+                        onPlayOnWatch = onPlayOnWatch,
+                        onCopyToWatch = onCopyToWatch,
                     )
                 }
             }

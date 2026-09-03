@@ -30,10 +30,26 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
-    // Unused by the watch today: artwork arrives as a Data Layer asset and is decoded with
-    // BitmapFactory, not fetched. Kept because dropping it shifts the resolved Kotlin stdlib version
-    // and would require regenerating gradle/verification-metadata.xml; that cleanup belongs in its
-    // own commit, where the diff to that file can be reviewed on its own terms.
+
+    // The watch-face surfaces: a tile beside the face, and a complication on it. Both render the
+    // same data item the app reads, so neither needs the phone to be awake to draw itself.
+    implementation(libs.androidx.wear.tiles)
+    implementation(libs.androidx.wear.protolayout)
+    implementation(libs.androidx.wear.protolayout.expression)
+    implementation(libs.androidx.wear.watchface.complications.data.source)
+    implementation(libs.androidx.concurrent.futures)
+    // `ListenableFuture.await()`, for connecting the media controller to the playback service.
+    implementation(libs.androidx.concurrent.futures.ktx)
+
+    // Playback of episodes carried over to the watch. The same player the phone uses, minus the
+    // download machinery: the watch receives finished files rather than fetching anything.
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.common)
+    // Unused by the watch: it draws no remote imagery at all — the now-playing header is a generated
+    // waveform in the show's own colour. Kept because dropping it shifts the resolved Kotlin stdlib
+    // version and would require regenerating gradle/verification-metadata.xml; that cleanup belongs
+    // in its own commit, where the diff to that file can be reviewed on its own terms.
     implementation(libs.coil.compose)
 
     // The screen is rendered in JVM tests through Robolectric rather than on a device: the layout

@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.wear.di
 
 import android.content.Context
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.NodeClient
@@ -16,9 +17,9 @@ import javax.inject.Singleton
 /**
  * Provides the watch's handles on the Wearable Data Layer.
  *
- * This is the whole of the watch's "data layer" in both senses of the phrase: there is no database,
- * no HTTP client and no player on this side, only these four clients and the phone at the other end
- * of them.
+ * These are the watch's whole connection to the phone: state arrives on a data item, commands leave
+ * as messages, and one episode's audio at a time crosses on a channel. There is still no database
+ * and no HTTP client on this side — the audio the watch plays is audio the phone handed it.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -47,4 +48,16 @@ object WearableModule {
     @Singleton
     fun providesNodeClient(@ApplicationContext context: Context): NodeClient =
         Wearable.getNodeClient(context)
+
+    /**
+     * Receives episode audio the phone sends.
+     *
+     * The channel itself is opened by the phone and delivered to
+     * [md.borisveriga.bpodcat.wear.data.EpisodeAudioReceiverService]; this client is what turns the
+     * handle it is given into a stream.
+     */
+    @Provides
+    @Singleton
+    fun providesChannelClient(@ApplicationContext context: Context): ChannelClient =
+        Wearable.getChannelClient(context)
 }

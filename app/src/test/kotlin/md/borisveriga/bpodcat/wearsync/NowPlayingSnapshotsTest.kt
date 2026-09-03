@@ -120,7 +120,6 @@ class NowPlayingSnapshotsTest {
         assertEquals("ep-2", snapshot.episodeId)
         assertEquals("Two", snapshot.title)
         assertEquals("The Show", snapshot.showTitle)
-        assertEquals("https://example.com/two.jpg", snapshot.artworkUrl)
         assertTrue(snapshot.isPlaying)
         assertEquals(5_000L, snapshot.positionMs)
         assertEquals(60_000L, snapshot.durationMs)

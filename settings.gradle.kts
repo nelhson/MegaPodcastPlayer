@@ -1,5 +1,5 @@
 pluginManagement {
-    // BPodcat's convention plugins live in a composite build so every module can share them.
+    // MegaPodcastPlayer's convention plugins live in a composite build so every module can share them.
     includeBuild("build-logic")
     repositories {
         google {
@@ -32,7 +32,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BPodcat"
+rootProject.name = "MegaPodcastPlayer"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 // Applications

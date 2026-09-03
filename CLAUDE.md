@@ -1,6 +1,8 @@
 # BPodcat
 
-Personal, sideloaded podcast player for Android (`:app`) with a Wear OS companion (`:wear`).
+Personal, sideloaded podcast player for Android (`:app`) with a Wear OS companion (`:wear`) that is
+a remote control, a tile, a watch-face complication, and — for episodes the phone has sent it — a
+player of its own.
 Kotlin, Jetpack Compose, Hilt, Room, Media3. Application ID `md.borisveriga.bpodcat`.
 
 This file is deliberately short. The conventions are enforced by code, so read the source of
@@ -45,6 +47,13 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
   `isPlayableMediaUrl` in `:core:model`.
 - **The watch pairing is package name plus signing certificate.** `:app` and `:wear` share both;
   no `applicationIdSuffix` on debug, ever. Install both sides from the same build.
+- **Three things cross the Data Layer, and each has its own shape.** State is a *data item* (kept
+  and replayed on connect), a command is a *message* (an event, never de-duplicated), and episode
+  audio is a *channel* (tens of megabytes, one node, opened and closed per transfer). Putting one on
+  another's transport is the mistake `:core:wearprotocol`'s `WearPaths` exists to prevent.
+- **The watch's copy of an episode is the watch's.** It keeps its own index and its own position,
+  and reports that position back with `ReportPosition`; a run out of Bluetooth range is reconciled
+  when the phone is next reachable, not lost.
 - **Never swallow `CancellationException`.** Use `suspendRunCatching` from `:core:common`; detekt's
   `TooGenericExceptionCaught` and `SwallowedException` enforce it.
 - **Dependency verification is on.** A bump needs `gradle/verification-metadata.xml` refreshed;

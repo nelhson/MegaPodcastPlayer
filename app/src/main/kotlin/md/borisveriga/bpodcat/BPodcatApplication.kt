@@ -17,6 +17,7 @@ import md.borisveriga.bpodcat.core.data.download.DownloadStateSynchroniser
 import md.borisveriga.bpodcat.core.network.di.BPodcatOkHttp
 import md.borisveriga.bpodcat.sync.RefreshScheduler
 import md.borisveriga.bpodcat.wearsync.NowPlayingPublisher
+import md.borisveriga.bpodcat.wearsync.OfflineLibraryPublisher
 import okhttp3.OkHttpClient
 
 /**
@@ -58,6 +59,9 @@ class BPodcatApplication :
     @Inject
     internal lateinit var nowPlayingPublisher: NowPlayingPublisher
 
+    @Inject
+    internal lateinit var offlineLibraryPublisher: OfflineLibraryPublisher
+
     /** Puts the periodic feed refresh on WorkManager's schedule. */
     @Inject
     internal lateinit var refreshScheduler: RefreshScheduler
@@ -79,6 +83,10 @@ class BPodcatApplication :
         // Likewise returns immediately. Costs nothing when no watch is paired: the publisher only
         // writes when playback changes, and a write with no peer simply fails and is swallowed.
         nowPlayingPublisher.start()
+        // The other half of what the watch reads: which episodes it could take with it. Cheap for
+        // the same reason — one Data Layer write when the download list changes, and none at all
+        // when it does not.
+        offlineLibraryPublisher.start()
         // Cheap and idempotent: WorkManager keeps the run already scheduled, so this is a no-op on
         // every start after the first.
         refreshScheduler.schedule()

@@ -5,15 +5,23 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.bpodcat.core.testing.MainDispatcherRule
 import md.borisveriga.bpodcat.core.wearprotocol.NowPlayingSnapshot
+import md.borisveriga.bpodcat.core.wearprotocol.OfflineLibrary
 import md.borisveriga.bpodcat.core.wearprotocol.WearCommand
 import md.borisveriga.bpodcat.wear.data.PhoneLink
 import md.borisveriga.bpodcat.wear.data.PhonePlayerClient
+import md.borisveriga.bpodcat.wear.data.PositionReporter
 import md.borisveriga.bpodcat.wear.data.ReceivedSnapshot
-import md.borisveriga.bpodcat.wear.data.WatchArtwork
+import md.borisveriga.bpodcat.wear.data.StoredEpisode
+import md.borisveriga.bpodcat.wear.data.TransferProgress
+import md.borisveriga.bpodcat.wear.data.WatchEpisodeStore
+import md.borisveriga.bpodcat.wear.data.WatchLibrary
+import md.borisveriga.bpodcat.wear.playback.WatchPlayback
+import md.borisveriga.bpodcat.wear.playback.WatchPlaybackState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,7 +36,16 @@ class WatchPlayerViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val client = mockk<PhonePlayerClient>(relaxed = true)
-    private val artwork = mockk<WatchArtwork>(relaxed = true)
+    private val playback = mockk<WatchPlayback>(relaxed = true)
+    private val store = mockk<WatchEpisodeStore>(relaxed = true)
+    private val reporter = mockk<PositionReporter>(relaxed = true)
+    private val library = mockk<WatchLibrary>(relaxed = true)
+
+    /** What the watch's own player is doing; nothing, unless a test says otherwise. */
+    private val localPlayback = MutableStateFlow<WatchPlaybackState?>(null)
+
+    /** What the watch holds on disk. */
+    private val stored = MutableStateFlow(emptyList<StoredEpisode>())
 
     /** Paused, so the scrub tests are not racing the position ticker while they assert on it. */
     private val playing = NowPlayingSnapshot(
@@ -48,11 +65,14 @@ class WatchPlayerViewModelTest {
         every { client.snapshots } returns flowOf<ReceivedSnapshot?>(null)
         coEvery { client.send(any()) } returns true
         // Same reasoning as the snapshots flow: a flow that never emits would stall the combine.
-        every { artwork.artwork } returns flowOf(null)
+        every { playback.state } returns localPlayback
+        every { store.episodes } returns stored
+        every { store.transfers } returns MutableStateFlow(emptyMap<String, TransferProgress>())
+        every { library.library } returns flowOf(OfflineLibrary())
     }
 
     /** Builds the view model under test with both of its sources stubbed. */
-    private fun viewModel() = WatchPlayerViewModel(client, artwork)
+    private fun viewModel() = WatchPlayerViewModel(client, playback, store, reporter, library)
 
     @Test
     fun `opening the app asks the phone to republish its state`() = runTest {
