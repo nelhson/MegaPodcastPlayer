@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
@@ -39,7 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -58,40 +58,25 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 /**
  * Add-a-podcast screen: Apple search plus pasted-link support in one field.
  *
- * @param onPodcastAdded invoked with the new show's id once an add succeeds, so the caller can
- *   navigate straight to it.
+ * @param onPodcastAdded invoked with the new show's id once a *pasted link* has been added, so the
+ *   caller can navigate straight to it. Adding from a result does not call this — see
+ *   [SearchViewModel.addSearchResult].
+ * @param onOpenPodcast invoked with a show's id when the user taps a result the library already
+ *   holds. Distinct from [onPodcastAdded] because the caller should keep the results on the back
+ *   stack here: the user is still browsing, and will likely come back.
  * @param onBack invoked when the user leaves without adding anything.
  * @param modifier layout modifier.
- * @param pasteFromClipboard true when the screen was opened by "Paste a link", in which case
- *   whatever is on the clipboard is put in the field for the user to check before adding.
  * @param viewModel injected by Hilt.
  */
 @Composable
 fun SearchRoute(
     onPodcastAdded: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    pasteFromClipboard: Boolean = false,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val clipboard = LocalClipboard.current
-
-    // Once, on arrival, and only when the user chose the paste route: reading the clipboard shows a
-    // system toast, so it must be something they asked for rather than something every visit does.
-    // The text is put in the field rather than added straight away — pasting the wrong thing is
-    // easy, and one look at it is cheaper than removing a show afterwards.
-    LaunchedEffect(pasteFromClipboard) {
-        if (!pasteFromClipboard) return@LaunchedEffect
-        val pasted = clipboard.getClipEntry()
-            ?.clipData
-            ?.takeIf { it.itemCount > 0 }
-            ?.getItemAt(0)
-            ?.text
-            ?.toString()
-            ?.trim()
-        if (!pasted.isNullOrEmpty()) viewModel.onQueryChange(pasted)
-    }
 
     SearchScreen(
         uiState = uiState,
@@ -99,7 +84,9 @@ fun SearchRoute(
         onAddLink = viewModel::addPastedLink,
         onAddResult = viewModel::addSearchResult,
         onMessageShown = viewModel::onMessageShown,
+        onNavigationHandled = viewModel::onNavigationHandled,
         onPodcastAdded = onPodcastAdded,
+        onOpenPodcast = onOpenPodcast,
         onBack = onBack,
         modifier = modifier,
     )
@@ -117,7 +104,9 @@ fun SearchRoute(
  * @param onAddLink handler for the "add this link" card.
  * @param onAddResult handler for adding a search result.
  * @param onMessageShown called once a snackbar message has been displayed.
- * @param onPodcastAdded called with the new show's id after a successful add.
+ * @param onNavigationHandled called once a pending navigation has been acted on.
+ * @param onPodcastAdded called with a show's id after a pasted link was added.
+ * @param onOpenPodcast called with a show's id when a result the library already holds is tapped.
  * @param onBack back handler.
  * @param modifier layout modifier.
  */
@@ -129,7 +118,9 @@ fun SearchScreen(
     onAddLink: () -> Unit,
     onAddResult: (PodcastSearchResult) -> Unit,
     onMessageShown: () -> Unit,
+    onNavigationHandled: () -> Unit,
     onPodcastAdded: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -141,20 +132,27 @@ fun SearchScreen(
     val resources = LocalResources.current
     val focusRequester = remember { FocusRequester() }
 
-    // The screen exists to be typed into, and it is always reached by a deliberate tap, so it opens
-    // ready for the first keystroke rather than making the user tap the field they just asked for.
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // The screen exists to be typed into, and it is the library's add button's only destination, so
+    // it opens ready for the first keystroke rather than making the user tap the field they just
+    // asked for. The keyboard is raised explicitly: focus alone raises it on most devices but not
+    // reliably when the screen arrives mid-transition, and this screen is useless without it.
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message.toUserText(resources))
-        // Both branches mean "this show is in the library now"; go look at it.
-        when (message) {
-            is AddPodcastResult.Added -> onPodcastAdded(message.podcast.id)
-            is AddPodcastResult.AlreadyInLibrary -> onPodcastAdded(message.podcast.id)
-            else -> Unit
-        }
         onMessageShown()
+        snackbarHostState.showSnackbar(message.toUserText(resources))
+    }
+
+    // Navigation is state rather than a consequence of the snackbar: only the pasted-link path sets
+    // it, and it must not wait on a snackbar the user may have already dismissed.
+    LaunchedEffect(uiState.navigateToPodcastId) {
+        val id = uiState.navigateToPodcastId ?: return@LaunchedEffect
+        onNavigationHandled()
+        onPodcastAdded(id)
     }
 
     Scaffold(
@@ -244,10 +242,22 @@ fun SearchScreen(
 
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(items = uiState.results, key = { it.itunesId }) { result ->
+                        // A show already in the library makes the row a door rather than a button:
+                        // there is nothing left to add, and the thing the user most likely wants is
+                        // the show itself.
+                        val addedId = uiState.addedPodcastIds[result.itunesId]
                         SearchResultRow(
                             result = result,
                             isAdding = uiState.addingId == result.itunesId.toString(),
-                            onClick = { onAddResult(result) },
+                            isAdded = addedId != null,
+                            onClick = {
+                                if (addedId != null) {
+                                    keyboard?.hide()
+                                    onOpenPodcast(addedId)
+                                } else {
+                                    onAddResult(result)
+                                }
+                            },
                         )
                     }
                 }
@@ -329,8 +339,13 @@ private fun LinkCard(
 /**
  * One Apple search result.
  *
+ * The trailing glyph is the row's whole state machine: a plus to add, a spinner while the add is in
+ * flight, a tick once the show is in the library. The tick is not a disabled plus — the row stays
+ * tappable and opens the show, which is why it keeps a content description of its own.
+ *
  * @param result the show.
  * @param isAdding true while this specific row is being added.
+ * @param isAdded true when the library already holds this show; the tap opens it instead of adding.
  * @param onClick tap handler.
  * @param modifier layout modifier.
  */
@@ -338,6 +353,7 @@ private fun LinkCard(
 private fun SearchResultRow(
     result: PodcastSearchResult,
     isAdding: Boolean,
+    isAdded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -361,10 +377,18 @@ private fun SearchResultRow(
         },
         artworkUrl = result.artworkUrl,
         onClick = onClick,
-        enabled = addable && !isAdding,
+        // An added show is reachable even when Apple publishes no feed for it: whatever the user
+        // added it from, it is in the library now and the row should open it.
+        enabled = (addable || isAdded) && !isAdding,
         trailing = {
             when {
                 isAdding -> CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE))
+
+                isAdded -> Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = stringResource(R.string.search_open_added, result.title),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
 
                 addable -> Icon(
                     imageVector = Icons.Rounded.Add,
@@ -464,7 +488,9 @@ private fun SearchScreenPreview() {
             onAddLink = {},
             onAddResult = {},
             onMessageShown = {},
+            onNavigationHandled = {},
             onPodcastAdded = {},
+            onOpenPodcast = {},
             onBack = {},
         )
     }
@@ -483,7 +509,9 @@ private fun SearchScreenLinkPreview() {
             onAddLink = {},
             onAddResult = {},
             onMessageShown = {},
+            onNavigationHandled = {},
             onPodcastAdded = {},
+            onOpenPodcast = {},
             onBack = {},
         )
     }

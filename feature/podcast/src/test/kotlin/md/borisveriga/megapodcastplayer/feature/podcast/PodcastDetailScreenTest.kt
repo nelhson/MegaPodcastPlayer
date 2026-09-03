@@ -168,14 +168,14 @@ class PodcastDetailScreenTest {
     }
 
     @Test
-    fun `removing the show is behind the overflow, not next to the back arrow`() {
+    fun `deleting the show is behind the overflow, not next to the back arrow`() {
         var removals = 0
         setScreen(listOf(episode("a")), onRemove = { removals++ })
 
-        composeRule.onNodeWithText("Remove this podcast").assertDoesNotExist()
+        composeRule.onNodeWithText("Delete").assertDoesNotExist()
 
         composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithText("Remove this podcast").performClick()
+        composeRule.onNodeWithText("Delete").performClick()
 
         assertEquals(1, removals)
     }

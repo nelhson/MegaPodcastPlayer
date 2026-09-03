@@ -46,6 +46,7 @@ class SearchScreenTest {
         uiState: SearchUiState,
         onAddLink: () -> Unit = {},
         onAddResult: (PodcastSearchResult) -> Unit = {},
+        onOpenPodcast: (String) -> Unit = {},
         onBack: () -> Unit = {},
     ) {
         composeRule.setContent {
@@ -56,7 +57,9 @@ class SearchScreenTest {
                     onAddLink = onAddLink,
                     onAddResult = onAddResult,
                     onMessageShown = {},
+                    onNavigationHandled = {},
                     onPodcastAdded = {},
+                    onOpenPodcast = onOpenPodcast,
                     onBack = onBack,
                 )
             }
@@ -123,6 +126,69 @@ class SearchScreenTest {
         composeRule.onNodeWithText("Exclusive Show").performClick()
 
         assertEquals(null, added)
+    }
+
+    @Test
+    fun `a row being added shows a spinner and cannot be tapped again`() {
+        var adds = 0
+        val row = result(1L, "Podlodka Podcast")
+        setScreen(
+            SearchUiState(query = "podlodka", results = listOf(row), addingId = "1"),
+            onAddResult = { adds++ },
+        )
+
+        composeRule.onNodeWithContentDescription("Add Podlodka Podcast").assertDoesNotExist()
+        composeRule.onNodeWithText("Podlodka Podcast").performClick()
+
+        assertEquals(0, adds)
+    }
+
+    /**
+     * The row's second state: once the show is in the library there is nothing left to add, so the
+     * tap has to mean something else. It opens the show, and says so to TalkBack rather than
+     * leaving a bare tick to be interpreted.
+     */
+    @Test
+    fun `an added row opens the show instead of adding it again`() {
+        var adds = 0
+        var opened: String? = null
+        val row = result(1L, "Podlodka Podcast")
+        setScreen(
+            SearchUiState(
+                query = "podlodka",
+                results = listOf(row),
+                addedPodcastIds = mapOf(1L to "stored-1"),
+            ),
+            onAddResult = { adds++ },
+            onOpenPodcast = { opened = it },
+        )
+
+        composeRule.onNodeWithContentDescription("Add Podlodka Podcast").assertDoesNotExist()
+        composeRule
+            .onNodeWithContentDescription("Open Podlodka Podcast, already in your library")
+            .assertExists()
+
+        composeRule.onNodeWithText("Podlodka Podcast").performClick()
+
+        assertEquals("stored-1", opened)
+        assertEquals(0, adds)
+    }
+
+    @Test
+    fun `an added apple exclusive is still reachable`() {
+        var opened: String? = null
+        setScreen(
+            SearchUiState(
+                query = "exclusive",
+                results = listOf(result(2L, "Exclusive Show", feedUrl = null)),
+                addedPodcastIds = mapOf(2L to "stored-2"),
+            ),
+            onOpenPodcast = { opened = it },
+        )
+
+        composeRule.onNodeWithText("Exclusive Show").performClick()
+
+        assertEquals("stored-2", opened)
     }
 
     @Test

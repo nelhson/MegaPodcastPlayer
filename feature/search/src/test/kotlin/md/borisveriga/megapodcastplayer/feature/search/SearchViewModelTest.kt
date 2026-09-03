@@ -2,10 +2,12 @@ package md.borisveriga.megapodcastplayer.feature.search
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import java.net.UnknownHostException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -13,7 +15,10 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.repository.AddPodcastResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
+import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
+import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import md.borisveriga.megapodcastplayer.core.testing.testPodcast
 import org.junit.Assert.assertEquals
@@ -43,13 +48,28 @@ class SearchViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private lateinit var repository: PodcastRepository
+    private lateinit var library: MutableStateFlow<List<PodcastWithCounts>>
     private lateinit var viewModel: SearchViewModel
 
     @Before
     fun setUp() {
         repository = mockk(relaxed = true)
         coEvery { repository.search(any()) } returns Result.success(emptyList())
+        // `uiState` combines the library in, and `combine` emits nothing until every source has
+        // emitted once — so an unstubbed library flow would freeze the whole screen at its initial
+        // value and quietly pass every assertion below.
+        library = MutableStateFlow(emptyList())
+        every { repository.observeLibrary() } returns library
         viewModel = SearchViewModel(repository)
+    }
+
+    /**
+     * Wraps shows as the library observes them.
+     *
+     * @param podcasts the shows; the counts are irrelevant to this screen.
+     */
+    private fun libraryOf(vararg podcasts: Podcast) = podcasts.map {
+        PodcastWithCounts(podcast = it, episodeCount = 0, newEpisodeCount = 0, downloadedCount = 0)
     }
 
     /**
@@ -217,6 +237,109 @@ class SearchViewModelTest {
 
         assertEquals("not a link", viewModel.uiState.value.query)
         assertEquals(AddPodcastResult.InvalidInput, viewModel.uiState.value.message)
+    }
+
+    @Test
+    fun `a result whose apple id is in the library is reported as already added`() = runTest {
+        coEvery { repository.search("podlodka") } returns Result.success(listOf(searchResult(1L)))
+        // Stored under a different feed URL than Apple's copy — a redirect, in practice — so the
+        // Apple id is the only thing the two have in common.
+        library.value = libraryOf(
+            testPodcast(id = "stored-1", itunesId = 1L, feedUrl = "https://redirected.example/1"),
+        )
+        subscribe()
+
+        viewModel.onQueryChange("podlodka")
+        advanceTimeBy(DEBOUNCE_MS + 1)
+        runCurrent()
+
+        assertEquals(mapOf(1L to "stored-1"), viewModel.uiState.value.addedPodcastIds)
+    }
+
+    @Test
+    fun `a result matching a stored feed url is reported as already added`() = runTest {
+        val result = searchResult(2L)
+        coEvery { repository.search("podlodka") } returns Result.success(listOf(result))
+        // No Apple id at all — how a show added from a pasted RSS link is stored. The feed URL, and
+        // therefore the derived id, is the only thing left to match on.
+        val feedUrl = requireNotNull(result.feedUrl)
+        library.value = libraryOf(
+            testPodcast(id = podcastIdOf(feedUrl), itunesId = null, feedUrl = feedUrl),
+        )
+        subscribe()
+
+        viewModel.onQueryChange("podlodka")
+        advanceTimeBy(DEBOUNCE_MS + 1)
+        runCurrent()
+
+        assertEquals(
+            mapOf(2L to podcastIdOf(feedUrl)),
+            viewModel.uiState.value.addedPodcastIds,
+        )
+    }
+
+    @Test
+    fun `a result nobody has added is not reported as added`() = runTest {
+        coEvery { repository.search("podlodka") } returns Result.success(listOf(searchResult(1L)))
+        library.value = libraryOf(testPodcast(id = "something-else", itunesId = 99L))
+        subscribe()
+
+        viewModel.onQueryChange("podlodka")
+        advanceTimeBy(DEBOUNCE_MS + 1)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.addedPodcastIds.isEmpty())
+    }
+
+    /**
+     * The point of the change: adding from a list of candidates leaves the user in that list. The
+     * row's own tick is the confirmation, and a second show is usually one tap away.
+     */
+    @Test
+    fun `adding from a result does not ask the screen to navigate`() = runTest {
+        coEvery { repository.addFromSearchResult(any()) } returns
+            AddPodcastResult.Added(testPodcast(id = "added-1"), episodeCount = 3)
+        subscribe()
+
+        viewModel.addSearchResult(searchResult(1L))
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.navigateToPodcastId)
+        assertTrue(viewModel.uiState.value.message is AddPodcastResult.Added)
+    }
+
+    @Test
+    fun `adding a pasted link does ask the screen to navigate`() = runTest {
+        coEvery { repository.addFromInput(any()) } returns
+            AddPodcastResult.Added(testPodcast(id = "added-1"), episodeCount = 3)
+        subscribe()
+
+        viewModel.onQueryChange(APPLE_LINK)
+        advanceTimeBy(DEBOUNCE_MS + 1)
+        runCurrent()
+        viewModel.addPastedLink()
+        runCurrent()
+
+        assertEquals("added-1", viewModel.uiState.value.navigateToPodcastId)
+
+        viewModel.onNavigationHandled()
+        runCurrent()
+        assertNull(viewModel.uiState.value.navigateToPodcastId)
+    }
+
+    @Test
+    fun `a pasted link for a show already held navigates to it rather than complaining`() = runTest {
+        coEvery { repository.addFromInput(any()) } returns
+            AddPodcastResult.AlreadyInLibrary(testPodcast(id = "held-1"))
+        subscribe()
+
+        viewModel.onQueryChange(APPLE_LINK)
+        advanceTimeBy(DEBOUNCE_MS + 1)
+        runCurrent()
+        viewModel.addPastedLink()
+        runCurrent()
+
+        assertEquals("held-1", viewModel.uiState.value.navigateToPodcastId)
     }
 
     private companion object {

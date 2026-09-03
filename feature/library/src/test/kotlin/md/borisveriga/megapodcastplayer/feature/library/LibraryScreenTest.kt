@@ -80,7 +80,6 @@ class LibraryScreenTest {
         onLayoutChange: (LibraryLayout) -> Unit = {},
         onPodcastClick: (String) -> Unit = {},
         onSearchClick: () -> Unit = {},
-        onPasteLinkClick: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
         onQueueNewest: (PodcastWithCounts) -> Unit = {},
@@ -99,7 +98,6 @@ class LibraryScreenTest {
                     ),
                     onPodcastClick = onPodcastClick,
                     onSearchClick = onSearchClick,
-                    onPasteLinkClick = onPasteLinkClick,
                     onOpenSettings = onOpenSettings,
                     onMove = onMove,
                     onQueueNewest = onQueueNewest,
@@ -154,40 +152,22 @@ class LibraryScreenTest {
     }
 
     /**
-     * Found by content description rather than by the label a sighted user reads, deliberately.
-     * `ExtendedFloatingActionButton` clears the semantics of its own icon and text, so unless each
-     * entry is named explicitly the menu is two anonymous buttons — which is what this asserts.
+     * The add button used to open a two-item menu; adding a show therefore cost two taps in the
+     * common case. This pins the replacement: one tap, straight into search, with no intermediate
+     * choice to make.
      */
     @Test
-    fun `the add button names both ways of adding a show`() {
-        var searches = 0
-        var pastes = 0
-        setScreen(
-            layout = LibraryLayout.GRID,
-            onSearchClick = { searches++ },
-            onPasteLinkClick = { pastes++ },
-        )
-
-        // Closed, the menu offers neither.
-        composeRule.onNodeWithContentDescription("Paste a link").assertDoesNotExist()
-
-        composeRule.onNodeWithContentDescription("Add a podcast").performClick()
-        composeRule.onNodeWithContentDescription("Paste a link").performClick()
-
-        assertEquals(1, pastes)
-        assertEquals(0, searches)
-    }
-
-    @Test
-    fun `choosing search closes the menu and opens search`() {
+    fun `the add button opens search on the first tap`() {
         var searches = 0
         setScreen(layout = LibraryLayout.GRID, onSearchClick = { searches++ })
 
         composeRule.onNodeWithContentDescription("Add a podcast").performClick()
-        composeRule.onNodeWithContentDescription("Search Apple Podcasts").performClick()
 
         assertEquals(1, searches)
+        // Nothing intermediate appeared: the old menu's entries are gone entirely, so a second tap
+        // would be on nothing.
         composeRule.onNodeWithContentDescription("Search Apple Podcasts").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Paste a link").assertDoesNotExist()
     }
 
     @Test

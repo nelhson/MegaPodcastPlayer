@@ -12,10 +12,8 @@
 
     <string name="library_add_podcast">Add a podcast</string>
 
-    <!-- The two ways in, named in the add menu rather than left for the user to discover. -->
+    <!-- The empty state's action button; the add button itself uses library_add_podcast. -->
     <string name="library_add_search">Search Apple Podcasts</string>
-    <string name="library_add_link">Paste a link</string>
-    <string name="library_add_close">Close</string>
 
     <!-- Top bar action; Settings is pushed from here rather than owning a navigation-bar slot. -->
     <string name="library_settings">Settings</string>

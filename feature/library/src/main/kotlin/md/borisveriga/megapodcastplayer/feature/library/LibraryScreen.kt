@@ -1,13 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.library
 
 import android.content.res.Resources
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,13 +20,10 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,11 +43,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -87,18 +74,16 @@ import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorde
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
-import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 
 /**
- * Library screen: every subscribed show, refreshed on entry, with two routes into search.
+ * Library screen: every subscribed show, refreshed on entry, with a button into search.
  *
  * @param onPodcastClick invoked with a podcast id when a show is tapped.
  * @param onSearchClick invoked when the user wants to look a show up by name.
- * @param onPasteLinkClick invoked when the user wants to add a show from a link they have copied.
  * @param onOpenSettings invoked when the user taps the top bar's settings action.
  * @param onMove invoked with positions in the library once a reorder gesture finishes.
  * @param modifier layout modifier.
@@ -108,7 +93,6 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 fun LibraryRoute(
     onPodcastClick: (String) -> Unit,
     onSearchClick: () -> Unit,
-    onPasteLinkClick: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LibraryViewModel = hiltViewModel(),
@@ -131,7 +115,6 @@ fun LibraryRoute(
         uiState = uiState,
         onPodcastClick = onPodcastClick,
         onSearchClick = onSearchClick,
-        onPasteLinkClick = onPasteLinkClick,
         onOpenSettings = onOpenSettings,
         onMove = viewModel::move,
         onQueueNewest = viewModel::queueNewest,
@@ -151,7 +134,6 @@ fun LibraryRoute(
  * @param uiState what to render.
  * @param onPodcastClick show tap handler.
  * @param onSearchClick opens search by name.
- * @param onPasteLinkClick opens search with a copied link.
  * @param onOpenSettings opens the settings screen.
  * @param onMove applies a completed reorder, as positions within [LibraryUiState.podcasts].
  *   Called once on release rather than per frame: one gesture is one edit.
@@ -170,7 +152,6 @@ fun LibraryScreen(
     uiState: LibraryUiState,
     onPodcastClick: (String) -> Unit,
     onSearchClick: () -> Unit,
-    onPasteLinkClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onMove: (Int, Int) -> Unit,
     onQueueNewest: (PodcastWithCounts) -> Unit,
@@ -193,8 +174,6 @@ fun LibraryScreen(
     // tab the navigation bar already highlights, and then scroll the name away exactly when a fast
     // scroll makes it easiest to lose track of.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    // Saveable so the menu does not silently close when the Fold 7 is opened mid-decision.
-    var addMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // The show a removal is being confirmed for, held as an id rather than the object so it too
     // survives the fold — and so a show that disappears under the dialog simply closes it.
     var pendingRemovalId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -242,12 +221,7 @@ fun LibraryScreen(
             )
         },
         floatingActionButton = {
-            AddMenu(
-                expanded = addMenuExpanded,
-                onExpandedChange = { addMenuExpanded = it },
-                onSearchClick = onSearchClick,
-                onPasteLinkClick = onPasteLinkClick,
-            )
+            AddButton(onSearchClick = onSearchClick)
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -612,107 +586,28 @@ private fun LayoutToggle(layout: LibraryLayout, onLayoutChange: (LibraryLayout) 
 }
 
 /**
- * The add button, and the two ways of adding a show.
+ * The add button: one tap, straight into search.
  *
- * A single "Add" button used to open search, where a pasted link happened to work but nothing said
- * so — the only mention of it was in the empty state, which a library with shows in it never shows.
- * Naming both routes on the button itself is the fix.
+ * This used to open a two-item menu naming "Search" and "Paste a link" separately, because a single
+ * button that opened search left the pasted-link route unadvertised. The menu bought that wording
+ * at the price of a tap on every single add, which is the common case; search now opens with the
+ * field already focused and the keyboard up, so a pasted link goes in exactly where a typed name
+ * does and the extra step earns nothing.
  *
- * Hand-built rather than Material's `FloatingActionButtonMenu`, which is Expressive and not in
- * material3 1.4.0's public API.
- *
- * @param expanded whether the two actions are showing.
- * @param onExpandedChange opens and closes the menu.
- * @param onSearchClick opens search by name.
- * @param onPasteLinkClick opens search with a copied link.
+ * @param onSearchClick opens search.
  */
 @Composable
-private fun AddMenu(
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onSearchClick: () -> Unit,
-    onPasteLinkClick: () -> Unit,
-) {
-    // An open menu is the innermost thing on screen, so back closes it before it leaves the tab.
-    BackHandler(enabled = expanded) { onExpandedChange(false) }
-
-    // The plus turns into a close glyph by rotating an eighth of a turn, which is the same two
-    // strokes in both states — no second icon, and nothing to cross-fade.
-    val rotation by animateFloatAsState(
-        targetValue = if (expanded) CLOSE_ROTATION_DEGREES else 0f,
-        animationSpec = Motion.bouncy(),
-        label = "addMenuRotation",
-    )
-
-    Column(
-        // Held further off the end edge than the Scaffold's own FAB inset puts it. The button and
-        // the two labelled actions above it move together, so the column stays right-aligned with
-        // itself whichever of them is showing.
-        modifier = Modifier.padding(end = AddMenuEndPadding),
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
+private fun AddButton(onSearchClick: () -> Unit) {
+    FloatingActionButton(
+        onClick = onSearchClick,
+        // Held further off the end edge than the Scaffold's own FAB inset puts it.
+        modifier = Modifier.padding(end = AddButtonEndPadding),
     ) {
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn() + scaleIn(animationSpec = Motion.bouncy()),
-            exit = fadeOut() + scaleOut(animationSpec = Motion.smooth()),
-        ) {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
-            ) {
-                AddMenuItem(
-                    label = stringResource(R.string.library_add_link),
-                    icon = Icons.Rounded.Link,
-                    onClick = {
-                        onExpandedChange(false)
-                        onPasteLinkClick()
-                    },
-                )
-                AddMenuItem(
-                    label = stringResource(R.string.library_add_search),
-                    icon = Icons.Rounded.Search,
-                    onClick = {
-                        onExpandedChange(false)
-                        onSearchClick()
-                    },
-                )
-            }
-        }
-
-        FloatingActionButton(onClick = { onExpandedChange(!expanded) }) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = stringResource(
-                    if (expanded) R.string.library_add_close else R.string.library_add_podcast,
-                ),
-                modifier = Modifier.rotate(rotation),
-            )
-        }
+        Icon(
+            imageVector = Icons.Rounded.Add,
+            contentDescription = stringResource(R.string.library_add_podcast),
+        )
     }
-}
-
-/**
- * One entry in the add menu.
- *
- * The label is repeated as a content description rather than left to the button's own text.
- * `ExtendedFloatingActionButton` wraps its icon and label in `clearAndSetSemantics`, so the text
- * inside it never reaches an accessibility service: without this the menu is two unnamed buttons.
- *
- * @param label what the entry does.
- * @param icon the glyph beside it; decorative, since the label is right there.
- * @param onClick invoked on tap.
- */
-@Composable
-private fun AddMenuItem(label: String, icon: ImageVector, onClick: () -> Unit) {
-    ExtendedFloatingActionButton(
-        text = { Text(text = label) },
-        icon = { Icon(imageVector = icon, contentDescription = null) },
-        onClick = onClick,
-        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        modifier = Modifier.semantics { contentDescription = label },
-    )
 }
 
 /**
@@ -823,11 +718,8 @@ private fun LibraryMessage.toText(resources: Resources): String = when (this) {
 /** The narrowest a cover tile may be before the grid drops a column. */
 private val TILE_MIN_WIDTH = 148.dp
 
-/** How far the add button and its menu sit from the end edge, on top of the Scaffold's own inset. */
-private val AddMenuEndPadding = 32.dp
-
-/** An eighth of a turn, which is what turns a plus into a close glyph. */
-private const val CLOSE_ROTATION_DEGREES = 45f
+/** How far the add button sits from the end edge, on top of the Scaffold's own inset. */
+private val AddButtonEndPadding = 32.dp
 
 /** How far a dragged show is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
@@ -846,7 +738,6 @@ private fun LibraryScreenPreview() {
             ),
             onPodcastClick = {},
             onSearchClick = {},
-            onPasteLinkClick = {},
             onOpenSettings = {},
             onMove = { _, _ -> },
             onQueueNewest = {},
@@ -872,7 +763,6 @@ private fun LibraryScreenListPreview() {
             ),
             onPodcastClick = {},
             onSearchClick = {},
-            onPasteLinkClick = {},
             onOpenSettings = {},
             onMove = { _, _ -> },
             onQueueNewest = {},

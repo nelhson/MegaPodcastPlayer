@@ -46,6 +46,13 @@
     <!-- TalkBack label on a result row's add glyph; %1$s is the show title. -->
     <string name="search_add_result">Add %1$s</string>
 
+    <!--
+        TalkBack label on a result the library already holds; %1$s is the show title. The row stops
+        being an add button and becomes a way into the show, so the label says what the tap does
+        rather than only reporting the tick.
+    -->
+    <string name="search_open_added">Open %1$s, already in your library</string>
+
     <!-- Snackbars. %1$s is a show title; %2$s is a pluralised episode or video count. -->
     <string name="search_message_added">Added %1$s · %2$s</string>
     <string name="search_message_already_in_library">%1$s is already in your library</string>

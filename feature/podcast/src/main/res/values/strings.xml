@@ -11,7 +11,7 @@
 <resources>
 
     <string name="podcast_back">Back to the library</string>
-    <string name="podcast_remove">Remove this podcast</string>
+    <string name="podcast_remove">Delete</string>
     <string name="podcast_more_actions">More actions</string>
     <string name="podcast_play_latest">Play latest</string>
 

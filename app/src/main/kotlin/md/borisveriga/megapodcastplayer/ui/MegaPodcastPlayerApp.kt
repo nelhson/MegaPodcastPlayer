@@ -127,8 +127,7 @@ fun MegaPodcastPlayerApp(
                         // A plain push now that search is not a tab: it opens on top of the library
                         // and backing out returns there. The two entries differ only in whether the
                         // screen may read the clipboard on arrival.
-                        onSearchClick = { navController.navigate(Route.Search()) },
-                        onPasteLinkClick = { navController.navigate(Route.Search(paste = true)) },
+                        onSearchClick = { navController.navigate(Route.Search) },
                         onOpenSettings = { navController.navigate(Route.Settings) },
                     )
                 }
@@ -142,18 +141,21 @@ fun MegaPodcastPlayerApp(
                     )
                 }
 
-                composable<Route.Search> { entry ->
+                composable<Route.Search> {
                     SearchRoute(
                         onBack = { navController.popBackStack() },
-                        pasteFromClipboard = entry.toRoute<Route.Search>().paste,
-                        // Search drops off the back stack as the new show opens: its job is done,
-                        // and backing out of a podcast you just added should land in the library
-                        // that now contains it, not in the search results you left behind.
+                        // A pasted link names one show and nothing else, so search drops off the
+                        // back stack as that show opens: backing out should land in the library
+                        // that now contains it, not on a screen whose job is done.
                         onPodcastAdded = { id ->
                             navController.navigate(Route.PodcastDetail(id)) {
                                 popUpTo<Route.Search> { inclusive = true }
                             }
                         },
+                        // Opening a result the library already holds keeps search on the stack:
+                        // the user is still reading a list of candidates and backing out of the
+                        // show should return them to it.
+                        onOpenPodcast = { id -> navController.navigate(Route.PodcastDetail(id)) },
                     )
                 }
 

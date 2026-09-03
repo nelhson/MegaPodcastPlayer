@@ -20,9 +20,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.data.repository.AddPodcastResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastLink
 import md.borisveriga.megapodcastplayer.core.model.PodcastLinkParser
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
+import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
 
 /**
  * State rendered by the add/search screen.
@@ -39,7 +41,12 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
  *   set rather than a message, so the wording lives with the screen that shows it.
  * @property addingId Apple id (or feed URL) currently being added, so exactly one row shows a
  *   spinner.
+ * @property addedPodcastIds local podcast id for every result already in the library, keyed by
+ *   Apple id. A row in here is not an add button but a way back to a show the user already has —
+ *   which is why it carries the local id rather than a bare "yes".
  * @property message the outcome of the last add attempt.
+ * @property navigateToPodcastId a show to open, set only by the paste-a-link path. Adding from a
+ *   result deliberately leaves the user in the list they were reading, so it never sets this.
  */
 data class SearchUiState(
     val query: String = "",
@@ -49,7 +56,9 @@ data class SearchUiState(
     val isSearching: Boolean = false,
     val searchError: SearchError? = null,
     val addingId: String? = null,
+    val addedPodcastIds: Map<Long, String> = emptyMap(),
     val message: AddPodcastResult? = null,
+    val navigateToPodcastId: String? = null,
 )
 
 /**
@@ -126,7 +135,12 @@ class SearchViewModel @Inject constructor(
         )
 
     val uiState: StateFlow<SearchUiState> =
-        combine(query, searchResults, addState) { text, search, adding ->
+        combine(
+            query,
+            searchResults,
+            addState,
+            repository.observeLibrary(),
+        ) { text, search, adding, library ->
             val link = PodcastLinkParser.parse(text)
             SearchUiState(
                 query = text,
@@ -136,7 +150,9 @@ class SearchViewModel @Inject constructor(
                 isSearching = search.isSearching,
                 searchError = search.error,
                 addingId = adding.inFlightId,
+                addedPodcastIds = search.results.addedIds(library.map { it.podcast }),
                 message = adding.message,
+                navigateToPodcastId = adding.navigateToPodcastId,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -149,19 +165,30 @@ class SearchViewModel @Inject constructor(
         query.value = value
     }
 
-    /** Adds whatever is currently in the text field, treating it as a link. */
+    /**
+     * Adds whatever is currently in the text field, treating it as a link.
+     *
+     * This is the one path that navigates on success: a pasted link names one specific show, so
+     * opening it is what the user asked for, and there is no list left behind worth returning to.
+     */
     fun addPastedLink() {
         val input = query.value
-        add(id = input) { repository.addFromInput(input) }
+        add(id = input, navigateOnSuccess = true) { repository.addFromInput(input) }
     }
 
     /**
      * Adds a show the user picked from the results.
      *
+     * Deliberately does not navigate. The user is reading a list of candidates and may well want
+     * several of them; the row turning into a tick is the whole confirmation, and the list stays
+     * where it was.
+     *
      * @param result the chosen show.
      */
     fun addSearchResult(result: PodcastSearchResult) {
-        add(id = result.itunesId.toString()) { repository.addFromSearchResult(result) }
+        add(id = result.itunesId.toString(), navigateOnSuccess = false) {
+            repository.addFromSearchResult(result)
+        }
     }
 
     /** Clears the last add outcome once its snackbar has been shown. */
@@ -169,12 +196,26 @@ class SearchViewModel @Inject constructor(
         addState.value = addState.value.copy(message = null)
     }
 
-    private fun add(id: String, block: suspend () -> AddPodcastResult) {
+    /** Clears the pending navigation once the screen has acted on it. */
+    fun onNavigationHandled() {
+        addState.value = addState.value.copy(navigateToPodcastId = null)
+    }
+
+    private fun add(
+        id: String,
+        navigateOnSuccess: Boolean,
+        block: suspend () -> AddPodcastResult,
+    ) {
         if (addState.value.inFlightId != null) return
         addState.value = AddState(inFlightId = id)
         viewModelScope.launch {
             val result = block()
-            addState.value = AddState(inFlightId = null, message = result)
+            addState.value = AddState(
+                inFlightId = null,
+                message = result,
+                // Both branches mean "this show is in the library now".
+                navigateToPodcastId = if (navigateOnSuccess) result.podcastIdOrNull() else null,
+            )
             // A successful add clears the field so the next paste starts clean.
             if (result is AddPodcastResult.Added) query.value = ""
         }
@@ -191,12 +232,48 @@ class SearchViewModel @Inject constructor(
     private data class AddState(
         val inFlightId: String? = null,
         val message: AddPodcastResult? = null,
+        val navigateToPodcastId: String? = null,
     )
 
     private companion object {
         const val DEBOUNCE_MS = 400L
         const val STOP_TIMEOUT_MS = 5_000L
     }
+}
+
+/**
+ * Matches search results against the library.
+ *
+ * Two keys, because either alone misses cases. Apple's `collectionId` is the direct match but is
+ * null on a show added from a pasted RSS link, and the feed URL is the app's real uniqueness key —
+ * [podcastIdOf] of it is literally how the stored id is derived — but a publisher's feed URL and
+ * Apple's copy of it can differ by a redirect. A result is "already added" if either agrees.
+ *
+ * @param library every stored show.
+ * @return the local podcast id for each matched result, keyed by Apple id.
+ */
+private fun List<PodcastSearchResult>.addedIds(library: List<Podcast>): Map<Long, String> {
+    if (isEmpty() || library.isEmpty()) return emptyMap()
+    val byLocalId = library.associateBy { it.id }
+    val byItunesId = library.filter { it.itunesId != null }.associateBy { it.itunesId }
+    return mapNotNull { result ->
+        val match = byItunesId[result.itunesId]
+            ?: result.feedUrl
+                ?.takeIf { it.isNotBlank() }
+                ?.let { byLocalId[podcastIdOf(it)] }
+        match?.let { result.itunesId to it.id }
+    }.toMap()
+}
+
+/**
+ * The show an add outcome landed on, if it landed on one.
+ *
+ * @return the local podcast id for the two outcomes that mean "it is in the library now", else null.
+ */
+private fun AddPodcastResult.podcastIdOrNull(): String? = when (this) {
+    is AddPodcastResult.Added -> podcast.id
+    is AddPodcastResult.AlreadyInLibrary -> podcast.id
+    else -> null
 }
 
 /**
