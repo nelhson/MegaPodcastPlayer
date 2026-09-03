@@ -15,10 +15,6 @@
     <string name="podcast_more_actions">More actions</string>
     <string name="podcast_play_latest">Play latest</string>
 
-    <!-- The overflow's background-refresh switch, which had no control anywhere until now. -->
-    <string name="podcast_auto_refresh_on">Refreshing in the background</string>
-    <string name="podcast_auto_refresh_off">Not refreshing in the background</string>
-
     <!--
         The overflow's rebuild, for a list a refresh cannot repair — a refresh only ever merges into
         the list it already has. The label leads with the deletion rather than the reload, because

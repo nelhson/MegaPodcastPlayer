@@ -83,11 +83,9 @@ class PodcastDetailScreenTest {
 
     private fun setScreen(
         episodes: List<Episode>,
-        autoRefresh: Boolean = true,
         source: PodcastSource = PodcastSource.RSS,
         onEpisodeMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
         onEpisodeClick: (String) -> Unit = {},
-        onAutoRefreshChange: (Boolean) -> Unit = {},
         onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
         onEpisodeDownloadToggle: (String) -> Unit = {},
@@ -97,7 +95,7 @@ class PodcastDetailScreenTest {
             BPodcatTheme {
                 PodcastDetailScreen(
                     uiState = PodcastDetailUiState(
-                        podcast = podcast.copy(autoRefresh = autoRefresh, source = source),
+                        podcast = podcast.copy(source = source),
                         episodes = episodes,
                         isLoading = false,
                         isRebuilding = isRebuilding,
@@ -107,7 +105,6 @@ class PodcastDetailScreenTest {
                     onEpisodeDownloadToggle = onEpisodeDownloadToggle,
                     onEpisodeMove = onEpisodeMove,
                     onRefresh = {},
-                    onAutoRefreshChange = onAutoRefreshChange,
                     onRebuild = onRebuild,
                     onRemove = onRemove,
                     onMessageShown = {},
@@ -183,15 +180,18 @@ class PodcastDetailScreenTest {
         assertEquals(1, removals)
     }
 
+    /**
+     * The toggle was a setting among actions, and it sat directly above the two entries that
+     * delete things. What a show does in the background now follows whatever it was added with.
+     */
     @Test
-    fun `the overflow can turn background refresh off, which nothing could before`() {
-        var enabled: Boolean? = null
-        setScreen(listOf(episode("a")), autoRefresh = true, onAutoRefreshChange = { enabled = it })
+    fun `the overflow offers no background-refresh toggle`() {
+        setScreen(listOf(episode("a")))
 
         composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithContentDescription("Refreshing in the background").performClick()
 
-        assertEquals(false, enabled)
+        composeRule.onNodeWithText("Refreshing in the background").assertDoesNotExist()
+        composeRule.onNodeWithText("Not refreshing in the background").assertDoesNotExist()
     }
 
     @Test

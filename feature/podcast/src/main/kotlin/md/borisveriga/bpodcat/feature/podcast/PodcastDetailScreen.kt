@@ -22,8 +22,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.SyncDisabled
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -134,7 +132,6 @@ fun PodcastDetailRoute(
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onEpisodeMove = viewModel::moveEpisode,
         onRefresh = viewModel::refresh,
-        onAutoRefreshChange = viewModel::setAutoRefresh,
         onRebuild = viewModel::rebuild,
         onRemove = viewModel::removePodcast,
         onMessageShown = viewModel::onMessageShown,
@@ -155,7 +152,6 @@ fun PodcastDetailRoute(
  *   on screen alongside the two positions, because a filter means those are a subset and the
  *   positions alone would name the wrong episodes.
  * @param onRefresh pull-to-refresh handler; also the empty state's action.
- * @param onAutoRefreshChange background-refresh toggle handler.
  * @param onRebuild deletes the episode list and imports the feed again from scratch; the screen
  *   confirms first, so this is only ever called once the user has said yes.
  * @param onRemove remove-show handler.
@@ -172,7 +168,6 @@ fun PodcastDetailScreen(
     onEpisodeDownloadToggle: (String) -> Unit,
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onRefresh: () -> Unit,
-    onAutoRefreshChange: (Boolean) -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
     onMessageShown: () -> Unit,
@@ -223,8 +218,6 @@ fun PodcastDetailScreen(
                 actions = {
                     if (uiState.podcast != null) {
                         OverflowMenu(
-                            autoRefresh = uiState.podcast.autoRefresh,
-                            onAutoRefreshChange = onAutoRefreshChange,
                             // A confirmation that protects nothing is only a tax, so a show with
                             // no episodes stored rebuilds on the tap. Everywhere else it asks.
                             onRebuild = {
@@ -665,23 +658,23 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  * The show's rarely-used actions.
  *
  * Removing a show sat in the top bar, one mis-tap from the back arrow, for something that deletes
- * every episode and every download it has. It belongs behind a menu. The background-refresh switch
- * joins it because until now the repository could turn it off and nothing in the app could.
+ * every episode and every download it has. It belongs behind a menu.
  *
- * Rebuilding the list belongs here for the same reason removal does, and is ordered between the
- * two: it destroys less than removing the show but more than any refresh, and putting it directly
- * above "Remove this podcast" keeps the menu reading from harmless to irreversible.
+ * Rebuilding the list belongs here for the same reason removal does, and is ordered above removal:
+ * it destroys less than removing the show, which keeps the menu reading from harmless to
+ * irreversible.
  *
- * @param autoRefresh whether this show is refreshed in the background.
- * @param onAutoRefreshChange toggle handler.
+ * A per-show background-refresh toggle used to head the menu. It was the odd one out — a setting
+ * among actions, whose label had to state the current value and whose content description had to
+ * state the opposite — and it made the two destructive entries below it that much easier to reach
+ * by accident. Background refreshing now follows whatever the show was added with.
+ *
  * @param onRebuild opens the rebuild confirmation, or rebuilds outright when there is nothing
  *   stored to lose.
  * @param onRemove remove-show handler.
  */
 @Composable
 private fun OverflowMenu(
-    autoRefresh: Boolean,
-    onAutoRefreshChange: (Boolean) -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -694,28 +687,6 @@ private fun OverflowMenu(
         )
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-        val autoRefreshLabel = stringResource(
-            if (autoRefresh) R.string.podcast_auto_refresh_on else R.string.podcast_auto_refresh_off,
-        )
-        DropdownMenuItem(
-            text = { Text(text = autoRefreshLabel) },
-            leadingIcon = {
-                Icon(
-                    imageVector = if (autoRefresh) {
-                        Icons.Rounded.Sync
-                    } else {
-                        Icons.Rounded.SyncDisabled
-                    },
-                    contentDescription = null,
-                )
-            },
-            onClick = {
-                expanded = false
-                onAutoRefreshChange(!autoRefresh)
-            },
-            // The label states the current setting, so the item needs to say what pressing it does.
-            modifier = Modifier.semantics { contentDescription = autoRefreshLabel },
-        )
         DropdownMenuItem(
             text = { Text(text = stringResource(R.string.podcast_rebuild)) },
             leadingIcon = {
@@ -931,7 +902,6 @@ private fun PodcastDetailScreenPreview() {
             onEpisodeDownloadToggle = {},
             onEpisodeMove = { _, _, _ -> },
             onRefresh = {},
-            onAutoRefreshChange = {},
             onRebuild = {},
             onRemove = {},
             onMessageShown = {},

@@ -256,11 +256,6 @@ class PodcastDetailViewModel @Inject constructor(
         viewModelScope.launch { repository.remove(podcastId) }
     }
 
-    /** Enables or disables background refresh for this show. */
-    fun setAutoRefresh(enabled: Boolean) {
-        viewModelScope.launch { repository.setAutoRefresh(podcastId, enabled) }
-    }
-
     /**
      * Plays an episode, resuming from wherever it was left.
      *
