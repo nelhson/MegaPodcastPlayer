@@ -1,9 +1,11 @@
 package md.borisveriga.bpodcat.feature.player
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -30,6 +32,10 @@ import org.robolectric.annotation.Config
  * One real gesture is driven here too. The arithmetic in [PlayerSheetStateTest] was always right;
  * what stranded the sheet half open was the wiring between the gesture and that arithmetic, which
  * only a test that actually swipes can see.
+ *
+ * Where things sit is asserted too, loosely — halves of the sheet rather than exact offsets. The
+ * expanded player is deliberately split top and bottom, and a test that pinned the dp would break
+ * on every padding tweak while missing the only thing that matters: which end each block is at.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -126,7 +132,40 @@ class PlayerSheetTest {
         composeRule.onNodeWithText("Podlodka #400").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Next episode").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Close the player").assertIsDisplayed()
+    }
+
+    /**
+     * A chevron in the top-left corner did what the grabber, a downward drag and the back gesture
+     * already do, from the spot a back arrow lives in — on a surface with nowhere to go back to.
+     */
+    @Test
+    fun `the expanded sheet offers no close button`() {
+        setContent(PlayerSheetValue.Expanded)
+
+        composeRule.onNodeWithContentDescription("Close the player").assertDoesNotExist()
+    }
+
+    /**
+     * The controls belong within reach of a thumb, not floating in the middle of the screen with
+     * dead space beneath them. They used to follow the title immediately and stop wherever the
+     * content ran out.
+     */
+    @Test
+    fun `the controls sit at the bottom and what is playing stays at the top`() {
+        setContent(PlayerSheetValue.Expanded)
+
+        val sheetBottom = composeRule.onRoot().getBoundsInRoot().bottom
+        // Unmerged: the sheet's own tap-to-expand `clickable` merges every descendant into one
+        // node the size of the whole surface, which is the node the collapsed tests click.
+        val title = composeRule.onNodeWithText("Podlodka #400", useUnmergedTree = true)
+            .getBoundsInRoot()
+        val scrubber = composeRule.onNodeWithContentDescription("Playback position")
+            .getBoundsInRoot()
+
+        // The title stays in the top half, where the artwork above it lands.
+        assertTrue(title.bottom < sheetBottom / 2)
+        // The scrubber, and therefore everything under it, has been pushed past the halfway mark.
+        assertTrue(scrubber.top > sheetBottom / 2)
     }
 
     @Test
@@ -138,16 +177,6 @@ class PlayerSheetTest {
 
         composeRule.onNodeWithContentDescription("Playback position").assertExists()
         composeRule.onNodeWithContentDescription("Next episode").assertExists()
-    }
-
-    @Test
-    fun `the close button collapses the sheet rather than navigating anywhere`() {
-        val sheetState = setContent(PlayerSheetValue.Expanded)
-
-        composeRule.onNodeWithContentDescription("Close the player").performClick()
-        composeRule.waitForIdle()
-
-        assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
     }
 
     @Test

@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -284,7 +280,6 @@ fun PlayerSheet(
                     )
 
                     SheetHeader(
-                        onCollapse = { scope.launch { sheetState.collapse() } },
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .graphicsLayer { alpha = expandedAlpha(progress) }
@@ -353,39 +348,33 @@ private fun TravellingArtwork(
 }
 
 /**
- * The expanded player's grab strip: a collapse button and the drag target.
+ * The expanded player's grab strip: the grabber, and the drag target it advertises.
  *
  * Carries no title. The show's name is already under the artwork a few dp below, and repeating it
  * here would be the second of two labels a screen reader has to walk past to reach the controls.
  *
- * @param onCollapse closes the sheet.
+ * Carries no collapse button either. A chevron in the top-left corner was a second, smaller way to
+ * do what the grabber, a downward drag anywhere on this strip and the back gesture all already do,
+ * and it sat where a back arrow sits — which reads as "go back" on a surface that has nowhere to go
+ * back to. The whole strip is the drag target, and the grabber is drawn large enough to say so.
+ *
  * @param modifier layout modifier, carrying the drag gesture.
  */
 @Composable
 private fun SheetHeader(
-    onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(expandedHeaderHeight),
-        contentAlignment = Alignment.CenterStart,
+        contentAlignment = Alignment.TopCenter,
     ) {
-        IconButton(
-            onClick = onCollapse,
-            modifier = Modifier.padding(start = BPodcatTheme.spacing.sm),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.KeyboardArrowDown,
-                contentDescription = stringResource(R.string.player_close),
-            )
-        }
-
         Box(
+            // The pill is inset from the very top rather than tucked under it: a grabber pressed
+            // against the status bar looks like an artefact of the cutout, not a handle.
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = BPodcatTheme.spacing.sm)
+                .padding(top = GrabberTopPadding)
                 .size(width = GrabberWidth, height = GrabberHeight)
                 .clip(BPodcatTheme.shapes.pill)
                 .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = GRABBER_ALPHA)),
@@ -412,8 +401,16 @@ private val CollapsedArtworkTop: Dp = collapsedProgressHeight + collapsedVertica
 private val FlingThreshold: Dp = 200.dp
 
 private val SheetTonalElevation: Dp = 3.dp
-private val GrabberWidth: Dp = 32.dp
-private val GrabberHeight: Dp = 4.dp
+
+/**
+ * The grabber, drawn at the size of a thing meant to be grabbed.
+ *
+ * A 32x4 pill under 8dp of padding read as decoration; this is the only remaining affordance for
+ * closing the sheet by hand, so it is worth the space.
+ */
+private val GrabberWidth: Dp = 48.dp
+private val GrabberHeight: Dp = 6.dp
+private val GrabberTopPadding: Dp = 16.dp
 private const val GRABBER_ALPHA = 0.4f
 
 /** The fraction by which the collapsed bar has completely faded out. */

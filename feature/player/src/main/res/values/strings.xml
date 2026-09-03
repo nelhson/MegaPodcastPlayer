@@ -13,8 +13,11 @@
     <!-- The mini player has one fixed-size skip button, so its label names no interval. -->
     <string name="player_mini_skip_ahead">Skip ahead</string>
 
+    <!--
+        Opening is a tap on the bar, and there is no matching label for closing: the expanded sheet
+        is closed by dragging its grabber down or by the back gesture, not by a button.
+    -->
     <string name="player_expand">Open the player</string>
-    <string name="player_close">Close the player</string>
 
     <string name="player_idle_title">Nothing playing</string>
     <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>

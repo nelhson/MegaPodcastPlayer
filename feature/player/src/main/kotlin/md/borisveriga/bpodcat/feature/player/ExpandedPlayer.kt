@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -55,6 +56,13 @@ import md.borisveriga.bpodcat.core.model.PlaybackSettings
  * gaps are at the top, so everything below flows normally and scrolls as one column at large font
  * scales.
  *
+ * Split into two blocks pushed to opposite ends. What the episode *is* — artwork, title, show —
+ * belongs at the top where the artwork lands; what the user *does* — scrub, play, skip, open the
+ * queue — belongs within reach of a thumb at the bottom, rather than stranded in the middle of the
+ * screen with dead space under it. The column is still scrollable and still at least a screenful
+ * tall, so at a large font scale the two blocks meet and the whole thing scrolls as one instead of
+ * clipping.
+ *
  * @param uiState what to render.
  * @param heroArtworkSize how tall the artwork will be, so the right amount of room is left for it.
  * @param onPlayPause play/pause handler.
@@ -84,58 +92,72 @@ fun ExpandedPlayer(
     val playback = uiState.playback
 
     Column(
+        // `fillMaxSize` ahead of `verticalScroll` is what makes both true at once: the scroll
+        // relaxes the maximum height to infinity but leaves the minimum at a full screen, so the
+        // column is never shorter than the sheet and `SpaceBetween` has room to push against.
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = expandedHorizontalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        // The sheet's header and the shared artwork are drawn over this column, not in it.
-        Spacer(
-            modifier = Modifier.height(
-                expandedHeaderHeight + expandedArtworkTopGap + heroArtworkSize,
-            ),
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // The sheet's header and the shared artwork are drawn over this column, not in it.
+            Spacer(
+                modifier = Modifier.height(
+                    expandedHeaderHeight + expandedArtworkTopGap + heroArtworkSize,
+                ),
+            )
 
-        Text(
-            text = playback.title,
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = BPodcatTheme.spacing.xl),
-        )
-        Text(
-            text = playback.showTitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = BPodcatTheme.spacing.xs),
-        )
-
-        Scrubber(playback = playback, onSeek = onSeek)
-
-        TransportControls(
-            playback = playback,
-            settings = uiState.settings,
-            onPlayPause = onPlayPause,
-            onSkipForward = onSkipForward,
-            onSkipBack = onSkipBack,
-            onSkipToNext = onSkipToNext,
-            onSkipToPrevious = onSkipToPrevious,
-        )
-
-        TextButton(onClick = onCycleSpeed, modifier = Modifier.padding(top = BPodcatTheme.spacing.xs)) {
-            Text(text = formatSpeed(playback.speed))
+            Text(
+                text = playback.title,
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = BPodcatTheme.spacing.xl),
+            )
+            Text(
+                text = playback.showTitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = BPodcatTheme.spacing.xs),
+            )
         }
 
-        val upNextCount = uiState.upNext.size
-        if (upNextCount > 0) {
-            UpNextLink(count = upNextCount, onClick = onOpenQueue)
-        }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Scrubber(playback = playback, onSeek = onSeek)
 
-        Spacer(modifier = Modifier.height(BPodcatTheme.spacing.xl))
+            TransportControls(
+                playback = playback,
+                settings = uiState.settings,
+                onPlayPause = onPlayPause,
+                onSkipForward = onSkipForward,
+                onSkipBack = onSkipBack,
+                onSkipToNext = onSkipToNext,
+                onSkipToPrevious = onSkipToPrevious,
+            )
+
+            TextButton(
+                onClick = onCycleSpeed,
+                modifier = Modifier.padding(top = BPodcatTheme.spacing.xs),
+            ) {
+                Text(text = formatSpeed(playback.speed))
+            }
+
+            val upNextCount = uiState.upNext.size
+            if (upNextCount > 0) {
+                UpNextLink(count = upNextCount, onClick = onOpenQueue)
+            }
+
+            Spacer(modifier = Modifier.height(BPodcatTheme.spacing.xl))
+        }
     }
 }
 
