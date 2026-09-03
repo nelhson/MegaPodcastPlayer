@@ -3,7 +3,7 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>BlankLineBetweenWhenConditions:OfflineFirstPodcastRepository.kt:OfflineFirstPodcastRepository$when (fetched) { is FeedFetchResult.Fetched -&gt; fetched FeedFetchResult.NotModified -&gt; return@withContext AddPodcastResult.Failed( IllegalStateException("Server answered 304 for a feed we have never fetched"), ) }</ID>
-    <ID>NoUnusedImports:DefaultPlaybackRepositoryTest.kt:md.borisveriga.bpodcat.core.data.repository.DefaultPlaybackRepositoryTest.kt</ID>
-    <ID>NoUnusedImports:DownloadStateSynchroniserTest.kt:md.borisveriga.bpodcat.core.data.download.DownloadStateSynchroniserTest.kt</ID>
+    <ID>NoUnusedImports:DefaultPlaybackRepositoryTest.kt:md.borisveriga.megapodcastplayer.core.data.repository.DefaultPlaybackRepositoryTest.kt</ID>
+    <ID>NoUnusedImports:DownloadStateSynchroniserTest.kt:md.borisveriga.megapodcastplayer.core.data.download.DownloadStateSynchroniserTest.kt</ID>
   </CurrentIssues>
 </SmellBaseline>

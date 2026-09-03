@@ -1,6 +1,6 @@
 plugins {
-    alias(libs.plugins.bpodcat.android.application.wear)
-    alias(libs.plugins.bpodcat.android.hilt)
+    alias(libs.plugins.megapodcastplayer.android.application.wear)
+    alias(libs.plugins.megapodcastplayer.android.hilt)
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -8,10 +8,10 @@ android {
     // The namespace differs from the application ID so the two APKs' R classes don't collide in the
     // IDE, but the application ID and signing key MUST match `:app` — the Wearable Data Layer only
     // routes messages between apps with an identical package name and certificate.
-    namespace = "md.borisveriga.bpodcat.wear"
+    namespace = "md.borisveriga.megapodcastplayer.wear"
 
     defaultConfig {
-        applicationId = "md.borisveriga.bpodcat"
+        applicationId = "md.borisveriga.megapodcastplayer"
     }
 }
 

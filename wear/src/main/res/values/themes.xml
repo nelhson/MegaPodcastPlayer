@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Wear windows are always dark and always full screen; real theming is done in Compose. -->
-    <style name="Theme.BPodcat.Wear" parent="@android:style/Theme.DeviceDefault">
+    <style name="Theme.MegaPodcastPlayer.Wear" parent="@android:style/Theme.DeviceDefault">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 </resources>

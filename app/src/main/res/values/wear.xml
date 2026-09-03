@@ -2,10 +2,10 @@
 <resources>
     <!--
       Advertised over the Data Layer so the watch can tell "no phone in range" apart from "the phone
-      is here but BPodcat is not installed on it". The name is the shared constant
+      is here but MegaPodcastPlayer is not installed on it". The name is the shared constant
       WearPaths.PHONE_CAPABILITY; changing one without the other silently breaks the pairing check.
     -->
     <string-array name="android_wear_capabilities">
-        <item>bpodcat_phone_player</item>
+        <item>megapodcastplayer_phone_player</item>
     </string-array>
 </resources>

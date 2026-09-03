@@ -1,4 +1,4 @@
-import md.borisveriga.bpodcat.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.dependencies
@@ -8,13 +8,13 @@ import org.gradle.kotlin.dsl.project
  * Baseline for a `:feature:*` module: an Android library with Compose, Hilt, navigation and the
  * shared design system already wired up.
  *
- * Registered as `bpodcat.android.feature`.
+ * Registered as `megapodcastplayer.android.feature`.
  */
 class AndroidFeatureConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
-        pluginManager.apply("bpodcat.android.library")
-        pluginManager.apply("bpodcat.android.library.compose")
-        pluginManager.apply("bpodcat.android.hilt")
+        pluginManager.apply("megapodcastplayer.android.library")
+        pluginManager.apply("megapodcastplayer.android.library.compose")
+        pluginManager.apply("megapodcastplayer.android.hilt")
 
         dependencies {
             add("implementation", project(":core:designsystem"))

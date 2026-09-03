@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Creates BPodcat's release signing keystore and the keystore.properties that points at it.
+    Creates MegaPodcastPlayer's release signing keystore and the keystore.properties that points at it.
 
 .DESCRIPTION
     A release build fails without a signing key (see docs/RELEASE_SIGNING.md), and the phone and
@@ -26,8 +26,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Alias = 'bpodcat',
-    [string] $KeystoreFile = 'bpodcat-release.jks'
+    [string] $Alias = 'megapodcastplayer',
+    [string] $KeystoreFile = 'megapodcastplayer-release.jks'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,7 +63,7 @@ if ($plain.Length -lt 6) { throw 'keytool requires at least 6 characters.' }
     -alias $Alias `
     -keyalg RSA -keysize 4096 -validity 10000 `
     -storepass $plain -keypass $plain `
-    -dname "CN=BPodcat, O=Boris Veriga, C=MD"
+    -dname "CN=MegaPodcastPlayer, O=Boris Veriga, C=MD"
 if ($LASTEXITCODE -ne 0) { throw "keytool failed with exit code $LASTEXITCODE." }
 
 # storeFile is resolved relative to the repository root by the build (rootProject.file(...)).

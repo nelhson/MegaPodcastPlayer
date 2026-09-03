@@ -1,17 +1,17 @@
 ---
 name: security-plan
-description: Run a deep defensive security audit of BPodcat (untrusted feed input, the Wear Data Layer, OWASP MASVS, supply chain) and produce a hardening roadmap. Use when asked for a security audit, security plan, threat model, or security review of this app.
+description: Run a deep defensive security audit of MegaPodcastPlayer (untrusted feed input, the Wear Data Layer, OWASP MASVS, supply chain) and produce a hardening roadmap. Use when asked for a security audit, security plan, threat model, or security review of this app.
 ---
 
 # Security Plan
 
 This is a **defensive review of Boris's own app** — the goal is finding and fixing weaknesses in
-BPodcat, not exploiting anything. Produce severity-ranked findings and a hardening roadmap in
+MegaPodcastPlayer, not exploiting anything. Produce severity-ranked findings and a hardening roadmap in
 `docs/reports/YYYY-MM-DD-security-plan.md` (create `docs/reports/` if it does not exist).
 
 ## What the threat surface actually is
 
-BPodcat is not a password manager and has no vault, no crypto layer and no user accounts. Do not
+MegaPodcastPlayer is not a password manager and has no vault, no crypto layer and no user accounts. Do not
 audit for those. Its real exposure is three things:
 
 1. **Untrusted remote input.** RSS/Atom feeds and YouTube extraction results are attacker-authored
@@ -89,7 +89,7 @@ Deduplicate (the MASVS and threat-model agents will overlap), then write
 `docs/reports/<date>-security-plan.md`:
 
 ```markdown
-# BPodcat Security Plan — <date>
+# MegaPodcastPlayer Security Plan — <date>
 
 ## Executive summary          (posture in plain language + finding counts by severity)
 ## Findings                   (ordered by severity; each: ID, title, severity, evidence file:line,

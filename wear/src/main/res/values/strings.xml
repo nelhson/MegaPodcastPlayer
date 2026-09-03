@@ -11,7 +11,7 @@
 -->
 <resources>
 
-    <string name="app_name">BPodcat</string>
+    <string name="app_name">MegaPodcastPlayer</string>
 
     <string name="watch_up_next">Up next</string>
 
@@ -44,8 +44,8 @@
 
     <string name="watch_link_checking_title">Looking for your phone</string>
     <string name="watch_link_checking_description">One moment.</string>
-    <string name="watch_link_app_missing_title">BPodcat is not on your phone</string>
-    <string name="watch_link_app_missing_description">Install BPodcat on your phone to control it from here.</string>
+    <string name="watch_link_app_missing_title">MegaPodcastPlayer is not on your phone</string>
+    <string name="watch_link_app_missing_description">Install MegaPodcastPlayer on your phone to control it from here.</string>
     <string name="watch_link_disconnected_title">Phone not connected</string>
     <string name="watch_link_disconnected_description">Bring your phone closer, or turn Bluetooth back on.</string>
 

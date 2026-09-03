@@ -1,4 +1,4 @@
-# BPodcat's detekt configuration.
+# MegaPodcastPlayer's detekt configuration.
 #
 # `buildUponDefaultConfig` is on in the convention plugin, so this file records only deltas from
 # detekt's shipped defaults; anything not mentioned keeps its default. Every override below exists

@@ -1,6 +1,6 @@
 ---
 name: performance-plan
-description: Audit BPodcat runtime, startup, playback, download and build performance and produce a prioritized optimization roadmap. Use when asked about performance, slow screens, startup time, jank, recomposition, download speed, or build speed.
+description: Audit MegaPodcastPlayer runtime, startup, playback, download and build performance and produce a prioritized optimization roadmap. Use when asked about performance, slow screens, startup time, jank, recomposition, download speed, or build speed.
 ---
 
 # Performance Plan
@@ -39,7 +39,7 @@ the code.
    playing and are the most likely source of real jank.
 
 2. **Playback, download and startup hot paths** (`general-purpose`)
-   Audit: app startup (`BPodcatApplication`, Hilt graph size, anything eager that could be lazy,
+   Audit: app startup (`MegaPodcastPlayerApplication`, Hilt graph size, anything eager that could be lazy,
    WorkManager initialisation); the media stack in `:core:media` (data source chain construction per
    open, `EpisodePlayer`, `PlaybackService`); the download path (`EpisodeDownloader`,
    `ChunkedDataSource` — note `MAX_PARALLEL_DOWNLOADS` and the 8 MB chunk size and whether either is
@@ -59,8 +59,8 @@ the code.
 4. **On-device measurement** (`general-purpose`) — only if a device is connected
    Install the debug build (see the `install_on_devices` skill for device classification and the
    `ANDROID_SERIAL` targeting this needs), then measure cold startup with
-   `adb shell am start -W md.borisveriga.bpodcat/.MainActivity` and capture
-   `adb shell dumpsys gfxinfo md.borisveriga.bpodcat` while scrolling the library and while the
+   `adb shell am start -W md.borisveriga.megapodcastplayer/.MainActivity` and capture
+   `adb shell dumpsys gfxinfo md.borisveriga.megapodcastplayer` while scrolling the library and while the
    player sheet animates. Report numbers, not impressions. Remember both builds are debug — no R8 —
    so absolute figures are pessimistic; say so.
 
@@ -69,7 +69,7 @@ the code.
 Write `docs/reports/<date>-performance-plan.md`:
 
 ```markdown
-# BPodcat Performance Plan — <date>
+# MegaPodcastPlayer Performance Plan — <date>
 
 ## Executive summary          (biggest wins first; note whether device measurements were taken)
 ## Measurements               (build timings; startup/jank numbers if a device was available)

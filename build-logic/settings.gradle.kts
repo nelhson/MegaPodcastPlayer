@@ -1,4 +1,4 @@
-// Settings for the `build-logic` composite build, which hosts BPodcat's convention plugins.
+// Settings for the `build-logic` composite build, which hosts MegaPodcastPlayer's convention plugins.
 // It is included by the root `settings.gradle.kts` via `pluginManagement { includeBuild(...) }`.
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)

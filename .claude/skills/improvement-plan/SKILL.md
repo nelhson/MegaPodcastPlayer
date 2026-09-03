@@ -1,6 +1,6 @@
 ---
 name: improvement-plan
-description: Audit BPodcat code quality, architecture, testing, and accessibility, and produce a prioritized improvement roadmap. Use when asked for refactoring ideas, tech-debt review, code quality audit, or an improvement plan.
+description: Audit MegaPodcastPlayer code quality, architecture, testing, and accessibility, and produce a prioritized improvement roadmap. Use when asked for refactoring ideas, tech-debt review, code quality audit, or an improvement plan.
 ---
 
 # Improvement Plan
@@ -71,7 +71,7 @@ must work from the code and from the conventions above, not from a reference ski
 Deduplicate overlapping findings, then write `docs/reports/<date>-improvement-plan.md`:
 
 ```markdown
-# BPodcat Improvement Plan — <date>
+# MegaPodcastPlayer Improvement Plan — <date>
 
 ## Executive summary
 ## Progress against REFACTORING_PLAN.md   (which numbered items are done, which remain)

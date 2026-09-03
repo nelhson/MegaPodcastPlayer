@@ -8,15 +8,8 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="37"
+            line="44"
             column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.mipmap.ic_launcher_round` appears to be unused">
-        <location
-            file="src/main/res/mipmap-hdpi/ic_launcher_round.webp"/>
     </issue>
 
 </issues>

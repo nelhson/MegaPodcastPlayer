@@ -1,4 +1,4 @@
-# Single source of truth for every dependency version in BPodcat.
+# Single source of truth for every dependency version in MegaPodcastPlayer.
 # Versions verified against Maven metadata on 2026-08-28.
 [versions]
 # --- Build toolchain -------------------------------------------------------
@@ -193,14 +193,14 @@ hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 detekt = { id = "dev.detekt", version.ref = "detekt" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 
-# BPodcat convention plugins, implemented in build-logic/convention.
-bpodcat-android-application = { id = "bpodcat.android.application" }
-bpodcat-android-application-compose = { id = "bpodcat.android.application.compose" }
-bpodcat-android-application-wear = { id = "bpodcat.android.application.wear" }
-bpodcat-android-library = { id = "bpodcat.android.library" }
-bpodcat-android-library-compose = { id = "bpodcat.android.library.compose" }
-bpodcat-android-feature = { id = "bpodcat.android.feature" }
-bpodcat-android-hilt = { id = "bpodcat.android.hilt" }
-bpodcat-android-room = { id = "bpodcat.android.room" }
-bpodcat-jvm-library = { id = "bpodcat.jvm.library" }
-bpodcat-detekt = { id = "bpodcat.detekt" }
+# MegaPodcastPlayer convention plugins, implemented in build-logic/convention.
+megapodcastplayer-android-application = { id = "megapodcastplayer.android.application" }
+megapodcastplayer-android-application-compose = { id = "megapodcastplayer.android.application.compose" }
+megapodcastplayer-android-application-wear = { id = "megapodcastplayer.android.application.wear" }
+megapodcastplayer-android-library = { id = "megapodcastplayer.android.library" }
+megapodcastplayer-android-library-compose = { id = "megapodcastplayer.android.library.compose" }
+megapodcastplayer-android-feature = { id = "megapodcastplayer.android.feature" }
+megapodcastplayer-android-hilt = { id = "megapodcastplayer.android.hilt" }
+megapodcastplayer-android-room = { id = "megapodcastplayer.android.room" }
+megapodcastplayer-jvm-library = { id = "megapodcastplayer.jvm.library" }
+megapodcastplayer-detekt = { id = "megapodcastplayer.detekt" }

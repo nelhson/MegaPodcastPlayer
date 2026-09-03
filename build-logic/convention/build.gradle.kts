@@ -1,5 +1,5 @@
 /**
- * Hosts every BPodcat convention plugin.
+ * Hosts every MegaPodcastPlayer convention plugin.
  *
  * The Android/Kotlin Gradle plugins are `compileOnly` here: they are only needed to compile against
  * their APIs. At runtime they are supplied by the consuming build, which declares them in its root
@@ -9,7 +9,7 @@ plugins {
     `kotlin-dsl`
 }
 
-group = "md.borisveriga.bpodcat.buildlogic"
+group = "md.borisveriga.megapodcastplayer.buildlogic"
 
 dependencies {
     compileOnly(libs.android.gradlePlugin)
@@ -22,43 +22,43 @@ dependencies {
 gradlePlugin {
     plugins {
         register("androidApplication") {
-            id = "bpodcat.android.application"
+            id = "megapodcastplayer.android.application"
             implementationClass = "AndroidApplicationConventionPlugin"
         }
         register("androidApplicationCompose") {
-            id = "bpodcat.android.application.compose"
+            id = "megapodcastplayer.android.application.compose"
             implementationClass = "AndroidApplicationComposeConventionPlugin"
         }
         register("androidApplicationWear") {
-            id = "bpodcat.android.application.wear"
+            id = "megapodcastplayer.android.application.wear"
             implementationClass = "AndroidApplicationWearConventionPlugin"
         }
         register("androidLibrary") {
-            id = "bpodcat.android.library"
+            id = "megapodcastplayer.android.library"
             implementationClass = "AndroidLibraryConventionPlugin"
         }
         register("androidLibraryCompose") {
-            id = "bpodcat.android.library.compose"
+            id = "megapodcastplayer.android.library.compose"
             implementationClass = "AndroidLibraryComposeConventionPlugin"
         }
         register("androidFeature") {
-            id = "bpodcat.android.feature"
+            id = "megapodcastplayer.android.feature"
             implementationClass = "AndroidFeatureConventionPlugin"
         }
         register("androidHilt") {
-            id = "bpodcat.android.hilt"
+            id = "megapodcastplayer.android.hilt"
             implementationClass = "AndroidHiltConventionPlugin"
         }
         register("androidRoom") {
-            id = "bpodcat.android.room"
+            id = "megapodcastplayer.android.room"
             implementationClass = "AndroidRoomConventionPlugin"
         }
         register("jvmLibrary") {
-            id = "bpodcat.jvm.library"
+            id = "megapodcastplayer.jvm.library"
             implementationClass = "JvmLibraryConventionPlugin"
         }
         register("detekt") {
-            id = "bpodcat.detekt"
+            id = "megapodcastplayer.detekt"
             implementationClass = "DetektConventionPlugin"
         }
     }

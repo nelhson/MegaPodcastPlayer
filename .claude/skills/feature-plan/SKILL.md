@@ -1,6 +1,6 @@
 ---
 name: feature-plan
-description: Plan a new feature for BPodcat. With an argument (e.g. /feature-plan sleep timer) it produces a detailed implementation plan for that feature; with no argument it first brainstorms and prioritizes a feature backlog, then plans the top candidate. Use when asked to plan, scope, or brainstorm new features.
+description: Plan a new feature for MegaPodcastPlayer. With an argument (e.g. /feature-plan sleep timer) it produces a detailed implementation plan for that feature; with no argument it first brainstorms and prioritizes a feature backlog, then plans the top candidate. Use when asked to plan, scope, or brainstorm new features.
 ---
 
 # Feature Plan
@@ -26,7 +26,7 @@ Produce a feature implementation plan and write it to
    `:core:model` and `:core:wearprotocol`, then `:core:common`, `:core:database`, `:core:datastore`,
    `:core:network`, `:core:youtube`, `:core:media`, `:core:data`, `:core:designsystem`,
    `:core:testing`, and `:feature:{library,downloads,search,podcast,player,settings}`. Sources are at
-   `<module>/src/main/kotlin/md/borisveriga/bpodcat/…`.
+   `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
 4. Carry these standing constraints into every agent prompt — they are the ones features break:
    - **Episode audio URLs are identities, not addresses.** A YouTube episode stores the
      `youtube://video/<id>` sentinel and it doubles as the Media3 cache key; a feed URL is hashed
@@ -55,9 +55,9 @@ Launch these agents **in a single message**:
 2. **Competitor survey** (`general-purpose`, needs WebSearch)
    Research current feature sets of Pocket Casts, AntennaPod, Podcast Addict and Overcast. Multiple
    searches, cross-check claims across at least two sources, cite URLs. Identify (a) table-stakes
-   features BPodcat lacks, (b) differentiators that suit an offline-first app with first-class
+   features MegaPodcastPlayer lacks, (b) differentiators that suit an offline-first app with first-class
    YouTube-playlist support and a Wear companion. Note explicitly which competitor features depend on
-   a server-side account, since BPodcat has none.
+   a server-side account, since MegaPodcastPlayer has none.
 
 Then synthesize a **prioritized backlog** (table: feature, user value, effort, notes) and use
 AskUserQuestion to let Boris pick from the top 3–4. Continue below with his pick.
@@ -69,7 +69,7 @@ Launch these agents **in a single message**:
 1. **Affected code & reuse** (`Explore`, thoroughness: very thorough)
    For feature "<feature>": find every code path it touches and the existing patterns to reuse —
    repositories in `:core:data`, DAOs in `:core:database`, `UserPreferencesDataSource` in
-   `:core:datastore`, the design system components, `BPodcatNavigation`. Cite `file:line`. Flag where
+   `:core:datastore`, the design system components, `MegaPodcastPlayerNavigation`. Cite `file:line`. Flag where
    the feature would cut across a module boundary the graph currently forbids.
 
 2. **Data & media impact** (`Explore`, thoroughness: very thorough)

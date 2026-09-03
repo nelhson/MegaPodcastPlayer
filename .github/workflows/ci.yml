@@ -1,4 +1,4 @@
-# Continuous integration for BPodcat.
+# Continuous integration for MegaPodcastPlayer.
 #
 # One job, because the build is small enough that the fan-out cost of separate jobs (each paying
 # for its own checkout, JDK and Gradle cache restore) outweighs the parallelism. Split it when the

@@ -6,7 +6,7 @@
 -->
 <resources>
 
-    <string name="app_name">BPodcat</string>
+    <string name="app_name">MegaPodcastPlayer</string>
 
     <!-- Navigation bar / rail destinations. -->
     <string name="destination_library">Library</string>

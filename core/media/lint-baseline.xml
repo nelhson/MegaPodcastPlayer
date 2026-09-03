@@ -7,31 +7,9 @@
         errorLine1="    override fun getScheduler(): Scheduler = PlatformScheduler(this, JOB_ID)"
         errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="59"
             column="46"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="        youTubeResolver: YouTubeDataSpecResolver,"
-        errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="85"
-            column="26"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="    ): DataSource.Factory = ResolvingDataSource.Factory("
-        errorLine2="                                                ~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="86"
-            column="49"/>
     </issue>
 
     <issue
@@ -40,8 +18,8 @@
         errorLine1="    ): DatabaseProvider = StandaloneDatabaseProvider(context)"
         errorLine2="       ~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="95"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="154"
             column="8"/>
     </issue>
 
@@ -51,8 +29,8 @@
         errorLine1="    ): DatabaseProvider = StandaloneDatabaseProvider(context)"
         errorLine2="                          ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="95"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="154"
             column="27"/>
     </issue>
 
@@ -62,8 +40,8 @@
         errorLine1="        databaseProvider: DatabaseProvider,"
         errorLine2="                          ~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="109"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="168"
             column="27"/>
     </issue>
 
@@ -73,8 +51,8 @@
         errorLine1="    ): Cache = SimpleCache("
         errorLine2="       ~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="110"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="169"
             column="8"/>
     </issue>
 
@@ -84,8 +62,8 @@
         errorLine1="    ): Cache = SimpleCache("
         errorLine2="               ~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="110"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="169"
             column="16"/>
     </issue>
 
@@ -95,8 +73,8 @@
         errorLine1="        NoOpCacheEvictor(),"
         errorLine2="        ~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="112"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="171"
             column="9"/>
     </issue>
 
@@ -106,8 +84,8 @@
         errorLine1="        databaseProvider: DatabaseProvider,"
         errorLine2="                          ~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="126"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="185"
             column="27"/>
     </issue>
 
@@ -117,8 +95,8 @@
         errorLine1="        @DownloadCache cache: Cache,"
         errorLine2="                              ~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="127"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="186"
             column="31"/>
     </issue>
 
@@ -128,8 +106,8 @@
         errorLine1="        youTubeResolver: YouTubeDataSpecResolver,"
         errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="129"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="188"
             column="26"/>
     </issue>
 
@@ -139,8 +117,8 @@
         errorLine1="    ): DownloadManager = DownloadManager("
         errorLine2="       ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="130"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="189"
             column="8"/>
     </issue>
 
@@ -150,8 +128,8 @@
         errorLine1="    ): DownloadManager = DownloadManager("
         errorLine2="                         ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="130"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="189"
             column="26"/>
     </issue>
 
@@ -161,8 +139,8 @@
         errorLine1="        maxParallelDownloads = MAX_PARALLEL_DOWNLOADS"
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="140"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="199"
             column="9"/>
     </issue>
 
@@ -172,8 +150,8 @@
         errorLine1="        @DownloadCache cache: Cache,"
         errorLine2="                              ~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="158"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="217"
             column="31"/>
     </issue>
 
@@ -183,8 +161,8 @@
         errorLine1="        youTubeResolver: YouTubeDataSpecResolver,"
         errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="160"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="219"
             column="26"/>
     </issue>
 
@@ -194,8 +172,8 @@
         errorLine1="    ): DataSource.Factory = CacheDataSource.Factory()"
         errorLine2="                                            ~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="161"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="220"
             column="45"/>
     </issue>
 
@@ -205,8 +183,8 @@
         errorLine1="        .setCache(cache)"
         errorLine2="         ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="162"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="221"
             column="10"/>
     </issue>
 
@@ -216,8 +194,8 @@
         errorLine1="        .setUpstreamDataSourceFactory("
         errorLine2="         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="163"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="222"
             column="10"/>
     </issue>
 
@@ -227,8 +205,8 @@
         errorLine1="        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)"
         errorLine2="         ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="166"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="225"
             column="10"/>
     </issue>
 
@@ -238,8 +216,8 @@
         errorLine1="        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)"
         errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/di/DownloadModule.kt"
-            line="166"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/di/DownloadModule.kt"
+            line="225"
             column="35"/>
     </issue>
 
@@ -247,7 +225,7 @@
         id="UnsafeOptInUsageError"
         message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"/>
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"/>
     </issue>
 
     <issue
@@ -256,7 +234,7 @@
         errorLine1="class EpisodeDownloadService : DownloadService("
         errorLine2="                               ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="29"
             column="32"/>
     </issue>
@@ -267,7 +245,7 @@
         errorLine1="class EpisodeDownloadService : DownloadService("
         errorLine2="                               ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="29"
             column="32"/>
     </issue>
@@ -278,7 +256,7 @@
         errorLine1="    /* foregroundNotificationUpdateInterval = */ DEFAULT_FOREGROUND_NOTIFICATION_UPDATE_INTERVAL,"
         errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="31"
             column="50"/>
     </issue>
@@ -289,7 +267,7 @@
         errorLine1="    lateinit var injectedDownloadManager: DownloadManager"
         errorLine2="                                          ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="44"
             column="43"/>
     </issue>
@@ -300,7 +278,7 @@
         errorLine1="    private val notificationHelper: DownloadNotificationHelper by lazy {"
         errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="47"
             column="37"/>
     </issue>
@@ -311,7 +289,7 @@
         errorLine1="        DownloadNotificationHelper(this, DOWNLOAD_NOTIFICATION_CHANNEL_ID)"
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="48"
             column="9"/>
     </issue>
@@ -322,7 +300,7 @@
         errorLine1="    override fun getDownloadManager(): DownloadManager = injectedDownloadManager"
         errorLine2="                 ~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="51"
             column="18"/>
     </issue>
@@ -333,7 +311,7 @@
         errorLine1="    override fun getDownloadManager(): DownloadManager = injectedDownloadManager"
         errorLine2="                                       ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="51"
             column="40"/>
     </issue>
@@ -344,7 +322,7 @@
         errorLine1="    override fun getScheduler(): Scheduler = PlatformScheduler(this, JOB_ID)"
         errorLine2="                 ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="59"
             column="18"/>
     </issue>
@@ -355,7 +333,7 @@
         errorLine1="    override fun getScheduler(): Scheduler = PlatformScheduler(this, JOB_ID)"
         errorLine2="                                 ~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="59"
             column="34"/>
     </issue>
@@ -366,7 +344,7 @@
         errorLine1="    override fun getScheduler(): Scheduler = PlatformScheduler(this, JOB_ID)"
         errorLine2="                                             ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="59"
             column="46"/>
     </issue>
@@ -377,7 +355,7 @@
         errorLine1="    override fun getForegroundNotification("
         errorLine2="                 ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="68"
             column="18"/>
     </issue>
@@ -388,7 +366,7 @@
         errorLine1="        downloads: List&lt;Download>,"
         errorLine2="                        ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="69"
             column="25"/>
     </issue>
@@ -399,7 +377,7 @@
         errorLine1="    ): Notification = notificationHelper.buildProgressNotification("
         errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadService.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadService.kt"
             line="71"
             column="42"/>
     </issue>
@@ -410,7 +388,7 @@
         errorLine1="    Download.STATE_QUEUED, Download.STATE_STOPPED, Download.STATE_RESTARTING -> DownloadState.QUEUED"
         errorLine2="             ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="50"
             column="14"/>
     </issue>
@@ -421,7 +399,7 @@
         errorLine1="    Download.STATE_QUEUED, Download.STATE_STOPPED, Download.STATE_RESTARTING -> DownloadState.QUEUED"
         errorLine2="                                    ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="50"
             column="37"/>
     </issue>
@@ -432,7 +410,7 @@
         errorLine1="    Download.STATE_QUEUED, Download.STATE_STOPPED, Download.STATE_RESTARTING -> DownloadState.QUEUED"
         errorLine2="                                                            ~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="50"
             column="61"/>
     </issue>
@@ -443,7 +421,7 @@
         errorLine1="    Download.STATE_DOWNLOADING -> DownloadState.DOWNLOADING"
         errorLine2="             ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="51"
             column="14"/>
     </issue>
@@ -454,7 +432,7 @@
         errorLine1="    Download.STATE_COMPLETED -> DownloadState.COMPLETED"
         errorLine2="             ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="52"
             column="14"/>
     </issue>
@@ -465,7 +443,7 @@
         errorLine1="    Download.STATE_FAILED -> DownloadState.FAILED"
         errorLine2="             ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="53"
             column="14"/>
     </issue>
@@ -476,7 +454,7 @@
         errorLine1="    Download.STATE_REMOVING -> DownloadState.NOT_DOWNLOADED"
         errorLine2="             ~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="54"
             column="14"/>
     </issue>
@@ -487,7 +465,7 @@
         errorLine1="internal fun Download.asEpisodeDownloadStatus(): EpisodeDownloadStatus {"
         errorLine2="             ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="65"
             column="14"/>
     </issue>
@@ -498,7 +476,7 @@
         errorLine1="    val mapped = downloadStateOf(state)"
         errorLine2="                                 ~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="66"
             column="34"/>
     </issue>
@@ -509,7 +487,7 @@
         errorLine1="        episodeId = request.id,"
         errorLine2="                    ~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="68"
             column="21"/>
     </issue>
@@ -520,7 +498,7 @@
         errorLine1="        episodeId = request.id,"
         errorLine2="                            ~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="68"
             column="29"/>
     </issue>
@@ -531,7 +509,7 @@
         errorLine1="        downloadedBytes = bytesDownloaded,"
         errorLine2="                          ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="70"
             column="27"/>
     </issue>
@@ -542,7 +520,7 @@
         errorLine1="            percentDownloaded.takeIf { !it.isNaN() }?.coerceIn(0f, 100f) ?: 0f"
         errorLine2="            ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloadStatus.kt"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloadStatus.kt"
             line="74"
             column="13"/>
     </issue>
@@ -553,8 +531,8 @@
         errorLine1="    private val downloadManager: DownloadManager,"
         errorLine2="                                 ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="45"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="46"
             column="34"/>
     </issue>
 
@@ -564,8 +542,8 @@
         errorLine1="    @DownloadCache private val cache: Cache,"
         errorLine2="                                      ~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="46"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="47"
             column="39"/>
     </issue>
 
@@ -575,8 +553,8 @@
         errorLine1="        val listener = object : DownloadManager.Listener {"
         errorLine2="            ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="59"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="60"
             column="13"/>
     </issue>
 
@@ -586,8 +564,8 @@
         errorLine1="            override fun onDownloadChanged("
         errorLine2="                         ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="60"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="61"
             column="26"/>
     </issue>
 
@@ -597,8 +575,8 @@
         errorLine1="                downloadManager: DownloadManager,"
         errorLine2="                                 ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="61"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="62"
             column="34"/>
     </issue>
 
@@ -608,8 +586,8 @@
         errorLine1="                download: Download,"
         errorLine2="                          ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="62"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="63"
             column="27"/>
     </issue>
 
@@ -619,8 +597,8 @@
         errorLine1="            override fun onDownloadRemoved("
         errorLine2="                         ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="68"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="69"
             column="26"/>
     </issue>
 
@@ -630,8 +608,8 @@
         errorLine1="                downloadManager: DownloadManager,"
         errorLine2="                                 ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="69"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="70"
             column="34"/>
     </issue>
 
@@ -641,8 +619,8 @@
         errorLine1="                download: Download,"
         errorLine2="                          ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="70"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="71"
             column="27"/>
     </issue>
 
@@ -652,8 +630,8 @@
         errorLine1="                trySend(EpisodeDownloadStatus.notDownloaded(download.request.id))"
         errorLine2="                                                                     ~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="72"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="73"
             column="70"/>
     </issue>
 
@@ -663,8 +641,8 @@
         errorLine1="                trySend(EpisodeDownloadStatus.notDownloaded(download.request.id))"
         errorLine2="                                                                             ~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="72"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="73"
             column="78"/>
     </issue>
 
@@ -674,8 +652,8 @@
         errorLine1="        downloadManager.addListener(listener)"
         errorLine2="                        ~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="75"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="76"
             column="25"/>
     </issue>
 
@@ -685,8 +663,8 @@
         errorLine1="        awaitClose { downloadManager.removeListener(listener) }"
         errorLine2="                                     ~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="76"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="77"
             column="38"/>
     </issue>
 
@@ -696,8 +674,8 @@
         errorLine1="        val request = DownloadRequest.Builder(episodeId, audioUrl.toUri()).build()"
         errorLine2="            ~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="97"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="98"
             column="13"/>
     </issue>
 
@@ -707,8 +685,8 @@
         errorLine1="        val request = DownloadRequest.Builder(episodeId, audioUrl.toUri()).build()"
         errorLine2="                                      ~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="97"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="98"
             column="39"/>
     </issue>
 
@@ -718,8 +696,8 @@
         errorLine1="        val request = DownloadRequest.Builder(episodeId, audioUrl.toUri()).build()"
         errorLine2="                                                                           ~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="97"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="98"
             column="76"/>
     </issue>
 
@@ -729,8 +707,8 @@
         errorLine1="            DownloadService.sendAddDownload("
         errorLine2="                            ~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="99"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="100"
             column="29"/>
     </issue>
 
@@ -740,8 +718,8 @@
         errorLine1="            DownloadService.sendRemoveDownload("
         errorLine2="                            ~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="115"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="116"
             column="29"/>
     </issue>
 
@@ -751,8 +729,8 @@
         errorLine1="            DownloadService.sendRemoveAllDownloads("
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="127"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="128"
             column="29"/>
     </issue>
 
@@ -762,8 +740,8 @@
         errorLine1="            downloadManager.requirements = Requirements("
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="143"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="144"
             column="13"/>
     </issue>
 
@@ -773,8 +751,8 @@
         errorLine1="            downloadManager.requirements = Requirements("
         errorLine2="                            ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="143"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="144"
             column="29"/>
     </issue>
 
@@ -784,8 +762,8 @@
         errorLine1="            downloadManager.requirements = Requirements("
         errorLine2="                                           ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="143"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="144"
             column="44"/>
     </issue>
 
@@ -795,8 +773,8 @@
         errorLine1="                if (unmeteredOnly) Requirements.NETWORK_UNMETERED else Requirements.NETWORK,"
         errorLine2="                                                ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="144"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="145"
             column="49"/>
     </issue>
 
@@ -806,8 +784,8 @@
         errorLine1="                if (unmeteredOnly) Requirements.NETWORK_UNMETERED else Requirements.NETWORK,"
         errorLine2="                                                                                    ~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="144"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="145"
             column="85"/>
     </issue>
 
@@ -817,8 +795,8 @@
         errorLine1="            downloadManager.downloadIndex.getDownloads().use { cursor ->"
         errorLine2="                            ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="158"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="159"
             column="29"/>
     </issue>
 
@@ -828,8 +806,8 @@
         errorLine1="            downloadManager.downloadIndex.getDownloads().use { cursor ->"
         errorLine2="                                          ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="158"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="159"
             column="43"/>
     </issue>
 
@@ -839,8 +817,8 @@
         errorLine1="            downloadManager.downloadIndex.getDownloads().use { cursor ->"
         errorLine2="                                                               ~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="158"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="159"
             column="64"/>
     </issue>
 
@@ -850,8 +828,8 @@
         errorLine1="                    while (cursor.moveToNext()) {"
         errorLine2="                                  ~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="160"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="161"
             column="35"/>
     </issue>
 
@@ -861,8 +839,8 @@
         errorLine1="                        add(cursor.download.asEpisodeDownloadStatus())"
         errorLine2="                                   ~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="161"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="162"
             column="36"/>
     </issue>
 
@@ -872,119 +850,9 @@
         errorLine1="        suspendRunCatching { cache.cacheSpace }.getOrElse { 0L }"
         errorLine2="                                   ~~~~~~~~~~">
         <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/download/EpisodeDownloader.kt"
-            line="180"
+            file="src/main/kotlin/md/borisveriga/megapodcastplayer/core/media/download/EpisodeDownloader.kt"
+            line="181"
             column="36"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))"
-        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="91"
-            column="36"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="            player.setSeekForwardIncrementMs(settings.skipForwardMs)"
-        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="140"
-            column="20"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="            player.setSeekBackIncrementMs(settings.skipBackMs)"
-        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="141"
-            column="20"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="            val finishedId = oldPosition.mediaItem?.episodeId ?: return"
-        errorLine2="                                         ~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="256"
-            column="42"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()"
-        errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="328"
-            column="50"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()"
-        errorLine2="                                                                                ~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="328"
-            column="81"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="        override fun onPlaybackResumption("
-        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="331"
-            column="22"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="        ): ListenableFuture&lt;MediaSession.MediaItemsWithStartPosition> {"
-        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="335"
-            column="29"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="                    MediaSession.MediaItemsWithStartPosition("
-        errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="342"
-            column="34"/>
-    </issue>
-
-    <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="                }.onSuccess { items -> future.set(items) }.onFailure { error ->"
-        errorLine2="                              ~~~~~">
-        <location
-            file="src/main/kotlin/md/borisveriga/bpodcat/core/media/PlaybackService.kt"
-            line="348"
-            column="31"/>
     </issue>
 
 </issues>

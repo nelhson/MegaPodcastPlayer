@@ -1,23 +1,23 @@
 import com.android.build.api.dsl.ApplicationExtension
-import md.borisveriga.bpodcat.buildlogic.addSharedTestingModule
-import md.borisveriga.bpodcat.buildlogic.configureAndroidCommon
-import md.borisveriga.bpodcat.buildlogic.configureSharedSigning
-import md.borisveriga.bpodcat.buildlogic.int
-import md.borisveriga.bpodcat.buildlogic.libs
-import md.borisveriga.bpodcat.buildlogic.string
+import md.borisveriga.megapodcastplayer.buildlogic.addSharedTestingModule
+import md.borisveriga.megapodcastplayer.buildlogic.configureAndroidCommon
+import md.borisveriga.megapodcastplayer.buildlogic.configureSharedSigning
+import md.borisveriga.megapodcastplayer.buildlogic.int
+import md.borisveriga.megapodcastplayer.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.string
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
 
 /**
- * Applies BPodcat's baseline configuration to an Android application module (`:app`).
+ * Applies MegaPodcastPlayer's baseline configuration to an Android application module (`:app`).
  *
- * Registered as `bpodcat.android.application`.
+ * Registered as `megapodcastplayer.android.application`.
  */
 class AndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("com.android.application")
-        pluginManager.apply("bpodcat.detekt")
+        pluginManager.apply("megapodcastplayer.detekt")
         addSharedTestingModule()
 
         extensions.configure<ApplicationExtension> {

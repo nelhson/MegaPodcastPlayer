@@ -1,4 +1,4 @@
-import md.borisveriga.bpodcat.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.dependencies
@@ -6,7 +6,7 @@ import org.gradle.kotlin.dsl.dependencies
 /**
  * Wires Hilt (via KSP — kapt is incompatible with AGP 9's built-in Kotlin) into a module.
  *
- * Registered as `bpodcat.android.hilt`.
+ * Registered as `megapodcastplayer.android.hilt`.
  */
 class AndroidHiltConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {

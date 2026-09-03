@@ -1,10 +1,10 @@
 plugins {
-    alias(libs.plugins.bpodcat.android.library)
-    alias(libs.plugins.bpodcat.android.library.compose)
+    alias(libs.plugins.megapodcastplayer.android.library)
+    alias(libs.plugins.megapodcastplayer.android.library.compose)
 }
 
 android {
-    namespace = "md.borisveriga.bpodcat.core.designsystem"
+    namespace = "md.borisveriga.megapodcastplayer.core.designsystem"
 }
 
 dependencies {

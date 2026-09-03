@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  BPodcat launcher icon, background layer.
+  MegaPodcastPlayer launcher icon, background layer.
 
   A dark espresso wash, taken from the theme's `onPrimaryContainer`/`surface` browns so the icon
   reads as the same app as the UI. The layer fills the whole 108dp canvas because launchers may

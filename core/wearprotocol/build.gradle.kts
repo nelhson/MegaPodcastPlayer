@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.bpodcat.jvm.library)
+    alias(libs.plugins.megapodcastplayer.jvm.library)
     alias(libs.plugins.kotlin.serialization)
 }
 

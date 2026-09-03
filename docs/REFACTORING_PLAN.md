@@ -1,4 +1,4 @@
-# BPodcat — Refactoring Plan
+# MegaPodcastPlayer — Refactoring Plan
 
 **Date:** 2026-08-29
 **Scope reviewed:** all 201 source/build files across `:app`, `:wear`, `:core:*` (9 modules),
@@ -44,10 +44,10 @@ scheme. That URI is then handed to a `DefaultDataSource.Factory`
 `rawresource:` and `rtmp:` in addition to HTTP(S).
 
 Consequence: a hostile or compromised feed can publish
-`<enclosure url="file:///data/data/md.borisveriga.bpodcat/databases/bpodcat.db" type="audio/mpeg"/>`
+`<enclosure url="file:///data/data/md.borisveriga.megapodcastplayer/databases/megapodcastplayer.db" type="audio/mpeg"/>`
 and the app will open — and, if the user taps download, **copy into the download cache** — an
 arbitrary file readable by the app's own UID. The same applies to `content://` URIs, which reaches
-other apps' exported providers under BPodcat's identity.
+other apps' exported providers under MegaPodcastPlayer's identity.
 
 **Fix**
 
@@ -70,7 +70,7 @@ dropped; `MediaItemsTest` case asserting a non-HTTP URI never becomes a `MediaIt
 absent, `buildTypes.release.signingConfig = signingConfigs.debug`. The debug key is a
 world-known Android SDK artifact. A release APK signed with it is trivially re-signable by
 anyone, and — because the Wearable Data Layer routes purely on *package name + certificate* —
-**any app built by anyone with the debug key and the `md.borisveriga.bpodcat` application ID can
+**any app built by anyone with the debug key and the `md.borisveriga.megapodcastplayer` application ID can
 send `WearCommand`s to a real installation** and receive its `NowPlayingSnapshot` (which carries
 episode titles, show titles and the full queue).
 
@@ -249,7 +249,7 @@ Play Store review problem and an honest-manifest problem.
 
 **Recommended:** finish it. A `RefreshWorker : CoroutineWorker` in `:app` (or a new
 `:core:sync`), `PeriodicWorkRequest` every 6 h with `NetworkType.CONNECTED`, wired in
-`BPodcatApplication.onCreate` via `WorkManager.getInstance(this).enqueueUniquePeriodicWork(…, KEEP, …)`,
+`MegaPodcastPlayerApplication.onCreate` via `WorkManager.getInstance(this).enqueueUniquePeriodicWork(…, KEEP, …)`,
 plus a "new episodes" notification. This also closes the loop on the `is_new` episode flag,
 which `clearNewFlags` already maintains.
 
@@ -264,7 +264,7 @@ Media3's `PlatformScheduler` does not need it first — it does, so keep that on
   exponential backoff up to three attempts, on the theory that it means the network came back only
   far enough to satisfy the `CONNECTED` constraint; one failure among several is a success.
 - `RefreshScheduler`: `PeriodicWorkRequest` every 6 h, `NetworkType.CONNECTED`, enqueued as unique
-  work with `KEEP` from `BPodcatApplication.onCreate`. `KEEP` is the load-bearing half — `REPLACE`
+  work with `KEEP` from `MegaPodcastPlayerApplication.onCreate`. `KEEP` is the load-bearing half — `REPLACE`
   would push the next run six hours out on every app launch, so a phone used daily would never
   refresh in the background at all.
 - `NewEpisodeNotifier`: an interface, so the worker is testable without a notification manager. Its
@@ -356,7 +356,7 @@ inside it are not.
 Five byte-identical 33-line files differing only in `package`:
 `feature/downloads`, `feature/player`, `feature/podcast`, `feature/settings`, `wear`.
 
-**Fix:** create `:core:testing` (a `bpodcat.jvm.library` — it needs no Android), holding
+**Fix:** create `:core:testing` (a `megapodcastplayer.jvm.library` — it needs no Android), holding
 `MainDispatcherRule`, the existing `InMemoryPreferencesDataStore` (currently stranded in
 `core/datastore/src/test/`, where no other module can reach it), and shared test fixtures for
 `Episode`/`Podcast`/`PlaybackState`. Add `add("testImplementation", project(":core:testing"))`
@@ -392,7 +392,7 @@ per KEEP-0459.
 **Measured in Phase 3 — no change made.** The premise no longer holds on this toolchain. Strong
 skipping has been on by default since Kotlin 2.0.20, and this project is on 2.3.21: an unstable
 parameter is compared by instance rather than disqualifying the composable. The Compose compiler
-reports (`./gradlew assembleDebug -Pbpodcat.compose.metrics=true`, wired in `AndroidCompose.kt`)
+reports (`./gradlew assembleDebug -Pmegapodcastplayer.compose.metrics=true`, wired in `AndroidCompose.kt`)
 say so directly — across `:app`, `:wear` and all six feature modules, **48 of 48** restartable
 composables are `skippable`, none unskippable, even though `SearchUiState`, `DownloadsUiState`,
 `PlayerUiState`, `PodcastDetailUiState` and `WatchPlayerUiState` are all still reported as
@@ -450,7 +450,7 @@ stock defaults and nothing fails the build.
 
 **Fix**
 
-1. Add a `bpodcat.detekt` convention plugin applying detekt to every module with one shared
+1. Add a `megapodcastplayer.detekt` convention plugin applying detekt to every module with one shared
    config. Enable at minimum: `TooGenericExceptionCaught`, `SwallowedException` (these catch C-1),
    `MaxLineLength`, `LongMethod`, `LongParameterList`, `ForbiddenComment`.
 2. Add `.editorconfig` matching `kotlin.code.style=official`.

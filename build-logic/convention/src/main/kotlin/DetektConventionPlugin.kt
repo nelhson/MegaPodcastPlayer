@@ -1,6 +1,6 @@
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.extensions.DetektExtension
-import md.borisveriga.bpodcat.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
@@ -17,7 +17,7 @@ import org.gradle.kotlin.dsl.withType
  * `./gradlew detektBaseline` after adding a rule that the existing code violates, so the rule
  * starts guarding new code immediately instead of waiting for a cleanup.
  *
- * Registered as `bpodcat.detekt`.
+ * Registered as `megapodcastplayer.detekt`.
  */
 class DetektConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {

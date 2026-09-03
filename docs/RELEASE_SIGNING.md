@@ -11,7 +11,7 @@ Execution failed for task ':app:packageRelease'
 That is deliberate. It used to fall back to the Android SDK's debug key, which is public — anyone
 can re-sign an APK signed with it. Worse, the Wearable Data Layer routes purely on *package name
 plus signing certificate*, so an app built by anyone with the debug key and the
-`md.borisveriga.bpodcat` application ID could send `WearCommand`s to a real installation and read
+`md.borisveriga.megapodcastplayer` application ID could send `WearCommand`s to a real installation and read
 back its `NowPlayingSnapshot`: episode titles, show titles, the whole queue.
 
 Debug builds are unaffected and still use the debug key.
@@ -31,17 +31,17 @@ By hand:
 
 ```bash
 keytool -genkeypair -v \
-  -keystore bpodcat-release.jks \
-  -alias bpodcat \
+  -keystore megapodcastplayer-release.jks \
+  -alias megapodcastplayer \
   -keyalg RSA -keysize 4096 -validity 10000
 ```
 
 Then create `keystore.properties` at the repository root:
 
 ```properties
-storeFile=bpodcat-release.jks
+storeFile=megapodcastplayer-release.jks
 storePassword=…
-keyAlias=bpodcat
+keyAlias=megapodcastplayer
 keyPassword=…
 ```
 

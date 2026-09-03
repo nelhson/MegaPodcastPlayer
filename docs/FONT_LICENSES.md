@@ -1,6 +1,6 @@
 # Bundled font licenses
 
-BPodcat bundles two variable typefaces as Android font resources in
+MegaPodcastPlayer bundles two variable typefaces as Android font resources in
 `core/designsystem/src/main/res/font/`. Both are licensed under the
 SIL Open Font License, Version 1.1.
 

@@ -1,11 +1,11 @@
 ---
 name: project-report
-description: Generate a comprehensive state-of-the-project report for BPodcat (architecture, features, test health, delivery readiness, risks). Use when asked for a project report, status snapshot, or project health check.
+description: Generate a comprehensive state-of-the-project report for MegaPodcastPlayer (architecture, features, test health, delivery readiness, risks). Use when asked for a project report, status snapshot, or project health check.
 ---
 
 # Project Report
 
-Produce a dated, evidence-backed snapshot of the BPodcat codebase and write it to
+Produce a dated, evidence-backed snapshot of the MegaPodcastPlayer codebase and write it to
 `docs/reports/YYYY-MM-DD-project-report.md` (create `docs/reports/` if it does not exist).
 
 ## Phase 0 — Ground truth (do this yourself, before any agents)
@@ -38,8 +38,8 @@ Launch these agents **in a single message** so they run concurrently.
    - Features: `:feature:library`, `:feature:downloads`, `:feature:search`, `:feature:podcast`,
      `:feature:player`, `:feature:settings`.
 
-   Sources live at `<module>/src/main/kotlin/md/borisveriga/bpodcat/…`. List every screen from
-   `app/.../navigation/BPodcatNavigation.kt`, the repositories in `:core:data`, and the DAOs in
+   Sources live at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`. List every screen from
+   `app/.../navigation/MegaPodcastPlayerNavigation.kt`, the repositories in `:core:data`, and the DAOs in
    `:core:database`. Enumerate dependency versions from the version catalog and flag notably
    outdated ones — mark as "check for update" rather than guessing exact latest versions. Cite
    `file:line`.
@@ -70,7 +70,7 @@ Every agent must cite `file:line` evidence for checkable claims — no impressio
 Merge into `docs/reports/<date>-project-report.md`:
 
 ```markdown
-# BPodcat Project Report — <date>
+# MegaPodcastPlayer Project Report — <date>
 
 ## Executive summary        (5–8 sentences, plain language)
 ## Architecture overview    (module graph, layers, key components)

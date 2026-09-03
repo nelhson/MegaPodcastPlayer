@@ -1,5 +1,5 @@
 import com.google.devtools.ksp.gradle.KspExtension
-import md.borisveriga.bpodcat.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
@@ -9,7 +9,7 @@ import org.gradle.kotlin.dsl.dependencies
  * Wires Room + KSP into a module and exports the generated schemas to `schemas/` so that
  * migrations can be diffed and tested.
  *
- * Registered as `bpodcat.android.room`.
+ * Registered as `megapodcastplayer.android.room`.
  */
 class AndroidRoomConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {

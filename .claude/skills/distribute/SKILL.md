@@ -1,6 +1,6 @@
 ---
 name: distribute
-description: Build signed release APKs of BPodcat (phone and watch) for handing to someone else. Use when asked to distribute, ship a build, cut a release, produce a signed APK, or send the app to someone.
+description: Build signed release APKs of MegaPodcastPlayer (phone and watch) for handing to someone else. Use when asked to distribute, ship a build, cut a release, produce a signed APK, or send the app to someone.
 ---
 
 # Distribute
@@ -24,7 +24,7 @@ faster, needs no keystore, and is almost always what "put this on my phone" mean
 
 ## The constraint that governs everything
 
-`:app` and `:wear` share `applicationId = "md.borisveriga.bpodcat"` and **must be signed with the
+`:app` and `:wear` share `applicationId = "md.borisveriga.megapodcastplayer"` and **must be signed with the
 same certificate**. The Wearable Data Layer routes messages purely on package name plus signing
 certificate, so a mismatched pair installs, launches, and silently never connects. Both APKs come
 out of the same build with the same key, so this holds automatically — but never hand someone a

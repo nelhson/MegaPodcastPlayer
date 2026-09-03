@@ -11,11 +11,11 @@
  * create a project dependency cycle.
  */
 plugins {
-    alias(libs.plugins.bpodcat.android.library)
+    alias(libs.plugins.megapodcastplayer.android.library)
 }
 
 android {
-    namespace = "md.borisveriga.bpodcat.core.testing"
+    namespace = "md.borisveriga.megapodcastplayer.core.testing"
 }
 
 dependencies {

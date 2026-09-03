@@ -1,21 +1,21 @@
 import com.android.build.api.dsl.LibraryExtension
-import md.borisveriga.bpodcat.buildlogic.addSharedTestingModule
-import md.borisveriga.bpodcat.buildlogic.configureAndroidCommon
-import md.borisveriga.bpodcat.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.addSharedTestingModule
+import md.borisveriga.megapodcastplayer.buildlogic.configureAndroidCommon
+import md.borisveriga.megapodcastplayer.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 
 /**
- * Applies BPodcat's baseline configuration to an Android library module (`:core:*`).
+ * Applies MegaPodcastPlayer's baseline configuration to an Android library module (`:core:*`).
  *
- * Registered as `bpodcat.android.library`.
+ * Registered as `megapodcastplayer.android.library`.
  */
 class AndroidLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("com.android.library")
-        pluginManager.apply("bpodcat.detekt")
+        pluginManager.apply("megapodcastplayer.detekt")
 
         extensions.configure<LibraryExtension> {
             configureAndroidCommon(this)

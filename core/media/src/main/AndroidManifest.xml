@@ -20,7 +20,7 @@
             leftover.
         -->
         <service
-            android:name="md.borisveriga.bpodcat.core.media.PlaybackService"
+            android:name="md.borisveriga.megapodcastplayer.core.media.PlaybackService"
             android:enabled="true"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback"
@@ -45,7 +45,7 @@
             playback would be a lie and Android 14+ rejects a mismatched type at startForeground().
         -->
         <service
-            android:name="md.borisveriga.bpodcat.core.media.download.EpisodeDownloadService"
+            android:name="md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloadService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

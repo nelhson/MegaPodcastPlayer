@@ -1,9 +1,9 @@
 plugins {
-    alias(libs.plugins.bpodcat.android.feature)
+    alias(libs.plugins.megapodcastplayer.android.feature)
 }
 
 android {
-    namespace = "md.borisveriga.bpodcat.feature.player"
+    namespace = "md.borisveriga.megapodcastplayer.feature.player"
 }
 
 dependencies {

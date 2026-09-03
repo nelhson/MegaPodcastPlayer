@@ -27,7 +27,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BPodcat.Wear">
+        android:theme="@style/Theme.MegaPodcastPlayer.Wear">
 
         <!--
           The watch app is useless without the phone (it is a remote control), but it is still
@@ -43,7 +43,7 @@
             android:exported="true"
             android:label="@string/app_name"
             android:taskAffinity=""
-            android:theme="@style/Theme.BPodcat.Wear">
+            android:theme="@style/Theme.MegaPodcastPlayer.Wear">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -65,14 +65,14 @@
                 <data
                     android:scheme="wear"
                     android:host="*"
-                    android:pathPrefix="/bpodcat" />
+                    android:pathPrefix="/megapodcastplayer" />
             </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
                 <data
                     android:scheme="wear"
                     android:host="*"
-                    android:pathPrefix="/bpodcat_phone_player" />
+                    android:pathPrefix="/megapodcastplayer_phone_player" />
             </intent-filter>
         </service>
         <!--
@@ -88,7 +88,7 @@
                 <data
                     android:scheme="wear"
                     android:host="*"
-                    android:pathPrefix="/bpodcat/episode_audio" />
+                    android:pathPrefix="/megapodcastplayer/episode_audio" />
             </intent-filter>
         </service>
 

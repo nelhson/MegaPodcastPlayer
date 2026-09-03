@@ -19,7 +19,7 @@
 # The original file names are folded into one placeholder; with the mapping file, line numbers are
 # enough to find the source, and the APK stays a little smaller.
 -renamesourcefileattribute SourceFile
-# --- BPodcat ---------------------------------------------------------------
+# --- MegaPodcastPlayer ---------------------------------------------------------------
 # Retrofit + kotlinx.serialization DTOs are only referenced reflectively at the HTTP boundary.
 -keepattributes Signature, InnerClasses, EnclosingMethod
 -keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations

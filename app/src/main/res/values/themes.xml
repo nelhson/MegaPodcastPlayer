@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Minimal platform theme. All real theming happens in Compose (BPodcatTheme in
+      Minimal platform theme. All real theming happens in Compose (MegaPodcastPlayerTheme in
       :core:designsystem); this only styles the window before the first frame is drawn.
     -->
-    <style name="Theme.BPodcat" parent="@android:style/Theme.DeviceDefault.DayNight">
+    <style name="Theme.MegaPodcastPlayer" parent="@android:style/Theme.DeviceDefault.DayNight">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@android:color/background_light</item>

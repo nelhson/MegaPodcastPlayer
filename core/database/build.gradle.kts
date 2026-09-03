@@ -1,11 +1,11 @@
 plugins {
-    alias(libs.plugins.bpodcat.android.library)
-    alias(libs.plugins.bpodcat.android.hilt)
-    alias(libs.plugins.bpodcat.android.room)
+    alias(libs.plugins.megapodcastplayer.android.library)
+    alias(libs.plugins.megapodcastplayer.android.hilt)
+    alias(libs.plugins.megapodcastplayer.android.room)
 }
 
 android {
-    namespace = "md.borisveriga.bpodcat.core.database"
+    namespace = "md.borisveriga.megapodcastplayer.core.database"
 }
 
 dependencies {

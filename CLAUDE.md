@@ -1,9 +1,9 @@
-# BPodcat
+# MegaPodcastPlayer
 
 Personal, sideloaded podcast player for Android (`:app`) with a Wear OS companion (`:wear`) that is
 a remote control, a tile, a watch-face complication, and — for episodes the phone has sent it — a
 player of its own.
-Kotlin, Jetpack Compose, Hilt, Room, Media3. Application ID `md.borisveriga.bpodcat`.
+Kotlin, Jetpack Compose, Hilt, Room, Media3. Application ID `md.borisveriga.megapodcastplayer`.
 
 This file is deliberately short. The conventions are enforced by code, so read the source of
 truth rather than a summary of it:
@@ -16,7 +16,7 @@ truth rather than a summary of it:
 
 ## Layout
 
-Nineteen modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/bpodcat/…`.
+Nineteen modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
 
 - Apps: `:app`, `:wear`.
 - Pure JVM, shared with the watch: `:core:model`, `:core:wearprotocol`. No Android types here.

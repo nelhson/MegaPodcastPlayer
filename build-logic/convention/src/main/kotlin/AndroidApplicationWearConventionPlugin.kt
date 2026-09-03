@@ -1,11 +1,11 @@
 import com.android.build.api.dsl.ApplicationExtension
-import md.borisveriga.bpodcat.buildlogic.addSharedTestingModule
-import md.borisveriga.bpodcat.buildlogic.configureAndroidCommon
-import md.borisveriga.bpodcat.buildlogic.configureSharedSigning
-import md.borisveriga.bpodcat.buildlogic.configureWearCompose
-import md.borisveriga.bpodcat.buildlogic.int
-import md.borisveriga.bpodcat.buildlogic.libs
-import md.borisveriga.bpodcat.buildlogic.string
+import md.borisveriga.megapodcastplayer.buildlogic.addSharedTestingModule
+import md.borisveriga.megapodcastplayer.buildlogic.configureAndroidCommon
+import md.borisveriga.megapodcastplayer.buildlogic.configureSharedSigning
+import md.borisveriga.megapodcastplayer.buildlogic.configureWearCompose
+import md.borisveriga.megapodcastplayer.buildlogic.int
+import md.borisveriga.megapodcastplayer.buildlogic.libs
+import md.borisveriga.megapodcastplayer.buildlogic.string
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
@@ -18,12 +18,12 @@ import org.gradle.kotlin.dsl.dependencies
  * key with `:app` — the Wearable Data Layer only routes messages between apps whose package name
  * *and* signing certificate match on both devices.
  *
- * Registered as `bpodcat.android.application.wear`.
+ * Registered as `megapodcastplayer.android.application.wear`.
  */
 class AndroidApplicationWearConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("com.android.application")
-        pluginManager.apply("bpodcat.detekt")
+        pluginManager.apply("megapodcastplayer.detekt")
         addSharedTestingModule()
 
         extensions.configure<ApplicationExtension> {

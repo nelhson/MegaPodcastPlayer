@@ -1,6 +1,6 @@
 ---
 name: install_on_devices
-description: Build BPodcat and sideload it onto Boris's Galaxy Fold 7 (phone) and Galaxy Watch Ultra 2 (Wear OS) over adb. Use when asked to install on devices, sideload, put the app on the phone or the watch, deploy to the Fold or the Watch, or try it on real hardware.
+description: Build MegaPodcastPlayer and sideload it onto Boris's Galaxy Fold 7 (phone) and Galaxy Watch Ultra 2 (Wear OS) over adb. Use when asked to install on devices, sideload, put the app on the phone or the watch, deploy to the Fold or the Watch, or try it on real hardware.
 ---
 
 # Install on devices
@@ -12,7 +12,7 @@ adb, and it is the right tool for "let me look at this on the watch".
 
 ## The constraint that governs everything
 
-`:app` and `:wear` both declare `applicationId = "md.borisveriga.bpodcat"` — no `applicationIdSuffix`
+`:app` and `:wear` both declare `applicationId = "md.borisveriga.megapodcastplayer"` — no `applicationIdSuffix`
 on debug, deliberately — and both must be signed with the **same certificate**. The Wearable Data
 Layer routes messages purely on package name plus signing certificate, so a phone and a watch
 holding differently-signed builds will install fine, launch fine, and silently never see each other.
@@ -144,11 +144,11 @@ needed.
 ## 5 — Launch (only if asked)
 
 ```powershell
-& $adb -s <serial> shell monkey -p md.borisveriga.bpodcat -c android.intent.category.LAUNCHER 1
+& $adb -s <serial> shell monkey -p md.borisveriga.megapodcastplayer -c android.intent.category.LAUNCHER 1
 ```
 
 `monkey` resolves the launcher activity itself, which matters here: the two modules have different
-namespaces (`md.borisveriga.bpodcat` and `md.borisveriga.bpodcat.wear`) under one application ID, so
+namespaces (`md.borisveriga.megapodcastplayer` and `md.borisveriga.megapodcastplayer.wear`) under one application ID, so
 a hardcoded component name is right for only one of them.
 
 ## 6 — Report
@@ -169,7 +169,7 @@ was skipped, and whether the pair is now on matching builds.
 | `InstallException: EOF`, `DeviceException` | the adb link died mid-transfer — the usual outcome on the watch, because the debug `:wear` APK is **~72 MB** and wireless debugging rarely survives it | step 2, then push the already-built APK directly (below) rather than re-running Gradle |
 | Watch drops to `offline` mid-install | wireless debugging timed out | step 2, then re-run only the `:wear` install |
 
-**Before suggesting an uninstall, warn Boris what it costs.** `adb uninstall md.borisveriga.bpodcat`
+**Before suggesting an uninstall, warn Boris what it costs.** `adb uninstall md.borisveriga.megapodcastplayer`
 (or `:app:uninstallDebug`) removes app-private storage with the app: the Room database — every
 subscription, queue entry and playback position — and the `episode_downloads` cache, which is the
 user's entire offline library. That is a real loss on his own daily-driver phone, not a test device.

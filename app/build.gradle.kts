@@ -1,15 +1,15 @@
 plugins {
-    alias(libs.plugins.bpodcat.android.application)
-    alias(libs.plugins.bpodcat.android.application.compose)
-    alias(libs.plugins.bpodcat.android.hilt)
+    alias(libs.plugins.megapodcastplayer.android.application)
+    alias(libs.plugins.megapodcastplayer.android.application.compose)
+    alias(libs.plugins.megapodcastplayer.android.hilt)
     alias(libs.plugins.kotlin.serialization)
 }
 
 android {
-    namespace = "md.borisveriga.bpodcat"
+    namespace = "md.borisveriga.megapodcastplayer"
 
     defaultConfig {
-        applicationId = "md.borisveriga.bpodcat"
+        applicationId = "md.borisveriga.megapodcastplayer"
     }
 }
 
