@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -118,6 +119,33 @@ class EpisodeRowTest {
         }
 
         composeTestRule.assertRowState("Halfway", "42% played")
+    }
+
+    /**
+     * The mark is 16dp of green with no text beside it, so without a description it is a fact only
+     * a sighted user gets — and it is the fact that decides whether a row can be played on a
+     * train.
+     */
+    @Test
+    fun `marks a downloaded episode, and says so`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                EpisodeRow(title = "On the device", isDownloaded = true)
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Downloaded").assertExists()
+    }
+
+    @Test
+    fun `leaves a row that is not downloaded unmarked`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                EpisodeRow(title = "Streams only")
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Downloaded").assertDoesNotExist()
     }
 
     @Test

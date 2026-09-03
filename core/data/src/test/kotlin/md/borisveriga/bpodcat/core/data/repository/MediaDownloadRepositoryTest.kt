@@ -253,6 +253,73 @@ class MediaDownloadRepositoryTest {
         coVerify { downloader.setUnmeteredOnly(false) }
     }
 
+    @Test
+    fun `with nothing dragged, the downloads list keeps the ordering the query gives it`() =
+        runTest {
+            database.episodeDao().upsertFromFeed(
+                listOf(episode("old", 1_000L), episode("new", 3_000L)),
+            )
+            markDownloaded("old", "new")
+
+            assertEquals(
+                listOf("new", "old"),
+                repository.observeDownloads().first().map { it.episode.id },
+            )
+        }
+
+    @Test
+    fun `a stored arrangement is what the downloads list comes back in`() = runTest {
+        database.episodeDao().upsertFromFeed(
+            listOf(episode("old", 1_000L), episode("new", 3_000L)),
+        )
+        markDownloaded("old", "new")
+
+        repository.reorderDownloads(listOf("old", "new"))
+
+        // Newest-first is only the starting point; once the user has said otherwise, they have
+        // said otherwise.
+        assertEquals(
+            listOf("old", "new"),
+            repository.observeDownloads().first().map { it.episode.id },
+        )
+    }
+
+    @Test
+    fun `a download nobody has placed follows the ones they have`() = runTest {
+        database.episodeDao().upsertFromFeed(
+            listOf(episode("a", 1_000L), episode("b", 2_000L), episode("late", 3_000L)),
+        )
+        markDownloaded("a", "b", "late")
+
+        // The arrangement was made before "late" was ever downloaded.
+        repository.reorderDownloads(listOf("b", "a"))
+
+        // It is the newest, so the query would have put it first; it goes last instead, because
+        // the two rows in front of it are where they are on purpose.
+        assertEquals(
+            listOf("b", "a", "late"),
+            repository.observeDownloads().first().map { it.episode.id },
+        )
+    }
+
+    @Test
+    fun `an arrangement naming episodes that have gone still orders the ones that remain`() =
+        runTest {
+            database.episodeDao().upsertFromFeed(
+                listOf(episode("a", 1_000L), episode("b", 2_000L)),
+            )
+            markDownloaded("a", "b")
+
+            // "gone" was removed from the device after it was dragged; its id is kept so that
+            // fetching it again brings it back where it was put.
+            repository.reorderDownloads(listOf("gone", "b", "a"))
+
+            assertEquals(
+                listOf("b", "a"),
+                repository.observeDownloads().first().map { it.episode.id },
+            )
+        }
+
     /** Marks [ids] as fully downloaded, as a completed Media3 event would. */
     private suspend fun markDownloaded(vararg ids: String) {
         ids.forEach { id ->

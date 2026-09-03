@@ -29,9 +29,24 @@ interface DownloadRepository {
      * because the downloads screen mixes shows and an episode title alone does not say what you are
      * looking at. And it is not limited to what is on the device: a transfer in progress and a
      * failure are precisely what the user opens this screen to find out about, and neither is
-     * "available offline". Ordered failures first, then in progress, then waiting, then completed.
+     * "available offline".
+     *
+     * Ordered by hand where the user has said so — see [reorderDownloads] — and otherwise failures
+     * first, then in progress, then waiting, then completed. A download the user has never placed
+     * follows the ones they have, in that state ordering.
      */
     fun observeDownloads(): Flow<List<EpisodeWithShow>>
+
+    /**
+     * Stores a hand-made ordering for the downloads screen.
+     *
+     * The screen shows every tracked download at once, so the caller passes the whole list rather
+     * than a pair of positions: the stored order is the arrangement, not a log of moves, which is
+     * what keeps it right when a transfer finishes or fails mid-drag.
+     *
+     * @param episodeIds the downloads in the order they should appear, first row first.
+     */
+    suspend fun reorderDownloads(episodeIds: List<String>)
 
     /**
      * Total bytes the downloads occupy on disk.

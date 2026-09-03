@@ -15,7 +15,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
@@ -71,13 +73,16 @@ import md.borisveriga.bpodcat.core.designsystem.R as DesignSystemR
 import md.borisveriga.bpodcat.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
 import md.borisveriga.bpodcat.core.designsystem.component.BPodcatTopAppBar
-import md.borisveriga.bpodcat.core.designsystem.component.DownloadButton
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
 import md.borisveriga.bpodcat.core.designsystem.component.PodcastArtwork
 import md.borisveriga.bpodcat.core.designsystem.component.SourceBadge
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.bpodcat.core.designsystem.component.WavyProgressLine
+import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderableState
 import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
@@ -316,44 +321,17 @@ fun PodcastDetailScreen(
                             items = drag.order,
                             key = { _, episode -> episode.id },
                         ) { index, episode ->
-                            val isDragging = drag.draggingKey == episode.id
-
-                            EpisodeRow(
-                                modifier = Modifier
-                                    .semantics {
-                                        if (isReorderable) {
-                                            customActions =
-                                                drag.moveActions(index, moveUp, moveDown)
-                                        }
-                                    }
-                                    .graphicsLayer {
-                                        translationY = if (isDragging) drag.offset.y else 0f
-                                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-                                    }
-                                    // Only where the order is the user's to keep: a long press
-                                    // on a row of an RSS show would pick it up and then refuse to
-                                    // put it anywhere.
-                                    .then(
-                                        if (isReorderable) {
-                                            Modifier.reorderableLongPressDrag(drag, episode.id)
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                                title = episode.title,
+                            EpisodeListRow(
+                                episode = episode,
                                 metadata = episode.metadataLine(now, resources),
                                 artworkUrl = episode.artworkUrl ?: podcast.artworkUrl,
-                                isUnplayed = episode.isNew,
-                                isPlayed = episode.isPlayed,
-                                playedFraction = episode.playedFraction,
+                                index = index,
+                                drag = drag,
+                                isReorderable = isReorderable,
+                                moveUp = moveUp,
+                                moveDown = moveDown,
                                 onClick = { onEpisodeClick(episode.id) },
-                                trailing = {
-                                    DownloadButton(
-                                        state = episode.downloadState,
-                                        progressPercent = episode.downloadPercent,
-                                        onClick = { onEpisodeDownloadToggle(episode.id) },
-                                    )
-                                },
+                                onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
                             )
                         }
                     }
@@ -361,6 +339,131 @@ fun PodcastDetailScreen(
             }
         }
     }
+}
+
+/**
+ * One episode in the show's list.
+ *
+ * The offline copy is a swipe rather than a button on the right. A list of fifty episodes carried
+ * fifty controls, each one a target to aim at beside a row whose whole width already does something
+ * — and downloading is the action this screen exists for, so it gets the gesture the library and
+ * the queue give to theirs: a long pull, committed on release.
+ *
+ * One action rather than three, because there is only ever one thing to do with an episode's copy,
+ * and which one follows the state it is in. That is the same rule the button had; only its shape
+ * has changed.
+ *
+ * @param episode the episode.
+ * @param metadata the line under the title, already assembled.
+ * @param artworkUrl the episode's own artwork, or the show's.
+ * @param index the row's position, for the reorder actions.
+ * @param drag the reorder state the list shares.
+ * @param isReorderable whether this show's order is the user's to keep; only a YouTube playlist is.
+ * @param moveUp accessibility label for moving the row up.
+ * @param moveDown accessibility label for moving the row down.
+ * @param onClick plays the episode.
+ * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
+ *   current state means.
+ */
+@Composable
+private fun EpisodeListRow(
+    episode: Episode,
+    metadata: String,
+    artworkUrl: String?,
+    index: Int,
+    drag: ReorderableState<Episode>,
+    isReorderable: Boolean,
+    moveUp: String,
+    moveDown: String,
+    onClick: () -> Unit,
+    onDownloadToggle: () -> Unit,
+) {
+    val isDragging = drag.draggingKey == episode.id
+    val download = episode.downloadSwipeAction(onDownloadToggle)
+
+    SwipeActionsRow(
+        // Nothing to reveal: the row offers one thing, so it is the pull itself rather than a
+        // button behind it that would need a second tap to mean anything.
+        actions = emptyList(),
+        fullSwipeAction = download,
+        modifier = Modifier.graphicsLayer {
+            // Only the dragged row moves; the rest are re-laid-out by the list as the order
+            // changes underneath it.
+            translationY = if (isDragging) drag.offset.y else 0f
+            shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+        },
+    ) {
+        EpisodeRow(
+            // On the row rather than on the box around it: the row merges its children into one
+            // node, and that merged node is what a screen reader lands on. Neither the drag nor
+            // the swipe is visible to one, so both are published here as actions.
+            modifier = Modifier
+                .semantics {
+                    customActions = (
+                        if (isReorderable) drag.moveActions(index, moveUp, moveDown) else emptyList()
+                        ) + listOf(download).asAccessibilityActions()
+                }
+                // Inside the swipe box rather than around it, so the row's two drags are settled
+                // by the pointer that started them: this one consumes movement only once the
+                // press has been held, and a horizontal swipe claims the gesture long before that.
+                //
+                // Only where the order is the user's to keep: a long press on a row of an RSS
+                // show would pick it up and then refuse to put it anywhere.
+                .then(
+                    if (isReorderable) {
+                        Modifier.reorderableLongPressDrag(drag, episode.id)
+                    } else {
+                        Modifier
+                    },
+                ),
+            title = episode.title,
+            metadata = metadata,
+            artworkUrl = artworkUrl,
+            isUnplayed = episode.isNew,
+            isPlayed = episode.isPlayed,
+            playedFraction = episode.playedFraction,
+            onClick = onClick,
+        )
+    }
+}
+
+/**
+ * What the swipe on this episode does, which depends on what its offline copy is currently doing.
+ *
+ * The colours carry the difference the labels make in words: fetching something is the ordinary
+ * action, calling off a transfer takes nothing away, and deleting audio is the one that should look
+ * like it.
+ *
+ * @param onToggle the handler; the same one for every state, as the view model's toggle already
+ *   reads the state to decide.
+ * @return the action to hand to [SwipeActionsRow].
+ */
+@Composable
+private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = when (downloadState) {
+    // A failed download is retried rather than cleared, so it reads as "download" too.
+    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> SwipeAction(
+        icon = Icons.Rounded.FileDownload,
+        label = stringResource(R.string.podcast_action_download),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        onClick = onToggle,
+    )
+
+    DownloadState.QUEUED, DownloadState.DOWNLOADING -> SwipeAction(
+        icon = Icons.Rounded.Close,
+        label = stringResource(R.string.podcast_action_cancel_download),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        onClick = onToggle,
+    )
+
+    DownloadState.COMPLETED -> SwipeAction(
+        icon = Icons.Rounded.Delete,
+        label = stringResource(R.string.podcast_action_remove_download),
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        onClick = onToggle,
+    )
 }
 
 /**

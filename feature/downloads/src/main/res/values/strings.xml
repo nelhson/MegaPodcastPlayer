@@ -16,25 +16,20 @@
     <string name="downloads_empty_description">Episodes you download appear here and play without a connection.</string>
     <string name="downloads_empty_action">Go to your library</string>
 
-    <!-- Confirmation before deleting a whole selection, which no second tap can undo. -->
-    <plurals name="downloads_remove_dialog_title">
-        <item quantity="one">Remove %1$d download?</item>
-        <item quantity="other">Remove %1$d downloads?</item>
-    </plurals>
+    <!-- The two tiers of a row's swipe; also spoken as its accessibility actions, so both name an action. -->
+    <string name="downloads_action_queue">Add to queue</string>
+    <string name="downloads_action_remove">Remove</string>
+
+    <!-- A drag is invisible to a screen reader, so the reorder is published as these two actions. -->
+    <string name="downloads_move_up">Move up</string>
+    <string name="downloads_move_down">Move down</string>
+
+    <!-- Confirmation before deleting audio, which no second gesture undoes. %1$s is the episode. -->
+    <string name="downloads_remove_dialog_title">Remove \"%1$s\"?</string>
     <!-- %1$s is the freed size, e.g. "148 MB". -->
-    <string name="downloads_remove_dialog_text">This frees %1$s. The episodes stay in your library and can be downloaded again.</string>
+    <string name="downloads_remove_dialog_text">This frees %1$s. The episode stays in your library and can be downloaded again.</string>
     <string name="downloads_remove_confirm">Remove</string>
     <string name="downloads_cancel">Cancel</string>
-
-    <!-- Multi-selection: a long press starts it, and the floating bar carries what it can do. -->
-    <string name="downloads_select">Select</string>
-    <plurals name="downloads_selected">
-        <item quantity="one">%1$d selected</item>
-        <item quantity="other">%1$d selected</item>
-    </plurals>
-    <string name="downloads_select_all">Select all</string>
-    <string name="downloads_clear_selection">Clear the selection</string>
-    <string name="downloads_remove_selected">Remove the selected downloads</string>
 
     <!-- The storage card. %1$s is a size, e.g. "1.4 GB". -->
     <string name="downloads_storage_used">%1$s downloaded</string>
@@ -67,17 +62,8 @@
     <!-- Names the action, because tapping the row is what retries it. -->
     <string name="downloads_state_failed">Download failed — tap to try again</string>
 
-    <!-- Row buttons are reached out of reading order, so each names the episode it acts on. -->
-    <string name="downloads_queue_episode">Add %1$s to the queue</string>
-    <string name="downloads_remove_episode">Remove the download of %1$s</string>
-    <!-- The same button on a row that has not finished: it calls the transfer off. -->
-    <string name="downloads_cancel_episode">Cancel the download of %1$s</string>
-
     <string name="downloads_message_removed">Removed \"%1$s\" from this device</string>
-    <plurals name="downloads_message_removed_all">
-        <item quantity="one">Removed %1$d download</item>
-        <item quantity="other">Removed %1$d downloads</item>
-    </plurals>
+    <!-- The queue is another tab, so the button needs a word here or nothing visibly happens. -->
     <string name="downloads_message_queued">Added \"%1$s\" to the queue</string>
     <!-- A retry may sit waiting, so the confirmation says which of the two happened. -->
     <string name="downloads_message_retry_queued">Downloading \"%1$s\" again</string>

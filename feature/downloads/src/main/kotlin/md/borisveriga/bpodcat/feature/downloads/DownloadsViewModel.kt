@@ -19,7 +19,8 @@ import md.borisveriga.bpodcat.core.model.EpisodeWithShow
  * State rendered by the downloads screen.
  *
  * @property downloads every episode the download stack is tracking: completed, transferring,
- *   waiting and failed, failures first.
+ *   waiting and failed. In the order the user dragged them into, and failures first before they
+ *   have dragged anything; see [DownloadsViewModel.move].
  * @property completedCount how many of [downloads] are actually on the device. Counted separately
  *   because the storage summary answers "what is this costing me", and a transfer that is half done
  *   or has failed is not yet costing anything worth reporting.
@@ -31,6 +32,8 @@ import md.borisveriga.bpodcat.core.model.EpisodeWithShow
  * @property unmeteredOnly whether downloads wait for Wi-Fi, which is what lets a waiting row say
  *   why it is waiting rather than just that it is.
  * @property isLoading true until the first database emission arrives.
+ * @property isRefreshing true while a pull-to-refresh is re-reading the storage figures; drives
+ *   the gesture's own spinner, which is the only feedback it has.
  * @property message a one-off outcome for the snackbar; cleared via
  *   [DownloadsViewModel.onMessageShown].
  */
@@ -41,6 +44,7 @@ data class DownloadsUiState(
     val freeBytes: Long = 0L,
     val unmeteredOnly: Boolean = false,
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val message: DownloadsMessage? = null,
 )
 
@@ -60,21 +64,6 @@ sealed interface DownloadsMessage {
     data class Removed(val title: String) : DownloadsMessage
 
     /**
-     * Every download was deleted.
-     *
-     * @property count how many episodes went, so the confirmation is specific about what the tap
-     *   actually did.
-     */
-    data class RemovedAll(val count: Int) : DownloadsMessage
-
-    /**
-     * An episode was added to the end of the queue.
-     *
-     * @property title the episode's title.
-     */
-    data class Queued(val title: String) : DownloadsMessage
-
-    /**
      * A failed download was asked for again.
      *
      * Confirmed rather than left silent because the row it came from does not visibly change on the
@@ -87,7 +76,17 @@ sealed interface DownloadsMessage {
     data class RetryQueued(val title: String, val waitingForWifi: Boolean) : DownloadsMessage
 
     /**
-     * An episode could not be played or queued.
+     * One episode was added to the end of the queue.
+     *
+     * Confirmed because the row it came from does not change: the queue is a different tab, so
+     * without a word here a tap on the queue button is a tap with no visible effect at all.
+     *
+     * @property title the episode's title.
+     */
+    data class Queued(val title: String) : DownloadsMessage
+
+    /**
+     * An episode could not be played.
      *
      * Only reachable when the show is removed between the list rendering and the tap landing.
      */
@@ -121,6 +120,9 @@ class DownloadsViewModel @Inject constructor(
      */
     private val freeBytes = MutableStateFlow(0L)
 
+    /** True while a pull-to-refresh is in flight; see [refresh]. */
+    private val refreshing = MutableStateFlow(false)
+
     init {
         refreshFreeBytes()
     }
@@ -129,8 +131,9 @@ class DownloadsViewModel @Inject constructor(
         downloadRepository.observeDownloads(),
         downloadRepository.observeDownloadSettings(),
         freeBytes,
+        refreshing,
         transientState,
-    ) { downloads, settings, free, message ->
+    ) { downloads, settings, free, isRefreshing, message ->
         val completed = downloads.filter { it.episode.downloadState == DownloadState.COMPLETED }
         DownloadsUiState(
             downloads = downloads,
@@ -142,6 +145,7 @@ class DownloadsViewModel @Inject constructor(
             freeBytes = free,
             unmeteredOnly = settings.unmeteredOnly,
             isLoading = false,
+            isRefreshing = isRefreshing,
             message = message,
         )
     }.stateIn(
@@ -170,18 +174,26 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
-     * Appends an episode to the end of the queue without interrupting what is playing.
+     * Re-reads the storage figures, as the pull-to-refresh gesture.
      *
-     * @param episodeId the episode to queue.
+     * There is nothing to fetch here — the list is a live query, and a transfer's progress writes
+     * itself back — so what the gesture actually answers is the question the card at the top asks:
+     * how much room is left. That figure is sampled rather than observed (see [freeBytes]), so it
+     * is the one thing on this screen that can be stale, and the one thing worth a gesture.
+     *
+     * A second pull while one is running is ignored rather than queued: it would read the same
+     * number again.
      */
-    fun addToQueue(episodeId: String) {
+    fun refresh() {
+        if (refreshing.value) return
+        refreshing.value = true
         viewModelScope.launch {
-            val title = titleOf(episodeId)
-            val queued = episodePlayer.addToQueue(episodeId)
-            transientState.value = if (queued && title != null) {
-                DownloadsMessage.Queued(title)
-            } else {
-                DownloadsMessage.EpisodeUnavailable
+            try {
+                freeBytes.value = downloadRepository.freeBytes()
+            } finally {
+                // Also on cancellation: the view model dying takes the spinner with it, but a
+                // flag left true would otherwise outlive a cancelled read within the same screen.
+                refreshing.value = false
             }
         }
     }
@@ -230,43 +242,42 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
-     * Deletes every download, cancelling anything still in flight.
+     * Adds an episode to the end of the play queue.
      *
-     * The count covers the whole list rather than only the finished episodes, because that is
-     * genuinely what the sweep clears: a queued transfer stops being queued too.
+     * What the queue button on every row does, whatever state the download is in. An episode still
+     * transferring is deliberately allowed: the queue is a list of what to listen to next, and by
+     * the time it comes round the file will be there — refusing it would mean the user had to come
+     * back to this screen and remember.
      *
-     * The count is read before the removal, because afterwards there is nothing left to count.
+     * @param episodeId the episode to queue.
      */
-    fun removeAll() {
-        val count = uiState.value.downloads.size
-        if (count == 0) return
+    fun addToQueue(episodeId: String) {
+        val title = titleOf(episodeId) ?: return
         viewModelScope.launch {
-            downloadRepository.removeAllDownloads()
-            transientState.value = DownloadsMessage.RemovedAll(count)
-            refreshFreeBytes()
+            transientState.value = if (episodePlayer.addToQueue(episodeId)) {
+                DownloadsMessage.Queued(title)
+            } else {
+                DownloadsMessage.EpisodeUnavailable
+            }
         }
     }
 
     /**
-     * Deletes everything the user picked out, cancelling any of it that is still transferring.
+     * Applies a completed drag-to-reorder.
      *
-     * A selection covering the whole list is handed to [removeAll] instead: it is the same request,
-     * and Media3 can do it as one sweep rather than as one cancellation per episode.
+     * The whole arrangement is written rather than the two positions, because that is what the
+     * stored order is — see [DownloadRepository.reorderDownloads]. [visibleIds] is the list as it
+     * stood *before* the gesture, taken from the screen rather than re-read here: a transfer that
+     * finished mid-drag would otherwise re-sort the list under the indices and move the wrong row.
      *
-     * @param episodeIds the selected episodes. An empty set does nothing.
+     * @param visibleIds the downloads on screen, in the order they were in before the drag.
+     * @param from the row's position among those, before the drag.
+     * @param to where it was dropped.
      */
-    fun removeSelected(episodeIds: Set<String>) {
-        if (episodeIds.isEmpty()) return
-        val downloads = uiState.value.downloads
-        if (episodeIds.containsAll(downloads.map { it.episode.id })) {
-            removeAll()
-            return
-        }
-        viewModelScope.launch {
-            episodeIds.forEach { downloadRepository.removeDownload(it) }
-            transientState.value = DownloadsMessage.RemovedAll(episodeIds.size)
-            refreshFreeBytes()
-        }
+    fun move(visibleIds: List<String>, from: Int, to: Int) {
+        if (from !in visibleIds.indices || to !in visibleIds.indices || from == to) return
+        val reordered = visibleIds.toMutableList().apply { add(to, removeAt(from)) }
+        viewModelScope.launch { downloadRepository.reorderDownloads(reordered) }
     }
 
     /** Clears the current [DownloadsUiState.message] once its snackbar has been shown. */

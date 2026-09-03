@@ -75,6 +75,28 @@ class UserPreferencesDataSourceTest {
     }
 
     @Test
+    fun `the downloads order is empty until something is dragged`() = runTest {
+        assertEquals(emptyList<String>(), dataSource.downloadOrder.first())
+    }
+
+    @Test
+    fun `the downloads order round trips, keeping the order it was given`() = runTest {
+        dataSource.setDownloadOrder(listOf("c", "a", "b"))
+
+        assertEquals(listOf("c", "a", "b"), dataSource.downloadOrder.first())
+    }
+
+    @Test
+    fun `clearing the downloads order reads back as no order at all`() = runTest {
+        dataSource.setDownloadOrder(listOf("a"))
+        dataSource.setDownloadOrder(emptyList())
+
+        // An empty list is stored as an empty string, which splits into one empty id: without the
+        // filter the screen would think it had an arrangement and sort every row behind it.
+        assertEquals(emptyList<String>(), dataSource.downloadOrder.first())
+    }
+
+    @Test
     fun `auto play next round trips`() = runTest {
         dataSource.setAutoPlayNext(false)
 

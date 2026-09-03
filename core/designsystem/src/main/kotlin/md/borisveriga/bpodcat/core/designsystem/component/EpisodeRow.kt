@@ -59,6 +59,8 @@ import md.borisveriga.bpodcat.core.model.DownloadState
  * @param artworkSize which rung of [ArtworkSize] the leading square uses.
  * @param isUnplayed whether to mark the episode as new; draws the title heavier and adds a dot.
  * @param isPlayed whether the episode has been finished; dims the row.
+ * @param isDownloaded whether the audio is already on the device; marks the row so a list can be
+ *   read down for what will play without a connection.
  * @param playedFraction progress through the episode in `0f..1f`; drawn as a hairline under the row.
  * @param isNowPlaying whether this episode is the one loaded in the player.
  * @param isPlaying whether that episode is actually running, as opposed to loaded and paused.
@@ -83,6 +85,7 @@ fun EpisodeRow(
     artworkSize: ArtworkSize = ArtworkSize.Row,
     isUnplayed: Boolean = false,
     isPlayed: Boolean = false,
+    isDownloaded: Boolean = false,
     playedFraction: Float = 0f,
     isNowPlaying: Boolean = false,
     isPlaying: Boolean = false,
@@ -176,6 +179,16 @@ fun EpisodeRow(
                     }
                     if (isNowPlaying) {
                         NowPlayingBars(playing = isPlaying)
+                    }
+                    // With the dot and the bars rather than out at the end of the row: all three
+                    // are marks on the title, and a lone glyph on the far side would be read as a
+                    // control. The title takes what is left and ellipsises, as it already did.
+                    if (isDownloaded) {
+                        DownloadedMark(
+                            contentDescription = stringResource(
+                                R.string.designsystem_downloaded,
+                            ),
+                        )
                     }
                     Text(
                         text = title,

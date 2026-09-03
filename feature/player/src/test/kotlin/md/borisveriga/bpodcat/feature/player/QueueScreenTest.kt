@@ -14,6 +14,7 @@ import java.time.Instant
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.media.PlayableEpisode
 import md.borisveriga.bpodcat.core.media.PlaybackState
+import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -42,7 +43,10 @@ class QueueScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun playable(id: String) = PlayableEpisode(
+    private fun playable(
+        id: String,
+        downloadState: DownloadState = DownloadState.NOT_DOWNLOADED,
+    ) = PlayableEpisode(
         episode = Episode(
             id = id,
             podcastId = "podcast-1",
@@ -54,6 +58,7 @@ class QueueScreenTest {
             durationMs = 60_000L,
             publishedAt = Instant.parse("2026-08-24T06:00:00Z"),
             sizeBytes = null,
+            downloadState = downloadState,
         ),
         showTitle = "Podlodka Podcast",
         showArtworkUrl = null,
@@ -94,13 +99,36 @@ class QueueScreenTest {
     }
 
     @Test
-    fun `the episode playing is shown above the ones that follow it`() {
+    fun `the queue lists what is up next, and not what is already playing`() {
         setContent()
 
-        composeRule.onNodeWithText("Now playing").assertIsDisplayed()
-        composeRule.onNodeWithText("Up next").assertIsDisplayed()
-        composeRule.onNodeWithText("Episode a").assertIsDisplayed()
         composeRule.onNodeWithText("Episode b").assertIsDisplayed()
+        // No section header over the rows: the large app bar already says Queue, and a heading
+        // under it said the same thing twice.
+        composeRule.onNodeWithText("Up next").assertDoesNotExist()
+        // The player is what says this, on whichever screen the user is on. A second copy of it
+        // here was a row that could not be played, reordered or swiped away.
+        composeRule.onNodeWithText("Now playing").assertDoesNotExist()
+        composeRule.onNodeWithText("Episode a").assertDoesNotExist()
+    }
+
+    /**
+     * What a queue row is asked at a glance is whether it will play away from a connection, and
+     * that is the one thing the row's text does not say.
+     */
+    @Test
+    fun `a queued episode that is on the device is marked`() {
+        setContent(
+            playingFirst.copy(
+                queue = listOf(
+                    playable("a"),
+                    playable("b", downloadState = DownloadState.COMPLETED),
+                    playable("c"),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Downloaded").assertExists()
     }
 
     @Test

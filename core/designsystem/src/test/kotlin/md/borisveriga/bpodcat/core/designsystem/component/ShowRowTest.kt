@@ -6,6 +6,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -46,6 +47,27 @@ class ShowRowTest {
         composeTestRule.onNodeWithText("Podlodka Podcast").assertIsDisplayed()
         composeTestRule.onNodeWithText("Egor Tolstoy").assertIsDisplayed()
         composeTestRule.onNodeWithText("412 episodes · 2 downloaded").assertIsDisplayed()
+    }
+
+    /**
+     * The counts line already says "2 downloaded", so the mark beside it is decoration and has to
+     * stay silent: the alternative is TalkBack reading the same fact twice in one breath. Same
+     * reasoning as the library's new-episode badge, which is muted for the same reason.
+     */
+    @Test
+    fun `marks a show with stored episodes without announcing it twice`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                ShowRow(
+                    title = "Podlodka Podcast",
+                    metadata = "412 episodes · 2 downloaded",
+                    isDownloaded = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("412 episodes · 2 downloaded").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Downloaded").assertDoesNotExist()
     }
 
     @Test

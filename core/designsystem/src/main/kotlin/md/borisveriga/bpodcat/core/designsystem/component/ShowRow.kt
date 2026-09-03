@@ -37,6 +37,8 @@ import md.borisveriga.bpodcat.core.model.PodcastSource
  * @param metadata the detail line, e.g. `412 episodes · 2 downloaded`. Set in tabular figures, so
  *   counts line up down the list.
  * @param artworkUrl cover art; null renders the themed placeholder.
+ * @param isDownloaded whether any episode of the show is on the device; marks the row so the
+ *   library can be read down for what will play without a connection.
  * @param source draws the badge that marks where the show came from; null draws none.
  * @param stateDescription what TalkBack announces about the row beyond its text, e.g. "3 new
  *   episodes". Null when the row has no state worth naming.
@@ -52,6 +54,7 @@ fun ShowRow(
     author: String? = null,
     metadata: String? = null,
     artworkUrl: String? = null,
+    isDownloaded: Boolean = false,
     source: PodcastSource? = null,
     stateDescription: String? = null,
     onClick: (() -> Unit)? = null,
@@ -114,14 +117,28 @@ fun ShowRow(
                     }
                 }
             }
-            if (metadata != null) {
-                Text(
-                    text = metadata,
-                    style = BPodcatTheme.type.numeric,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (metadata != null || isDownloaded) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.xs),
+                ) {
+                    // Leading the counts rather than marking the title: on a show the fact is
+                    // about how many of its episodes are stored, which is what this line says.
+                    // No description — the line it sits on already spells out "2 downloaded",
+                    // and a second reading of the same fact is noise.
+                    if (isDownloaded) {
+                        DownloadedMark()
+                    }
+                    if (metadata != null) {
+                        Text(
+                            text = metadata,
+                            style = BPodcatTheme.type.numeric,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
 

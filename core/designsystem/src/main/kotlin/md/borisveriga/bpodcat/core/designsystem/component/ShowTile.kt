@@ -1,5 +1,6 @@
 package md.borisveriga.bpodcat.core.designsystem.component
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,12 +15,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import md.borisveriga.bpodcat.core.designsystem.R
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.designsystem.theme.ThemePreviews
 import md.borisveriga.bpodcat.core.model.PodcastSource
@@ -38,6 +42,9 @@ import md.borisveriga.bpodcat.core.model.PodcastSource
  * @param author the publisher, one line under the title.
  * @param source draws the badge that marks where the show came from; null draws none.
  * @param badgeCount unplayed episodes; a count over the artwork's corner, hidden when zero.
+ * @param isDownloaded whether any episode of the show is on the device; marks the opposite corner
+ *   of the cover. Unlike [ShowRow], the tile is announced — a tile carries no counts line, so
+ *   nothing else here says it.
  * @param stateDescription what TalkBack announces beyond the tile's text, e.g. "3 new episodes";
  *   the badge itself is decorative, because a bare number read out means nothing.
  * @param onClick invoked when the tile is pressed.
@@ -50,6 +57,7 @@ fun ShowTile(
     author: String? = null,
     source: PodcastSource? = null,
     badgeCount: Int = 0,
+    isDownloaded: Boolean = false,
     stateDescription: String? = null,
     onClick: (() -> Unit)? = null,
 ) {
@@ -93,6 +101,24 @@ fun ShowTile(
                     Text(text = badgeCount.toString())
                 }
             }
+            if (isDownloaded) {
+                // The far corner from the badge, so a show that is both new and downloaded says
+                // both things instead of stacking them. On its own disc of surface colour, because
+                // the thing behind it is arbitrary artwork: a bare glyph disappears into roughly
+                // half the covers in a library, and the half it disappears into is unpredictable.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(BPodcatTheme.spacing.sm)
+                        .clip(BPodcatTheme.shapes.pill)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(BPodcatTheme.spacing.xxs),
+                ) {
+                    DownloadedMark(
+                        contentDescription = stringResource(R.string.designsystem_downloaded),
+                    )
+                }
+            }
         }
 
         Text(
@@ -133,6 +159,7 @@ private fun ShowTilePreview() {
             author = "Egor Tolstoy",
             source = PodcastSource.RSS,
             badgeCount = 3,
+            isDownloaded = true,
             stateDescription = "3 new episodes",
             onClick = {},
         )

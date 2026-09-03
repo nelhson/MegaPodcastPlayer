@@ -76,6 +76,23 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Observes the hand-made ordering of the downloads screen, first row first.
+     *
+     * Empty until the user drags something, which is what leaves the screen on the state-based
+     * ordering the DAO produces until then. Ids that are no longer downloads are kept rather than
+     * pruned: an episode removed and fetched again should come back where it was put, and the list
+     * is at most a few hundred forty-character ids.
+     */
+    val downloadOrder: Flow<List<String>> = dataStore.data.map { preferences ->
+        preferences[Keys.DOWNLOAD_ORDER]
+            ?.split(ID_SEPARATOR)
+            // A stored empty string splits to one empty id, which would match no episode but would
+            // still make the order look non-empty.
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+    }
+
+    /**
      * Observes the episode the player was last given, or null if nothing has been played.
      *
      * This is what lets a cold start — or a system-initiated playback resumption from the
@@ -150,6 +167,19 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Stores the hand-made ordering of the downloads screen.
+     *
+     * Written as one separated string rather than a `stringSet`, which DataStore does not order.
+     * Episode ids are SHA-1 hex (see `episodeIdOf` in `:core:model`), so no id can contain the
+     * separator and the round trip is lossless.
+     *
+     * @param episodeIds the downloads in the order they should appear, first row first.
+     */
+    suspend fun setDownloadOrder(episodeIds: List<String>) {
+        dataStore.edit { it[Keys.DOWNLOAD_ORDER] = episodeIds.joinToString(ID_SEPARATOR) }
+    }
+
+    /**
      * Records which episode the player is on.
      *
      * @param episodeId the episode, or null once the player is stopped and the queue is empty.
@@ -176,10 +206,14 @@ class UserPreferencesDataSource @Inject constructor(
         val KEEP_LIMIT = intPreferencesKey("download_keep_limit_per_podcast")
         val DELETE_AFTER_PLAYING = booleanPreferencesKey("delete_after_playing")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
+        val DOWNLOAD_ORDER = stringPreferencesKey("download_order")
     }
 
     private companion object {
         /** Anything shorter than a second is a mis-tap, not a preference. */
         const val MIN_SKIP_MS = 1_000L
+
+        /** Separates the ids in the stored downloads order; see [setDownloadOrder]. */
+        const val ID_SEPARATOR = "\n"
     }
 }

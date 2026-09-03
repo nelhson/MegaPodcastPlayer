@@ -4,6 +4,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -54,8 +55,23 @@ class MediaDownloadRepository @Inject constructor(
     override fun observeDownloadedEpisodes(): Flow<List<Episode>> =
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
 
-    override fun observeDownloads(): Flow<List<EpisodeWithShow>> =
-        episodeDao.observeDownloadsWithShow().map { rows -> rows.map { it.asEpisodeWithShow() } }
+    override fun observeDownloads(): Flow<List<EpisodeWithShow>> = combine(
+        episodeDao.observeDownloadsWithShow().map { rows -> rows.map { it.asEpisodeWithShow() } },
+        userPreferences.downloadOrder,
+    ) { downloads, order ->
+        if (order.isEmpty()) return@combine downloads
+
+        // A map rather than `indexOf` per row: the stored order keeps ids that are no longer
+        // downloads, so it can be much longer than the list being sorted.
+        val positions = order.withIndex().associate { (index, id) -> id to index }
+        // Anything the user has never placed sorts after everything they have, keeping the DAO's
+        // own ordering among themselves — `sortedBy` is stable, so a newly failed download arrives
+        // at the bottom rather than displacing a row that was put where it is on purpose.
+        downloads.sortedBy { positions[it.episode.id] ?: UNPLACED }
+    }
+
+    override suspend fun reorderDownloads(episodeIds: List<String>) =
+        userPreferences.setDownloadOrder(episodeIds)
 
     override suspend fun downloadedBytes(): Long = downloader.downloadedBytes()
 
@@ -181,4 +197,9 @@ class MediaDownloadRepository @Inject constructor(
 
     override suspend fun setDeleteAfterPlaying(enabled: Boolean) =
         userPreferences.setDeleteAfterPlaying(enabled)
+
+    private companion object {
+        /** Where a download the user has never dragged sorts: after everything they have placed. */
+        const val UNPLACED = Int.MAX_VALUE
+    }
 }

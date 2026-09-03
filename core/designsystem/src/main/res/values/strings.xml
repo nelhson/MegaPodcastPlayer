@@ -32,6 +32,9 @@
     <string name="designsystem_download_remove">Downloaded, remove from device</string>
     <string name="designsystem_download_retry">Download failed, retry</string>
 
+    <!-- The mark on a row that is already stored. Not a control, so it names the fact, not an action. -->
+    <string name="designsystem_downloaded">Downloaded</string>
+
     <!-- The app bar's back arrow. Overridable, but this is the right answer nearly everywhere. -->
     <string name="designsystem_back">Back</string>
 

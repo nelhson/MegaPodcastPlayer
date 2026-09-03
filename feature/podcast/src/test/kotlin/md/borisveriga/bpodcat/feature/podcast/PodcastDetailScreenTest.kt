@@ -90,6 +90,7 @@ class PodcastDetailScreenTest {
         onAutoRefreshChange: (Boolean) -> Unit = {},
         onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
+        onEpisodeDownloadToggle: (String) -> Unit = {},
         isRebuilding: Boolean = false,
     ) {
         composeRule.setContent {
@@ -103,7 +104,7 @@ class PodcastDetailScreenTest {
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
-                    onEpisodeDownloadToggle = {},
+                    onEpisodeDownloadToggle = onEpisodeDownloadToggle,
                     onEpisodeMove = onEpisodeMove,
                     onRefresh = {},
                     onAutoRefreshChange = onAutoRefreshChange,
@@ -336,6 +337,43 @@ class PodcastDetailScreenTest {
         }
 
         assertEquals(emptyList<Triple<List<String>, Int, Int>>(), moves)
+    }
+
+    @Test
+    fun `a row's swipe downloads it, and no button on the right does it any more`() {
+        val toggled = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a")),
+            onEpisodeDownloadToggle = { toggled += it },
+        )
+
+        // The button that used to carry this is gone; the row itself carries it now.
+        composeRule.onNodeWithContentDescription("Download").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Download")
+
+        assertEquals(listOf("a"), toggled)
+    }
+
+    @Test
+    fun `the swipe says what it will do, which follows the state the copy is in`() {
+        setScreen(
+            episodes = listOf(
+                episode("stored", downloadState = DownloadState.COMPLETED),
+                episode("busy", downloadState = DownloadState.DOWNLOADING),
+                episode("broken", downloadState = DownloadState.FAILED),
+            ),
+        )
+
+        // Deleting audio, calling a transfer off and trying a failure again are three different
+        // promises, and the gesture that makes them is the same one — so the label is all the
+        // user, or a screen reader, has to tell them apart.
+        composeRule.onNodeWithText("Episode stored")
+            .performCustomAccessibilityAction("Remove download")
+        composeRule.onNodeWithText("Episode busy")
+            .performCustomAccessibilityAction("Cancel download")
+        composeRule.onNodeWithText("Episode broken")
+            .performCustomAccessibilityAction("Download")
     }
 
     @Test

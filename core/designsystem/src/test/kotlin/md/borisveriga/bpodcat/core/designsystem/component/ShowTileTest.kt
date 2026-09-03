@@ -2,6 +2,7 @@ package md.borisveriga.bpodcat.core.designsystem.component
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -53,6 +54,32 @@ class ShowTileTest {
         }
 
         composeTestRule.onNodeWithText("0").assertDoesNotExist()
+    }
+
+    /**
+     * Spoken, unlike the row's mark: a tile has no counts line under it, so nothing else on it
+     * says whether the show can be played away from a connection.
+     */
+    @Test
+    fun `marks a show with stored episodes, and says so`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                ShowTile(title = "Podlodka Podcast", isDownloaded = true, onClick = {})
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Downloaded").assertExists()
+    }
+
+    @Test
+    fun `leaves a show with nothing stored unmarked`() {
+        composeTestRule.setContent {
+            BPodcatTheme {
+                ShowTile(title = "Acquired", onClick = {})
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Downloaded").assertDoesNotExist()
     }
 
     @Test

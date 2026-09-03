@@ -351,6 +351,7 @@ private fun ShowGrid(
                 author = entry.podcast.author,
                 source = entry.podcast.source,
                 badgeCount = entry.newEpisodeCount,
+                isDownloaded = entry.downloadedCount > 0,
                 stateDescription = entry.newEpisodeDescription(resources),
                 onClick = { onPodcastClick(entry.podcast.id) },
                 modifier = Modifier
@@ -502,6 +503,7 @@ private fun ShowListRow(
             author = entry.podcast.author,
             metadata = entry.countsLine(resources),
             artworkUrl = entry.podcast.artworkUrl,
+            isDownloaded = entry.downloadedCount > 0,
             source = entry.podcast.source,
             stateDescription = entry.newEpisodeDescription(resources),
             onClick = onPodcastClick,

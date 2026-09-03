@@ -83,6 +83,16 @@
     <string name="podcast_move_up">Move up</string>
     <string name="podcast_move_down">Move down</string>
 
+    <!--
+        The swipe on a row, which replaced the button that used to sit on its right. One action
+        with three faces, because an episode's offline copy is only ever in one of three positions:
+        not here, on its way, or here. Each is also spoken as the row's accessibility action, so
+        each has to read as something to do rather than as a state.
+    -->
+    <string name="podcast_action_download">Download</string>
+    <string name="podcast_action_cancel_download">Cancel download</string>
+    <string name="podcast_action_remove_download">Remove download</string>
+
     <!-- Snackbars. -->
     <plurals name="podcast_message_new_episodes">
         <item quantity="one">%1$d new episode</item>

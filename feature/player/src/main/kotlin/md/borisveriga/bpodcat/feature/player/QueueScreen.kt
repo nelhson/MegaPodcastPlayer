@@ -35,7 +35,6 @@ import md.borisveriga.bpodcat.core.designsystem.component.ArtworkSize
 import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
-import md.borisveriga.bpodcat.core.designsystem.component.SectionHeader
 import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
 import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
@@ -45,6 +44,7 @@ import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayou
 import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
 import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.media.PlayableEpisode
+import md.borisveriga.bpodcat.core.model.DownloadState
 
 /**
  * The play queue.
@@ -144,9 +144,7 @@ fun QueueScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        val nowPlaying = uiState.queue.firstOrNull { it.episode.id == uiState.playback.episodeId }
-
-        if (nowPlaying == null && drag.order.isEmpty()) {
+        if (drag.order.isEmpty()) {
             EmptyState(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 title = stringResource(R.string.queue_empty_title),
@@ -162,30 +160,6 @@ fun QueueScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (nowPlaying != null) {
-                item(key = NOW_PLAYING_KEY) {
-                    SectionHeader(text = stringResource(R.string.queue_now_playing))
-                    // No swipe on this one: "remove" and "mark played" both mean "stop playing
-                    // this", which is what the player's own controls are for, and a gesture that
-                    // silently stopped the audio would be a surprising thing to find by accident.
-                    EpisodeRow(
-                        title = nowPlaying.episode.title,
-                        showTitle = nowPlaying.showTitle,
-                        artworkUrl = nowPlaying.artworkUrl,
-                        artworkSize = ArtworkSize.Row,
-                        playedFraction = uiState.playback.progress,
-                        isNowPlaying = true,
-                        isPlaying = uiState.playback.isPlaying,
-                    )
-                }
-            }
-
-            if (drag.order.isNotEmpty()) {
-                item(key = UP_NEXT_KEY) {
-                    SectionHeader(text = stringResource(R.string.player_up_next))
-                }
-            }
-
             itemsIndexed(drag.order, key = { _, entry -> entry.episode.id }) { index, entry ->
                 QueueEntry(
                     entry = entry,
@@ -285,6 +259,9 @@ private fun QueueEntry(
             showTitle = entry.showTitle,
             artworkUrl = entry.artworkUrl,
             artworkSize = ArtworkSize.Row,
+            // The queue is where the offline question is actually asked: these are the episodes
+            // about to play, and which of them need a connection decides what is safe to start.
+            isDownloaded = entry.episode.downloadState == DownloadState.COMPLETED,
             playedFraction = entry.episode.playedFraction,
             onClick = onPlay,
         )
@@ -306,6 +283,4 @@ private fun QueueMessage.toText(resources: Resources): String = when (this) {
         resources.getString(R.string.queue_message_marked_played, episodeTitle)
 }
 
-private const val NOW_PLAYING_KEY = "now-playing"
-private const val UP_NEXT_KEY = "up-next"
 private const val DRAG_ELEVATION = 8f

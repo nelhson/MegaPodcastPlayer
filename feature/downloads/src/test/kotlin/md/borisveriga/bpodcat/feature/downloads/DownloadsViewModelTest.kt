@@ -6,6 +6,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -29,8 +30,9 @@ import org.junit.Test
  *
  * The screen has to be an honest picture of what the download stack is doing and let the user act
  * on it, so the cases worth pinning are the storage total it reports — which counts only finished
- * episodes even though the list shows more than those — the retry path, and the two removal paths,
- * including the one that must not fire on an empty list.
+ * episodes even though the list shows more than those — the retry and removal paths, and the
+ * pull-to-refresh, whose whole job is the one figure on the screen that is sampled rather than
+ * observed.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadsViewModelTest {
@@ -113,33 +115,6 @@ class DownloadsViewModelTest {
     }
 
     @Test
-    fun `removing all reports the count that was there before the sweep`() = runTest {
-        downloads.value = listOf(download("a"), download("b"), download("c"))
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.removeAll()
-
-            coVerify { downloadRepository.removeAllDownloads() }
-            assertEquals(DownloadsMessage.RemovedAll(3), awaitItem().message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `removing all does nothing when there is nothing downloaded`() = runTest {
-        downloads.value = emptyList()
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.removeAll()
-
-            coVerify(exactly = 0) { downloadRepository.removeAllDownloads() }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
     fun `playing a downloaded episode opens the player`() = runTest {
         downloads.value = listOf(download("a"))
         coEvery { episodePlayer.play("a") } returns true
@@ -168,21 +143,6 @@ class DownloadsViewModelTest {
 
             assertFalse(opened)
             assertEquals(DownloadsMessage.EpisodeUnavailable, awaitItem().message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `queueing an episode confirms with its title`() = runTest {
-        downloads.value = listOf(download("a"))
-        coEvery { episodePlayer.addToQueue("a") } returns true
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.addToQueue("a")
-
-            assertEquals(DownloadsMessage.Queued("Episode a"), awaitItem().message)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -298,22 +258,86 @@ class DownloadsViewModelTest {
     }
 
     @Test
-    fun `removing all counts the transfers it cancels as well as the files it deletes`() = runTest {
-        downloads.value = listOf(
-            download("done"),
-            download("busy", downloadState = DownloadState.DOWNLOADING),
-            download("waiting", downloadState = DownloadState.QUEUED),
-        )
+    fun `queueing a download adds it to the queue and confirms it by name`() = runTest {
+        downloads.value = listOf(download("a"))
+        coEvery { episodePlayer.addToQueue("a") } returns true
 
         viewModel.uiState.test {
             awaitItem()
 
-            viewModel.removeAll()
+            viewModel.addToQueue("a")
 
-            coVerify { downloadRepository.removeAllDownloads() }
-            // Three rows go, so the confirmation says three: the sweep stops the queued and
-            // in-flight transfers too, and claiming one would misdescribe what just happened.
-            assertEquals(DownloadsMessage.RemovedAll(3), awaitItem().message)
+            coVerify { episodePlayer.addToQueue("a") }
+            // The queue is another tab, so the row does not visibly change: without the message a
+            // tap on the button looks like a tap that missed.
+            assertEquals(DownloadsMessage.Queued("Episode a"), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a transfer that has not finished can still be queued`() = runTest {
+        downloads.value = listOf(
+            download("busy", downloadState = DownloadState.DOWNLOADING, downloadPercent = 40f),
+        )
+        coEvery { episodePlayer.addToQueue("busy") } returns true
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.addToQueue("busy")
+
+            // The file will have arrived by the time the queue reaches it; refusing here would
+            // mean coming back to this screen and remembering.
+            coVerify { episodePlayer.addToQueue("busy") }
+            assertEquals(DownloadsMessage.Queued("Episode busy"), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `queueing an episode that has gone is reported rather than claimed`() = runTest {
+        downloads.value = listOf(download("a"))
+        // The show was removed between the row rendering and the tap landing.
+        coEvery { episodePlayer.addToQueue("a") } returns false
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.addToQueue("a")
+
+            assertEquals(DownloadsMessage.EpisodeUnavailable, awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a completed drag stores the whole arrangement, not the two positions`() = runTest {
+        downloads.value = listOf(download("a"), download("b"), download("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.move(visibleIds = listOf("a", "b", "c"), from = 2, to = 0)
+
+            coVerify { downloadRepository.reorderDownloads(listOf("c", "a", "b")) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a drag reported against a list that has moved on is ignored`() = runTest {
+        downloads.value = listOf(download("a"))
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            // A transfer finishing can re-sort the list mid-gesture, leaving an index that names
+            // nothing; writing an arrangement built from it would scramble the order.
+            viewModel.move(visibleIds = listOf("a", "b"), from = 1, to = 5)
+            viewModel.move(visibleIds = listOf("a", "b"), from = 0, to = 0)
+
+            coVerify(exactly = 0) { downloadRepository.reorderDownloads(any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -333,52 +357,50 @@ class DownloadsViewModelTest {
     }
 
     @Test
-    fun `removing a selection deletes exactly what was picked`() = runTest {
-        downloads.value = listOf(download("a"), download("b"), download("c"))
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.removeSelected(setOf("a", "c"))
-
-            coVerify { downloadRepository.removeDownload("a") }
-            coVerify { downloadRepository.removeDownload("c") }
-            coVerify(exactly = 0) { downloadRepository.removeDownload("b") }
-            coVerify(exactly = 0) { downloadRepository.removeAllDownloads() }
-            assertEquals(DownloadsMessage.RemovedAll(2), awaitItem().message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `selecting everything is the sweep, not one cancellation per episode`() = runTest {
-        downloads.value = listOf(download("a"), download("b"))
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.removeSelected(setOf("a", "b"))
-
-            coVerify { downloadRepository.removeAllDownloads() }
-            coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
-            assertEquals(DownloadsMessage.RemovedAll(2), awaitItem().message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `an empty selection does nothing at all`() = runTest {
+    fun `a pull re-reads free space and puts the spinner away afterwards`() = runTest {
         downloads.value = listOf(download("a"))
 
         viewModel.uiState.test {
+            assertEquals(FREE_BYTES, awaitItem().freeBytes)
+
+            // A different figure the second time, so the assertion is about the re-read rather
+            // than about the number happening to match.
+            coEvery { downloadRepository.freeBytes() } returns FREE_BYTES / 2
+
+            viewModel.refresh()
+
+            assertTrue("The gesture has to show it registered", awaitItem().isRefreshing)
+
+            val done = awaitItem()
+            assertFalse(done.isRefreshing)
+            assertEquals(FREE_BYTES / 2, done.freeBytes)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a second pull while one is running reads nothing twice`() = runTest {
+        downloads.value = listOf(download("a"))
+        // Held open so the two pulls genuinely overlap: without this the first finishes between
+        // them and the second is a fresh gesture rather than the one the guard is there for.
+        val firstRead = CompletableDeferred<Unit>()
+        coEvery { downloadRepository.freeBytes() } coAnswers {
+            firstRead.await()
+            FREE_BYTES
+        }
+
+        viewModel.uiState.test {
             awaitItem()
 
-            viewModel.removeSelected(emptySet())
+            viewModel.refresh()
+            viewModel.refresh()
+            firstRead.complete(Unit)
 
-            coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
-            coVerify(exactly = 0) { downloadRepository.removeAllDownloads() }
-            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
         }
+
+        // Once from `init` and once from the pair of pulls: the second found one already running.
+        coVerify(exactly = 2) { downloadRepository.freeBytes() }
     }
 }
 

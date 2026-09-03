@@ -19,14 +19,13 @@
     <string name="player_idle_title">Nothing playing</string>
     <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>
 
-    <string name="player_up_next">Up next</string>
-
     <!--
-        The queue screen. Its title names the whole list; "Up next" heads the editable part. It is a
-        top-level tab, so there is no back arrow and no label for one.
+        The queue screen. Its title names the whole list, so nothing heads the rows: a section
+        header under a large app bar that already says "Queue" only repeated it. It is a top-level
+        tab, so there is no back arrow and no label for one. What is playing is not repeated here
+        either — the player says that, on every screen.
     -->
     <string name="queue_title">Queue</string>
-    <string name="queue_now_playing">Now playing</string>
     <string name="queue_empty_title">Nothing queued</string>
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>
 

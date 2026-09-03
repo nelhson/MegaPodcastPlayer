@@ -1,7 +1,6 @@
 package md.borisveriga.bpodcat.feature.downloads
 
 import android.content.res.Resources
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,19 +14,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DownloadDone
-import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -35,24 +31,25 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -64,11 +61,17 @@ import md.borisveriga.bpodcat.core.common.format.formatDuration
 import md.borisveriga.bpodcat.core.common.format.formatPublishedDate
 import md.borisveriga.bpodcat.core.common.format.formatRemaining
 import md.borisveriga.bpodcat.core.designsystem.component.BPodcatLargeTopAppBar
-import md.borisveriga.bpodcat.core.designsystem.component.DownloadButton
 import md.borisveriga.bpodcat.core.designsystem.component.EmptyState
 import md.borisveriga.bpodcat.core.designsystem.component.EpisodeRow
 import md.borisveriga.bpodcat.core.designsystem.component.LoadingState
-import md.borisveriga.bpodcat.core.designsystem.component.SelectionToolbar
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeAction
+import md.borisveriga.bpodcat.core.designsystem.component.SwipeActionsRow
+import md.borisveriga.bpodcat.core.designsystem.component.asAccessibilityActions
+import md.borisveriga.bpodcat.core.designsystem.reorder.ReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.moveActions
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableLayout
+import md.borisveriga.bpodcat.core.designsystem.reorder.rememberReorderableState
+import md.borisveriga.bpodcat.core.designsystem.reorder.reorderableLongPressDrag
 import md.borisveriga.bpodcat.core.designsystem.theme.BPodcatTheme
 import md.borisveriga.bpodcat.core.model.DownloadState
 import md.borisveriga.bpodcat.core.model.Episode
@@ -97,10 +100,11 @@ fun DownloadsRoute(
     DownloadsScreen(
         uiState = uiState,
         onEpisodeClick = { episodeId -> viewModel.play(episodeId, onEpisodePlaying) },
-        onEpisodeQueue = viewModel::addToQueue,
         onEpisodeRetry = viewModel::retry,
         onEpisodeRemove = viewModel::remove,
-        onRemoveSelected = viewModel::removeSelected,
+        onEpisodeQueue = viewModel::addToQueue,
+        onMove = viewModel::move,
+        onRefresh = viewModel::refresh,
         onBrowseLibrary = onBrowseLibrary,
         onMessageShown = viewModel::onMessageShown,
         modifier = modifier,
@@ -113,11 +117,14 @@ fun DownloadsRoute(
  * @param uiState what to render.
  * @param onEpisodeClick episode tap handler; a tap plays a finished episode. Called only for
  *   rows that are actually on the device.
- * @param onEpisodeQueue add-to-queue handler.
  * @param onEpisodeRetry retry handler for a failed download.
  * @param onEpisodeRemove delete-this-download handler; cancels the transfer when it has not
- *   finished.
- * @param onRemoveSelected delete-these-downloads handler; the screen confirms first.
+ *   finished. A finished episode is confirmed first by the screen; a transfer is not.
+ * @param onEpisodeQueue adds an episode to the end of the play queue.
+ * @param onMove applies a completed drag. Takes the ids on screen in the order they were in
+ *   *before* the gesture, then the two positions within them: one gesture is one edit, and the
+ *   list is re-sorted by the download stack often enough that indices alone would go stale.
+ * @param onRefresh pull-to-refresh handler.
  * @param onBrowseLibrary empty-state action handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -127,10 +134,11 @@ fun DownloadsRoute(
 fun DownloadsScreen(
     uiState: DownloadsUiState,
     onEpisodeClick: (String) -> Unit,
-    onEpisodeQueue: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
     onEpisodeRemove: (String) -> Unit,
-    onRemoveSelected: (Set<String>) -> Unit,
+    onEpisodeQueue: (String) -> Unit,
+    onMove: (List<String>, Int, Int) -> Unit,
+    onRefresh: () -> Unit,
     onBrowseLibrary: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -142,15 +150,10 @@ fun DownloadsScreen(
     val resources = LocalResources.current
     val now = remember { Instant.now() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    // Saveable so neither the selection nor the confirmation vanishes when the Fold 7 is opened
-    // mid-decision.
-    var selection by rememberSaveable(saver = selectionSaver) { mutableStateOf(emptySet<String>()) }
-    var confirmingRemoval by rememberSaveable { mutableStateOf(false) }
-
-    // Rows can leave the list under the selection — a transfer finishing does not change an id, but
-    // a keep-limit sweep can remove one — so the selection is pruned to what is actually on screen.
-    // Without this, "Remove 3" could act on an episode the user can no longer see.
-    val selectedIds = selection intersect uiState.downloads.map { it.episode.id }.toSet()
+    // Saveable so a decision half-made does not vanish when the Fold 7 is opened mid-thought. The
+    // id rather than the episode: the row it names is re-read from the list below, which is what
+    // makes a confirmation for an episode that has since gone resolve to no dialog at all.
+    var pendingRemovalId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -158,22 +161,16 @@ fun DownloadsScreen(
         onMessageShown()
     }
 
-    // The selection is the innermost thing on screen while it exists, so back clears it rather than
-    // leaving the tab with rows still highlighted.
-    BackHandler(enabled = selectedIds.isNotEmpty()) { selection = emptySet() }
-
-    if (confirmingRemoval) {
+    val pendingRemoval = uiState.downloads.firstOrNull { it.episode.id == pendingRemovalId }
+    if (pendingRemoval != null) {
         RemovalDialog(
-            count = selectedIds.size,
-            freedBytes = uiState.downloads
-                .filter { it.episode.id in selectedIds }
-                .sumOf { it.episode.downloadedBytes },
+            title = pendingRemoval.episode.title,
+            freedBytes = pendingRemoval.episode.downloadedBytes,
             onConfirm = {
-                confirmingRemoval = false
-                onRemoveSelected(selectedIds)
-                selection = emptySet()
+                pendingRemovalId = null
+                onEpisodeRemove(pendingRemoval.episode.id)
             },
-            onDismiss = { confirmingRemoval = false },
+            onDismiss = { pendingRemovalId = null },
         )
     }
 
@@ -205,49 +202,30 @@ fun DownloadsScreen(
                     onAction = onBrowseLibrary,
                 )
 
-                else -> DownloadList(
-                    uiState = uiState,
-                    now = now,
-                    selectedIds = selectedIds,
-                    onEpisodeClick = onEpisodeClick,
-                    onEpisodeRetry = onEpisodeRetry,
-                    onEpisodeQueue = onEpisodeQueue,
-                    onEpisodeRemove = onEpisodeRemove,
-                    onToggleSelected = { id ->
-                        selection = if (id in selectedIds) selectedIds - id else selectedIds + id
-                    },
-                )
-            }
-
-            SelectionToolbar(
-                visible = selectedIds.isNotEmpty(),
-                label = pluralStringResource(
-                    R.plurals.downloads_selected,
-                    selectedIds.size,
-                    selectedIds.size,
-                ),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(BPodcatTheme.spacing.lg),
-            ) {
-                IconButton(
-                    onClick = { selection = uiState.downloads.map { it.episode.id }.toSet() },
+                // The gesture needs something scrollable under it, which is why the empty state
+                // above is outside it: there is nothing to pull.
+                else -> PullToRefreshBox(
+                    isRefreshing = uiState.isRefreshing,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize(),
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SelectAll,
-                        contentDescription = stringResource(R.string.downloads_select_all),
-                    )
-                }
-                IconButton(onClick = { confirmingRemoval = true }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = stringResource(R.string.downloads_remove_selected),
-                    )
-                }
-                IconButton(onClick = { selection = emptySet() }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = stringResource(R.string.downloads_clear_selection),
+                    DownloadList(
+                        uiState = uiState,
+                        now = now,
+                        onEpisodeClick = onEpisodeClick,
+                        onEpisodeRetry = onEpisodeRetry,
+                        onEpisodeQueue = onEpisodeQueue,
+                        onMove = onMove,
+                        // A finished episode is a file the user would have to fetch again, so it
+                        // asks first. A transfer that has not finished is not: calling it off is
+                        // exactly what the ring on the same row already does with one tap.
+                        onEpisodeRemove = { download ->
+                            if (download.episode.downloadState == DownloadState.COMPLETED) {
+                                pendingRemovalId = download.episode.id
+                            } else {
+                                onEpisodeRemove(download.episode.id)
+                            }
+                        },
                     )
                 }
             }
@@ -258,32 +236,50 @@ fun DownloadsScreen(
 /**
  * The scrolling body: the storage card, then a row per tracked episode.
  *
+ * The rows are hand-orderable, the same long-press drag the queue and the library use. Downloads
+ * arrive in an order nobody chose — whatever the download stack was doing, newest first — and this
+ * is the screen where "listen to these three next" is a decision the user actually has. The storage
+ * card sits in the same list but outside the reorder: its key is not one of the dragged keys, so
+ * the hit test never offers it as a drop target and it stays pinned at the top.
+ *
  * @param uiState what to render.
  * @param now reference time for relative date formatting.
- * @param selectedIds the current selection.
  * @param onEpisodeClick tap handler for a finished episode.
  * @param onEpisodeRetry tap handler for a failed download.
- * @param onEpisodeQueue add-to-queue handler.
- * @param onEpisodeRemove delete-or-cancel handler.
- * @param onToggleSelected adds or removes one row from the selection.
+ * @param onEpisodeQueue add-to-queue handler for a row's full swipe.
+ * @param onEpisodeRemove delete-or-cancel handler, called with the whole row so the caller can
+ *   decide whether it is destructive enough to confirm.
+ * @param onMove applies a completed drag; see [DownloadsScreen].
  */
 @Composable
 private fun DownloadList(
     uiState: DownloadsUiState,
     now: Instant,
-    selectedIds: Set<String>,
     onEpisodeClick: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
     onEpisodeQueue: (String) -> Unit,
-    onEpisodeRemove: (String) -> Unit,
-    onToggleSelected: (String) -> Unit,
+    onEpisodeRemove: (EpisodeWithShow) -> Unit,
+    onMove: (List<String>, Int, Int) -> Unit,
 ) {
     val resources = LocalResources.current
-    val selecting = selectedIds.isNotEmpty()
+    val listState = rememberLazyListState()
+    // Captured from the upstream list rather than read out of `drag.order` inside the callback:
+    // by the time a gesture ends, the drawn order has already been rearranged locally, and the
+    // move has to be expressed against the arrangement it started from.
+    // Remembered against the list itself: a running transfer re-emits several times a second, and
+    // this must not rebuild an id list on every one of those frames.
+    val shownIds = remember(uiState.downloads) { uiState.downloads.map { it.episode.id } }
+    val drag = rememberReorderableState(
+        layout = rememberReorderableLayout(listState),
+        items = uiState.downloads,
+        keyOf = { it.episode.id },
+        onMove = { from, to -> onMove(shownIds, from, to) },
+    )
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = LIST_BOTTOM_PADDING),
+        contentPadding = PaddingValues(bottom = BPodcatTheme.spacing.sm),
     ) {
         item(key = STORAGE_CARD_KEY) {
             StorageCard(
@@ -293,64 +289,129 @@ private fun DownloadList(
             )
         }
 
-        items(items = uiState.downloads, key = { it.episode.id }) { download ->
-            val episode = download.episode
-            val isCompleted = episode.downloadState == DownloadState.COMPLETED
-            val isFailed = episode.downloadState == DownloadState.FAILED
-
-            EpisodeRow(
-                title = episode.title,
-                showTitle = download.showTitle,
+        itemsIndexed(drag.order, key = { _, download -> download.episode.id }) { index, download ->
+            DownloadRow(
+                download = download,
+                index = index,
+                drag = drag,
                 metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
-                artworkUrl = download.artworkUrl,
-                isPlayed = isCompleted && episode.isPlayed,
-                playedFraction = if (isCompleted) episode.playedFraction else 0f,
-                isSelected = episode.id in selectedIds,
-                // What a tap does follows the state, because that is the only thing a tap could
-                // sensibly mean: a finished episode plays, a failed one retries, and a transfer in
-                // progress does nothing at all — there is no local audio to play, and streaming
-                // instead would spend mobile data nobody asked to spend. While a selection exists,
-                // every row means "add me to it" instead; that is what selection mode is.
-                onClick = when {
-                    selecting -> ({ onToggleSelected(episode.id) })
-                    isCompleted -> ({ onEpisodeClick(episode.id) })
-                    isFailed -> ({ onEpisodeRetry(episode.id) })
-                    else -> null
-                },
-                onLongClick = { onToggleSelected(episode.id) },
-                longClickLabel = stringResource(R.string.downloads_select),
-                trailing = {
-                    // Nothing to queue until the audio is on the device, and nothing to press at
-                    // all while the row is standing in for a selection.
-                    if (isCompleted && !selecting) {
-                        IconButton(onClick = { onEpisodeQueue(episode.id) }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                // These buttons are reached out of the list's reading order, so
-                                // each one names the episode it acts on.
-                                contentDescription = stringResource(
-                                    R.string.downloads_queue_episode,
-                                    episode.title,
-                                ),
-                            )
-                        }
-                    }
-                    if (!selecting) {
-                        DownloadButton(
-                            state = episode.downloadState,
-                            progressPercent = episode.downloadPercent,
-                            // The button means what its own label says, which is not the same
-                            // action in every state: a failure asks to be tried again, and
-                            // anything else asks to be given back. Removing a failed download —
-                            // the one case neither control covers — is what the selection is for.
-                            onClick = {
-                                if (isFailed) onEpisodeRetry(episode.id) else onEpisodeRemove(episode.id)
-                            },
-                        )
-                    }
-                },
+                onClick = onEpisodeClick,
+                onRetry = onEpisodeRetry,
+                onQueue = { onEpisodeQueue(download.episode.id) },
+                onRemove = { onEpisodeRemove(download) },
             )
         }
+    }
+}
+
+/**
+ * One tracked episode: draggable, swipeable, tappable, and queueable.
+ *
+ * Four gestures share the row and stay out of each other's way by asking for different things, the
+ * same arrangement the queue and the library arrived at. A tap plays a finished episode (or retries
+ * a failed one), a long right-to-left swipe queues it, a short one reveals "remove", and a long
+ * *press* picks it up to reorder. Nothing is left at the end of the row.
+ *
+ * Queueing is the full swipe because it is what a downloaded episode is eventually *for*: it was
+ * stored so it could be listened to, and lining one up should cost a single movement and no aim. It
+ * used to be a button on every row, which is a control that has to be aimed at once per row.
+ * Removal moved the other way, behind the short swipe: it deletes audio, no second gesture undoes
+ * it, and a destructive action wants to be chosen rather than fired — the same reasoning that
+ * puts "mark played" behind the queue's short swipe.
+ *
+ * None of the four gestures is visible to a screen reader, so all of them — both tiers of the
+ * swipe and both directions of the reorder — are also published as custom accessibility actions.
+ *
+ * @param download the episode and its show.
+ * @param index its position in the list, for the reorder actions.
+ * @param drag the shared drag state, which owns the visual offset and the pending move.
+ * @param metadata the line under the title, already assembled.
+ * @param onClick tap handler for a finished episode.
+ * @param onRetry tap handler for a failed download.
+ * @param onQueue adds this episode to the end of the play queue.
+ * @param onRemove delete-or-cancel handler.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun DownloadRow(
+    download: EpisodeWithShow,
+    index: Int,
+    drag: ReorderableState<EpisodeWithShow>,
+    metadata: String,
+    onClick: (String) -> Unit,
+    onRetry: (String) -> Unit,
+    onQueue: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val episode = download.episode
+    val isCompleted = episode.downloadState == DownloadState.COMPLETED
+    val isFailed = episode.downloadState == DownloadState.FAILED
+    val isDragging = drag.draggingKey == episode.id
+    val moveUp = stringResource(R.string.downloads_move_up)
+    val moveDown = stringResource(R.string.downloads_move_down)
+
+    val queue = SwipeAction(
+        icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+        label = stringResource(R.string.downloads_action_queue),
+        // The primary palette: this is the row being used rather than the row leaving, and it has
+        // to read as the opposite of the remove button it is pulled past.
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        onClick = onQueue,
+    )
+    val remove = SwipeAction(
+        icon = Icons.Rounded.Delete,
+        label = stringResource(R.string.downloads_action_remove),
+        // The error palette, because the file is going. On this screen that is the whole point of
+        // the gesture, and it should not look like a tidy-up.
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        onClick = onRemove,
+    )
+
+    SwipeActionsRow(
+        actions = listOf(remove),
+        fullSwipeAction = queue,
+        modifier = modifier.graphicsLayer {
+            // Only the dragged row moves; the rest are re-laid-out by the list as the underlying
+            // order changes, which is what makes the gap follow the finger.
+            translationY = if (isDragging) drag.offset.y else 0f
+            // Lifts the row above its neighbours so it is not clipped by them mid-drag.
+            shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+        },
+    ) {
+        EpisodeRow(
+            // On the row rather than on the box around it: the row merges its children into one
+            // node, and that merged node is where a screen reader — which can see neither the
+            // drag nor the swipe — looks for what the row can do.
+            modifier = Modifier
+                // Inside the swipe box rather than around it, so the row's two drags are settled
+                // by the pointer that started them: this one consumes movement only once the
+                // press has been held, and a swipe claims the gesture long before that.
+                .reorderableLongPressDrag(drag, episode.id)
+                .semantics {
+                    // Both tiers of the swipe, flattened: to a screen reader they are not two
+                    // tiers, they are simply the two things this row can do.
+                    customActions = drag.moveActions(index, moveUp, moveDown) +
+                        listOf(queue, remove).asAccessibilityActions()
+                },
+            title = episode.title,
+            showTitle = download.showTitle,
+            metadata = metadata,
+            artworkUrl = download.artworkUrl,
+            isPlayed = isCompleted && episode.isPlayed,
+            playedFraction = if (isCompleted) episode.playedFraction else 0f,
+            // What a tap does follows the state, because that is the only thing a tap could
+            // sensibly mean: a finished episode plays, a failed one retries, and a transfer in
+            // progress does nothing at all — there is no local audio to play, and streaming
+            // instead would spend mobile data nobody asked to spend.
+            onClick = when {
+                isCompleted -> ({ onClick(episode.id) })
+                isFailed -> ({ onRetry(episode.id) })
+                else -> null
+            },
+        )
     }
 }
 
@@ -466,28 +527,28 @@ private fun StorageCard(
 }
 
 /**
- * The confirmation shown before a selection is deleted.
+ * The confirmation shown before a downloaded episode is deleted.
  *
- * Deleting several episodes is the one action here that no second tap undoes, so it asks first —
- * and says how much space it will actually free, which is usually why it is being done.
+ * Deleting audio is the one action here that no second gesture undoes — the file has to be fetched
+ * again — so it asks first, and says how much space it will actually free, which is usually why it
+ * is being done. A swipe is deliberate, but it is also a gesture a thumb can start by accident on a
+ * list that scrolls.
  *
- * @param count how many episodes are selected.
- * @param freedBytes what deleting them gives back.
+ * @param title the episode being deleted, named so a mis-swipe is caught here rather than after.
+ * @param freedBytes what deleting it gives back.
  * @param onConfirm proceed.
  * @param onDismiss cancel.
  */
 @Composable
 private fun RemovalDialog(
-    count: Int,
+    title: String,
     freedBytes: Long,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(text = pluralStringResource(R.plurals.downloads_remove_dialog_title, count, count))
-        },
+        title = { Text(text = stringResource(R.string.downloads_remove_dialog_title, title)) },
         text = {
             Text(
                 text = stringResource(
@@ -567,11 +628,7 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
     is DownloadsMessage.Removed ->
         resources.getString(R.string.downloads_message_removed, title)
 
-    is DownloadsMessage.RemovedAll ->
-        resources.getQuantityString(R.plurals.downloads_message_removed_all, count, count)
-
-    is DownloadsMessage.Queued ->
-        resources.getString(R.string.downloads_message_queued, title)
+    is DownloadsMessage.Queued -> resources.getString(R.string.downloads_message_queued, title)
 
     is DownloadsMessage.RetryQueued -> resources.getString(
         if (waitingForWifi) {
@@ -586,21 +643,11 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
         resources.getString(R.string.downloads_message_unavailable)
 }
 
-/**
- * Keeps the selection across a configuration change.
- *
- * A [Set] is not something [rememberSaveable] can store on its own; the ids are, and a list of them
- * is all the selection ever was.
- */
-private val selectionSaver = listSaver<MutableState<Set<String>>, String>(
-    save = { state -> state.value.toList() },
-    restore = { ids -> mutableStateOf(ids.toSet()) },
-)
-
 private const val STORAGE_CARD_KEY = "storage-card"
 
-/** Room under the last row for the floating selection bar, which is drawn over the list. */
-private val LIST_BOTTOM_PADDING = 88.dp
+/** How far a picked-up row is lifted above its neighbours, in pixels; matches the queue. */
+private const val DRAG_ELEVATION = 8f
+
 private val BAR_HEIGHT = 10.dp
 
 /** The narrowest the stored segment is drawn at, so a small library still marks the bar. */
@@ -647,10 +694,11 @@ private fun DownloadsScreenPreview() {
                 ),
             ),
             onEpisodeClick = {},
-            onEpisodeQueue = {},
             onEpisodeRetry = {},
             onEpisodeRemove = {},
-            onRemoveSelected = {},
+            onEpisodeQueue = {},
+            onMove = { _, _, _ -> },
+            onRefresh = {},
             onBrowseLibrary = {},
             onMessageShown = {},
         )

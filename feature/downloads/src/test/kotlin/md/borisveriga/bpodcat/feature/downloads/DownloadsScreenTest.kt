@@ -1,10 +1,12 @@
 package md.borisveriga.bpodcat.feature.downloads
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
@@ -22,11 +24,18 @@ import org.robolectric.annotation.Config
 /**
  * Tests for [DownloadsScreen].
  *
- * Two things are worth pinning here. The states a download can be in have to stay *visible* — the
+ * Three things are worth pinning here. The states a download can be in have to stay *visible* — the
  * screen used to filter everything but finished episodes, so a failure or a transfer waiting for
- * Wi-Fi appeared nowhere at all — and the selection has to act on exactly what was picked, since
- * the action it leads to deletes files.
+ * Wi-Fi appeared nowhere at all. Removal has to ask before it deletes audio while still calling an
+ * unfinished transfer off on the spot. And a row carries no buttons at all: both of the things it
+ * can do are tiers of one swipe, queueing on the long pull and removal behind the short one.
+ *
+ * Both tiers are exercised through their accessibility actions rather than as drags: each is the
+ * same handler by construction, and the action is what a screen reader has instead of the gesture.
+ * The reorder is exercised both ways, because a long press and a swipe start from the same
+ * pointer and it is their separation that is easy to break.
  */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class DownloadsScreenTest {
@@ -61,7 +70,9 @@ class DownloadsScreenTest {
     private fun setScreen(
         downloads: List<EpisodeWithShow>,
         unmeteredOnly: Boolean = true,
-        onRemoveSelected: (Set<String>) -> Unit = {},
+        onEpisodeRemove: (String) -> Unit = {},
+        onEpisodeQueue: (String) -> Unit = {},
+        onMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
     ) {
         composeRule.setContent {
             BPodcatTheme {
@@ -77,10 +88,11 @@ class DownloadsScreenTest {
                         isLoading = false,
                     ),
                     onEpisodeClick = {},
-                    onEpisodeQueue = {},
                     onEpisodeRetry = {},
-                    onEpisodeRemove = {},
-                    onRemoveSelected = onRemoveSelected,
+                    onEpisodeRemove = onEpisodeRemove,
+                    onEpisodeQueue = onEpisodeQueue,
+                    onMove = onMove,
+                    onRefresh = {},
                     onBrowseLibrary = {},
                     onMessageShown = {},
                 )
@@ -127,81 +139,133 @@ class DownloadsScreenTest {
     }
 
     @Test
-    fun `a long press starts a selection and offers what to do with it`() {
-        setScreen(listOf(download("a"), download("b")))
+    fun `removing a downloaded episode asks first, and names what it is about to delete`() {
+        var removed: String? = null
+        setScreen(listOf(download("a"), download("b")), onEpisodeRemove = { removed = it })
 
-        // Nothing is selected to begin with, so the bar is not there.
-        composeRule.onNodeWithText("1 selected").assertDoesNotExist()
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Remove")
 
-        composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
-
-        composeRule.onNodeWithText("1 selected").assertExists()
-        composeRule.onNodeWithContentDescription("Remove the selected downloads").assertExists()
-    }
-
-    @Test
-    fun `removing a selection confirms first, then acts on exactly what was picked`() {
-        var removed: Set<String>? = null
-        setScreen(listOf(download("a"), download("b")), onRemoveSelected = { removed = it })
-
-        composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
-        composeRule.onNodeWithContentDescription("Remove the selected downloads").performClick()
-
-        // Deleting files is not undone by a second tap, so it asks — and says what it frees.
-        composeRule.onNodeWithText("Remove 1 download?").assertExists()
+        // Deleting audio is not undone by a second gesture, so it asks — and says what it frees.
+        composeRule.onNodeWithText("Remove \"Episode a\"?").assertExists()
         assertNull(removed)
 
         composeRule.onNodeWithText("Remove").performClick()
 
-        assertEquals(setOf("a"), removed)
+        assertEquals("a", removed)
     }
 
     @Test
-    fun `cancelling the confirmation leaves the downloads alone`() {
-        var removed: Set<String>? = null
-        setScreen(listOf(download("a")), onRemoveSelected = { removed = it })
+    fun `cancelling the confirmation leaves the download alone`() {
+        var removed: String? = null
+        setScreen(listOf(download("a")), onEpisodeRemove = { removed = it })
 
-        composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
-        composeRule.onNodeWithContentDescription("Remove the selected downloads").performClick()
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Remove")
         composeRule.onNodeWithText("Cancel").performClick()
 
         assertNull(removed)
-        // The selection survives a cancelled removal: the user changed their mind about deleting,
-        // not about what they had picked.
-        composeRule.onNodeWithText("1 selected").assertExists()
+        composeRule.onNodeWithText("Remove \"Episode a\"?").assertDoesNotExist()
     }
 
     @Test
-    fun `select all picks up every row`() {
-        var removed: Set<String>? = null
+    fun `calling off a transfer does not ask, because nothing is lost by it`() {
+        var removed: String? = null
         setScreen(
-            listOf(download("a"), download("b"), download("c")),
-            onRemoveSelected = { removed = it },
+            listOf(download("a", state = DownloadState.DOWNLOADING, downloadPercent = 42f)),
+            onEpisodeRemove = { removed = it },
         )
 
-        composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
-        composeRule.onNodeWithContentDescription("Select all").performClick()
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Remove")
 
-        composeRule.onNodeWithText("3 selected").assertExists()
-
-        composeRule.onNodeWithContentDescription("Remove the selected downloads").performClick()
-        composeRule.onNodeWithText("Remove").performClick()
-
-        assertEquals(setOf("a", "b", "c"), removed)
+        assertEquals("a", removed)
+        composeRule.onNodeWithText("Remove \"Episode a\"?").assertDoesNotExist()
     }
 
     @Test
-    fun `clearing the selection puts the row actions back`() {
-        setScreen(listOf(download("a")))
+    fun `a row carries no buttons, and the full swipe is the one that queues the episode`() {
+        var queued: String? = null
+        setScreen(listOf(download("a")), onEpisodeQueue = { queued = it })
 
-        composeRule.onNodeWithText("Episode a").performTouchInput { longClick() }
-        // While a selection exists every row means "add me to it", so its own buttons stand down.
+        // Nothing is left at the end of the row: the download controls said nothing the rest of
+        // the row did not, and the queue button that replaced them is now the swipe.
         composeRule.onNodeWithContentDescription("Downloaded, remove from device")
             .assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Add Episode a to the queue").assertDoesNotExist()
 
-        composeRule.onNodeWithContentDescription("Clear the selection").performClick()
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Add to queue")
 
-        composeRule.onNodeWithText("1 selected").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Downloaded, remove from device").assertExists()
+        assertEquals("a", queued)
+    }
+
+    @Test
+    fun `a transfer that has not finished can be queued too`() {
+        var queued: String? = null
+        setScreen(
+            listOf(download("a", state = DownloadState.DOWNLOADING, downloadPercent = 42f)),
+            onEpisodeQueue = { queued = it },
+        )
+
+        // The ring that used to sit here is gone; the percentage is still on the row, in words.
+        composeRule.onNodeWithContentDescription("Downloading, 42%").assertDoesNotExist()
+        composeRule.onNodeWithText("Downloading 42%").assertExists()
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Add to queue")
+
+        assertEquals("a", queued)
+    }
+
+    @Test
+    fun `a row can be reordered without a drag`() {
+        var move: Triple<List<String>, Int, Int>? = null
+        setScreen(
+            listOf(download("a"), download("b")),
+            onMove = { ids, from, to -> move = Triple(ids, from, to) },
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Move down")
+
+        assertEquals(Triple(listOf("a", "b"), 0, 1), move)
+    }
+
+    @Test
+    fun `the first row cannot be moved up`() {
+        setScreen(listOf(download("a"), download("b")))
+
+        // No "Move up" action is published for it, so asking for one fails rather than silently
+        // doing nothing — which is what makes this assertion meaningful.
+        val hasMoveUp = runCatching {
+            composeRule.onNodeWithText("Episode a")
+                .performCustomAccessibilityActionWithLabel("Move up")
+        }.isSuccess
+
+        assertEquals(false, hasMoveUp)
+    }
+
+    @Test
+    fun `a long press anywhere on a row picks it up, and the drag reorders the list`() {
+        var move: Triple<List<String>, Int, Int>? = null
+        setScreen(
+            listOf(download("a"), download("b")),
+            onMove = { ids, from, to -> move = Triple(ids, from, to) },
+        )
+
+        composeRule.onNodeWithText("Episode a").performTouchInput {
+            down(center)
+            // Held past the system's long-press timeout, which is what separates picking the row
+            // up from tapping it, swiping it away, or scrolling the list.
+            advanceEventTime(LONG_PRESS_MS)
+            // One row down puts the dragged row's centre inside the row below it.
+            moveBy(Offset(0f, height.toFloat()))
+            up()
+        }
+
+        assertEquals(Triple(listOf("a", "b"), 0, 1), move)
+    }
+
+    private companion object {
+        /** Comfortably past `ViewConfiguration`'s 500 ms long-press timeout. */
+        const val LONG_PRESS_MS = 1_000L
     }
 }
