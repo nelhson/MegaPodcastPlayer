@@ -645,6 +645,10 @@ private fun AddMenu(
     )
 
     Column(
+        // Held further off the end edge than the Scaffold's own FAB inset puts it. The button and
+        // the two labelled actions above it move together, so the column stays right-aligned with
+        // itself whichever of them is showing.
+        modifier = Modifier.padding(end = AddMenuEndPadding),
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(BPodcatTheme.spacing.md),
     ) {
@@ -818,6 +822,9 @@ private fun LibraryMessage.toText(resources: Resources): String = when (this) {
 
 /** The narrowest a cover tile may be before the grid drops a column. */
 private val TILE_MIN_WIDTH = 148.dp
+
+/** How far the add button and its menu sit from the end edge, on top of the Scaffold's own inset. */
+private val AddMenuEndPadding = 32.dp
 
 /** An eighth of a turn, which is what turns a plus into a close glyph. */
 private const val CLOSE_ROTATION_DEGREES = 45f
