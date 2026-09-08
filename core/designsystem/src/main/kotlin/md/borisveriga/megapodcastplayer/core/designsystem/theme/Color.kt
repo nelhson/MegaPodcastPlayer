@@ -70,8 +70,16 @@ private val Red90 = Color(0xFFFFDAD6)
 
 // endregion
 
-/** Light scheme: ink on bone, citron for anything that acts. */
-internal val citronLightScheme: ColorScheme = lightColorScheme(
+/**
+ * Light scheme: ink on bone, citron for anything that acts.
+ *
+ * Public rather than internal, and the reason is the home-screen widget. A Glance widget is drawn
+ * into the launcher's process out of `RemoteViews`, so not one component in this module can appear
+ * in it — the palette is the only part of the design system that can travel that far, and the
+ * alternative to lending it is a second copy of these colours in `:app` that drifts the first time
+ * one of them is corrected.
+ */
+val citronLightScheme: ColorScheme = lightColorScheme(
     primary = Citron40,
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Citron85,
@@ -114,8 +122,12 @@ internal val citronLightScheme: ColorScheme = lightColorScheme(
     inverseOnSurface = Color(0xFFF2F1E9),
 )
 
-/** Dark scheme: the primary reading of the brand — citron glowing on near-black. */
-internal val citronDarkScheme: ColorScheme = darkColorScheme(
+/**
+ * Dark scheme: the primary reading of the brand — citron glowing on near-black.
+ *
+ * Public for the reason [citronLightScheme] gives.
+ */
+val citronDarkScheme: ColorScheme = darkColorScheme(
     primary = Citron90,
     onPrimary = Citron20,
     primaryContainer = Citron30,

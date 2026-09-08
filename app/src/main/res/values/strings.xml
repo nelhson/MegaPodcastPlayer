@@ -89,4 +89,23 @@
     <string name="shortcut_add_show_short_label">Add</string>
     <string name="shortcut_add_show_long_label">Add a show</string>
 
+    <!--
+      The home-screen widget; see res/xml/now_playing_widget_info.xml.
+
+      The skip labels name the interval in words because the glyphs do not draw it — a widget
+      button is forty dp, and two digits inside a circle that size are illegible. What the button
+      actually skips is always the user's own setting, so the words say "your skip interval"
+      rather than a number that would be wrong for four of the five settings.
+    -->
+    <string name="widget_description">What you are listening to, with a transport and what to carry on with</string>
+    <string name="widget_empty_title">Nothing to carry on with</string>
+    <string name="widget_empty_body">Tap to open MegaPodcastPlayer</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_resume">Resume listening</string>
+    <string name="widget_skip_back">Skip back by your skip interval</string>
+    <string name="widget_skip_forward">Skip ahead by your skip interval</string>
+    <!-- %1$s is the episode title. -->
+    <string name="widget_play_episode">Play %1$s</string>
+
 </resources>

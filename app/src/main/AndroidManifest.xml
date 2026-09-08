@@ -163,6 +163,28 @@
             android:foregroundServiceType="dataSync" />
 
         <!--
+          The home-screen widget. Glance draws it, this receiver is the name the platform knows it
+          by, and res/xml/now_playing_widget_info.xml decides its sizes and says why it asks for no
+          periodic update.
+
+          Exported, as every app widget provider must be — the launcher is another process and has
+          to be able to send it APPWIDGET_UPDATE. That is also why nothing in the widget or its
+          action callbacks reads anything off the incoming intent: the two intent filters here are
+          the platform's own, and everything the widget does is decided by what it drew.
+        -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetReceiver"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_info" />
+        </receiver>
+
+        <!--
           MegaPodcastPlayerApplication supplies WorkManager's Configuration so that @HiltWorker workers can be
           injected. On-demand initialisation and the default androidx.startup initializer are
           mutually exclusive, so the default one is removed here.

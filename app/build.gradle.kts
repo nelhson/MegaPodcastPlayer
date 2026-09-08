@@ -48,12 +48,20 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp.core)
 
+    // The home-screen widget. Glance is a second, much smaller Compose whose output is RemoteViews;
+    // glance-material3 is only there to hand it the app's own ColorScheme.
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+
     // Wearable Data Layer: receives commands from the watch, publishes playback state to it.
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.androidx.work.testing)
+    // Renders the widget's composition on the JVM, so what it draws can be asserted without a
+    // launcher; see NowPlayingWidgetTest.
+    testImplementation(libs.androidx.glance.appwidget.testing)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
 }

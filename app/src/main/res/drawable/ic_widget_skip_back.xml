@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Skip back, for the home-screen widget; tinted at draw time. See ic_widget_play.xml.
+
+    Deliberately carries no number, unlike the app's own skip glyphs, which draw the user's chosen
+    interval into the arc. A widget button is forty dp on a home screen and two digits inside a
+    circle that size are illegible; an arrow with nothing written in it says "back", which is true
+    at every one of the five settings. The interval is in the spoken label instead, and the button
+    itself always uses the user's own.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5V2.21c0,-0.45 -0.54,-0.67 -0.85,-0.35l-3.8,3.79c-0.2,0.2 -0.2,0.51 0,0.71l3.79,3.79C11.46,10.46 12,10.24 12,9.79V7c3.31,0 6,2.69 6,6s-2.69,6 -6,6s-6,-2.69 -6,-6c0,-0.79 -0.62,-1.42 -1.4,-1.42S3.18,12.21 3.18,13c0,4.42 3.58,8 8,8s8,-3.58 8,-8S15.31,5 12,5z" />
+</vector>

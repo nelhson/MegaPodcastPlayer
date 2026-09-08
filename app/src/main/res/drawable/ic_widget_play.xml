@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Play, for the home-screen widget.
+
+    Drawn white and tinted at draw time: a Glance widget renders in the launcher's process out of
+    RemoteViews, so it cannot reach the app's Compose icons, and a drawable with a colour baked in
+    would be the one thing on the widget that ignores the user's light/dark choice.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5.14v13.72c0,0.77 0.85,1.24 1.5,0.83l10.79,-6.86c0.6,-0.39 0.6,-1.27 0,-1.66L9.5,4.31C8.85,3.9 8,4.37 8,5.14z" />
+</vector>
