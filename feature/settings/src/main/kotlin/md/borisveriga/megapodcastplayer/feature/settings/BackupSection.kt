@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Login
+import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.AlertDialog
@@ -37,14 +39,21 @@ import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 
 /**
- * The backup section's two rows.
+ * The backup section's four rows: two for this app's own file, two for everybody else's.
  *
- * Both are disabled while either action is in flight, because both write the same library and a
- * second tap during a restore would only interleave two runs over the same rows.
+ * The pairs sit together, and the order says which is which — the backup first, because it is the
+ * one that answers "what happens when the database is wiped", and the subscription list second,
+ * because it answers a question about *other apps*. Their supporting lines do the rest: one carries
+ * positions, downloads and moments, the other carries shows and nothing else.
+ *
+ * All four are disabled while any of them is in flight, because all four read or write the same
+ * library and a second tap during a restore would only interleave two runs over the same rows.
  *
  * @param state what to render.
  * @param onExport called when the user asks to write a backup; the caller launches the picker.
  * @param onRestore called when the user asks to read one.
+ * @param onExportOpml called when the user asks to write a subscription list.
+ * @param onImportOpml called when the user asks to read one.
  * @param modifier layout modifier.
  */
 @Composable
@@ -52,6 +61,8 @@ internal fun BackupRows(
     state: BackupUiState,
     onExport: () -> Unit,
     onRestore: () -> Unit,
+    onExportOpml: () -> Unit,
+    onImportOpml: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -76,17 +87,50 @@ internal fun BackupRows(
                 .clickable(enabled = !state.isBusy, onClick = onRestore)
                 .semantics { role = Role.Button },
         )
+
+        ListItem(
+            headlineContent = { Text(text = stringResource(R.string.settings_opml_export)) },
+            supportingContent = {
+                Text(text = stringResource(R.string.settings_opml_export_description))
+            },
+            leadingContent = {
+                Icon(imageVector = Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier
+                .clickable(enabled = !state.isBusy, onClick = onExportOpml)
+                .semantics { role = Role.Button },
+        )
+
+        ListItem(
+            headlineContent = { Text(text = stringResource(R.string.settings_opml_import)) },
+            supportingContent = {
+                Text(text = stringResource(R.string.settings_opml_import_description))
+            },
+            leadingContent = {
+                Icon(imageVector = Icons.AutoMirrored.Rounded.Login, contentDescription = null)
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier
+                .clickable(enabled = !state.isBusy, onClick = onImportOpml)
+                .semantics { role = Role.Button },
+        )
     }
 }
 
 /**
- * Asks the user to confirm a picked backup before anything is written.
+ * Asks the user to confirm a picked file before anything is fetched.
  *
- * The queue warning is spelled out because replacing it is the one thing a restore does that a
- * merge cannot undo.
+ * Two kinds of file reach this dialog and it says different things about them. For a backup the
+ * queue warning is spelled out, because replacing it is the one thing a restore does that a merge
+ * cannot undo, and the re-download switch is offered because the file records what was offline. An
+ * OPML file has neither: it carries shows and nothing else, so the switch is not drawn — a control
+ * that cannot do anything is worse than a missing one — and the body says what will and will not
+ * arrive, before a single feed is fetched.
  *
  * @param pending the validated document awaiting a decision.
- * @param onConfirm called with whether to re-queue the downloads the backup records.
+ * @param onConfirm called with whether to re-queue the downloads the backup records; always false
+ *   for an OPML import, which records none.
  * @param onDismiss called when the user backs out.
  */
 @Composable
@@ -96,36 +140,74 @@ internal fun RestoreConfirmDialog(
     onDismiss: () -> Unit,
 ) {
     var reDownload by remember { mutableStateOf(false) }
+    val isOpml = pending.source == RestoreSource.OPML
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(R.string.settings_backup_restore_confirm_title)) },
+        title = {
+            Text(
+                text = stringResource(
+                    if (isOpml) {
+                        R.string.settings_opml_import_confirm_title
+                    } else {
+                        R.string.settings_backup_restore_confirm_title
+                    },
+                ),
+            )
+        },
         text = {
             Column {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.settings_backup_restore_confirm_body,
+                        if (isOpml) {
+                            R.plurals.settings_opml_import_confirm_body
+                        } else {
+                            R.plurals.settings_backup_restore_confirm_body
+                        },
                         pending.showCount,
                         pending.showCount,
                     ),
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = MegaPodcastPlayerTheme.spacing.md),
-                ) {
+                // Said rather than folded into the total. A file whose extra rows were folders is
+                // ordinary; one whose rows were mostly refused is a file worth looking at again,
+                // and the user cannot tell the two apart from a count of what arrived.
+                if (pending.skipped > 0) {
                     Text(
-                        text = stringResource(R.string.settings_backup_re_download),
-                        modifier = Modifier.weight(1f),
+                        text = pluralStringResource(
+                            R.plurals.settings_opml_import_skipped,
+                            pending.skipped,
+                            pending.skipped,
+                        ),
+                        modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.sm),
                     )
-                    Switch(checked = reDownload, onCheckedChange = { reDownload = it })
+                }
+                if (!isOpml) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = MegaPodcastPlayerTheme.spacing.md),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_backup_re_download),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = reDownload, onCheckedChange = { reDownload = it })
+                    }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(reDownload) }) {
-                Text(text = stringResource(R.string.settings_backup_restore_confirm_action))
+                Text(
+                    text = stringResource(
+                        if (isOpml) {
+                            R.string.settings_opml_import_confirm_action
+                        } else {
+                            R.string.settings_backup_restore_confirm_action
+                        },
+                    ),
+                )
             }
         },
         dismissButton = {

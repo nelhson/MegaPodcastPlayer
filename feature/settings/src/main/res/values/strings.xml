@@ -139,6 +139,33 @@
         <item quantity="other">%1$d moments restored.</item>
     </plurals>
     <string name="settings_backup_restore_done_failed">Could not fetch: %1$s</string>
+
+    <!--
+      OPML: the subscription list, which is how a library moves in from or out to another app.
+
+      The two descriptions are the whole point of having four rows instead of two — they say what
+      each file carries, so the difference between the backup and the subscription list is on the
+      screen rather than in the extension. "Shows only" is stated twice, in the row and again in the
+      dialog, because it is the thing a user will be surprised by afterwards if it is stated once.
+    -->
+    <string name="settings_opml_export">Export subscriptions (OPML)</string>
+    <string name="settings_opml_export_description">Shows only, in the format other podcast apps read</string>
+    <string name="settings_opml_import">Import subscriptions (OPML)</string>
+    <string name="settings_opml_import_description">Adds shows exported from another podcast app</string>
+    <string name="settings_opml_import_confirm_title">Add these shows?</string>
+    <plurals name="settings_opml_import_confirm_body">
+        <item quantity="one">%1$d show will be added. Positions, downloads and moments are not in an OPML file.</item>
+        <item quantity="other">%1$d shows will be added. Positions, downloads and moments are not in an OPML file.</item>
+    </plurals>
+    <plurals name="settings_opml_import_skipped">
+        <item quantity="one">%1$d entry was skipped: a folder, or a feed this app will not fetch.</item>
+        <item quantity="other">%1$d entries were skipped: folders, or feeds this app will not fetch.</item>
+    </plurals>
+    <string name="settings_opml_import_confirm_action">Add</string>
+    <string name="settings_opml_exported">Subscriptions exported</string>
+    <string name="settings_opml_export_failed">Could not write the subscription list</string>
+    <string name="settings_opml_not_recognised">That file is not an OPML subscription list</string>
+    <string name="settings_opml_empty">That subscription list has no shows in it</string>
     <string name="settings_message_backup_exported">Backup saved</string>
     <string name="settings_message_backup_export_failed">Could not write the backup file</string>
     <string name="settings_message_backup_read_failed">Could not read that file</string>

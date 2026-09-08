@@ -42,6 +42,8 @@ class SettingsScreenTest {
         uiState: SettingsUiState,
         onExportBackup: () -> Unit = {},
         onRestoreBackup: () -> Unit = {},
+        onExportOpml: () -> Unit = {},
+        onImportOpml: () -> Unit = {},
         onConfirmRestore: (Boolean) -> Unit = {},
         onCancelRestore: () -> Unit = {},
         onThemeChange: (ThemeChoice) -> Unit = {},
@@ -68,6 +70,8 @@ class SettingsScreenTest {
                     onRemoveAllDownloads = {},
                     onExportBackup = onExportBackup,
                     onRestoreBackup = onRestoreBackup,
+                    onExportOpml = onExportOpml,
+                    onImportOpml = onImportOpml,
                     onConfirmRestore = onConfirmRestore,
                     onCancelRestore = onCancelRestore,
                     onMessageShown = {},
@@ -203,6 +207,88 @@ class SettingsScreenTest {
         composeRule.onNodeWithText("Restore", substring = false).performClick()
 
         assertEquals(false, confirmedWith)
+    }
+
+    @Test
+    fun `the section offers the subscription list beside the backup`() {
+        setContent(SettingsUiState())
+
+        scrollToText("Import subscriptions (OPML)")
+
+        // Four rows, and the two descriptions are what tell them apart: one file carries positions
+        // and moments, the other carries shows. Without them the difference is the extension.
+        composeRule.onNodeWithText("Export subscriptions (OPML)").assertIsDisplayed()
+        composeRule.onNodeWithText("Import subscriptions (OPML)").assertIsDisplayed()
+        composeRule.onNodeWithText("Shows only", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun `tapping either subscription row asks the caller to launch its picker`() {
+        var exported = false
+        var imported = false
+        setContent(
+            SettingsUiState(),
+            onExportOpml = { exported = true },
+            onImportOpml = { imported = true },
+        )
+
+        scrollToText("Export subscriptions (OPML)")
+        composeRule.onNodeWithText("Export subscriptions (OPML)").performClick()
+        scrollToText("Import subscriptions (OPML)")
+        composeRule.onNodeWithText("Import subscriptions (OPML)").performClick()
+
+        assertTrue(exported)
+        assertTrue(imported)
+    }
+
+    /**
+     * The dialog says different things about the two files it can be shown for. An OPML import has
+     * no downloads to re-queue, so the switch is not drawn — a control that cannot do anything is
+     * worse than a missing one — and the body says what will *not* arrive before any feed is
+     * fetched, which is the thing a user would otherwise be surprised by afterwards.
+     */
+    @Test
+    fun `confirming an OPML import offers no re-download switch and says what is missing`() {
+        var confirmedWith: Boolean? = null
+        setContent(
+            uiState = SettingsUiState(
+                backup = BackupUiState(
+                    pendingRestore = PendingRestore(
+                        json = "{}",
+                        showCount = 3,
+                        source = RestoreSource.OPML,
+                    ),
+                ),
+            ),
+            onConfirmRestore = { confirmedWith = it },
+        )
+
+        composeRule.onNodeWithText("Positions, downloads and moments", substring = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Download the episodes I had offline").assertDoesNotExist()
+        composeRule.onNodeWithText("Add", substring = false).performClick()
+
+        assertEquals(false, confirmedWith)
+    }
+
+    @Test
+    fun `an OPML file whose rows were not all usable says how many were skipped`() {
+        // Reported rather than folded into the total: a file whose extra rows were folders is
+        // ordinary, and one whose rows were mostly refused is worth going back to.
+        setContent(
+            uiState = SettingsUiState(
+                backup = BackupUiState(
+                    pendingRestore = PendingRestore(
+                        json = "{}",
+                        showCount = 3,
+                        source = RestoreSource.OPML,
+                        skipped = 2,
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("2 entries were skipped", substring = true).assertIsDisplayed()
     }
 
     @Test
