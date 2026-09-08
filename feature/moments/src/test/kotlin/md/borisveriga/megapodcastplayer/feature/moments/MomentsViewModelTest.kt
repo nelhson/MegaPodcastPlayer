@@ -47,21 +47,33 @@ class MomentsViewModelTest {
 
     private lateinit var viewModel: MomentsViewModel
 
-    private fun entry(id: Long, positionMs: Long = 743_000L, note: String? = null) =
-        MomentWithEpisode(
-            moment = Moment(
-                id = id,
-                episodeId = "episode-$id",
-                positionMs = positionMs,
-                note = note,
-                createdAtMs = 1_000L,
-            ),
-            episodeTitle = "Episode $id",
-            showTitle = "Podlodka Podcast",
-            showArtworkUrl = null,
-            feedUrl = "https://feeds.simplecast.com/podlodka",
-            audioUrl = "https://cdn.example.com/$id.mp3",
-        )
+    private fun entry(
+        id: Long,
+        positionMs: Long = 743_000L,
+        note: String? = null,
+        showTitle: String = "Podlodka Podcast",
+        feedUrl: String = "https://feeds.simplecast.com/podlodka",
+    ) = MomentWithEpisode(
+        moment = Moment(
+            id = id,
+            episodeId = "episode-$id",
+            positionMs = positionMs,
+            note = note,
+            createdAtMs = 1_000L,
+        ),
+        episodeTitle = "Episode $id",
+        showTitle = showTitle,
+        showArtworkUrl = null,
+        feedUrl = feedUrl,
+        audioUrl = "https://cdn.example.com/$id.mp3",
+    )
+
+    /** The other show, so the filter has something to choose between. */
+    private val radioT = "https://radio-t.com/rss"
+
+    /** Nine moments across two shows: past the threshold the narrowing controls appear at. */
+    private val manyMoments = (1L..5L).map { entry(it, note = "Note $it") } +
+        (6L..9L).map { entry(it, showTitle = "Radio-T", feedUrl = radioT) }
 
     @Before
     fun setUp() {
@@ -222,6 +234,111 @@ class MomentsViewModelTest {
             viewModel.exportTo(uri)
 
             assertEquals(MomentsMessage.ExportFailed, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a short list is not offered controls it does not need`() = runTest {
+        // A search field over three moments costs more room than the list it filters.
+        moments.value = listOf(entry(1L), entry(2L))
+
+        viewModel.uiState.test {
+            assertEquals(false, expectMostRecentItem().isNarrowable)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a long list is`() = runTest {
+        moments.value = manyMoments
+
+        viewModel.uiState.test {
+            assertEquals(true, expectMostRecentItem().isNarrowable)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a query narrows the list without changing what exists`() = runTest {
+        // The pair is what lets the screen tell "you have saved nothing" from "nothing matches" —
+        // two empty lists that want opposite things said about them.
+        moments.value = manyMoments
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setQuery("Note 3")
+
+            val state = expectMostRecentItem()
+            assertEquals(listOf(3L), state.moments.map { it.moment.id })
+            assertEquals(manyMoments.size, state.savedCount)
+            assertEquals(false, state.isEmpty)
+            assertEquals(false, state.isNarrowedToNothing)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a query that matches nothing is a different empty than an empty library`() = runTest {
+        moments.value = manyMoments
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setQuery("nothing here matches this")
+
+            val state = expectMostRecentItem()
+            assertEquals(true, state.isNarrowedToNothing)
+            assertEquals(false, state.isEmpty)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `choosing a show keeps the other shows in the menu`() = runTest {
+        // A menu that lost the rest the moment one was picked would be a menu with no way back.
+        moments.value = manyMoments
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setShow(radioT)
+
+            val state = expectMostRecentItem()
+            assertEquals(listOf(6L, 7L, 8L, 9L), state.moments.map { it.moment.id })
+            assertEquals(2, state.shows.size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `grouping is built only when it is asked for`() = runTest {
+        // The moments screen redraws whenever a note is saved, and grouping a list nothing reads
+        // is work done on every one of those.
+        moments.value = manyMoments
+
+        viewModel.uiState.test {
+            assertEquals(true, expectMostRecentItem().groups.isEmpty())
+
+            viewModel.setGroupByShow(true)
+
+            val grouped = expectMostRecentItem()
+            assertEquals(listOf("Podlodka Podcast", "Radio-T"), grouped.groups.map { it.title })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `grouping is applied after narrowing, not before`() = runTest {
+        // Otherwise a show heading would survive its last moment being filtered out, and the page
+        // would carry a heading with nothing under it.
+        moments.value = manyMoments
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setGroupByShow(true)
+            viewModel.setShow(radioT)
+
+            val state = expectMostRecentItem()
+            assertEquals(listOf("Radio-T"), state.groups.map { it.title })
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -17,12 +17,27 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
+import md.borisveriga.megapodcastplayer.core.model.MomentGroup
+import md.borisveriga.megapodcastplayer.core.model.MomentShow
 import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
+import md.borisveriga.megapodcastplayer.core.model.MomentsFilter
+import md.borisveriga.megapodcastplayer.core.model.groupedByShow
+import md.borisveriga.megapodcastplayer.core.model.narrowedBy
+import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
 
 /**
  * Everything the moments screen renders.
  *
- * @property moments every saved moment, newest first.
+ * [moments] is what survives the filter and [savedCount] is what exists, and the pair is what lets
+ * the screen tell "you have never saved a moment" from "your filter matches none of them" — two
+ * empty lists that need opposite things said about them.
+ *
+ * @property moments the moments to draw, after the filter, newest first.
+ * @property groups the same moments under show headings; empty unless [MomentsFilter.groupByShow].
+ * @property shows every show that has a moment in it, for the filter's menu. Derived from all of
+ *   them rather than from the filtered list, or choosing one show would empty the menu of the rest.
+ * @property filter what is narrowing and arranging the list.
+ * @property savedCount how many moments exist regardless of the filter.
  * @property isLoading true until the first database read arrives, so an empty list is not shown as
  *   "nothing saved" before anything has been read.
  * @property editing the moment whose note is open for editing, or null.
@@ -31,13 +46,39 @@ import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
  */
 data class MomentsUiState(
     val moments: List<MomentWithEpisode> = emptyList(),
+    val groups: List<MomentGroup> = emptyList(),
+    val shows: List<MomentShow> = emptyList(),
+    val filter: MomentsFilter = MomentsFilter(),
+    val savedCount: Int = 0,
     val isLoading: Boolean = true,
     val editing: MomentWithEpisode? = null,
     val message: MomentsMessage? = null,
 ) {
-    /** True when there is nothing saved and nothing left to wait for. */
-    val isEmpty: Boolean get() = !isLoading && moments.isEmpty()
+    /**
+     * True when there is nothing saved, nothing narrowing, and nothing left to wait for.
+     *
+     * Asked of the *filter* rather than of a second count of what exists, so that a state built
+     * with a list and nothing else cannot claim to be empty while holding rows. The one case the
+     * two spellings differ on is deleting the last moment with a filter still on — and there
+     * "nothing matches this" is true as well.
+     */
+    val isEmpty: Boolean get() = !isLoading && moments.isEmpty() && !filter.isNarrowing
+
+    /** True when a narrowing is in force and nothing survives it, which is a different thing. */
+    val isNarrowedToNothing: Boolean
+        get() = !isLoading && moments.isEmpty() && filter.isNarrowing
+
+    /**
+     * Whether the narrowing controls are worth drawing.
+     *
+     * A search field over three moments is a control that costs more room than the list it filters.
+     * The same judgement the library makes about its own filter field.
+     */
+    val isNarrowable: Boolean get() = savedCount >= NARROWING_THRESHOLD
 }
+
+/** How many moments there have to be before the screen offers to narrow them. */
+private const val NARROWING_THRESHOLD = 8
 
 /**
  * A one-off outcome to show the user.
@@ -89,13 +130,32 @@ class MomentsViewModel @Inject constructor(
 
     private val editingState = MutableStateFlow<MomentWithEpisode?>(null)
 
+    /**
+     * What is narrowing the list.
+     *
+     * Held here rather than stored, for the reason [MomentsFilter] gives. In a view model rather
+     * than in the composition so that it survives a rotation or a fold, which is the one kind of
+     * "next time" a narrowing should survive.
+     */
+    private val filterState = MutableStateFlow(MomentsFilter())
+
     val uiState: StateFlow<MomentsUiState> = combine(
         momentsRepository.observeMoments(),
         messageState,
         editingState,
-    ) { moments, message, editing ->
+        filterState,
+    ) { moments, message, editing, filter ->
+        val narrowed = moments.narrowedBy(filter)
         MomentsUiState(
-            moments = moments,
+            moments = narrowed,
+            // Grouped only when asked. Doing it unconditionally would build a list nothing reads
+            // on every database emission, and the moments screen redraws whenever a note is saved.
+            groups = if (filter.groupByShow) narrowed.groupedByShow() else emptyList(),
+            // From every moment rather than from the narrowed ones: a menu that lost the other
+            // shows the moment one was chosen would be a menu with no way back.
+            shows = moments.showsWithMoments(),
+            filter = filter,
+            savedCount = moments.size,
             isLoading = false,
             // Re-read from the list rather than kept as the copy that opened the dialog, so an
             // edit saved elsewhere — from the player's own note dialog — is not overwritten by a
@@ -110,6 +170,33 @@ class MomentsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
         initialValue = MomentsUiState(),
     )
+
+    /**
+     * Narrows the list to moments whose note or episode mentions [query].
+     *
+     * @param query what was typed; blank narrows nothing.
+     */
+    fun setQuery(query: String) {
+        filterState.value = filterState.value.copy(query = query)
+    }
+
+    /**
+     * Narrows the list to one show, or back to all of them.
+     *
+     * @param feedUrl the show to keep, or null for every show.
+     */
+    fun setShow(feedUrl: String?) {
+        filterState.value = filterState.value.copy(feedUrl = feedUrl)
+    }
+
+    /**
+     * Gathers the list under show headings, or puts it back in time order.
+     *
+     * @param groupByShow whether to group.
+     */
+    fun setGroupByShow(groupByShow: Boolean) {
+        filterState.value = filterState.value.copy(groupByShow = groupByShow)
+    }
 
     /**
      * Plays the episode a moment is in, a few seconds before the mark.

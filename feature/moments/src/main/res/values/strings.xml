@@ -38,4 +38,21 @@
     <string name="moments_message_export_failed">Could not write that file</string>
     <string name="moments_message_nothing_to_export">There are no moments to export yet</string>
 
+
+    <!--
+      MOM-2: the narrowing controls, which appear only once there are enough moments to need them.
+
+      "All shows" is the chip's label when nothing is chosen rather than a word like "Show", because
+      a filter chip should say what is in force and "every one of them" is an answer.
+    -->
+    <string name="moments_search_hint">Search notes and episodes</string>
+    <string name="moments_search_clear">Clear the search</string>
+    <string name="moments_filter_all_shows">All shows</string>
+    <string name="moments_filter_show_description">Filter by show</string>
+    <!-- %1$s is the show title, %2$d how many moments it holds. -->
+    <string name="moments_filter_show_option">%1$s (%2$d)</string>
+    <string name="moments_filter_group_by_show">Group by show</string>
+    <string name="moments_no_matches_title">Nothing matches</string>
+    <string name="moments_no_matches_description">Try fewer words, or another show.</string>
+
 </resources>

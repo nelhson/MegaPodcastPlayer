@@ -1,16 +1,25 @@
 package md.borisveriga.megapodcastplayer.feature.moments
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.Moment
 import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
+import md.borisveriga.megapodcastplayer.core.model.MomentsFilter
+import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -33,7 +42,12 @@ class MomentsScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun entry(id: Long, note: String? = null) = MomentWithEpisode(
+    private fun entry(
+        id: Long,
+        note: String? = null,
+        showTitle: String = "Podlodka Podcast",
+        feedUrl: String = "https://feeds.simplecast.com/podlodka",
+    ) = MomentWithEpisode(
         moment = Moment(
             id = id,
             episodeId = "episode-$id",
@@ -42,9 +56,9 @@ class MomentsScreenTest {
             createdAtMs = 1_000L,
         ),
         episodeTitle = "Episode $id",
-        showTitle = "Podlodka Podcast",
+        showTitle = showTitle,
         showArtworkUrl = null,
-        feedUrl = "https://feeds.simplecast.com/podlodka",
+        feedUrl = feedUrl,
         audioUrl = "https://cdn.example.com/$id.mp3",
     )
 
@@ -52,8 +66,12 @@ class MomentsScreenTest {
         uiState: MomentsUiState,
         onPlay: (MomentWithEpisode) -> Unit = {},
         onShare: (MomentWithEpisode) -> Unit = {},
+        onEdit: (MomentWithEpisode) -> Unit = {},
         onDelete: (MomentWithEpisode) -> Unit = {},
         onExport: () -> Unit = {},
+        onQueryChange: (String) -> Unit = {},
+        onShowChange: (String?) -> Unit = {},
+        onGroupByShowChange: (Boolean) -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -61,9 +79,12 @@ class MomentsScreenTest {
                     uiState = uiState,
                     onPlay = onPlay,
                     onShare = onShare,
-                    onEdit = {},
+                    onEdit = onEdit,
                     onDelete = onDelete,
                     onExport = onExport,
+                    onQueryChange = onQueryChange,
+                    onShowChange = onShowChange,
+                    onGroupByShowChange = onGroupByShowChange,
                     onSaveNote = {},
                     onCancelEdit = {},
                     onUndoDelete = {},
@@ -72,6 +93,10 @@ class MomentsScreenTest {
             }
         }
     }
+
+    /** Nine moments across two shows: past the threshold the narrowing controls appear at. */
+    private val manyMoments = (1L..5L).map { entry(it, note = "Note $it") } +
+        (6L..9L).map { entry(it, showTitle = "Radio-T", feedUrl = "https://radio-t.com/rss") }
 
     @Test
     fun `an empty list explains where moments come from`() {
@@ -157,6 +182,148 @@ class MomentsScreenTest {
 
         assertEquals(true, exported)
     }
+
+    @Test
+    fun `a short list is not given controls it does not need`() {
+        setContent(
+            MomentsUiState(isLoading = false, moments = listOf(entry(1L)), savedCount = 1),
+        )
+
+        composeRule.onNodeWithText("Search notes and episodes").assertDoesNotExist()
+        composeRule.onNodeWithText("Group by show").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a long list is given a search field, a show chip and a grouping chip`() {
+        setContent(
+            MomentsUiState(
+                isLoading = false,
+                moments = manyMoments,
+                shows = manyMoments.showsWithMoments(),
+                savedCount = manyMoments.size,
+            ),
+        )
+
+        composeRule.onNodeWithText("Search notes and episodes").assertIsDisplayed()
+        // "All shows" rather than a word like "Show": a filter chip should say what is in force,
+        // and "every one of them" is an answer.
+        composeRule.onNodeWithText("All shows").assertIsDisplayed()
+        composeRule.onNodeWithText("Group by show").assertIsDisplayed()
+    }
+
+    @Test
+    fun `typing reports what was typed`() {
+        var typed: String? = null
+        setContent(
+            MomentsUiState(
+                isLoading = false,
+                moments = manyMoments,
+                savedCount = manyMoments.size,
+            ),
+            onQueryChange = { typed = it },
+        )
+
+        composeRule.onNodeWithText("Search notes and episodes").performTextInput("radio")
+
+        assertEquals("radio", typed)
+    }
+
+    @Test
+    fun `the show menu lists the shows with their counts`() {
+        setContent(
+            MomentsUiState(
+                isLoading = false,
+                moments = manyMoments,
+                shows = manyMoments.showsWithMoments(),
+                savedCount = manyMoments.size,
+            ),
+        )
+
+        composeRule.onNodeWithText("All shows").performClick()
+
+        composeRule.onNodeWithText("Podlodka Podcast (5)").assertIsDisplayed()
+        composeRule.onNodeWithText("Radio-T (4)").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the chip names the chosen show rather than the word Show`() {
+        setContent(
+            MomentsUiState(
+                isLoading = false,
+                moments = manyMoments,
+                shows = manyMoments.showsWithMoments(),
+                filter = MomentsFilter(feedUrl = "https://radio-t.com/rss"),
+                savedCount = manyMoments.size,
+            ),
+        )
+
+        composeRule.onAllNodesWithText("Radio-T").onFirst().assertIsDisplayed()
+        composeRule.onNodeWithText("All shows").assertDoesNotExist()
+    }
+
+    @Test
+    fun `toggling the grouping reports it`() {
+        var grouped: Boolean? = null
+        setContent(
+            MomentsUiState(
+                isLoading = false,
+                moments = manyMoments,
+                savedCount = manyMoments.size,
+            ),
+            onGroupByShowChange = { grouped = it },
+        )
+
+        composeRule.onNodeWithText("Group by show").performClick()
+
+        assertEquals(true, grouped)
+    }
+
+    /**
+     * The two empty states are different facts and want opposite things done about them, so a
+     * filter that matches nothing must not say "no moments yet" to someone with ninety of them.
+     */
+    @Test
+    fun `a filter that matches nothing says so rather than saying the library is empty`() {
+        setContent(
+            MomentsUiState(
+                isLoading = false,
+                moments = emptyList(),
+                shows = manyMoments.showsWithMoments(),
+                filter = MomentsFilter(query = "nothing"),
+                savedCount = manyMoments.size,
+            ),
+        )
+
+        composeRule.onNodeWithText("Nothing matches").assertIsDisplayed()
+        composeRule.onNodeWithText("No moments yet").assertDoesNotExist()
+    }
+
+    /**
+     * The swipe's two actions are also custom accessibility actions on the row, because a screen
+     * reader can see no gesture. MOM-2 exists because editing a note took three taps through a
+     * menu; for TalkBack it took the same three, and this is the shorter path for both.
+     */
+    @Test
+    fun `the row offers editing and deleting without opening the menu`() {
+        setContent(
+            MomentsUiState(isLoading = false, moments = listOf(entry(1L)), savedCount = 1),
+        )
+
+        composeRule.onNodeWithText("Episode 1").assert(hasCustomAction("Edit note"))
+        composeRule.onNodeWithText("Episode 1").assert(hasCustomAction("Delete"))
+    }
+
+    /**
+     * Matches a node carrying a custom accessibility action with this label.
+     *
+     * @param label the action, as a screen reader would announce it.
+     */
+    private fun hasCustomAction(label: String) =
+        SemanticsMatcher("has the custom action \"$label\"") { node ->
+            node.config.getOrNull(SemanticsActions.CustomActions)
+                .orEmpty()
+                .any { action -> action.label == label }
+        }
 }
 
 /*

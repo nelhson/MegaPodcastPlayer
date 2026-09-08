@@ -9,6 +9,7 @@ import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS
 import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
 import md.borisveriga.megapodcastplayer.feature.moments.MomentsScreenEmptyPreview
+import md.borisveriga.megapodcastplayer.feature.moments.MomentsScreenGroupedPreview
 import md.borisveriga.megapodcastplayer.feature.moments.MomentsScreenPreview
 import org.junit.Rule
 import org.junit.Test
@@ -46,6 +47,9 @@ class MomentsScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun moments() = capture("moments") { MomentsScreenPreview() }
+
+    @Test
+    fun momentsGrouped() = capture("moments-grouped") { MomentsScreenGroupedPreview() }
 
     @Test
     fun momentsEmpty() = capture("moments-empty") { MomentsScreenEmptyPreview() }
