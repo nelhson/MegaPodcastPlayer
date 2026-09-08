@@ -1,12 +1,16 @@
 package md.borisveriga.megapodcastplayer.wear.ui
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
@@ -123,6 +127,7 @@ class WatchPlayerScreenTest {
             onPlayQueued = { played = it },
         )
 
+        openEpisodes()
         scrollTo("The one about antennas")
         composeTestRule.onNodeWithText("The one about antennas").performClick()
 
@@ -224,10 +229,160 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithText("MegaPodcastPlayer is not on your phone").assertIsDisplayed()
     }
 
-    /** Scrolls the one scrollable list on the screen until the node holding [text] is on it. */
-    private fun scrollTo(text: String) {
-        composeTestRule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
+    // ---- Two pages ------------------------------------------------------------------------------
+
+    /**
+     * The whole reason the screen was split. The episode lists grow without limit — the phone's
+     * queue, what the phone has downloaded, what this watch holds — and in one column that pushed
+     * pause off the bottom of a 45 mm screen. On a page of its own the transport sits exactly where
+     * it sits when the watch is carrying nothing.
+     */
+    @Test
+    fun `the transport stays put however many episodes the watch is carrying`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = List(12) { index ->
+                    stored.copy(id = "ep-$index", title = "Stored episode $index")
+                },
+            ),
+        )
+
+        composeTestRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Stored episode 0").assertDoesNotExist()
     }
+
+    @Test
+    fun `the episodes are one swipe away rather than one scroll`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = listOf(stored),
+            ),
+        )
+
+        composeTestRule.onNodeWithText("On this watch").assertDoesNotExist()
+
+        openEpisodes()
+
+        scrollTo("On this watch")
+        composeTestRule.onNodeWithText("On this watch").assertIsDisplayed()
+    }
+
+    /**
+     * With nothing playing there is no page worth swiping to, so the screen collapses back to the
+     * one list it always was — and the sentence explaining the empty transport sits above the
+     * episodes it is telling the wearer to pick from.
+     */
+    @Test
+    fun `an idle phone keeps its episodes on the one page`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = NowPlayingSnapshot(upNext = playing.upNext),
+                stored = listOf(stored),
+            ),
+        )
+
+        composeTestRule.onNodeWithText("Nothing playing").assertIsDisplayed()
+
+        scrollTo("The one about capacitors")
+        composeTestRule.onNodeWithText("The one about capacitors").assertIsDisplayed()
+    }
+
+    /**
+     * A fact about the phone is true on whichever page the thumb happens to be on, so the two link
+     * notes are drawn on both rather than assigned to one of them.
+     */
+    @Test
+    fun `a phone out of range says so on both pages`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.DISCONNECTED,
+                snapshot = playing,
+                source = PlaybackSource.WATCH,
+                stored = listOf(stored),
+            ),
+        )
+
+        scrollTo(OUT_OF_RANGE)
+        composeTestRule.onNodeWithText(OUT_OF_RANGE).assertIsDisplayed()
+
+        openEpisodes()
+
+        scrollTo(OUT_OF_RANGE)
+        composeTestRule.onNodeWithText(OUT_OF_RANGE).assertIsDisplayed()
+    }
+
+    // ---- What a stored row says about itself ----------------------------------------------------
+
+    /**
+     * Every stored row answers the same question — will this fit my walk — so one nobody has started
+     * gives its whole length rather than only naming the show.
+     */
+    @Test
+    fun `an episode nobody has started says how long it is`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = listOf(stored),
+            ),
+        )
+
+        openEpisodes()
+        scrollTo("The one about capacitors")
+
+        composeTestRule.onNodeWithText("Radio Hardware · 30m").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a part-heard episode says what is left of it instead`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = listOf(stored.copy(positionMs = 600_000L)),
+            ),
+        )
+
+        openEpisodes()
+        scrollTo("The one about capacitors")
+
+        composeTestRule.onNodeWithText("Radio Hardware · 20m left").assertIsDisplayed()
+    }
+
+    /** Scrolls the list on whichever page is showing until the node holding [text] is on it. */
+    private fun scrollTo(text: String) {
+        composeTestRule.onNode(isVerticalList()).performScrollToNode(hasText(text))
+    }
+
+    /** The same, for a node that carries no text of its own — a button that is only a glyph. */
+    private fun scrollToDescription(description: String) {
+        composeTestRule.onNode(isVerticalList())
+            .performScrollToNode(hasContentDescription(description))
+    }
+
+    /**
+     * Moves from the now-playing page to the episodes page.
+     *
+     * Driven through the pager's own scroll-to-index rather than by a swipe gesture: the left edge
+     * of the first page is reserved for the system's swipe-to-dismiss, and a test that has to aim
+     * around that zone ends up asserting on the gesture rather than on the page it lands on.
+     */
+    private fun openEpisodes() {
+        composeTestRule.onNode(isPager()).performScrollToIndex(EPISODES_PAGE)
+    }
+
+    /** The pager: the one scrollable on this screen that moves sideways. */
+    private fun isPager(): SemanticsMatcher = hasScrollToNodeAction() and
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
+
+    /** The list on the page being shown: the one scrollable that moves up and down. */
+    private fun isVerticalList(): SemanticsMatcher = hasScrollToNodeAction() and
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
 
     // ---- Episodes the watch holds ---------------------------------------------------------------
 
@@ -243,6 +398,7 @@ class WatchPlayerScreenTest {
             onPlayOnWatch = { played = it },
         )
 
+        openEpisodes()
         scrollTo("The one about capacitors")
         composeTestRule.onNodeWithText("The one about capacitors").performClick()
 
@@ -263,6 +419,7 @@ class WatchPlayerScreenTest {
             onCopyToWatch = { copied = it },
         )
 
+        openEpisodes()
         scrollTo("The one about resistors")
         composeTestRule.onNodeWithText("The one about resistors").performClick()
 
@@ -330,6 +487,8 @@ class WatchPlayerScreenTest {
             ),
         )
 
+        openEpisodes()
+
         scrollTo("Phone queue")
         composeTestRule.onNodeWithText("Phone queue").assertIsDisplayed()
 
@@ -360,6 +519,7 @@ class WatchPlayerScreenTest {
             ),
         )
 
+        openEpisodes()
         scrollTo("The one about resistors")
         composeTestRule.onNodeWithContentDescription("Copy to watch").assertIsDisplayed()
     }
@@ -389,7 +549,10 @@ class WatchPlayerScreenTest {
             onCancelCopyToWatch = { cancelled = it },
         )
 
-        scrollTo("The one about resistors")
+        openEpisodes()
+        // Scrolled to the button rather than to the row's title: the row is taller than a quarter
+        // of this screen, so a scroll that lands the title leaves the button below the bezel.
+        scrollToDescription("Cancel copy")
         composeTestRule.onNodeWithContentDescription("Cancel copy").performClick()
 
         assertEquals("ep-8", cancelled)
@@ -469,3 +632,9 @@ class WatchPlayerScreenTest {
         }
     }
 }
+
+/** The episodes page's index in the pager; the now-playing page is the one before it. */
+private const val EPISODES_PAGE = 1
+
+/** Spelled once because two assertions in a row read it, and it is a whole sentence. */
+private const val OUT_OF_RANGE = "Phone out of range. Episodes on this watch still play."

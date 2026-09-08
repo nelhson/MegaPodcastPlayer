@@ -75,12 +75,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.pager.HorizontalPager
+import androidx.wear.compose.foundation.pager.rememberPagerState
+import androidx.wear.compose.material3.AnimatedPage
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.FilledTonalIconButton
+import androidx.wear.compose.material3.HorizontalPagerScaffold
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.LinearProgressIndicator
@@ -137,9 +142,18 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  *
  * Stateless so it can be previewed and screenshot-tested without a phone at the other end.
  *
- * Everything lives in one scrolling list rather than behind navigation: a watch screen fits about
- * four things at a time, and swiping down to the queue is one gesture where a nav graph would be
- * two plus a back stack to get wrong.
+ * Two pages side by side rather than one long column: *now playing*, and the episodes to choose
+ * from. Everything used to live in a single list, and that list grew — the phone's queue, what the
+ * phone has downloaded, what this watch holds — until pause was somewhere below the bottom of a
+ * 45 mm screen. The transport is the one thing here that has to be under the thumb within a second
+ * of raising the wrist, so it gets a page whose length nothing can change. Paging is what Wear does
+ * about exactly this, and it is not navigation: a swipe, with two dots to say the second page is
+ * there, rather than a route and a back stack to get wrong.
+ *
+ * The pager appears only when there is something to control. With nothing playing there is no
+ * now-playing page worth swiping to, so the screen collapses back to the one list it always was,
+ * and the sentence explaining the missing transport sits above the episodes it tells you to pick
+ * from.
  *
  * @param uiState what to draw.
  * @param onTogglePlayPause invoked by the centre transport button.
@@ -191,6 +205,99 @@ fun WatchPlayerScreen(
         return
     }
 
+    val episodesPage: @Composable () -> Unit = {
+        EpisodesPage(
+            uiState = uiState,
+            onPlayQueued = onPlayQueued,
+            onPlayOnWatch = onPlayOnWatch,
+            onCopyToWatch = onCopyToWatch,
+            onCancelCopyToWatch = onCancelCopyToWatch,
+            onRemoveFromWatch = onRemoveFromWatch,
+            onRemoveAllFromWatch = onRemoveAllFromWatch,
+        )
+    }
+
+    // Nothing to control means nothing to put on a first page, and a pager whose first page is an
+    // apology is worse than no pager: the dots would promise a screen not worth the swipe.
+    if (!uiState.showsControls) {
+        episodesPage()
+        return
+    }
+
+    val pagerState = rememberPagerState { PAGE_COUNT }
+
+    HorizontalPagerScaffold(pagerState = pagerState) {
+        HorizontalPager(
+            state = pagerState,
+            // Scrubbing is a horizontal drag on a bar inside a horizontally paged screen. The bar
+            // wins the gesture by being the inner one, but a drag that begins a few pixels off it
+            // would turn the page instead of moving the playhead — so while the bar is held there
+            // are no pages to turn.
+            userScrollEnabled = !uiState.isScrubbing,
+        ) { page ->
+            AnimatedPage(pageIndex = page, pagerState = pagerState) {
+                if (page == PAGE_NOW_PLAYING) {
+                    NowPlayingPage(
+                        uiState = uiState,
+                        onTogglePlayPause = onTogglePlayPause,
+                        onSkipForward = onSkipForward,
+                        onSkipBack = onSkipBack,
+                        onSkipToNext = onSkipToNext,
+                        onSkipToPrevious = onSkipToPrevious,
+                        onCycleSpeed = onCycleSpeed,
+                        onMarkMoment = onMarkMoment,
+                        onBeginScrub = onBeginScrub,
+                        onScrubBy = onScrubBy,
+                        onCommitScrub = onCommitScrub,
+                        onBackToPhone = onBackToPhone,
+                    )
+                } else {
+                    episodesPage()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The page that is only ever as long as the controls on it.
+ *
+ * Header, scrubber, transport, the controls used sitting down, and the moment button — five items,
+ * however many episodes the watch is carrying. That fixed length is the whole point of the page:
+ * before it, the same five sat on top of three growing lists, and the last two of them were a
+ * scroll away on a watch holding a walk's worth of audio.
+ *
+ * Still a scrolling list rather than a fixed layout, because at 200 % font scale five items do not
+ * fit a round screen and the alternative to scrolling is clipping.
+ *
+ * @param uiState what to draw.
+ * @param onTogglePlayPause invoked by the centre transport button.
+ * @param onSkipForward invoked by the skip-ahead button.
+ * @param onSkipBack invoked by the skip-back button.
+ * @param onSkipToNext invoked by the next-episode button.
+ * @param onSkipToPrevious invoked by the previous-episode button.
+ * @param onCycleSpeed invoked by the speed button.
+ * @param onMarkMoment invoked by the mark-a-moment button.
+ * @param onBeginScrub invoked when the user takes hold of the progress bar.
+ * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
+ * @param onCommitScrub invoked when they settle, which is what actually seeks.
+ * @param onBackToPhone invoked to stop local playback and go back to controlling the phone.
+ */
+@Composable
+private fun NowPlayingPage(
+    uiState: WatchPlayerUiState,
+    onTogglePlayPause: () -> Unit,
+    onSkipForward: () -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipToNext: () -> Unit,
+    onSkipToPrevious: () -> Unit,
+    onCycleSpeed: () -> Unit,
+    onMarkMoment: () -> Unit,
+    onBeginScrub: () -> Unit,
+    onScrubBy: (Long) -> Unit,
+    onCommitScrub: () -> Unit,
+    onBackToPhone: () -> Unit,
+) {
     val listState = rememberScalingLazyListState()
 
     ScreenScaffold(
@@ -202,50 +309,83 @@ fun WatchPlayerScreen(
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (uiState.showsPhoneOutOfRange) {
-                item { PhoneOutOfRangeNote() }
-            }
+            linkNotes(uiState)
 
-            if (uiState.showsControls) {
-                item { NowPlayingHeader(uiState) }
-                item {
-                    ProgressRow(
-                        uiState = uiState,
-                        onBeginScrub = onBeginScrub,
-                        onScrubBy = onScrubBy,
-                        onCommitScrub = onCommitScrub,
-                    )
-                }
-                item {
-                    TransportRow(
-                        uiState = uiState,
-                        onTogglePlayPause = onTogglePlayPause,
-                        onSkipForward = onSkipForward,
-                        onSkipBack = onSkipBack,
-                    )
-                }
-                item {
-                    SecondaryRow(
-                        uiState = uiState,
-                        onSkipToPrevious = onSkipToPrevious,
-                        onSkipToNext = onSkipToNext,
-                        onCycleSpeed = onCycleSpeed,
-                        onBackToPhone = onBackToPhone,
-                    )
-                }
-                item { MarkMomentRow(saved = uiState.momentSaved, onClick = onMarkMoment) }
-            } else {
+            item { NowPlayingHeader(uiState) }
+            item {
+                ProgressRow(
+                    uiState = uiState,
+                    onBeginScrub = onBeginScrub,
+                    onScrubBy = onScrubBy,
+                    onCommitScrub = onCommitScrub,
+                )
+            }
+            item {
+                TransportRow(
+                    uiState = uiState,
+                    onTogglePlayPause = onTogglePlayPause,
+                    onSkipForward = onSkipForward,
+                    onSkipBack = onSkipBack,
+                )
+            }
+            item {
+                SecondaryRow(
+                    uiState = uiState,
+                    onSkipToPrevious = onSkipToPrevious,
+                    onSkipToNext = onSkipToNext,
+                    onCycleSpeed = onCycleSpeed,
+                    onBackToPhone = onBackToPhone,
+                )
+            }
+            item { MarkMomentRow(saved = uiState.momentSaved, onClick = onMarkMoment) }
+        }
+    }
+}
+
+/**
+ * The page that holds every episode the watch can offer, wherever it lives.
+ *
+ * Two lists describing the phone, then one describing the watch. Each header names the list rather
+ * than the action its rows perform: on a screen this small the header is the only thing that says
+ * *whose* episodes these are, and "up next" and "downloaded" are both true of the phone at once.
+ *
+ * This is also the whole screen when nothing is playing — see [WatchPlayerScreen] — which is why the
+ * sentence about an idle phone is at the top of it rather than on a page of its own.
+ *
+ * @param uiState what to draw.
+ * @param onPlayQueued invoked with the episode id when a queue row is tapped.
+ * @param onPlayOnWatch invoked with a stored episode to play it on the watch itself.
+ * @param onCopyToWatch invoked with an episode id to ask the phone to send its audio over.
+ * @param onCancelCopyToWatch invoked with an episode id to abandon a copy that is arriving.
+ * @param onRemoveFromWatch invoked with an episode id to delete it from the watch.
+ * @param onRemoveAllFromWatch invoked to delete everything the watch holds.
+ */
+@Composable
+private fun EpisodesPage(
+    uiState: WatchPlayerUiState,
+    onPlayQueued: (String) -> Unit,
+    onPlayOnWatch: (StoredEpisode) -> Unit,
+    onCopyToWatch: (String) -> Unit,
+    onCancelCopyToWatch: (String) -> Unit,
+    onRemoveFromWatch: (String) -> Unit,
+    onRemoveAllFromWatch: () -> Unit,
+) {
+    val listState = rememberScalingLazyListState()
+
+    ScreenScaffold(
+        scrollState = listState,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 24.dp),
+    ) { contentPadding ->
+        ScalingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            linkNotes(uiState)
+
+            if (!uiState.showsControls) {
                 item { NothingPlaying(hasQueue = uiState.snapshot.upNext.isNotEmpty()) }
             }
-
-            if (uiState.lastCommandFailed) {
-                item { CommandFailedNote() }
-            }
-
-            // Two lists describing the phone, then one describing the watch. Each header names the
-            // list rather than the action its rows perform: on a screen this small the header is the
-            // only thing that says *whose* episodes these are, and "up next" and "downloaded" are
-            // both true of the phone at once.
 
             // The phone's queue, which only means anything while the phone is the one playing.
             if (uiState.source == PlaybackSource.PHONE && uiState.snapshot.upNext.isNotEmpty()) {
@@ -295,6 +435,24 @@ fun WatchPlayerScreen(
                 item { NothingToCopyNote() }
             }
         }
+    }
+}
+
+/**
+ * The two sentences about the phone link, at the top of whichever page is being read.
+ *
+ * Repeated on both pages rather than given to one of them. Both answer "why is this screen not
+ * doing what I asked", the question is asked from whichever page the thumb happens to be on, and a
+ * fact that is true of the app is true on every page of it.
+ *
+ * @param uiState what to draw.
+ */
+private fun ScalingLazyListScope.linkNotes(uiState: WatchPlayerUiState) {
+    if (uiState.showsPhoneOutOfRange) {
+        item { PhoneOutOfRangeNote() }
+    }
+    if (uiState.lastCommandFailed) {
+        item { CommandFailedNote() }
     }
 }
 
@@ -827,10 +985,15 @@ private fun StoredRow(
 }
 
 /**
- * The second line of a stored row: the show, and how far through it the wearer is.
+ * The second line of a stored row: the show, and how long the episode asks for.
  *
- * A part-heard episode says where it stands, because that is what decides whether to start it on a
- * twenty-minute walk. An untouched one says only what show it is; "0% played" is noise.
+ * Every row that can answer it gives a number, because the question asked of this list is always the
+ * same one — *will this fit my walk*. A part-heard episode answers it with what is left; an
+ * untouched one with its whole length, which is the same question one step earlier. "0% played" is
+ * still noise, which is why an unstarted episode says its length rather than its progress.
+ *
+ * A finished episode says so instead of saying a length: what is left of it is nothing, and its
+ * length is no longer a thing anybody is deciding about.
  *
  * @param episode the stored episode.
  */
@@ -844,6 +1007,14 @@ private fun storedSubtitle(episode: StoredEpisode): String = when {
         formatCompactRemaining(episode.durationMs - episode.positionMs),
     )
 
+    episode.durationMs > 0L -> stringResource(
+        R.string.watch_stored_length,
+        episode.showTitle,
+        formatCompactRemaining(episode.durationMs),
+    )
+
+    // A copy that arrived without a duration. The show's name is all there is to say, and inventing
+    // a "0m" for it would be the one thing worse than saying nothing.
     else -> episode.showTitle
 }
 
@@ -1126,6 +1297,16 @@ private fun skipContentDescription(skipMs: Long, forward: Boolean): String {
         seconds,
     )
 }
+
+/**
+ * The two pages of the screen, and the order they sit in.
+ *
+ * Now playing first because that is what a raised wrist is nearly always asking about; the episodes
+ * are a deliberate second question. Spelled out rather than left as bare 0 and 1 because the pager
+ * hands the index back as an `Int` and `if (page == 0)` says nothing about which page that is.
+ */
+private const val PAGE_NOW_PLAYING = 0
+private const val PAGE_COUNT = 2
 
 /** The play button is deliberately larger than its neighbours: it is the one pressed blind. */
 private val PLAY_BUTTON_SIZE = 60.dp

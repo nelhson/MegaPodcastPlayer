@@ -100,6 +100,10 @@ internal fun tileCommandFor(clickableId: String): WearCommand? = when (clickable
  * app's waveform does not come along — a tile cannot animate, and a frozen waveform would say
  * "paused" when it is not.
  *
+ * Colour therefore always means the same thing here: *which show is this*. Which leaves the idle
+ * tile — no show, no buttons, nothing to colour — looking like any other app's tile in the
+ * carousel, so that one state borrows the app's own citron for its heading instead. See [BRAND_ARGB].
+ *
  * @param snapshot what the phone last published.
  * @param positionMs playback position now, extrapolated from the snapshot.
  * @param accentArgb the show's colour, from [md.borisveriga.megapodcastplayer.wear.ui.showAccentArgb].
@@ -122,7 +126,10 @@ internal fun nowPlayingTileLayout(
         .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
 
     if (snapshot.isIdle) {
-        content.addContent(plainText(copy.idleTitle, TITLE_SIZE_SP, WHITE, IDLE_MAX_LINES))
+        // Citron, not white. An idle tile is the one state with no show to take a colour from, and
+        // white on black is what every other tile in the carousel looks like; the brand colour is
+        // the only thing left saying whose tile this is. See [BRAND_ARGB].
+        content.addContent(plainText(copy.idleTitle, TITLE_SIZE_SP, BRAND_ARGB, IDLE_MAX_LINES))
         content.addContent(spacerHeight(GAP_SMALL_DP))
         content.addContent(plainText(copy.idleBody, SHOW_SIZE_SP, MUTED, IDLE_MAX_LINES))
     } else {
@@ -435,6 +442,19 @@ private const val MIN_BAR_WEIGHT = 0.01f
 
 private const val WHITE = 0xFFFFFFFF.toInt()
 private const val BLACK = 0xFF000000.toInt()
+
+/**
+ * The app's own citron, for the one state that has no show to take a colour from.
+ *
+ * Spelled out rather than read from `:core:designsystem`: that module is mobile Material 3, which
+ * must never reach the watch, and a tile is drawn in the system's process from literal values
+ * anyway. This is `Citron80`, the dark scheme's primary — the watch is always on ink, so the dark
+ * one is the only one it could ever want. If the brand palette moves, this moves with it.
+ *
+ * Internal rather than private only so the test can assert on the same number the layout draws,
+ * instead of keeping a second copy of it that could drift.
+ */
+internal const val BRAND_ARGB = 0xFFBCDA4E.toInt()
 
 /** Secondary text: bright enough to read on black, dim enough not to compete with the title. */
 private const val MUTED = 0xFF9E9E9E.toInt()
