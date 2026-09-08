@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground layer of the *Resume* launcher shortcut: a play triangle.
+
+    Adaptive-icon geometry, exactly as ic_launcher_foreground has it: a 108x108 canvas of which
+    only the centre 72dp is guaranteed visible, so the mark stays inside the 66dp safe circle
+    (x and y in 21..87). The apex sits right of centre because a triangle's optical centre is
+    behind its widest edge; centring the bounding box would read as leaning left.
+
+    Citron on the app's own espresso background — see ic_shortcut_resume.xml — so a shortcut in the
+    launcher's menu reads as this app rather than as a system glyph.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M46,34 L76,54 L46,74 Z" />
+</vector>

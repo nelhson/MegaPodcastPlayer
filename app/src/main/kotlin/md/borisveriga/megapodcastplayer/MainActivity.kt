@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.media.EXTRA_OPEN_PLAYER
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
+import md.borisveriga.megapodcastplayer.navigation.LaunchShortcut
 import md.borisveriga.megapodcastplayer.ui.MegaPodcastPlayerApp
 import md.borisveriga.megapodcastplayer.ui.NotificationPermissionEffect
 
@@ -38,6 +39,9 @@ import md.borisveriga.megapodcastplayer.ui.NotificationPermissionEffect
  *
  * And it is the target of a shared or tapped podcast link; see [podcastLinkOrNull] for what is
  * accepted and why nothing is added without a tap.
+ *
+ * And of the launcher's long-press shortcuts, which arrive as an action rather than an extra; see
+ * [LaunchShortcut].
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -76,7 +80,17 @@ class MainActivity : ComponentActivity() {
      */
     private var pendingOpenPlayer by mutableStateOf(false)
 
-    /** Reads the stored appearance; the only state this activity has of its own. */
+    /**
+     * The launcher shortcut this launch came from, or null.
+     *
+     * Held and cleared like the other three, and passed to the composition for the same reason: a
+     * shortcut names a destination, and the graph is where destinations are reached. The one
+     * exception is [LaunchShortcut.RESUME], which is playback rather than navigation and is acted
+     * on here — see [resumePlayback].
+     */
+    private var pendingShortcut by mutableStateOf<LaunchShortcut?>(null)
+
+    /** Reads the stored appearance, and answers the Resume shortcut. */
     private val viewModel: MainActivityViewModel by viewModels()
 
     /**
@@ -129,6 +143,8 @@ class MainActivity : ComponentActivity() {
                     onPendingSharedLinkHandled = { pendingSharedLink = null },
                     pendingOpenPlayer = pendingOpenPlayer,
                     onPendingOpenPlayerHandled = { pendingOpenPlayer = false },
+                    pendingShortcut = pendingShortcut,
+                    onPendingShortcutHandled = { pendingShortcut = null },
                 )
             }
         }
@@ -159,6 +175,26 @@ class MainActivity : ComponentActivity() {
         pendingEpisodeId = intent.episodeIdExtra()
         pendingSharedLink = intent.podcastLinkOrNull()
         pendingOpenPlayer = intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false)
+        pendingShortcut = LaunchShortcut.fromAction(intent.action)
+        // After the assignment above, which clears the flag on every intent: the resume sets it
+        // again, asynchronously, and only if there turns out to be something to resume.
+        if (pendingShortcut == LaunchShortcut.RESUME) resumePlayback()
+    }
+
+    /**
+     * Starts what the *Resume* shortcut asked for, and opens the player over whatever is on screen.
+     *
+     * Nothing to resume — an empty queue on a fresh install, or a player dismissed since — opens
+     * the app and nothing else. Expanding an empty sheet would answer a request to carry on
+     * listening with a blank screen, and the app the user is now looking at is the better answer.
+     *
+     * In the activity's scope rather than the view model's, so a rotation cancels it; see
+     * [MainActivityViewModel.resume].
+     */
+    private fun resumePlayback() {
+        lifecycleScope.launch {
+            if (viewModel.resume()) pendingOpenPlayer = true
+        }
     }
 
     companion object {

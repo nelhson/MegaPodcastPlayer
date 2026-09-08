@@ -64,4 +64,21 @@
     <string name="bell_text">%1$s has ended. Playback is stopped.</string>
     <string name="bell_text_unknown_episode">Your episode has ended. Playback is stopped.</string>
 
+    <!--
+      The launcher's long-press shortcuts; see res/xml/shortcuts.xml.
+
+      Short labels are one word wherever the destination has one, because a launcher truncates at
+      around ten characters and a truncated label is worse than a shorter one. The long label is
+      what a launcher with room shows, and what a home-screen shortcut pinned from this menu is
+      named — so it is written as the thing it produces rather than as an instruction.
+    -->
+    <string name="shortcut_resume_short_label">Resume</string>
+    <string name="shortcut_resume_long_label">Resume listening</string>
+    <string name="shortcut_queue_short_label">Queue</string>
+    <string name="shortcut_queue_long_label">Open the queue</string>
+    <string name="shortcut_downloads_short_label">Downloads</string>
+    <string name="shortcut_downloads_long_label">Downloaded episodes</string>
+    <string name="shortcut_add_show_short_label">Add</string>
+    <string name="shortcut_add_show_long_label">Add a show</string>
+
 </resources>
