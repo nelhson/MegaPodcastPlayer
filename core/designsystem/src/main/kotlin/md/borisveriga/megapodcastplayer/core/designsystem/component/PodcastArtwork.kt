@@ -93,6 +93,10 @@ fun PodcastArtwork(
  * Decorative: the row that owns it carries the state in its own semantics, so this is hidden from
  * accessibility services rather than announced as three anonymous bars.
  *
+ * A user who has asked the system to remove animations gets the same three bars at rest. Which row
+ * is loaded is still legible — the bars are only drawn on that one — and the row's own semantics
+ * were always what said so out loud.
+ *
  * @param modifier layout modifier.
  * @param playing whether the bars animate; when false they rest at their minimum height, which is
  *   what "loaded but paused" should look like.
@@ -103,6 +107,7 @@ fun NowPlayingBars(
     playing: Boolean = true,
 ) {
     val transition = rememberInfiniteTransition(label = "bars")
+    val animate = playing && !MegaPodcastPlayerTheme.reduceMotion
 
     Row(
         modifier = modifier
@@ -126,7 +131,7 @@ fun NowPlayingBars(
             Box(
                 modifier = Modifier
                     .width(BAR_WIDTH)
-                    .height(BAR_MAX_HEIGHT * if (playing) fraction else BAR_MIN_FRACTION)
+                    .height(BAR_MAX_HEIGHT * if (animate) fraction else BAR_MIN_FRACTION)
                     .clip(MegaPodcastPlayerTheme.shapes.pill)
                     .background(MegaPodcastPlayerTheme.colors.nowPlaying),
             )

@@ -22,6 +22,8 @@ import java.time.Instant
  * @property downloadState current offline availability.
  * @property downloadedBytes bytes written so far; mirrors Media3's download index.
  * @property downloadPercent download progress in `0f..100f`.
+ * @property chaptersUrl URL of the `podcast:chapters` document the feed publishes, if any.
+ * @property chaptersJson the feed's inline `psc:chapters` list, serialised and decoded lazily.
  */
 data class Episode(
     val id: String,
@@ -40,6 +42,8 @@ data class Episode(
     val downloadState: DownloadState = DownloadState.NOT_DOWNLOADED,
     val downloadedBytes: Long = 0L,
     val downloadPercent: Float = 0f,
+    val chaptersUrl: String? = null,
+    val chaptersJson: String? = null,
 ) {
     /**
      * Fraction of the episode already played, in `0f..1f`.

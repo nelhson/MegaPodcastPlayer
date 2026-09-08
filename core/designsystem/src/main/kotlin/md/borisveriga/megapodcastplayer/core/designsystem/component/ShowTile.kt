@@ -22,8 +22,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import md.borisveriga.megapodcastplayer.core.designsystem.R
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
@@ -166,7 +166,8 @@ private fun ShowTilePreview() {
     }
 }
 
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun ShowTileNoBadgePreview() {
     MegaPodcastPlayerTheme {

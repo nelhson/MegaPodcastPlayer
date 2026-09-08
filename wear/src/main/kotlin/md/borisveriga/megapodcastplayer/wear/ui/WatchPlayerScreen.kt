@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
@@ -59,8 +61,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -112,6 +117,7 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onSkipToNext = viewModel::skipToNext,
         onSkipToPrevious = viewModel::skipToPrevious,
         onCycleSpeed = viewModel::cycleSpeed,
+        onMarkMoment = viewModel::markMoment,
         onPlayQueued = viewModel::playQueued,
         onRetry = viewModel::retry,
         onBeginScrub = viewModel::beginScrub,
@@ -142,6 +148,7 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onSkipToNext invoked by the next-episode button.
  * @param onSkipToPrevious invoked by the previous-episode button.
  * @param onCycleSpeed invoked by the speed button.
+ * @param onMarkMoment invoked by the mark-a-moment button.
  * @param onPlayQueued invoked with the episode id when a queue row is tapped.
  * @param onRetry invoked when the user retries a failed connection.
  * @param onBeginScrub invoked when the user takes hold of the progress bar.
@@ -165,6 +172,7 @@ fun WatchPlayerScreen(
     onCycleSpeed: () -> Unit,
     onPlayQueued: (String) -> Unit,
     onRetry: () -> Unit,
+    onMarkMoment: () -> Unit = {},
     onBeginScrub: () -> Unit = {},
     onScrubBy: (Long) -> Unit = {},
     onCommitScrub: () -> Unit = {},
@@ -225,6 +233,7 @@ fun WatchPlayerScreen(
                         onBackToPhone = onBackToPhone,
                     )
                 }
+                item { MarkMomentRow(saved = uiState.momentSaved, onClick = onMarkMoment) }
             } else {
                 item { NothingPlaying(hasQueue = uiState.snapshot.upNext.isNotEmpty()) }
             }
@@ -378,7 +387,11 @@ private fun Waveform(accent: Color, moving: Boolean, modifier: Modifier = Modifi
     // Kept as State and unwrapped inside the draw lambda below, not here: a value read during
     // composition would recompose this function on every animation frame, where a draw-phase read
     // only repaints. On a watch that difference is battery.
-    val phase: State<Float>? = if (moving) {
+    // A wearer who has turned animations off gets the bars at rest. Whether the phone is playing is
+    // said by the transport button, which is where it always was; the waveform only ever repeated it.
+    val animate = moving && !rememberReduceMotion()
+
+    val phase: State<Float>? = if (animate) {
         rememberInfiniteTransition(label = "waveform").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
@@ -508,8 +521,9 @@ private fun ProgressRow(
     )
 
     Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        LinearProgressIndicator(
-            progress = { uiState.progress },
+        // The bar and its thumb share one box so the thumb can be placed by the same fraction the
+        // bar fills, rather than by a second copy of the arithmetic.
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(if (uiState.isScrubbing) SCRUB_BAR_HEIGHT else PROGRESS_BAR_HEIGHT)
@@ -538,7 +552,27 @@ private fun ProgressRow(
                         Modifier
                     },
                 ),
-        )
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            LinearProgressIndicator(
+                progress = { uiState.progress },
+                modifier = Modifier.fillMaxWidth().height(
+                    if (uiState.isScrubbing) SCRUB_BAR_HEIGHT else PROGRESS_BAR_HEIGHT,
+                ),
+            )
+            if (uiState.isScrubbing) {
+                ScrubThumb(progress = uiState.progress, trackWidthPx = barWidthPx)
+            }
+        }
+        if (uiState.showsScrubHint) {
+            Text(
+                text = stringResource(R.string.watch_scrub_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            )
+        }
         Spacer(modifier = Modifier.height(2.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -562,6 +596,35 @@ private fun ProgressRow(
             )
         }
     }
+}
+
+/**
+ * The grip on the bar, drawn only while the bar is being held.
+ *
+ * The whole of what makes scrub mode visible. Before this, the only difference between reading the
+ * position and moving it was that the bar got taller, which nobody reads as *this is now a
+ * control*; a thumb is the shape every slider ever made has used to say so.
+ *
+ * Placed by padding it away from the start of the track rather than by weighting two spacers, so
+ * that a progress of zero and a progress of one both leave it inside the bar rather than half off
+ * the end of it.
+ *
+ * @param progress how far along the track it sits, from zero to one.
+ * @param trackWidthPx the measured width of the bar; zero before the first layout pass, which puts
+ *   the thumb at the start for one frame rather than not drawing it at all.
+ */
+@Composable
+private fun ScrubThumb(progress: Float, trackWidthPx: Int) {
+    val trackWidth = with(LocalDensity.current) { trackWidthPx.toDp() }
+    val travel = (trackWidth - SCRUB_THUMB_SIZE).coerceAtLeast(0.dp)
+
+    Box(
+        modifier = Modifier
+            .padding(start = travel * progress.coerceIn(0f, 1f))
+            .size(SCRUB_THUMB_SIZE)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary),
+    )
 }
 
 /** Skip back, play/pause, skip forward — the three buttons that get used while walking. */
@@ -679,6 +742,49 @@ private fun SecondaryRow(
             }
         }
     }
+}
+
+/**
+ * The button that keeps the spot the wearer is listening to.
+ *
+ * Full width and on a row of its own, rather than a fourth glyph squeezed into [SecondaryRow]. This
+ * is the one control here that is pressed *without looking* — mid-run, mid-walk, through a sleeve —
+ * so it is given the largest target on the screen after play/pause, and the others keep theirs.
+ *
+ * The label is the confirmation. A watch has no snackbar and marking leaves nothing behind, so the
+ * button says "Saved" for a few seconds; without that the wearer presses again to check, which is
+ * why the phone folds two marks a few seconds apart into one.
+ *
+ * @param saved true while the confirmation is showing.
+ * @param onClick marks a moment at the playhead.
+ */
+@Composable
+private fun MarkMomentRow(saved: Boolean, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    // Keyed on the confirmation rather than fired from the click, because the two are not the same
+    // event: a mark that could neither be delivered nor queued sets nothing, and a wrist that
+    // buzzed anyway would have said the moment was kept when it was not.
+    LaunchedEffect(saved) {
+        if (saved) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+    }
+
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        icon = {
+            Icon(
+                imageVector = if (saved) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkAdd,
+                contentDescription = null,
+            )
+        },
+        label = {
+            Text(
+                text = stringResource(
+                    if (saved) R.string.watch_moment_saved else R.string.watch_moment_mark,
+                ),
+            )
+        },
+    )
 }
 
 /**
@@ -1032,6 +1138,9 @@ private val PROGRESS_BAR_HEIGHT = 6.dp
 
 /** The bar while scrubbing: thick enough to be a target for a fingertip. */
 private val SCRUB_BAR_HEIGHT = 14.dp
+
+/** The thumb on that bar. As tall as the bar, so it reads as a grip on it and not a dot above it. */
+private val SCRUB_THUMB_SIZE = 14.dp
 
 /** The band the waveform is drawn in. Sized to be read, not to compete with the title under it. */
 private val WAVEFORM_HEIGHT = 18.dp

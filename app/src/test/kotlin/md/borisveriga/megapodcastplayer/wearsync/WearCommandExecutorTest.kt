@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.wearsync
 
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
@@ -7,8 +8,10 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
+import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
+import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
 import org.junit.Before
@@ -19,6 +22,7 @@ class WearCommandExecutorTest {
 
     private val connection = mockk<PlaybackConnection>(relaxed = true)
     private val playbackRepository = mockk<PlaybackRepository>(relaxed = true)
+    private val momentsRepository = mockk<MomentsRepository>(relaxed = true)
     private val episodePlayer = mockk<EpisodePlayer>(relaxed = true)
     private val publisher = mockk<NowPlayingPublisher>(relaxed = true)
     private val libraryPublisher = mockk<OfflineLibraryPublisher>(relaxed = true)
@@ -34,6 +38,7 @@ class WearCommandExecutorTest {
         executor = WearCommandExecutor(
             connection,
             playbackRepository,
+            momentsRepository,
             episodePlayer,
             publisher,
             libraryPublisher,
@@ -172,5 +177,46 @@ class WearCommandExecutorTest {
     private companion object {
         /** The node a command arrived from; only the commands that answer one care which. */
         const val WATCH_NODE = "watch-node-1"
+    }
+
+    @Test
+    fun `a mark from the wrist naming an episode is written where the watch says`() = runTest {
+        executor.execute(
+            WearCommand.MarkMoment(episodeId = "episode-1", positionMs = 743_000L),
+            WATCH_NODE,
+        )
+
+        coVerify(exactly = 1) { momentsRepository.mark("episode-1", 743_000L) }
+        // The phone's own player is never consulted: the watch is the device that has the audio.
+        coVerify(exactly = 0) { connection.currentState() }
+    }
+
+    @Test
+    fun `an empty mark is written wherever the phone's own playhead is`() = runTest {
+        coEvery { connection.currentState() } returns
+            PlaybackState(episodeId = "episode-2", positionMs = 61_000L)
+
+        executor.execute(WearCommand.MarkMoment(), WATCH_NODE)
+
+        coVerify(exactly = 1) { momentsRepository.mark("episode-2", 61_000L) }
+    }
+
+    @Test
+    fun `an empty mark with nothing playing is dropped rather than guessed at`() = runTest {
+        coEvery { connection.currentState() } returns PlaybackState()
+
+        executor.execute(WearCommand.MarkMoment(), WATCH_NODE)
+
+        coVerify(exactly = 0) { momentsRepository.mark(any(), any(), any()) }
+    }
+
+    @Test
+    fun `half an address is treated as no address`() = runTest {
+        coEvery { connection.currentState() } returns
+            PlaybackState(episodeId = "episode-2", positionMs = 61_000L)
+
+        executor.execute(WearCommand.MarkMoment(episodeId = "episode-1"), WATCH_NODE)
+
+        coVerify(exactly = 1) { momentsRepository.mark("episode-2", 61_000L) }
     }
 }

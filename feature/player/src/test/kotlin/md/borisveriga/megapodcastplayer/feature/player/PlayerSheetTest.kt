@@ -12,6 +12,8 @@ import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.media.SleepTimerState
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -60,15 +62,19 @@ class PlayerSheetTest {
 
     private fun setContent(
         initialValue: PlayerSheetValue,
+        uiState: PlayerUiState = playing,
         onPlayPause: () -> Unit = {},
         onSkipForward: () -> Unit = {},
+        onOpenSleepTimer: () -> Unit = {},
+        onToggleDownload: () -> Unit = {},
+        onDismiss: () -> Unit = {},
     ): PlayerSheetState {
         lateinit var sheetState: PlayerSheetState
         composeRule.setContent {
             sheetState = rememberPlayerSheetState(initialValue)
             MegaPodcastPlayerTheme {
                 PlayerSheet(
-                    uiState = playing,
+                    uiState = uiState,
                     sheetState = sheetState,
                     onPlayPause = onPlayPause,
                     onSeek = {},
@@ -76,8 +82,13 @@ class PlayerSheetTest {
                     onSkipBack = {},
                     onSkipToNext = {},
                     onSkipToPrevious = {},
-                    onCycleSpeed = {},
+                    onOpenSpeed = {},
+                    onOpenSleepTimer = onOpenSleepTimer,
+                    onToggleDownload = onToggleDownload,
+                    onMarkMoment = {},
+                    onOpenMoments = {},
                     onOpenQueue = {},
+                    onDismiss = onDismiss,
                 )
             }
         }
@@ -91,7 +102,9 @@ class PlayerSheetTest {
         composeRule.onNodeWithText("Podlodka #400").assertIsDisplayed()
         composeRule.onNodeWithText("Podlodka Podcast").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Skip ahead").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Skip ahead 30 seconds").assertIsDisplayed()
+        // Both directions, not just one: replaying a sentence used to need the sheet opened.
+        composeRule.onNodeWithContentDescription("Skip back 10 seconds").assertIsDisplayed()
         // The full player's controls are not merely hidden; they are not composed at all.
         composeRule.onNodeWithContentDescription("Playback position").assertDoesNotExist()
     }
@@ -107,7 +120,7 @@ class PlayerSheetTest {
         )
 
         composeRule.onNodeWithContentDescription("Pause").performClick()
-        composeRule.onNodeWithContentDescription("Skip ahead").performClick()
+        composeRule.onNodeWithContentDescription("Skip ahead 30 seconds").performClick()
 
         assertTrue(paused)
         assertTrue(skipped)
@@ -191,5 +204,114 @@ class PlayerSheetTest {
 
         assertEquals(PlayerSheetValue.Expanded, sheetState.targetValue)
         assertEquals(1f, sheetState.progress, 0.001f)
+    }
+
+    @Test
+    fun `expanded, the download button shows the episode's offline state`() {
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(
+                download = EpisodeDownload(DownloadState.DOWNLOADING, percent = 62f),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Downloading, 62%").assertIsDisplayed()
+    }
+
+    @Test
+    fun `expanded, a downloaded episode offers to remove it`() {
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(
+                download = EpisodeDownload(DownloadState.COMPLETED, percent = 100f),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Downloaded, remove from device").assertIsDisplayed()
+    }
+
+    @Test
+    fun `expanded, tapping download reports it`() {
+        var taps = 0
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(
+                download = EpisodeDownload(DownloadState.NOT_DOWNLOADED, percent = 0f),
+            ),
+            onToggleDownload = { taps++ },
+        )
+
+        composeRule.onNodeWithContentDescription("Download").performClick()
+
+        assertEquals(1, taps)
+    }
+
+    @Test
+    fun `with no episode there is no download button to press`() {
+        // `playing` carries no download, which is the state before the library has answered.
+        setContent(PlayerSheetValue.Expanded)
+
+        composeRule.onNodeWithContentDescription("Download").assertDoesNotExist()
+    }
+
+    @Test
+    fun `expanded, an idle sleep timer offers itself`() {
+        setContent(PlayerSheetValue.Expanded)
+
+        composeRule.onNodeWithContentDescription("Sleep timer").assertIsDisplayed()
+    }
+
+    @Test
+    fun `expanded, a running sleep timer says how long is left`() {
+        // The tint is the fast signal; the description is the one that survives TalkBack and a
+        // colour-blind user — and the number in it is what someone lying in the dark wants.
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(sleep = SleepTimerState(remainingMs = 18 * 60_000L)),
+        )
+
+        composeRule
+            .onNodeWithContentDescription("Sleep timer, 18 min left; tap to change it")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `expanded, the end-of-episode timer says so rather than showing a number`() {
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(sleep = SleepTimerState(isEndOfEpisode = true)),
+        )
+
+        composeRule
+            .onNodeWithContentDescription(
+                "Sleep timer set to the end of this episode; tap to change it",
+            )
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `expanded, tapping the sleep timer reports it`() {
+        var taps = 0
+        setContent(PlayerSheetValue.Expanded, onOpenSleepTimer = { taps++ })
+
+        composeRule.onNodeWithContentDescription("Sleep timer").performClick()
+
+        assertEquals(1, taps)
+    }
+
+    @Test
+    fun `collapsed, neither the sleep timer nor the download button is on the bar`() {
+        // The bar is four things wide already; both of these belong to the full player.
+        setContent(
+            PlayerSheetValue.Collapsed,
+            uiState = playing.copy(
+                download = EpisodeDownload(DownloadState.NOT_DOWNLOADED, percent = 0f),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Download").assertDoesNotExist()
+        composeRule
+            .onNodeWithContentDescription("Sleep timer")
+            .assertDoesNotExist()
     }
 }

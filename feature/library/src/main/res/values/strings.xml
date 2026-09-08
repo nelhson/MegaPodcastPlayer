@@ -25,6 +25,31 @@
     <string name="library_move_up">Move up</string>
     <string name="library_move_down">Move down</string>
 
+    <!--
+        The four orders the library can be in, as the sort menu lists them. "My order" rather than
+        "Manual", because what it names is the arrangement the user dragged into place, and nobody
+        thinks of their own shelf as manual.
+    -->
+    <string name="library_sort_manual">My order</string>
+    <string name="library_sort_recent">Recently updated</string>
+    <string name="library_sort_title">A–Z</string>
+    <string name="library_sort_unplayed">Most unplayed</string>
+
+    <!-- What the sort chip opens; it is labelled with the current order, not with a verb. -->
+    <string name="library_sort_description">Sort shows</string>
+
+    <!--
+        The narrowing controls, shown only once the library is past a screenful. The field matches
+        the author as well as the title, which the hint does not promise and does not need to.
+    -->
+    <string name="library_filter_hint">Find a show</string>
+    <string name="library_filter_clear">Clear filter</string>
+    <string name="library_filter_has_new">Has new episodes</string>
+
+    <!-- Shown when the filter matches nothing, in place of the empty-library state. -->
+    <string name="library_filtered_empty_title">No shows match</string>
+    <string name="library_filtered_empty_description">Try part of the show\'s name or its author.</string>
+
     <!-- The grid/list toggle; each label says what tapping it will do. -->
     <string name="library_layout_show_grid">Show as grid</string>
     <string name="library_layout_show_list">Show as list</string>
@@ -49,24 +74,33 @@
         <item quantity="other">%1$d videos</item>
     </plurals>
 
+    <!--
+        Never started, the same rule the show page's "Unplayed" chip applies. Kept apart from the
+        new-episode count in library_message_new_episodes on purpose: "new" means arrived since you
+        last looked, "unplayed" means never started, and the two numbers disagree constantly.
+    -->
+    <plurals name="library_unplayed_count">
+        <item quantity="one">%1$d unplayed</item>
+        <item quantity="other">%1$d unplayed</item>
+    </plurals>
+
     <plurals name="library_downloaded_count">
         <item quantity="one">%1$d downloaded</item>
         <item quantity="other">%1$d downloaded</item>
     </plurals>
 
-    <!-- Joins the episode count (%1$s) with the downloaded count (%2$s). -->
+    <!--
+        Joins two parts of the counts line (%1$s and %2$s). Applied more than once for a row that
+        has all three of episodes, unplayed and downloaded to report.
+    -->
     <string name="library_counts_combined">%1$s · %2$s</string>
 
     <!--
-        The swipe actions on a row. Button labels first and spoken labels second, so they are kept
-        short: they are drawn under an icon in a 76dp column, and the row a screen reader reads them
-        from has already said which show it is talking about.
+        The swipe action on a row. Kept short: it is drawn under an icon in a 76dp column, and the
+        row a screen reader reads it from has already said which show it is talking about.
     -->
-    <string name="library_action_queue_next">Queue next</string>
-    <string name="library_action_mark_all_played">Mark all played</string>
     <string name="library_action_remove">Remove</string>
     <string name="library_cancel">Cancel</string>
-    <string name="library_undo">Undo</string>
 
     <!--
         Removing a show cannot be undone — re-subscribing re-fetches the feed and loses every played
@@ -81,21 +115,6 @@
 
     <!-- Snackbar after a show is removed; %1$s is the show title. -->
     <string name="library_message_removed">Removed %1$s</string>
-
-    <!-- Snackbar after a full swipe queues an episode; %1$s is the episode title. -->
-    <string name="library_message_queued">Queued %1$s</string>
-
-    <!-- Shown when a full swipe found the show already finished; %1$s is the show title. -->
-    <string name="library_message_nothing_to_queue">Nothing unplayed left in %1$s</string>
-
-    <!-- Snackbar after "mark all played"; the count is what an undo would restore. -->
-    <plurals name="library_message_marked_played">
-        <item quantity="one">Marked %1$d episode played</item>
-        <item quantity="other">Marked %1$d episodes played</item>
-    </plurals>
-
-    <!-- The same gesture on a show with nothing left to mark; %1$s is the show title. -->
-    <string name="library_message_already_played">%1$s was already finished</string>
 
     <plurals name="library_message_new_episodes">
         <item quantity="one">%1$d new episode</item>

@@ -13,6 +13,7 @@ import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import md.borisveriga.megapodcastplayer.core.network.BuildConfig
 import md.borisveriga.megapodcastplayer.core.network.HttpsUpgradeInterceptor
+import md.borisveriga.megapodcastplayer.core.network.chapters.ChaptersApi
 import md.borisveriga.megapodcastplayer.core.network.itunes.ItunesApi
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedApi
 import okhttp3.Cache
@@ -98,4 +99,27 @@ object NetworkModule {
         .callFactory { request -> client.newCall(request) }
         .build()
         .create(FeedApi::class.java)
+
+    /**
+     * Chapter documents, like feeds, live on the publisher's own host and are addressed absolutely.
+     *
+     * They are served as `application/json+chapters` rather than `application/json`, and by some
+     * publishers as `text/plain`, so the converter is registered for every content type rather than
+     * for the one the spec names. Retrofit picks converters by Kotlin type, not by response header,
+     * so this costs nothing and stops a correct document being rejected for its label.
+     */
+    @Provides
+    @Singleton
+    fun providesChaptersApi(
+        @MegaPodcastPlayerOkHttp client: OkHttpClient,
+        json: Json,
+    ): ChaptersApi = Retrofit.Builder()
+        .baseUrl(ITUNES_BASE_URL)
+        .callFactory { request -> client.newCall(request) }
+        .addConverterFactory(json.asConverterFactory(ANY_CONTENT_TYPE.toMediaType()))
+        .build()
+        .create(ChaptersApi::class.java)
+
+    /** Matches whatever a publisher labels their chapters document; see [providesChaptersApi]. */
+    private const val ANY_CONTENT_TYPE = "*/*"
 }

@@ -3,10 +3,31 @@
     <!--
       Minimal platform theme. All real theming happens in Compose (MegaPodcastPlayerTheme in
       :core:designsystem); this only styles the window before the first frame is drawn.
+
+      `windowBackground` is a brand colour with a `values-night` twin rather than the platform's
+      `background_light`, which is what made a dark-mode cold launch flash white for the frames
+      between the window opening and Compose drawing.
     -->
     <style name="Theme.MegaPodcastPlayer" parent="@android:style/Theme.DeviceDefault.DayNight">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowBackground">@android:color/background_light</item>
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+
+    <!--
+      The theme the activity is *launched* with; `installSplashScreen()` swaps it for the one above
+      as soon as the first frame is ready.
+
+      The system draws this screen itself, from the manifest, before the process has finished
+      starting — so it is the only thing that can cover the gap between tapping the icon and Hilt,
+      Room and the media session being ready. The icon is the launcher mark on the brand's ink
+      ground in both modes: a splash that changed colour with the system theme would flash twice.
+      The adaptive launcher icon is used whole rather than its foreground layer alone — the mark is
+      a warm orange that has the contrast it needs against its own background and not against bone.
+    -->
+    <style name="Theme.MegaPodcastPlayer.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.MegaPodcastPlayer</item>
     </style>
 </resources>

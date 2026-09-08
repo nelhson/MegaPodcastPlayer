@@ -112,6 +112,34 @@ sealed interface WearCommand {
     data class CancelCopyToWatch(val episodeId: String) : WearCommand
 
     /**
+     * Marks the moment the wearer just heard.
+     *
+     * The one command with two shapes, because the watch has two relationships with an episode. As
+     * a remote control it knows nothing about where the phone is — the position it last saw is a
+     * snapshot several seconds old, extrapolated by a clock that is not the phone's — so it sends
+     * this empty and the phone marks its own playhead, which is the only position that is true.
+     * Playing a copy off the wrist it is the opposite: the phone is not playing anything, and the
+     * watch is the only device that knows the episode and the second, so it names both.
+     *
+     * Both fields are therefore nullable, and they travel together: a command naming one without
+     * the other is treated as the empty case, because half an address is not an address. Defaulted
+     * so the remote-control case serialises to `{}` and costs the link nothing.
+     *
+     * A duplicate is harmless by construction — see `MomentsRepository.mark`, which folds a second
+     * mark within a few seconds into the first — which is what makes it safe to send this as a
+     * message that the Data Layer will never de-duplicate.
+     *
+     * @property episodeId the episode the watch is playing, or null to mean "whatever the phone is".
+     * @property positionMs where in it, or null for the same reason.
+     */
+    @Serializable
+    @SerialName("mark_moment")
+    data class MarkMoment(
+        val episodeId: String? = null,
+        val positionMs: Long? = null,
+    ) : WearCommand
+
+    /**
      * Tells the phone where an episode played *on the watch* got to.
      *
      * The one command that carries state in the other direction, and it has to: audio the watch

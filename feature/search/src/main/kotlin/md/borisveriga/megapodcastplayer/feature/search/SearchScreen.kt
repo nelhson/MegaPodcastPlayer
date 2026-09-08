@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.feature.search
 
 import android.content.res.Resources
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,14 +46,27 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.time.Instant
+import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
+import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.data.repository.AddPodcastResult
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
+import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
+import md.borisveriga.megapodcastplayer.core.designsystem.component.RichText
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowRow
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
+import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 
@@ -82,7 +97,10 @@ fun SearchRoute(
         uiState = uiState,
         onQueryChange = viewModel::onQueryChange,
         onAddLink = viewModel::addPastedLink,
-        onAddResult = viewModel::addSearchResult,
+        onOpenPreview = viewModel::openPreview,
+        onDismissPreview = viewModel::dismissPreview,
+        onSubscribe = viewModel::subscribeFromPreview,
+        onPlayPreviewEpisode = viewModel::playPreviewEpisode,
         onMessageShown = viewModel::onMessageShown,
         onNavigationHandled = viewModel::onNavigationHandled,
         onPodcastAdded = onPodcastAdded,
@@ -102,7 +120,10 @@ fun SearchRoute(
  * @param uiState what to render.
  * @param onQueryChange keystroke handler.
  * @param onAddLink handler for the "add this link" card.
- * @param onAddResult handler for adding a search result.
+ * @param onOpenPreview opens the preview sheet for a result.
+ * @param onDismissPreview closes it.
+ * @param onSubscribe adds the show the sheet is showing.
+ * @param onPlayPreviewEpisode plays one episode of a show that has not been added.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param onNavigationHandled called once a pending navigation has been acted on.
  * @param onPodcastAdded called with a show's id after a pasted link was added.
@@ -116,7 +137,10 @@ fun SearchScreen(
     uiState: SearchUiState,
     onQueryChange: (String) -> Unit,
     onAddLink: () -> Unit,
-    onAddResult: (PodcastSearchResult) -> Unit,
+    onOpenPreview: (PodcastSearchResult) -> Unit,
+    onDismissPreview: () -> Unit,
+    onSubscribe: () -> Unit,
+    onPlayPreviewEpisode: (Episode) -> Unit,
     onMessageShown: () -> Unit,
     onNavigationHandled: () -> Unit,
     onPodcastAdded: (String) -> Unit,
@@ -251,11 +275,15 @@ fun SearchScreen(
                             isAdding = uiState.addingId == result.itunesId.toString(),
                             isAdded = addedId != null,
                             onClick = {
+                                keyboard?.hide()
                                 if (addedId != null) {
-                                    keyboard?.hide()
                                     onOpenPodcast(addedId)
                                 } else {
-                                    onAddResult(result)
+                                    // A look, not a subscription. Tapping a result used to add the
+                                    // show on the spot, which made investigating an unfamiliar one
+                                    // a subscribe-and-unsubscribe — and unsubscribing takes
+                                    // everything with it and cannot be undone.
+                                    onOpenPreview(result)
                                 }
                             },
                         )
@@ -264,7 +292,208 @@ fun SearchScreen(
             }
         }
     }
+
+    uiState.preview?.let { preview ->
+        PreviewSheet(
+            state = preview,
+            onDismiss = onDismissPreview,
+            onSubscribe = onSubscribe,
+            onPlayEpisode = onPlayPreviewEpisode,
+        )
+    }
 }
+
+/**
+ * A show, as it would be if it were added.
+ *
+ * The cover, the author, what the show says about itself, and the last few episodes — with each of
+ * them playable. That last part is the half of this that a description cannot do: two minutes of a
+ * show settles what a paragraph about it cannot, and until now the only way to hear those two
+ * minutes was to subscribe first.
+ *
+ * Nothing here is stored. Dismissing the sheet leaves the library exactly as it was.
+ *
+ * @param state the sheet's contents and what it is still waiting for.
+ * @param onDismiss closes the sheet.
+ * @param onSubscribe adds the show.
+ * @param onPlayEpisode plays one episode without adding anything.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PreviewSheet(
+    state: PreviewUiState,
+    onDismiss: () -> Unit,
+    onSubscribe: () -> Unit,
+    onPlayEpisode: (Episode) -> Unit,
+) {
+    val now = remember { Instant.now() }
+
+    MegaPodcastPlayerBottomSheet(
+        onDismiss = onDismiss,
+        // Named from the search result rather than from the feed, so the sheet says what it is
+        // about from the moment it opens rather than a fetch later.
+        title = state.result.title,
+        subtitle = state.result.author,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
+        ) {
+            PodcastArtwork(
+                url = state.preview?.podcast?.artworkUrl ?: state.result.artworkUrl,
+                size = ArtworkSize.Header,
+            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
+            ) {
+                state.preview?.let { preview ->
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.search_preview_episode_count,
+                            preview.totalEpisodeCount,
+                            preview.totalEpisodeCount,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Button(
+                    onClick = onSubscribe,
+                    // Offered while the feed is still loading: the user may already know they want
+                    // the show, and the add path does its own fetch anyway.
+                    enabled = !state.isSubscribing && state.error != PreviewError.NoFeed,
+                ) {
+                    if (state.isSubscribing) {
+                        CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE))
+                    } else {
+                        Text(text = stringResource(R.string.search_preview_subscribe))
+                    }
+                }
+            }
+        }
+
+        when {
+            state.isLoading -> Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(MegaPodcastPlayerTheme.spacing.xl),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+
+            state.error != null -> Text(
+                text = stringResource(state.error.messageResId),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = MegaPodcastPlayerTheme.spacing.md),
+            )
+
+            state.preview != null -> PreviewBody(
+                preview = state.preview,
+                now = now,
+                onPlayEpisode = onPlayEpisode,
+            )
+        }
+    }
+}
+
+/**
+ * The loaded half of the preview sheet: what the show says, and what it last published.
+ *
+ * The description is capped rather than scrolled on: a sheet that can be read in one glance is the
+ * point, and a show whose blurb runs to six paragraphs has already said enough in three.
+ *
+ * @param preview the fetched show.
+ * @param now reference time for the relative dates.
+ * @param onPlayEpisode plays one episode without adding the show.
+ */
+@Composable
+private fun PreviewBody(
+    preview: PodcastPreview,
+    now: Instant,
+    onPlayEpisode: (Episode) -> Unit,
+) {
+    if (preview.podcast.description.isNotBlank()) {
+        RichText(
+            html = preview.podcast.description,
+            maxLines = DESCRIPTION_MAX_LINES,
+            modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.md),
+        )
+    }
+
+    if (preview.episodes.isNotEmpty()) {
+        Text(
+            text = stringResource(R.string.search_preview_latest),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier
+                .padding(top = MegaPodcastPlayerTheme.spacing.lg)
+                .semantics { heading() },
+        )
+        preview.episodes.forEach { episode ->
+            PreviewEpisodeRow(episode = episode, now = now, onPlay = { onPlayEpisode(episode) })
+        }
+    }
+}
+
+/**
+ * One episode in the preview, with the button that is the whole reason it is listed.
+ *
+ * A play button rather than a tappable row: everything else on this sheet is reading, and a row
+ * that started audio because it was tapped while being read would be the sheet doing something the
+ * user did not ask for.
+ *
+ * @param episode the episode.
+ * @param now reference time for the relative date.
+ * @param onPlay plays it, without adding the show.
+ */
+@Composable
+private fun PreviewEpisodeRow(episode: Episode, now: Instant, onPlay: () -> Unit) {
+    val resources = LocalResources.current
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = MegaPodcastPlayerTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = episode.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = listOfNotNull(
+                    formatPublishedDate(resources, episode.publishedAt, now),
+                    formatDuration(resources, episode.durationMs),
+                ).joinToString(stringResource(R.string.search_result_separator)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onPlay) {
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = stringResource(R.string.search_preview_play, episode.title),
+            )
+        }
+    }
+}
+
+/**
+ * Wording for a [PreviewError].
+ *
+ * The two are worth telling apart: one of them will never work however many times it is tried.
+ */
+@get:StringRes
+private val PreviewError.messageResId: Int
+    get() = when (this) {
+        PreviewError.NoFeed -> R.string.search_preview_no_feed
+        PreviewError.Unreachable -> R.string.search_preview_unreachable
+    }
 
 /**
  * The "this is a link, add it" card.
@@ -456,7 +685,11 @@ private fun AddPodcastResult.toUserText(resources: Resources): String = when (th
 /** The spinner that replaces an add control while its request is in flight. */
 private val SPINNER_SIZE = 20.dp
 
-@Preview
+/** How much of a show's own blurb the preview sheet shows before it has said enough. */
+private const val DESCRIPTION_MAX_LINES = 6
+
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun SearchScreenPreview() {
     MegaPodcastPlayerTheme {
@@ -486,7 +719,10 @@ private fun SearchScreenPreview() {
             ),
             onQueryChange = {},
             onAddLink = {},
-            onAddResult = {},
+            onOpenPreview = {},
+            onDismissPreview = {},
+            onSubscribe = {},
+            onPlayPreviewEpisode = {},
             onMessageShown = {},
             onNavigationHandled = {},
             onPodcastAdded = {},
@@ -496,7 +732,8 @@ private fun SearchScreenPreview() {
     }
 }
 
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun SearchScreenLinkPreview() {
     MegaPodcastPlayerTheme {
@@ -507,7 +744,10 @@ private fun SearchScreenLinkPreview() {
             ),
             onQueryChange = {},
             onAddLink = {},
-            onAddResult = {},
+            onOpenPreview = {},
+            onDismissPreview = {},
+            onSubscribe = {},
+            onPlayPreviewEpisode = {},
             onMessageShown = {},
             onNavigationHandled = {},
             onPodcastAdded = {},

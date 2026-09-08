@@ -69,6 +69,12 @@ internal data class ScrubState(
  * @property stored episodes whose audio is on the watch, newest first.
  * @property offered episodes the phone has downloaded and has not yet sent here.
  * @property transfers copies currently arriving, by episode id.
+ * @property momentSaved true for a few seconds after a moment is marked. A watch has no snackbar
+ *   and the mark leaves nothing on screen, so without this the button is one the wearer presses and
+ *   then presses again because they cannot tell whether the first press did anything.
+ * @property showsScrubHint true while the first scrub on this watch is being explained. Taking hold
+ *   of the bar is the one gesture here that leaves no trace on the screen, so the first time it is
+ *   done the bar says what the bezel now does.
  */
 data class WatchPlayerUiState(
     val link: PhoneLink = PhoneLink.CHECKING,
@@ -81,6 +87,8 @@ data class WatchPlayerUiState(
     val stored: List<StoredEpisode> = emptyList(),
     val offered: List<OfflineEpisode> = emptyList(),
     val transfers: Map<String, TransferProgress> = emptyMap(),
+    val momentSaved: Boolean = false,
+    val showsScrubHint: Boolean = false,
 ) {
 
     /**

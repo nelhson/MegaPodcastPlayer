@@ -81,9 +81,10 @@ class QueueScreenTest {
         onPlay: (String) -> Unit = {},
         onRemove: (String) -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
-        onMarkPlayed: (String) -> Unit = {},
+        onClear: () -> Unit = {},
         onUndo: () -> Unit = {},
         onMessageShown: () -> Unit = {},
+        onBrowseLibrary: () -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -91,10 +92,11 @@ class QueueScreenTest {
                     uiState = uiState,
                     onPlay = onPlay,
                     onRemove = onRemove,
-                    onMarkPlayed = onMarkPlayed,
                     onMove = onMove,
+                    onClear = onClear,
                     onUndo = onUndo,
                     onMessageShown = onMessageShown,
+                    onBrowseLibrary = onBrowseLibrary,
                 )
             }
         }
@@ -108,10 +110,12 @@ class QueueScreenTest {
         // No section header over the rows: the app bar already says Queue, and a heading under
         // it said the same thing twice.
         composeRule.onNodeWithText("Up next").assertDoesNotExist()
-        // The player is what says this, on whichever screen the user is on. A second copy of it
-        // here was a row that could not be played, reordered or swiped away.
-        composeRule.onNodeWithText("Now playing").assertDoesNotExist()
-        composeRule.onNodeWithText("Episode a").assertDoesNotExist()
+        // The episode playing is named once, in the header line above the rows — it is not one of
+        // them. The header is a status line: nothing in it can be played, reordered or swiped away,
+        // which is why the list below it still starts at "up next".
+        composeRule.onNodeWithText("Now playing", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Episode a", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Remove").assertDoesNotExist()
     }
 
     /**
@@ -237,21 +241,9 @@ class QueueScreenTest {
     }
 
     @Test
-    fun `a queued episode can be marked played without a swipe`() {
-        var marked: String? = null
-        setContent(onMarkPlayed = { marked = it })
-
-        composeRule.onNodeWithText("Episode c")
-            .performCustomAccessibilityActionWithLabel("Mark played")
-
-        assertEquals("c", marked)
-    }
-
-    @Test
     fun `dragging a row past half its width removes it`() {
         var removed: String? = null
-        var marked: String? = null
-        setContent(onRemove = { removed = it }, onMarkPlayed = { marked = it })
+        setContent(onRemove = { removed = it })
 
         composeRule.onNodeWithText("Episode b").performTouchInput {
             down(centerRight)
@@ -265,19 +257,17 @@ class QueueScreenTest {
         }
 
         assertEquals("b", removed)
-        assertEquals(null, marked)
     }
 
     @Test
-    fun `a short swipe reveals mark played rather than removing the row`() {
+    fun `a short swipe commits nothing`() {
+        // The row's one action is the full swipe, so a pull that stops short has to leave the queue
+        // exactly as it was — a threshold set wrong would drop the episode here.
         var removed: String? = null
-        var marked: String? = null
-        setContent(onRemove = { removed = it }, onMarkPlayed = { marked = it })
+        setContent(onRemove = { removed = it })
 
         composeRule.onNodeWithText("Episode b").performTouchInput {
             down(centerRight)
-            // Far enough to rest open, nowhere near the commit threshold. The two tiers sharing one
-            // gesture is the whole design, and a threshold set wrong would remove the row here.
             repeat(SWIPE_STEPS) {
                 moveBy(Offset(-SHORT_SWIPE_PX / SWIPE_STEPS, 0f))
                 advanceEventTime(SWIPE_STEP_MS)
@@ -286,17 +276,14 @@ class QueueScreenTest {
         }
 
         assertEquals(null, removed)
-        composeRule.onNodeWithText("Mark played").performClick()
-        assertEquals("b", marked)
     }
 
     @Test
     fun `the episode playing carries no swipe actions`() {
         setContent()
 
-        // "Remove" and "mark played" both mean "stop playing this" for the current episode, which
-        // is what the player's own controls are for. Finding either here by accident would stop
-        // the audio with no warning.
+        // "Remove" means "stop playing this" for the current episode, which is what the player's
+        // own controls are for. Finding it here by accident would stop the audio with no warning.
         val hasRemove = runCatching {
             composeRule.onNodeWithText("Episode a")
                 .performCustomAccessibilityActionWithLabel("Remove")

@@ -11,20 +11,30 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.RefreshSummary
 import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
+import md.borisveriga.megapodcastplayer.core.model.LibraryFilter
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
+import md.borisveriga.megapodcastplayer.core.model.LibrarySort
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
+import md.borisveriga.megapodcastplayer.core.model.filteredBy
+import md.borisveriga.megapodcastplayer.core.model.orderedBy
 
 /**
  * State rendered by the library screen.
  *
- * @property podcasts subscribed shows with their episode counts.
+ * @property podcasts the shows to draw: the library, narrowed by [filter] and put in [sort]'s
+ *   order. The screen renders this list and nothing else, so "what is on screen" is decided in one
+ *   place rather than by three composables that each remember to apply the same two rules.
+ * @property libraryCount how many shows the library holds before [filter] narrows it. What decides
+ *   whether the narrowing controls are drawn at all, and what tells an empty result apart from an
+ *   empty library.
  * @property layout whether the shows are drawn as cover tiles or as rows. Part of the state rather
  *   than remembered in the composition, because it is a stored preference: a layout that reset on
  *   process death would be one the user has to keep re-choosing.
+ * @property sort the order the shows are in; stored, like [layout].
+ * @property filter what the list is narrowed to. Not stored, deliberately — see [LibraryFilter].
  * @property isLoading true until the first database emission arrives.
  * @property isRefreshing true while a pull-to-refresh is in flight; drives the gesture's own
  *   spinner and ends in a snackbar.
@@ -37,12 +47,42 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
  */
 data class LibraryUiState(
     val podcasts: List<PodcastWithCounts> = emptyList(),
+    val libraryCount: Int = 0,
     val layout: LibraryLayout = LibraryLayout.DEFAULT,
+    val sort: LibrarySort = LibrarySort.DEFAULT,
+    val filter: LibraryFilter = LibraryFilter.NONE,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val isAutoRefreshing: Boolean = false,
     val message: LibraryMessage? = null,
-)
+) {
+    /**
+     * Whether shows can be dragged into a new arrangement right now.
+     *
+     * Both conditions matter. A computed order would throw a drag away on the next emission, and a
+     * drag inside a narrowed list would be read as positions in the whole library, moving shows
+     * nobody touched. So the gesture is offered only when what is on screen *is* the stored order.
+     */
+    val isReorderable: Boolean get() = sort.isReorderable && !filter.isActive
+
+    /**
+     * Whether the library is long enough for the narrowing controls to earn their row.
+     *
+     * A filter field above six shows is a control pointing at something already entirely visible.
+     */
+    val isNarrowable: Boolean get() = libraryCount >= NARROWING_THRESHOLD
+
+    /** True when the library has shows but the filter has hidden all of them. */
+    val isFilteredEmpty: Boolean get() = podcasts.isEmpty() && libraryCount > 0
+}
+
+/**
+ * How many shows a library needs before it is offered a filter.
+ *
+ * Roughly a screenful of rows on the Fold 7 folded, which is the point at which finding a show
+ * stops being a glance and starts being a scroll.
+ */
+private const val NARROWING_THRESHOLD = 8
 
 /**
  * A one-off outcome to show the user.
@@ -65,70 +105,37 @@ sealed interface LibraryMessage {
      * @property title the removed show's title.
      */
     data class Removed(val title: String) : LibraryMessage
-
-    /**
-     * A full swipe put a show's next episode in the queue.
-     *
-     * Names the episode rather than the show: the row said which show it was, and what the user
-     * cannot see from the gesture is *which* episode they just got.
-     *
-     * @property episodeTitle the queued episode.
-     */
-    data class Queued(val episodeTitle: String) : LibraryMessage
-
-    /**
-     * A full swipe found nothing to queue, because the show is finished.
-     *
-     * A distinct outcome rather than silence: a gesture that does nothing and says nothing is
-     * indistinguishable from one that did not register.
-     *
-     * @property showTitle the show that had nothing unplayed left in it.
-     */
-    data class NothingToQueue(val showTitle: String) : LibraryMessage
-
-    /**
-     * A whole show was marked played, and can be put back.
-     *
-     * @property showTitle the show.
-     * @property count how many episodes actually changed, which is what an undo would restore —
-     *   never the show's whole episode count.
-     */
-    data class MarkedAllPlayed(val showTitle: String, val count: Int) : LibraryMessage
 }
 
 /**
  * Drives the library screen.
  *
  * @property repository the single source of podcast truth.
- * @property uiPreferences the stored grid-or-list choice.
- * @property episodePlayer what turns "queue the next one from this show" into a queue entry; the
- *   library knows shows, and this is the only thing here that touches an episode.
+ * @property uiPreferences the stored grid-or-list and order choices.
  */
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: PodcastRepository,
     private val uiPreferences: UiPreferencesRepository,
-    private val episodePlayer: EpisodePlayer,
 ) : ViewModel() {
 
     private val transientState = MutableStateFlow(TransientState())
 
-    /**
-     * The episodes the last "mark all played" changed, or null.
-     *
-     * The undo restores exactly these rather than un-playing the whole show, which would also
-     * reopen episodes the user had finished months ago.
-     */
-    private var pendingUnplay: List<String>? = null
-
     val uiState: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
         uiPreferences.observeLibraryLayout(),
+        uiPreferences.observeLibrarySort(),
         transientState,
-    ) { podcasts, layout, transient ->
+    ) { podcasts, layout, sort, transient ->
         LibraryUiState(
-            podcasts = podcasts,
+            // Narrowed and ordered here rather than in the composition: it is the same two rules
+            // for the grid and the list, and a screen that re-derived them would be a screen that
+            // can disagree with itself about what the library contains.
+            podcasts = podcasts.filteredBy(transient.filter).orderedBy(sort),
+            libraryCount = podcasts.size,
             layout = layout,
+            sort = sort,
+            filter = transient.filter,
             isLoading = false,
             isRefreshing = transient.isRefreshing,
             isAutoRefreshing = transient.isAutoRefreshing,
@@ -154,7 +161,9 @@ class LibraryViewModel @Inject constructor(
         transientState.value = transientState.value.copy(isRefreshing = true)
         viewModelScope.launch {
             val summary = repository.refreshAll(onlyAutoRefreshable = false)
-            transientState.value = TransientState(
+            // A copy rather than a fresh TransientState: what the user has typed into the
+            // filter field must survive a refresh they asked for while it was there.
+            transientState.value = transientState.value.copy(
                 isRefreshing = false,
                 message = LibraryMessage.RefreshFinished(summary),
             )
@@ -177,7 +186,11 @@ class LibraryViewModel @Inject constructor(
      * @param to where it was dropped.
      */
     fun move(from: Int, to: Int) {
-        val current = uiState.value.podcasts
+        val state = uiState.value
+        // A drag that lands after the order or the filter changed under it would be positions in a
+        // list nobody is looking at any more, applied to the whole library.
+        if (!state.isReorderable) return
+        val current = state.podcasts
         if (from !in current.indices || to !in current.indices || from == to) return
 
         val ids = current
@@ -216,7 +229,7 @@ class LibraryViewModel @Inject constructor(
     /**
      * Removes a show and everything stored for it.
      *
-     * Not offered back the way the other two gestures are, and deliberately not: putting a show
+     * Not offered back the way a queue edit is, and deliberately not: putting a show
      * back means re-fetching its feed, and what would come back is a subscription, not the one that
      * was removed — every played flag, every position and every downloaded file went with it. The
      * screen asks first instead, which is the honest place to put the friction.
@@ -233,60 +246,6 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
-     * Queues the show's newest unplayed episode.
-     *
-     * What a full right-to-left swipe on a library row commits. "Newest unplayed" rather than
-     * "newest" because a row swiped twice should queue two different episodes, and because the
-     * episode a finished show would otherwise offer is one the user has already heard.
-     *
-     * @param podcast the show to take an episode from.
-     */
-    fun queueNewest(podcast: PodcastWithCounts) {
-        viewModelScope.launch {
-            val episode = repository.newestUnplayedEpisode(podcast.podcast.id)
-            val message = when {
-                episode == null -> LibraryMessage.NothingToQueue(podcast.podcast.title)
-
-                // The player refuses an episode it cannot resolve — one whose show has just been
-                // removed under the gesture. Reporting that as "nothing to queue" is wrong but
-                // harmless; claiming it was queued would be a lie the queue then contradicts.
-                !episodePlayer.addToQueue(episode.id) ->
-                    LibraryMessage.NothingToQueue(podcast.podcast.title)
-
-                else -> LibraryMessage.Queued(episode.title)
-            }
-            transientState.value = transientState.value.copy(message = message)
-        }
-    }
-
-    /**
-     * Marks every unplayed episode of a show played, and offers it back.
-     *
-     * @param podcast the show to mark off.
-     */
-    fun markAllPlayed(podcast: PodcastWithCounts) {
-        viewModelScope.launch {
-            val changed = repository.markPodcastPlayed(podcast.podcast.id)
-            pendingUnplay = changed.takeIf { it.isNotEmpty() }
-            transientState.value = transientState.value.copy(
-                message = LibraryMessage.MarkedAllPlayed(podcast.podcast.title, changed.size),
-            )
-        }
-    }
-
-    /**
-     * Un-plays whatever the last [markAllPlayed] marked.
-     *
-     * Consumed rather than kept, so an undo cannot be replayed against a library that has moved on.
-     */
-    fun undoMarkAllPlayed() {
-        val ids = pendingUnplay ?: return
-        pendingUnplay = null
-        transientState.value = transientState.value.copy(message = null)
-        viewModelScope.launch { repository.setEpisodesPlayed(ids, isPlayed = false) }
-    }
-
-    /**
      * Switches between the cover grid and the row list, and remembers the choice.
      *
      * Takes the layout to move to rather than toggling from the current state, so a double tap on
@@ -298,12 +257,49 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { uiPreferences.setLibraryLayout(layout) }
     }
 
+    /**
+     * Changes the order the shows are listed in, and remembers it.
+     *
+     * @param sort the order to use from now on.
+     */
+    fun setSort(sort: LibrarySort) {
+        viewModelScope.launch { uiPreferences.setLibrarySort(sort) }
+    }
+
+    /**
+     * Narrows the library by name.
+     *
+     * Held here rather than in the composition so that it composes with the sort in one place, and
+     * so that a fold or a rotation does not drop what has been typed.
+     *
+     * @param query text to match against a show's title or author; blank clears it.
+     */
+    fun setQuery(query: String) {
+        transientState.value = transientState.value.copy(
+            filter = transientState.value.filter.copy(query = query),
+        )
+    }
+
+    /**
+     * Turns the *Has new episodes* narrowing on or off.
+     *
+     * @param enabled true to show only shows with an episode that arrived since the user last
+     *   looked.
+     */
+    fun setOnlyWithNewEpisodes(enabled: Boolean) {
+        transientState.value = transientState.value.copy(
+            filter = transientState.value.filter.copy(onlyWithNewEpisodes = enabled),
+        )
+    }
+
+    /** Drops every narrowing, showing the whole library again. */
+    fun clearFilter() {
+        transientState.value = transientState.value.copy(filter = LibraryFilter.NONE)
+    }
+
     /** Clears the current [LibraryUiState.message] once the snackbar has been shown. */
     fun onMessageShown() {
         transientState.value = transientState.value.copy(message = null)
-        // The undo goes with the snackbar that offered it. Left armed, it would fire against the
-        // *next* message, un-playing a show the user never asked about.
-        pendingUnplay = null
     }
 
     /** State owned by the view model rather than the database. */
@@ -311,6 +307,7 @@ class LibraryViewModel @Inject constructor(
         val isRefreshing: Boolean = false,
         val isAutoRefreshing: Boolean = false,
         val message: LibraryMessage? = null,
+        val filter: LibraryFilter = LibraryFilter.NONE,
     ) {
         /**
          * Whether a refresh of either kind is already running.

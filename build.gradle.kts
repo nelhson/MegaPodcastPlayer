@@ -23,6 +23,11 @@ plugins {
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.hilt) apply false
     alias(libs.plugins.detekt) apply false
+    // Crash reporting. Declared here so both plugins land on the shared buildscript classpath;
+    // `megapodcastplayer.android.crashlytics` applies them by id, and only when there is a
+    // google-services.json for them to read.
+    alias(libs.plugins.google.services) apply false
+    alias(libs.plugins.firebase.crashlytics) apply false
     alias(libs.plugins.kover)
 }
 

@@ -13,7 +13,17 @@
     <string name="podcast_back">Back to the library</string>
     <string name="podcast_remove">Delete</string>
     <string name="podcast_more_actions">More actions</string>
-    <string name="podcast_play_latest">Play latest</string>
+    <!--
+        The show header's one button, which reads as whatever there is to do next.
+
+        "Newest" rather than "latest": *latest* reads as "the most recent one I played" as readily
+        as "the most recent one published", and on a show's page both are plausible. %1$s in the
+        continue form is an already-formatted remaining time, e.g. "12 min left".
+    -->
+    <string name="podcast_play_newest">Play newest</string>
+    <string name="podcast_play_newest_again">Play newest again</string>
+    <string name="podcast_continue">Continue</string>
+    <string name="podcast_continue_with_remaining">Continue · %1$s</string>
 
     <!--
         The overflow's rebuild, for a list a refresh cannot repair — a refresh only ever merges into
@@ -55,6 +65,44 @@
     <string name="podcast_filter_empty_description">No episodes of this show match that filter.</string>
     <string name="podcast_filter_empty_action">Show all episodes</string>
 
+    <!--
+      The order toggle beside the filter chips.
+
+      It is labelled with the order that is *on*, not with the one it would switch to, so the row
+      reads as a description of the list under it. The spoken label has to say the opposite thing —
+      what pressing it does — which is why there are four strings here and not two.
+    -->
+    <string name="podcast_sort_newest">Newest first</string>
+    <string name="podcast_sort_oldest">Oldest first</string>
+    <string name="podcast_sort_switch_to_oldest">Newest first; tap to list oldest first</string>
+    <string name="podcast_sort_switch_to_newest">Oldest first; tap to list newest first</string>
+
+    <!--
+      Per-show settings, opened from the overflow.
+
+      Every option that has an app-wide equivalent offers "use it" as its first chip, and names the
+      current app-wide value inside that chip, so choosing an override is a comparison rather than a
+      guess. New-episode notifications are the exception: there is no app-wide toggle to defer to.
+    -->
+    <string name="podcast_show_settings">Show settings</string>
+    <string name="show_settings_title">Show settings</string>
+    <string name="show_settings_speed">Playback speed</string>
+    <!-- %1$s is an already-formatted rate, e.g. "1.5x". -->
+    <string name="show_settings_app_speed">App speed (%1$s)</string>
+    <string name="show_settings_auto_download">New episodes</string>
+    <string name="show_settings_app_download_on">App setting (download)</string>
+    <string name="show_settings_app_download_off">App setting (do not download)</string>
+    <string name="show_settings_download_always">Always download</string>
+    <string name="show_settings_download_never">Never download</string>
+    <string name="show_settings_skip_intro">Skip the intro</string>
+    <string name="show_settings_skip_intro_none">No intro</string>
+    <plurals name="show_settings_skip_intro_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <string name="show_settings_notify">Tell me about new episodes</string>
+    <string name="show_settings_notify_description">A notification when a background refresh finds one. New episodes are stored and badged either way.</string>
+
     <!-- Announced for the hairline that marks the refresh run on entering the screen. -->
     <string name="podcast_refreshing">Checking for new episodes</string>
     <!-- The same hairline, borrowed by a rebuild, which is not the same promise. -->
@@ -87,6 +135,8 @@
     -->
     <string name="podcast_action_download">Download</string>
     <string name="podcast_action_cancel_download">Cancel download</string>
+    <!-- The download chip on the episode sheet, when there is a copy to delete. -->
+    <string name="podcast_action_delete_download">Delete download</string>
     <string name="podcast_action_remove_download">Remove download</string>
 
     <!--
@@ -95,6 +145,13 @@
         this and the queueing the downloads screen offers.
     -->
     <string name="podcast_action_play_next">Play next</string>
+    <!--
+        The two faces of one swipe button. Written as instructions rather than states, because the
+        button is what the tap will do, not what the episode currently is; a screen reader reads the
+        same words as the label.
+    -->
+    <string name="podcast_action_mark_played">Mark played</string>
+    <string name="podcast_action_mark_unplayed">Mark unplayed</string>
 
     <!-- Snackbars. -->
     <plurals name="podcast_message_new_episodes">
@@ -120,5 +177,40 @@
     <string name="podcast_message_download_removed">Removed \"%1$s\" from this device</string>
     <!-- %1$s is the episode's title. Says where it went, because the queue is another screen. -->
     <string name="podcast_message_queued_next">\"%1$s\" plays next</string>
+    <!-- Snackbar after a mark; %1$s is the episode title. Both are offered back. -->
+    <string name="podcast_message_marked_played">Marked \"%1$s\" played</string>
+    <string name="podcast_message_marked_unplayed">Marked \"%1$s\" unplayed</string>
+    <string name="podcast_undo">Undo</string>
 
+
+    <!--
+        The episode sheet: an episode read rather than played.
+
+        Its primary button says what pressing it will actually do, which depends on the episode:
+        %1$s in the continue form is an already-formatted remaining time, e.g. "12 min left".
+    -->
+    <string name="episode_play">Play</string>
+    <string name="episode_play_again">Play again</string>
+    <string name="episode_continue">Continue</string>
+    <string name="episode_continue_with_remaining">Continue · %1$s</string>
+
+    <string name="episode_action_add_to_queue">Add to queue</string>
+    <string name="episode_action_share">Share</string>
+
+    <!-- Heading over the publisher's own show notes. -->
+    <string name="episode_notes">Show notes</string>
+
+    <!-- Heading over the chapter list; %1$d is how many there are. -->
+    <plurals name="episode_chapters">
+        <item quantity="one">%1$d chapter</item>
+        <item quantity="other">%1$d chapters</item>
+    </plurals>
+    <!-- Spoken while the app looks for chapters, which can mean a fetch from the publisher. -->
+    <string name="episode_chapters_loading">Looking for chapters</string>
+
+    <!-- Snackbar after adding to the end of the queue; %1$s is the episode title. -->
+    <string name="podcast_message_queued">\"%1$s\" added to the queue</string>
+
+    <!-- What the system share sheet is titled when an episode is shared out of the app. -->
+    <string name="episode_share_title">Share episode</string>
 </resources>

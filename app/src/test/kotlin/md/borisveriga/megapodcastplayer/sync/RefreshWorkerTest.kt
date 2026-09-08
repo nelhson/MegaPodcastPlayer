@@ -8,11 +8,15 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.repository.NewEpisode
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.RefreshSummary
+import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -30,11 +34,19 @@ class RefreshWorkerTest {
 
     private lateinit var repository: PodcastRepository
     private lateinit var notifier: RecordingNotifier
+    private lateinit var showSettings: ShowSettingsRepository
+
+    /** Shows the user has muted; everything else notifies, which is the default. */
+    private val mutedShows = mutableSetOf<String>()
 
     @Before
     fun setUp() {
         repository = mockk(relaxed = true)
         notifier = RecordingNotifier()
+        showSettings = mockk(relaxed = true)
+        every { showSettings.observeSettings(any()) } answers {
+            flowOf(ShowSettings(notifyNewEpisodes = firstArg<String>() !in mutedShows))
+        }
     }
 
     /** Records what it was asked to post, so a test can assert on it. */
@@ -67,16 +79,17 @@ class RefreshWorkerTest {
                         workerParameters,
                         repository,
                         notifier,
+                        showSettings,
                     )
                 },
             )
             .build()
 
-    private fun newEpisode(id: String) = NewEpisode(
+    private fun newEpisode(id: String, podcastId: String = "pod-1") = NewEpisode(
         episodeId = id,
         episodeTitle = "Episode $id",
-        podcastId = "pod-1",
-        podcastTitle = "Show pod-1",
+        podcastId = podcastId,
+        podcastTitle = "Show $podcastId",
     )
 
     @Test
@@ -100,6 +113,23 @@ class RefreshWorkerTest {
 
         assertEquals(ListenableWorker.Result.success(), result)
         assertEquals(discovered, notifier.posted)
+    }
+
+    @Test
+    fun `a muted show is left out while the others are still announced`() = runTest {
+        mutedShows += "pod-quiet"
+        val loud = newEpisode("a")
+        coEvery { repository.refreshAll(any()) } returns RefreshSummary(
+            refreshedCount = 2,
+            newEpisodes = listOf(loud, newEpisode("b", podcastId = "pod-quiet")),
+        )
+
+        val result = buildWorker().doWork()
+
+        // Filtered, not suppressed: one muted show must not silence a run that also found
+        // something the user does want to hear about.
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals(listOf(loud), notifier.posted)
     }
 
     @Test

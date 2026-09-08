@@ -64,6 +64,23 @@ data class EpisodeEntity(
      */
     @ColumnInfo(name = "sort_order", defaultValue = "0")
     val sortOrder: Int = 0,
+    /**
+     * URL of the `podcast:chapters` JSON document, when the feed publishes one.
+     *
+     * Stored because it arrives during a feed parse and is needed at playback time, and the feed
+     * body itself is not kept. Everything else about chapters is derived on demand — ID3 chapters
+     * come out of the player unbidden, and description chapters are a scan of a column already
+     * here — so there is no chapters table to keep in step with a publisher's edits.
+     */
+    @ColumnInfo(name = "chapters_url") val chaptersUrl: String? = null,
+    /**
+     * The inline `psc:chapters` list, serialised.
+     *
+     * Same argument as [chaptersUrl]: it exists only in the feed body. Left as an opaque string
+     * here and decoded lazily, so that mapping a row for a library list does not pay for a
+     * deserialization nobody asked for.
+     */
+    @ColumnInfo(name = "chapters_json") val chaptersJson: String? = null,
 )
 
 /** Maps a Room row to the domain model. */
@@ -84,6 +101,8 @@ fun EpisodeEntity.asExternalModel(): Episode = Episode(
     downloadState = downloadState,
     downloadedBytes = downloadedBytes,
     downloadPercent = downloadPercent,
+    chaptersUrl = chaptersUrl,
+    chaptersJson = chaptersJson,
 )
 
 /** Maps the domain model to a Room row. */
@@ -104,4 +123,6 @@ fun Episode.asEntity(): EpisodeEntity = EpisodeEntity(
     downloadState = downloadState,
     downloadedBytes = downloadedBytes,
     downloadPercent = downloadPercent,
+    chaptersUrl = chaptersUrl,
+    chaptersJson = chaptersJson,
 )

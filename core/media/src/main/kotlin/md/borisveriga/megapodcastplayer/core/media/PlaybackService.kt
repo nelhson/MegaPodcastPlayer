@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -22,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
@@ -87,6 +85,18 @@ class PlaybackService : MediaSessionService() {
     @Inject
     lateinit var userPreferences: UserPreferencesDataSource
 
+    /** Whether the user asked to be told when the episode playing finishes. */
+    @Inject
+    lateinit var episodeEndBell: EpisodeEndBell
+
+    /** Where that bell is rung, once the player says an episode has ended. */
+    @Inject
+    lateinit var bellRinger: BellRinger
+
+    /** The loaded episode's chapters, so the notification's previous/next can mean one. */
+    @Inject
+    lateinit var chapterSource: PlaybackChapterSource
+
     /**
      * Outlives the service, and is therefore the only scope that can carry the final position
      * write in [onDestroy] — [serviceScope] is cancelled there by definition.
@@ -131,10 +141,11 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             // Streaming needs the radio to stay up while the screen is off.
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            // These drive the *notification's* skip buttons. The in-app buttons seek explicitly
-            // through PlaybackConnection, so a changed interval takes effect there immediately.
-            // Built with the defaults and corrected by [applyPersistedSettings] below: Media3 hands
-            // the session a Player during onCreate, so construction cannot wait on disk.
+            // These are what the *notification's* skip buttons actually seek by; the glyphs beside
+            // them come from [mediaButtonPreferences]. The in-app buttons seek explicitly through
+            // PlaybackConnection, so a changed interval takes effect there immediately. Built with
+            // the defaults and corrected by [followPersistedSettings] below: Media3 hands the
+            // session a Player during onCreate, so construction cannot wait on disk.
             .setSeekForwardIncrementMs(PlaybackSettings.DEFAULT_SKIP_FORWARD_MS)
             .setSeekBackIncrementMs(PlaybackSettings.DEFAULT_SKIP_BACK_MS)
             .build()
@@ -148,33 +159,72 @@ class PlaybackService : MediaSessionService() {
             ),
         )
 
-        mediaSession = MediaSession.Builder(this, player)
+        // A second listener rather than more branches in the first: what the database remembers and
+        // what wakes the user are unrelated concerns that happen to read the same two callbacks.
+        player.addListener(
+            EndOfEpisodeBellListener(
+                player = player,
+                scope = serviceScope,
+                bell = episodeEndBell,
+                ringer = bellRinger,
+            ),
+        )
+
+        // Everything above is installed on the real player, because everything above is about what
+        // the *player* did. The wrapper below is about what a button *means*, and it is what the
+        // session — and therefore the notification, the lock screen, a car and a headset — sees.
+        val sessionPlayer = ChapterAwarePlayer(player)
+        sessionPlayer.addListener(
+            ChapterFollowingListener(
+                player = sessionPlayer,
+                scope = serviceScope,
+                chapterSource = chapterSource,
+            ),
+        )
+
+        mediaSession = MediaSession.Builder(this, sessionPlayer)
             .setCallback(SessionCallback())
+            // Skip back and skip forward in the two slots the lock screen actually shows, rather
+            // than Media3's music-shaped previous/next default; see [mediaButtonPreferences]. Built
+            // from the defaults here and corrected by [followPersistedSettings] once disk answers.
+            .setMediaButtonPreferences(mediaButtonPreferences(this, PlaybackSettings()))
             .apply { sessionActivityIntent()?.let(::setSessionActivity) }
             .build()
 
-        startPositionTicker(player)
-        applyPersistedSettings(player)
+        startPositionTicker(sessionPlayer)
+        followPersistedSettings(player)
     }
 
     /**
-     * Applies the user's stored speed and skip intervals to an already-built player.
+     * Keeps the player and the notification's buttons in step with the user's stored preferences.
      *
      * Deliberately asynchronous. Blocking `onCreate` on a DataStore read is harmless on the happy
      * path and dangerous on the one that matters: the service is most often recreated *under memory
      * pressure*, which is exactly when a cold DataStore read has to go to disk and can reach the ANR
-     * window. All three values are settable after construction, so the only consequence of waiting
-     * is that the notification's skip buttons use [PlaybackSettings]' defaults for the few
-     * milliseconds before the read lands — and nothing can be playing yet at that point.
+     * window. Every value is settable after construction, so the only consequence of waiting is that
+     * the notification's skip buttons use [PlaybackSettings]' defaults for the few milliseconds
+     * before the read lands — and nothing can be playing yet at that point.
+     *
+     * A continuous collection rather than a single read, because the skip interval is now drawn as
+     * well as applied: the notification's glyph carries the number, so a user who changes 30 seconds
+     * to 15 in Settings while the service is alive would otherwise be left with a button that says
+     * one thing and does another until the process next died. Re-applying the speed on each emission
+     * is redundant with the player already having it — the app's own speed control writes the
+     * preference and calls the controller — but it is idempotent, and it is what makes this the one
+     * place preferences reach the player.
      *
      * @param player the player built in [onCreate].
      */
-    private fun applyPersistedSettings(player: ExoPlayer) {
+    private fun followPersistedSettings(player: ExoPlayer) {
         serviceScope.launch {
-            val settings = userPreferences.playbackSettings.first()
-            player.setPlaybackSpeed(settings.speed)
-            player.setSeekForwardIncrementMs(settings.skipForwardMs)
-            player.setSeekBackIncrementMs(settings.skipBackMs)
+            userPreferences.playbackSettings.collect { settings ->
+                player.setPlaybackSpeed(settings.speed)
+                player.setSeekForwardIncrementMs(settings.skipForwardMs)
+                player.setSeekBackIncrementMs(settings.skipBackMs)
+                mediaSession?.setMediaButtonPreferences(
+                    mediaButtonPreferences(this@PlaybackService, settings),
+                )
+            }
         }
     }
 
@@ -206,12 +256,21 @@ class PlaybackService : MediaSessionService() {
      * A timer rather than a callback because Media3 publishes no "position changed" event — the
      * position simply advances. Five seconds is the compromise between losing progress to a crash
      * and writing to disk more often than anyone could notice.
+     *
+     * The absence of that event is also why the chapter-aware player is refreshed from here. Whether
+     * a chapter follows the playhead is a fact about the position, so the one loop that already
+     * exists because the position moves silently is the honest place to notice it changed.
+     *
+     * @param player the wrapper, not the [ExoPlayer]: its position is the same and it is the one
+     *   with a chapter list to re-derive.
      */
-    private fun startPositionTicker(player: Player) {
+    private fun startPositionTicker(player: ChapterAwarePlayer) {
         serviceScope.launch {
             while (isActive) {
                 delay(POSITION_SAVE_INTERVAL_MS)
-                if (player.isPlaying) player.positionReading()?.recordInto(progressRecorder)
+                if (!player.isPlaying) continue
+                player.positionReading()?.recordInto(progressRecorder)
+                player.refreshChapterCommands()
             }
         }
     }
@@ -222,13 +281,18 @@ class PlaybackService : MediaSessionService() {
      *
      * Resolved through the package manager rather than by naming an activity class, which would
      * force `:core:media` to depend on `:app`.
+     *
+     * It carries [EXTRA_OPEN_PLAYER], and that is the whole difference between landing *at* the
+     * player and landing near it. The tap comes from a card that is already showing the episode,
+     * the artwork and the transport controls; arriving at a library list with a collapsed bar at
+     * the bottom asks the user to find their way back to what they were just looking at.
      */
     private fun sessionActivityIntent(): PendingIntent? =
         packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
             PendingIntent.getActivity(
                 this,
                 /* requestCode = */ 0,
-                launchIntent,
+                launchIntent.putExtra(EXTRA_OPEN_PLAYER, true),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         }
@@ -356,3 +420,11 @@ class PlaybackService : MediaSessionService() {
         const val POSITION_SAVE_INTERVAL_MS = 5_000L
     }
 }
+
+/**
+ * Boolean extra on the launch intent asking the app to open with the player expanded.
+ *
+ * Lives here rather than in `:app` because this module is the one that sets it, and `:core:media`
+ * cannot depend on the app it is a part of. The app reads it; nothing else does.
+ */
+const val EXTRA_OPEN_PLAYER: String = "md.borisveriga.megapodcastplayer.extra.OPEN_PLAYER"

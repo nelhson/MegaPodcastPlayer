@@ -17,6 +17,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -37,6 +38,10 @@ import org.robolectric.annotation.Config
  * same handler by construction, and the action is what a screen reader has instead of the gesture.
  * The reorder is exercised both ways, because a long press and a swipe start from the same
  * pointer and it is their separation that is easy to break.
+ *
+ * Since the list was sectioned there is a fourth: only the *Ready* rows can be dragged. An
+ * arrangement of things that are still arriving would be rewritten by their arrival, and a drag
+ * offered on one of those rows is work the user does and loses.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -75,6 +80,7 @@ class DownloadsScreenTest {
         unmeteredOnly: Boolean = true,
         onEpisodeRemove: (String) -> Unit = {},
         onEpisodeQueue: (String) -> Unit = {},
+        onEpisodeDownloadNow: (String) -> Unit = {},
         onMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
     ) {
         composeRule.setContent {
@@ -82,6 +88,9 @@ class DownloadsScreenTest {
                 DownloadsScreen(
                     uiState = DownloadsUiState(
                         downloads = downloads,
+                        // Grouped by the same function the view model uses, so the test cannot
+                        // agree with a screen that disagrees with the app.
+                        sections = downloads.groupIntoSections(),
                         completedCount = downloads.count {
                             it.episode.downloadState == DownloadState.COMPLETED
                         },
@@ -92,6 +101,7 @@ class DownloadsScreenTest {
                     ),
                     onEpisodeClick = {},
                     onEpisodeRetry = {},
+                    onEpisodeDownloadNow = onEpisodeDownloadNow,
                     onEpisodeRemove = onEpisodeRemove,
                     onEpisodeQueue = onEpisodeQueue,
                     onMove = onMove,
@@ -278,6 +288,118 @@ class DownloadsScreenTest {
         }
 
         assertEquals(Triple(listOf("a", "b"), 0, 1), move)
+    }
+
+    /**
+     * Four states in one list, told apart only by a small grey line under the title, is what this
+     * screen was worst at. The headings say which is which before anything is read, and the
+     * failures — the only rows waiting on the user — come first.
+     */
+    @Test
+    fun `the list is grouped, problems first`() {
+        setScreen(
+            listOf(
+                download("ready"),
+                download("waiting", state = DownloadState.QUEUED),
+                download("failed", state = DownloadState.FAILED),
+                download("moving", state = DownloadState.DOWNLOADING, downloadPercent = 42f),
+            ),
+        )
+
+        listOf("Failed", "Downloading", "Waiting", "Ready").forEach { heading ->
+            composeRule.onNodeWithText(heading).assertExists()
+        }
+        val top = composeRule.onNodeWithText("Failed").fetchSemanticsNode().positionInRoot.y
+        val bottom = composeRule.onNodeWithText("Ready").fetchSemanticsNode().positionInRoot.y
+        assertEquals(true, top < bottom)
+    }
+
+    /** A heading over the only group on screen names the thing the user is already looking at. */
+    @Test
+    fun `one group alone gets no heading`() {
+        setScreen(listOf(download("a"), download("b")))
+
+        composeRule.onNodeWithText("Ready").assertDoesNotExist()
+    }
+
+    @Test
+    fun `only the ready rows can be rearranged`() {
+        var move: Triple<List<String>, Int, Int>? = null
+        setScreen(
+            listOf(
+                download("waiting", state = DownloadState.QUEUED),
+                download("alsoWaiting", state = DownloadState.QUEUED),
+                download("a"),
+                download("b"),
+            ),
+            onMove = { ids, from, to -> move = Triple(ids, from, to) },
+        )
+
+        val waitingCanMove = runCatching {
+            composeRule.onNodeWithText("Episode waiting")
+                .performCustomAccessibilityActionWithLabel("Move down")
+        }.isSuccess
+        assertEquals(false, waitingCanMove)
+
+        // And the positions the ready rows report are positions among themselves, not in a list
+        // that also counts the two waiting rows above them.
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Move down")
+        assertEquals(Triple(listOf("a", "b"), 0, 1), move)
+    }
+
+    /**
+     * The one thing a row reading "Waiting for Wi-Fi" could not previously say. Without it, the
+     * only way to fetch an episode before leaving is a trip to Settings to switch the rule off for
+     * everything, permanently.
+     */
+    @Test
+    fun `a row waiting for wi-fi can be told to download now`() {
+        var started: String? = null
+        setScreen(
+            listOf(download("a", state = DownloadState.QUEUED)),
+            onEpisodeDownloadNow = { started = it },
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Download now")
+
+        assertEquals("a", started)
+    }
+
+    @Test
+    fun `nothing else offers download now`() {
+        setScreen(
+            listOf(
+                download("ready"),
+                download("failed", state = DownloadState.FAILED),
+                download("moving", state = DownloadState.DOWNLOADING, downloadPercent = 42f),
+            ),
+        )
+
+        listOf("ready", "failed", "moving").forEach { id ->
+            val offered = runCatching {
+                composeRule.onNodeWithText("Episode $id")
+                    .performCustomAccessibilityActionWithLabel("Download now")
+            }.isSuccess
+            assertEquals("Episode $id must not offer it", false, offered)
+        }
+    }
+
+    /** With Wi-Fi-only off there is no wait to cut short: the download is already allowed. */
+    @Test
+    fun `a queued row offers nothing to cut short when wi-fi-only is off`() {
+        setScreen(
+            listOf(download("a", state = DownloadState.QUEUED)),
+            unmeteredOnly = false,
+        )
+
+        val offered = runCatching {
+            composeRule.onNodeWithText("Episode a")
+                .performCustomAccessibilityActionWithLabel("Download now")
+        }.isSuccess
+
+        assertEquals(false, offered)
     }
 
     private companion object {

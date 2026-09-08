@@ -22,6 +22,15 @@ enum class ArtworkSize(val dimension: Dp) {
     /** The library list, where artwork is the primary way a show is recognised. */
     RowLarge(64.dp),
 
+    /**
+     * An episode card on a Listen shelf.
+     *
+     * Wider than any row's thumbnail because on a card the artwork *is* the row: it is what the eye
+     * chooses by, and the two lines under it are only there to tell two episodes of one show apart.
+     * Matches the card's own width, so the cover is square and flush with the caption.
+     */
+    Card(168.dp),
+
     /** A show's detail header. */
     Header(96.dp),
 }

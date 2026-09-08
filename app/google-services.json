@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "860786298283",
+    "project_id": "megapodcastplayer",
+    "storage_bucket": "megapodcastplayer.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:860786298283:android:a06b5caf417d126f44d6ee",
+        "android_client_info": {
+          "package_name": "md.borisveriga.megapodcastplayer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqQeJTaUcV0NrZpR1A4povOC7Z2BA4Lao"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

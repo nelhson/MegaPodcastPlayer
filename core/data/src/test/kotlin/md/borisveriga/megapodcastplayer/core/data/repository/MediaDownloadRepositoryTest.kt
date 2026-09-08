@@ -6,8 +6,11 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -50,6 +53,9 @@ class MediaDownloadRepositoryTest {
     private lateinit var preferences: UserPreferencesDataSource
     private lateinit var downloader: EpisodeDownloader
     private lateinit var repository: MediaDownloadRepository
+
+    /** Stands in for the application scope the repository restores download requirements on. */
+    private val requirementScope = CoroutineScope(UnconfinedTestDispatcher())
 
     private val podcast = PodcastEntity(
         id = "podcast-1",
@@ -95,6 +101,10 @@ class MediaDownloadRepositoryTest {
             userPreferences = preferences,
             downloader = downloader,
             ioDispatcher = UnconfinedTestDispatcher(),
+            // The scope the "download now" rule-restore waits on. A test scope of its own rather
+            // than `backgroundScope`: the wait is meant to outlive the call that started it, and
+            // the tests below drive it deliberately.
+            scope = requirementScope,
         )
 
         database.podcastDao().upsert(podcast)
@@ -102,7 +112,57 @@ class MediaDownloadRepositoryTest {
 
     @After
     fun tearDown() {
+        requirementScope.cancel()
         database.close()
+    }
+
+    /**
+     * Media3 enforces one network requirement for the whole download manager, so "download this
+     * one now" is really "stop waiting for Wi-Fi". These three pin the consequences: the rule is
+     * lifted before the request (Media3 evaluates it as the download is added), it comes back on
+     * its own once nothing is left downloading, and a request for an episode that is not there
+     * does not leave it lifted.
+     */
+    @Test
+    fun `downloading now lifts the wi-fi rule before asking for the episode`() = runTest {
+        preferences.setUnmeteredOnly(true)
+        database.episodeDao().insertIgnoringExisting(listOf(episode("e1", publishedAt = 1L)))
+
+        assertTrue(repository.downloadNow("e1"))
+
+        coVerifyOrder {
+            downloader.setUnmeteredOnly(false)
+            downloader.download(episodeId = "e1", audioUrl = any())
+        }
+    }
+
+    @Test
+    fun `the wi-fi rule comes back once nothing is downloading`() = runTest {
+        preferences.setUnmeteredOnly(true)
+        database.episodeDao().insertIgnoringExisting(listOf(episode("e1", publishedAt = 1L)))
+        repository.downloadNow("e1")
+
+        // The download finishes, the way Media3's event would report it.
+        repository.recordDownloadStatus(
+            EpisodeDownloadStatus(
+                episodeId = "e1",
+                state = DownloadState.COMPLETED,
+                downloadedBytes = 1_000L,
+                percent = 100f,
+            ),
+        )
+
+        coVerify { downloader.setUnmeteredOnly(true) }
+    }
+
+    @Test
+    fun `a download now for an episode that is gone puts the rule straight back`() = runTest {
+        preferences.setUnmeteredOnly(true)
+
+        assertFalse(repository.downloadNow("missing"))
+
+        // Nothing was started, so nothing will ever finish and restore it.
+        coVerify { downloader.setUnmeteredOnly(true) }
     }
 
     @Test
@@ -227,6 +287,29 @@ class MediaDownloadRepositoryTest {
             // service is forbidden.
             coVerify { downloader.download("a", "https://cdn.example.com/a.mp3", false) }
         }
+
+    @Test
+    fun `a show that always downloads is fetched with the app setting off`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        preferences.updateShowSettings(podcast.id) { it.copy(autoDownload = true) }
+
+        repository.onEpisodesDiscovered(podcast.id, listOf("a"))
+
+        coVerify { downloader.download("a", "https://cdn.example.com/a.mp3", false) }
+    }
+
+    @Test
+    fun `a show that never downloads is skipped with the app setting on`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        preferences.setAutoDownloadNewEpisodes(true)
+        preferences.updateShowSettings(podcast.id) { it.copy(autoDownload = false) }
+
+        repository.onEpisodesDiscovered(podcast.id, listOf("a"))
+
+        // The show has the last word in both directions; a per-show "never" that only worked
+        // while the app setting was already off would be a control that does nothing.
+        coVerify(exactly = 0) { downloader.download(any(), any(), any()) }
+    }
 
     @Test
     fun `auto-download fetches no more than the keep limit`() = runTest {

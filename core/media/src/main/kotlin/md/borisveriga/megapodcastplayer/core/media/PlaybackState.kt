@@ -24,7 +24,11 @@ package md.borisveriga.megapodcastplayer.core.media
  * @property queueEpisodeIds every episode in the player's queue, in play order, including the
  *   currently loaded one.
  * @property queueIndex index of [episodeId] within [queueEpisodeIds].
- * @property errorMessage set when playback stopped because of an error.
+ * @property errorMessage the player's own words for a failure, or the message of a command that
+ *   could not be delivered. Shown only alongside [PlaybackError.UNKNOWN], where there is nothing
+ *   better to say; for every other case the screen has a sentence of its own.
+ * @property error what kind of failure it was, classified so a screen can word it. Null when
+ *   nothing has failed.
  */
 data class PlaybackState(
     val isConnected: Boolean = false,
@@ -41,6 +45,7 @@ data class PlaybackState(
     val queueEpisodeIds: List<String> = emptyList(),
     val queueIndex: Int = 0,
     val errorMessage: String? = null,
+    val error: PlaybackError? = null,
 ) {
 
     /** True when there is nothing loaded, i.e. the mini player should be hidden. */

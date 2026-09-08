@@ -1,31 +1,32 @@
-package md.borisveriga.megapodcastplayer.feature.podcast
+package md.borisveriga.megapodcastplayer.core.model
 
-import androidx.annotation.StringRes
-import md.borisveriga.megapodcastplayer.core.model.DownloadState
-import md.borisveriga.megapodcastplayer.core.model.Episode
+import kotlinx.serialization.Serializable
 
 /**
  * Which episodes of a show are on screen.
  *
- * Client-side over the episodes already in `PodcastDetailUiState`, deliberately: a show's list is
- * bounded by the feed, it is already in memory, and a database query per chip would make a filter
- * that is meant to feel instant wait on Room.
+ * Applied client-side over the episodes already loaded, deliberately: a show's list is bounded by
+ * the feed, it is already in memory, and a database query per chip would make a filter that is
+ * meant to feel instant wait on Room.
  *
- * @property labelResId the chip's caption.
+ * It lives here rather than beside the screen that draws the chips because the choice is now
+ * remembered per show (see [ShowSettings]), which makes it a fact about the user's library rather
+ * than a piece of one screen's state. The chip captions stay in the feature, where the strings are.
  */
-enum class EpisodeFilter(@param:StringRes val labelResId: Int) {
+@Serializable
+enum class EpisodeFilter {
 
     /** Everything the feed carries. */
-    ALL(R.string.podcast_filter_all),
+    ALL,
 
     /** Never started. What "is there anything new" means. */
-    UNPLAYED(R.string.podcast_filter_unplayed),
+    UNPLAYED,
 
     /** Started and not finished — the ones worth resuming. */
-    IN_PROGRESS(R.string.podcast_filter_in_progress),
+    IN_PROGRESS,
 
     /** On the device, and therefore playable with no connection. */
-    DOWNLOADED(R.string.podcast_filter_downloaded),
+    DOWNLOADED,
     ;
 
     /**

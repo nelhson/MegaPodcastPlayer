@@ -4,8 +4,11 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
+import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -147,5 +150,36 @@ class UserPreferencesDataSourceTest {
         dataSource.setLibraryLayout(LibraryLayout.LIST)
 
         assertEquals(LibraryLayout.LIST, dataSource.libraryLayout.first())
+    }
+
+    @Test
+    fun `a show with no stored settings reads as the defaults`() = runTest {
+        assertEquals(emptyMap<String, ShowSettings>(), dataSource.showSettings.first())
+    }
+
+    @Test
+    fun `one show's settings do not disturb another's`() = runTest {
+        dataSource.updateShowSettings("show-1") { it.copy(episodeSort = EpisodeSort.OLDEST_FIRST) }
+        dataSource.updateShowSettings("show-2") {
+            it.copy(episodeFilter = EpisodeFilter.DOWNLOADED)
+        }
+
+        val stored = dataSource.showSettings.first()
+
+        assertEquals(EpisodeSort.OLDEST_FIRST, stored.getValue("show-1").episodeSort)
+        assertEquals(EpisodeFilter.ALL, stored.getValue("show-1").episodeFilter)
+        assertEquals(EpisodeFilter.DOWNLOADED, stored.getValue("show-2").episodeFilter)
+    }
+
+    @Test
+    fun `a show put back to its defaults stops being stored`() = runTest {
+        dataSource.updateShowSettings("show-1") { it.copy(episodeSort = EpisodeSort.OLDEST_FIRST) }
+        assertTrue(dataSource.showSettings.first().containsKey("show-1"))
+
+        dataSource.updateShowSettings("show-1") { it.copy(episodeSort = EpisodeSort.NEWEST_FIRST) }
+
+        // Otherwise the map grows a row for every show the user has ever glanced at with a
+        // filter on, and never loses one.
+        assertFalse(dataSource.showSettings.first().containsKey("show-1"))
     }
 }

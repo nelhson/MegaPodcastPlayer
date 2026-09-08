@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.feature.downloads
 
 import android.content.res.Resources
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -50,7 +52,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,6 +65,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.SectionHeader
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
@@ -72,7 +74,10 @@ import md.borisveriga.megapodcastplayer.core.designsystem.reorder.moveActions
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.reorderableLongPressDrag
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
+import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
@@ -101,6 +106,7 @@ fun DownloadsRoute(
         uiState = uiState,
         onEpisodeClick = { episodeId -> viewModel.play(episodeId, onEpisodePlaying) },
         onEpisodeRetry = viewModel::retry,
+        onEpisodeDownloadNow = viewModel::downloadNow,
         onEpisodeRemove = viewModel::remove,
         onEpisodeQueue = viewModel::addToQueue,
         onMove = viewModel::move,
@@ -118,6 +124,7 @@ fun DownloadsRoute(
  * @param onEpisodeClick episode tap handler; a tap plays a finished episode. Called only for
  *   rows that are actually on the device.
  * @param onEpisodeRetry retry handler for a failed download.
+ * @param onEpisodeDownloadNow starts a download that is waiting for Wi-Fi, now.
  * @param onEpisodeRemove delete-this-download handler; cancels the transfer when it has not
  *   finished. A finished episode is confirmed first by the screen; a transfer is not.
  * @param onEpisodeQueue adds an episode to the end of the play queue.
@@ -135,6 +142,7 @@ fun DownloadsScreen(
     uiState: DownloadsUiState,
     onEpisodeClick: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
+    onEpisodeDownloadNow: (String) -> Unit,
     onEpisodeRemove: (String) -> Unit,
     onEpisodeQueue: (String) -> Unit,
     onMove: (List<String>, Int, Int) -> Unit,
@@ -218,6 +226,7 @@ fun DownloadsScreen(
                         now = now,
                         onEpisodeClick = onEpisodeClick,
                         onEpisodeRetry = onEpisodeRetry,
+                        onEpisodeDownloadNow = onEpisodeDownloadNow,
                         onEpisodeQueue = onEpisodeQueue,
                         onMove = onMove,
                         // A finished episode is a file the user would have to fetch again, so it
@@ -238,18 +247,25 @@ fun DownloadsScreen(
 }
 
 /**
- * The scrolling body: the storage card, then a row per tracked episode.
+ * The scrolling body: the storage card, then the tracked episodes under a heading each.
  *
- * The rows are hand-orderable, the same long-press drag the queue and the library use. Downloads
- * arrive in an order nobody chose — whatever the download stack was doing, newest first — and this
- * is the screen where "listen to these three next" is a decision the user actually has. The storage
- * card sits in the same list but outside the reorder: its key is not one of the dragged keys, so
- * the hit test never offers it as a drop target and it stays pinned at the top.
+ * The screen used to be one list in whatever order the download stack left it — a failure, a
+ * transfer, an episode waiting for Wi-Fi and a finished episode all drawn as the same row, told
+ * apart only by a grey line under the title. They are four different situations, and the headings
+ * say which is which before anything is read. Failures come first, because they are the only rows
+ * on this screen that are waiting on the user.
+ *
+ * The *Ready* rows alone are hand-orderable, the same long-press drag the queue and the library
+ * use: an arrangement of things that are still arriving would be rewritten by their arrival. That
+ * is also why the drag state is built over that section rather than the whole list. The storage
+ * card and the headings sit in the same list but outside the reorder — their keys are not dragged
+ * keys, so the hit test never offers them as drop targets.
  *
  * @param uiState what to render.
  * @param now reference time for relative date formatting.
  * @param onEpisodeClick tap handler for a finished episode.
  * @param onEpisodeRetry tap handler for a failed download.
+ * @param onEpisodeDownloadNow starts a download that is waiting for Wi-Fi, now.
  * @param onEpisodeQueue add-to-queue handler for a row's full swipe.
  * @param onEpisodeRemove delete-or-cancel handler, called with the whole row so the caller can
  *   decide whether it is destructive enough to confirm.
@@ -261,24 +277,30 @@ private fun DownloadList(
     now: Instant,
     onEpisodeClick: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
+    onEpisodeDownloadNow: (String) -> Unit,
     onEpisodeQueue: (String) -> Unit,
     onEpisodeRemove: (EpisodeWithShow) -> Unit,
     onMove: (List<String>, Int, Int) -> Unit,
 ) {
     val resources = LocalResources.current
     val listState = rememberLazyListState()
+    val ready = remember(uiState.sections) {
+        uiState.sections.firstOrNull { it.isReorderable }?.downloads.orEmpty()
+    }
     // Captured from the upstream list rather than read out of `drag.order` inside the callback:
     // by the time a gesture ends, the drawn order has already been rearranged locally, and the
     // move has to be expressed against the arrangement it started from.
     // Remembered against the list itself: a running transfer re-emits several times a second, and
     // this must not rebuild an id list on every one of those frames.
-    val shownIds = remember(uiState.downloads) { uiState.downloads.map { it.episode.id } }
+    val shownIds = remember(ready) { ready.map { it.episode.id } }
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(listState),
-        items = uiState.downloads,
+        items = ready,
         keyOf = { it.episode.id },
         onMove = { from, to -> onMove(shownIds, from, to) },
     )
+    // A single section needs no heading: it would name the only thing on screen.
+    val isHeaded = uiState.sections.size > 1
 
     LazyColumn(
         state = listState,
@@ -293,20 +315,50 @@ private fun DownloadList(
             )
         }
 
-        itemsIndexed(drag.order, key = { _, download -> download.episode.id }) { index, download ->
-            DownloadRow(
-                download = download,
-                index = index,
-                drag = drag,
-                metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
-                onClick = onEpisodeClick,
-                onRetry = onEpisodeRetry,
-                onQueue = { onEpisodeQueue(download.episode.id) },
-                onRemove = { onEpisodeRemove(download) },
-            )
+        uiState.sections.forEach { group ->
+            if (isHeaded) {
+                item(key = "header-${group.section}") {
+                    SectionHeader(text = stringResource(group.section.labelResId))
+                }
+            }
+
+            // The dragged section draws `drag.order`, which is the local arrangement a gesture in
+            // flight has already rearranged; every other section draws what it was given.
+            val rows = if (group.isReorderable) drag.order else group.downloads
+            itemsIndexed(rows, key = { _, download -> download.episode.id }) { index, download ->
+                DownloadRow(
+                    download = download,
+                    index = index,
+                    drag = drag.takeIf { group.isReorderable },
+                    metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
+                    // Only where it is actually waiting for Wi-Fi: on any other row the action
+                    // would be a control for a situation the row is not in.
+                    onDownloadNow = { onEpisodeDownloadNow(download.episode.id) }
+                        .takeIf { group.section == DownloadSection.WAITING && uiState.unmeteredOnly },
+                    onClick = onEpisodeClick,
+                    onRetry = onEpisodeRetry,
+                    onQueue = { onEpisodeQueue(download.episode.id) },
+                    onRemove = { onEpisodeRemove(download) },
+                )
+            }
         }
     }
 }
+
+/**
+ * The heading each section is drawn under.
+ *
+ * Beside the screen rather than on [DownloadSection] itself: which states group together is a fact
+ * about downloads and lives in `:core:model`, the words for them are a fact about this screen.
+ */
+@get:StringRes
+private val DownloadSection.labelResId: Int
+    get() = when (this) {
+        DownloadSection.FAILED -> R.string.downloads_section_failed
+        DownloadSection.DOWNLOADING -> R.string.downloads_section_downloading
+        DownloadSection.WAITING -> R.string.downloads_section_waiting
+        DownloadSection.READY -> R.string.downloads_section_ready
+    }
 
 /**
  * One tracked episode: draggable, swipeable, tappable, and queueable.
@@ -327,9 +379,12 @@ private fun DownloadList(
  * swipe and both directions of the reorder — are also published as custom accessibility actions.
  *
  * @param download the episode and its show.
- * @param index its position in the list, for the reorder actions.
- * @param drag the shared drag state, which owns the visual offset and the pending move.
+ * @param index its position within its own section, for the reorder actions.
+ * @param drag the shared drag state, which owns the visual offset and the pending move; null in
+ *   every section but *Ready*, where an arrangement would be rewritten by the next arrival.
  * @param metadata the line under the title, already assembled.
+ * @param onDownloadNow starts this download without waiting for Wi-Fi; null unless it is actually
+ *   waiting for one.
  * @param onClick tap handler for a finished episode.
  * @param onRetry tap handler for a failed download.
  * @param onQueue adds this episode to the end of the play queue.
@@ -340,8 +395,9 @@ private fun DownloadList(
 private fun DownloadRow(
     download: EpisodeWithShow,
     index: Int,
-    drag: ReorderableState<EpisodeWithShow>,
+    drag: ReorderableState<EpisodeWithShow>?,
     metadata: String,
+    onDownloadNow: (() -> Unit)?,
     onClick: (String) -> Unit,
     onRetry: (String) -> Unit,
     onQueue: () -> Unit,
@@ -351,7 +407,7 @@ private fun DownloadRow(
     val episode = download.episode
     val isCompleted = episode.downloadState == DownloadState.COMPLETED
     val isFailed = episode.downloadState == DownloadState.FAILED
-    val isDragging = drag.draggingKey == episode.id
+    val isDragging = drag?.draggingKey == episode.id
     val moveUp = stringResource(R.string.downloads_move_up)
     val moveDown = stringResource(R.string.downloads_move_down)
 
@@ -373,9 +429,22 @@ private fun DownloadRow(
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         onClick = onRemove,
     )
+    // The one thing a row reading "Waiting for Wi-Fi" could not previously say. Without it, the
+    // only way to fetch an episode before leaving the house is a trip to Settings and back to
+    // switch the rule off for everything, permanently.
+    val downloadNow = onDownloadNow?.let { start ->
+        SwipeAction(
+            icon = Icons.Rounded.Download,
+            label = stringResource(R.string.downloads_action_download_now),
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            onClick = start,
+        )
+    }
+    val revealed = listOfNotNull(downloadNow, remove)
 
     SwipeActionsRow(
-        actions = listOf(remove),
+        actions = revealed,
         fullSwipeAction = queue,
         modifier = modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the underlying
@@ -393,12 +462,18 @@ private fun DownloadRow(
                 // Inside the swipe box rather than around it, so the row's two drags are settled
                 // by the pointer that started them: this one consumes movement only once the
                 // press has been held, and a swipe claims the gesture long before that.
-                .reorderableLongPressDrag(drag, episode.id)
+                .then(
+                    if (drag != null) {
+                        Modifier.reorderableLongPressDrag(drag, episode.id)
+                    } else {
+                        Modifier
+                    },
+                )
                 .semantics {
-                    // Both tiers of the swipe, flattened: to a screen reader they are not two
-                    // tiers, they are simply the two things this row can do.
-                    customActions = drag.moveActions(index, moveUp, moveDown) +
-                        listOf(queue, remove).asAccessibilityActions()
+                    // Every tier of the swipe, flattened: to a screen reader they are not tiers,
+                    // they are simply the things this row can do.
+                    customActions = drag?.moveActions(index, moveUp, moveDown).orEmpty() +
+                        (listOf(queue) + revealed).asAccessibilityActions()
                 },
             title = episode.title,
             showTitle = download.showTitle,
@@ -443,6 +518,8 @@ private fun StorageCard(
     freeBytes: Long,
     modifier: Modifier = Modifier,
 ) {
+    val resources = LocalResources.current
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -466,7 +543,7 @@ private fun StorageCard(
                         episodeCount,
                         episodeCount,
                     ),
-                    formatBytes(totalBytes),
+                    formatBytes(resources, totalBytes),
                 ),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -476,8 +553,8 @@ private fun StorageCard(
                     (totalBytes.toFloat() / (totalBytes + freeBytes).toFloat()).coerceIn(0f, 1f)
                 val barDescription = stringResource(
                     R.string.downloads_storage_bar_description,
-                    formatBytes(totalBytes),
-                    formatBytes(freeBytes),
+                    formatBytes(resources, totalBytes),
+                    formatBytes(resources, freeBytes),
                 )
 
                 Box(
@@ -511,7 +588,7 @@ private fun StorageCard(
                     Text(
                         text = stringResource(
                             R.string.downloads_storage_used,
-                            formatBytes(totalBytes),
+                            formatBytes(resources, totalBytes),
                         ),
                         style = MegaPodcastPlayerTheme.type.numeric,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -519,7 +596,7 @@ private fun StorageCard(
                     Text(
                         text = stringResource(
                             R.string.downloads_storage_free,
-                            formatBytes(freeBytes),
+                            formatBytes(resources, freeBytes),
                         ),
                         style = MegaPodcastPlayerTheme.type.numeric,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -550,6 +627,8 @@ private fun RemovalDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val resources = LocalResources.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.downloads_remove_dialog_title, title)) },
@@ -557,7 +636,7 @@ private fun RemovalDialog(
             Text(
                 text = stringResource(
                     R.string.downloads_remove_dialog_text,
-                    formatBytes(freedBytes),
+                    formatBytes(resources, freedBytes),
                 ),
             )
         },
@@ -598,6 +677,8 @@ private fun EpisodeWithShow.metadataLine(
         episode.downloadPercent.roundToInt(),
     )
 
+    // Under a *Waiting* heading, "Waiting…" would say the heading again. What the line is for
+    // here is the reason: waiting for what.
     DownloadState.QUEUED -> resources.getString(
         if (unmeteredOnly) {
             R.string.downloads_state_queued_wifi
@@ -609,13 +690,13 @@ private fun EpisodeWithShow.metadataLine(
     DownloadState.FAILED -> resources.getString(R.string.downloads_state_failed)
 
     DownloadState.COMPLETED, DownloadState.NOT_DOWNLOADED -> listOfNotNull(
-        formatPublishedDate(episode.publishedAt, now),
-        formatRemaining(episode.durationMs, episode.positionMs)
+        formatPublishedDate(resources, episode.publishedAt, now),
+        formatRemaining(resources, episode.durationMs, episode.positionMs)
             ?.takeIf { episode.positionMs > 0 }
-            ?: formatDuration(episode.durationMs),
+            ?: formatDuration(resources, episode.durationMs),
         // Only meaningful once the file is whole; mid-transfer it would read as a size that keeps
         // changing, next to a percentage that already says the same thing.
-        episode.downloadedBytes.takeIf { it > 0L }?.let(::formatBytes),
+        episode.downloadedBytes.takeIf { it > 0L }?.let { formatBytes(resources, it) },
         resources.getString(R.string.downloads_played).takeIf { episode.isPlayed },
     ).joinToString(resources.getString(R.string.downloads_metadata_separator))
 }
@@ -633,6 +714,9 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
         resources.getString(R.string.downloads_message_removed, title)
 
     is DownloadsMessage.Queued -> resources.getString(R.string.downloads_message_queued, title)
+
+    is DownloadsMessage.DownloadingNow ->
+        resources.getString(R.string.downloads_message_downloading_now, title)
 
     is DownloadsMessage.RetryQueued -> resources.getString(
         if (waitingForWifi) {
@@ -657,7 +741,8 @@ private val BAR_HEIGHT = 10.dp
 /** The narrowest the stored segment is drawn at, so a small library still marks the bar. */
 private val MIN_SEGMENT_WIDTH = 12.dp
 
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun DownloadsScreenPreview() {
     MegaPodcastPlayerTheme {
@@ -699,6 +784,7 @@ private fun DownloadsScreenPreview() {
             ),
             onEpisodeClick = {},
             onEpisodeRetry = {},
+            onEpisodeDownloadNow = {},
             onEpisodeRemove = {},
             onEpisodeQueue = {},
             onMove = { _, _, _ -> },

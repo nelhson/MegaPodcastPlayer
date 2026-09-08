@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -196,6 +197,67 @@ class DownloadsViewModelTest {
 
         viewModel.uiState.test {
             assertTrue(awaitItem().unmeteredOnly)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * The one thing a row reading "Waiting for Wi-Fi" could not previously say. What it does is
+     * app-wide — Media3 has one network rule for the whole manager — which is why the message the
+     * screen shows for it names the wider effect rather than the single episode.
+     */
+    @Test
+    fun `telling a waiting download to go now asks for it and confirms`() = runTest {
+        downloads.value = listOf(download("waiting", downloadState = DownloadState.QUEUED))
+        coEvery { downloadRepository.downloadNow("waiting") } returns true
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.downloadNow("waiting")
+
+            coVerify { downloadRepository.downloadNow("waiting") }
+            assertEquals(
+                DownloadsMessage.DownloadingNow(title = "Episode waiting"),
+                awaitItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `telling an episode that has gone to download now is reported`() = runTest {
+        downloads.value = listOf(download("waiting", downloadState = DownloadState.QUEUED))
+        coEvery { downloadRepository.downloadNow("waiting") } returns false
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.downloadNow("waiting")
+
+            assertEquals(DownloadsMessage.EpisodeUnavailable, awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * The screen draws the sections rather than the flat list, so the grouping is part of what
+     * this view model publishes and not a detail of the composition.
+     */
+    @Test
+    fun `the downloads reach the screen grouped, problems first`() = runTest {
+        downloads.value = listOf(
+            download("ready", downloadState = DownloadState.COMPLETED),
+            download("waiting", downloadState = DownloadState.QUEUED),
+            download("broken", downloadState = DownloadState.FAILED),
+        )
+
+        viewModel.uiState.test {
+            val sections = awaitItem().sections
+            assertEquals(
+                listOf(DownloadSection.FAILED, DownloadSection.WAITING, DownloadSection.READY),
+                sections.map { it.section },
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }

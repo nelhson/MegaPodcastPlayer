@@ -12,18 +12,18 @@ truth rather than a summary of it:
 - `config/detekt/detekt.yml` — every override carries its own reason.
 - `gradle/libs.versions.toml` — the only place a version is written.
 - `docs/` — `REFACTORING_PLAN.md` (audit of 2026-08-29, largely applied), `RELEASE_SIGNING.md`,
-  `DEPENDENCY_VERIFICATION.md`, and dated reports under `docs/reports/`.
+  `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, and dated reports under `docs/reports/`.
 
 ## Layout
 
-Nineteen modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
+Twenty modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
 
 - Apps: `:app`, `:wear`.
 - Pure JVM, shared with the watch: `:core:model`, `:core:wearprotocol`. No Android types here.
 - Android infrastructure: `:core:common`, `:core:database`, `:core:datastore`, `:core:network`,
   `:core:youtube`, `:core:media`, `:core:data`, `:core:designsystem`.
 - Shared test utilities, on every Android module's test classpath automatically: `:core:testing`.
-- Features: `:feature:{library,downloads,search,podcast,player,settings}`.
+- Features: `:feature:{library,downloads,search,podcast,player,moments,settings}`.
 
 ## Commands (Windows: use `.\gradlew.bat`)
 
@@ -58,6 +58,16 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
   database is never migrated, so a schema or protocol change is free: JSON decoding is strict (an
   unknown field is corruption, not a newer peer) and Room's destructive fallback is on, which wipes
   and recreates on any schema change.
+- **A moment is the only thing here the user wrote.** A show can be re-fetched and a position
+  re-earned; a note typed at 12:23 of an episode cannot. That is why moments are in the backup, why
+  `MomentsRepository` carries its own Markdown export, and why every line that export writes carries
+  a link — a `youtube://` sentinel becomes a timestamped watch URL, an enclosure gains a media
+  fragment, and each show heading names the feed URL that re-adds it. The document has to be worth
+  something on a machine that has never had this app installed.
+- **A failure nobody is shown still goes somewhere.** The many `suspendRunCatching` sites that
+  carry on from a failure are right to, but the failure is then invisible; inject `CrashReporter`
+  from `:core:common` and record it. Firebase is on that one module's classpath and nowhere else.
+  See `docs/CRASH_REPORTING.md`.
 - **Never swallow `CancellationException`.** Use `suspendRunCatching` from `:core:common`; detekt's
   `TooGenericExceptionCaught` and `SwallowedException` enforce it.
 - **Dependency verification is on.** A bump needs `gradle/verification-metadata.xml` refreshed;

@@ -5,6 +5,9 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.xml.parsers.SAXParserFactory
+import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
+import md.borisveriga.megapodcastplayer.core.model.chapters.MAX_CHAPTERS
+import md.borisveriga.megapodcastplayer.core.model.format.parseTimecodeMs
 import md.borisveriga.megapodcastplayer.core.model.isPlayableMediaUrl
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
@@ -22,6 +25,8 @@ import org.xml.sax.helpers.DefaultHandler
  * Handled namespaces:
  *  - iTunes: `http://www.itunes.com/dtds/podcast-1.0.dtd` (`author`, `image`, `duration`, `summary`)
  *  - content: `http://purl.org/rss/1.0/modules/content/` (`encoded`)
+ *  - podcast: `https://podcastindex.org/namespace/1.0` (`chapters`)
+ *  - psc: `http://podlove.org/simple-chapters` (`chapter`)
  *
  * Namespace *prefixes* are ignored — publishers use `itunes:`, `im:` and occasionally none at all —
  * so elements are matched on namespace URI plus local name, with a prefix-insensitive fallback.
@@ -88,6 +93,15 @@ private const val NS_ITUNES = "http://www.itunes.com/dtds/podcast-1.0.dtd"
 /** SAX namespace URI for the `content:encoded` extension. */
 private const val NS_CONTENT = "http://purl.org/rss/1.0/modules/content/"
 
+/** SAX namespace URI for the Podcasting 2.0 extensions; only `podcast:chapters` is read. */
+private const val NS_PODCAST = "https://podcastindex.org/namespace/1.0"
+
+/** SAX namespace URI for Podlove Simple Chapters, the older inline form. */
+private const val NS_PSC = "http://podlove.org/simple-chapters"
+
+/** The only `podcast:chapters` document type this app can read. */
+private const val CHAPTERS_JSON_TYPE = "application/json+chapters"
+
 /**
  * Accumulates channel and item state while SAX walks the document.
  *
@@ -120,6 +134,8 @@ private class FeedHandler : DefaultHandler() {
     private var itemArtwork: String? = null
     private var itemDuration: String? = null
     private var itemPubDate: String? = null
+    private var itemChaptersUrl: String? = null
+    private var itemChapters = mutableListOf<Chapter>()
 
     override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes?) {
         text.setLength(0)
@@ -143,6 +159,10 @@ private class FeedHandler : DefaultHandler() {
 
             name == "image" && !inItem -> inChannelImage = true
 
+            // Both chapter forms are empty elements, so everything they carry is in the attributes
+            // and there is nothing for endElement to do.
+            inItem && startChapterElement(uri, name, attributes) -> Unit
+
             name == "enclosure" && inItem -> {
                 val type = attributes?.getValue("type").orEmpty()
                 val url = attributes?.getValue("url")
@@ -160,6 +180,53 @@ private class FeedHandler : DefaultHandler() {
             }
         }
     }
+
+    /**
+     * Reads the two chapter elements, both of which are empty and attribute-only.
+     *
+     * Extracted from [startElement] rather than inlined into its `when`: that method is already at
+     * the edge of what detekt allows for length and branching, and chapters add two more shapes to
+     * it that have nothing to do with the rest.
+     *
+     * @param uri the element's namespace.
+     * @param name the element's local name.
+     * @param attributes its attributes.
+     * @return true when the element was a chapter element and has been handled.
+     */
+    private fun startChapterElement(uri: String?, name: String, attributes: Attributes?): Boolean =
+        when {
+            name == "chapters" && uri == NS_PODCAST -> {
+                val type = attributes?.getValue("type").orEmpty()
+                val url = attributes?.getValue("url")
+                // A document type we cannot parse is worse than none: it would win the priority
+                // order against the description chapters that might actually work.
+                val readable = type.isEmpty() || type == CHAPTERS_JSON_TYPE
+                // This URL is about to be fetched, so it goes through the same gate an enclosure
+                // does — a `file:` chapters URL is exactly the shape isPlayableMediaUrl exists for.
+                if (url != null && readable && isPlayableMediaUrl(url)) {
+                    itemChaptersUrl = url
+                }
+                true
+            }
+
+            name == "chapter" && uri == NS_PSC -> {
+                val startMs = attributes?.getValue("start")?.let(::parseTimecodeMs)
+                val title = attributes?.getValue("title")?.trim()
+                // A chapter that will not parse is dropped and the item survives — the same
+                // discipline the parser applies to items within a feed, one level further down.
+                if (startMs != null && !title.isNullOrEmpty()) {
+                    itemChapters += Chapter(
+                        startMs = startMs,
+                        title = title,
+                        imageUrl = attributes.getValue("image")?.takeIf(::isPlayableMediaUrl),
+                        url = attributes.getValue("href")?.takeIf(::isPlayableMediaUrl),
+                    )
+                }
+                true
+            }
+
+            else -> false
+        }
 
     override fun characters(ch: CharArray?, start: Int, length: Int) {
         if (ch != null) text.appendRange(ch, start, start + length)
@@ -225,6 +292,8 @@ private class FeedHandler : DefaultHandler() {
             artworkUrl = itemArtwork,
             durationMs = itemDuration?.let(::parseItunesDurationMs),
             publishedAt = itemPubDate?.let(::parseRfc822Date),
+            chaptersUrl = itemChaptersUrl,
+            chapters = itemChapters.sortedBy { it.startMs }.take(MAX_CHAPTERS),
         )
     }
 
@@ -238,6 +307,8 @@ private class FeedHandler : DefaultHandler() {
         itemArtwork = null
         itemDuration = null
         itemPubDate = null
+        itemChaptersUrl = null
+        itemChapters = mutableListOf()
     }
 }
 

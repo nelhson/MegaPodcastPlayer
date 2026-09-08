@@ -6,8 +6,11 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
+import md.borisveriga.megapodcastplayer.core.data.repository.NewEpisode
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.RefreshSummary
+import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 
 /**
  * The periodic background refresh.
@@ -21,6 +24,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.RefreshSummary
  *
  * @property podcastRepository does the actual refreshing.
  * @property newEpisodeNotifier tells the user what was found.
+ * @property showSettings consulted for which shows are allowed to interrupt; see [doWork].
  */
 @HiltWorker
 class RefreshWorker @AssistedInject constructor(
@@ -28,6 +32,7 @@ class RefreshWorker @AssistedInject constructor(
     @Assisted workerParameters: WorkerParameters,
     private val podcastRepository: PodcastRepository,
     private val newEpisodeNotifier: NewEpisodeNotifier,
+    private val showSettings: ShowSettingsRepository,
 ) : CoroutineWorker(appContext, workerParameters) {
 
     override suspend fun doWork(): Result {
@@ -36,7 +41,11 @@ class RefreshWorker @AssistedInject constructor(
         // or a genuine defect, and neither should be turned into a silent retry.
         val summary = podcastRepository.refreshAll(onlyAutoRefreshable = true)
 
-        newEpisodeNotifier.notifyNewEpisodes(summary.newEpisodes)
+        // Filtered rather than suppressed wholesale: a run that finds episodes of three shows, one
+        // of which is muted, should still say so about the other two. The muted show's episodes
+        // are stored and badged exactly as before — the toggle declines the interruption, not the
+        // episode.
+        newEpisodeNotifier.notifyNewEpisodes(summary.newEpisodes.filter { it.notifiable() })
 
         return if (summary.everyFeedFailed) {
             // Every feed failing usually means the network came back only far enough to satisfy the
@@ -46,6 +55,14 @@ class RefreshWorker @AssistedInject constructor(
             Result.success()
         }
     }
+
+    /**
+     * Whether this show is one the user wants to hear about.
+     *
+     * @return true when the show's new-episode notifications are on, which is the default.
+     */
+    private suspend fun NewEpisode.notifiable(): Boolean =
+        showSettings.observeSettings(podcastId).first().notifyNewEpisodes
 
     private companion object {
 

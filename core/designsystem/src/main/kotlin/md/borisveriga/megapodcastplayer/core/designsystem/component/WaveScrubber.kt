@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -24,13 +25,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -63,6 +67,10 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
  * @param onSeek invoked once, on release, with the requested position in milliseconds.
  * @param modifier layout modifier.
  * @param enabled whether the control accepts input.
+ * @param markers positions to tick, as fractions in `0f..1f` — chapter starts, in practice. Drawn
+ *   as hairlines through the rail rather than as anything tappable: they are a map of the episode,
+ *   and a target three pixels wide beside a control the user is dragging would be a target nobody
+ *   could hit on purpose. The chapter list on the episode sheet is where a chapter is chosen.
  */
 @Composable
 fun WaveScrubber(
@@ -72,6 +80,7 @@ fun WaveScrubber(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    markers: List<Float> = emptyList(),
 ) {
     val hasDuration = durationMs > 0L
     // Null while the user is not dragging; a fraction in 0..1 while they are.
@@ -86,13 +95,19 @@ fun WaveScrubber(
     val waveColor = MegaPodcastPlayerTheme.colors.waveform
     val trackColor = MegaPodcastPlayerTheme.colors.waveformTrack
 
+    // A user who has asked the system to remove animations gets the rail and the thumb, with no
+    // wave and nothing travelling. The control still says everything it has to — position, duration
+    // and whether it can be dragged — because none of that was ever carried by the motion.
+    val still = MegaPodcastPlayerTheme.reduceMotion
+    val alive = playing && enabled && hasDuration
+
     // Amplitude, not visibility: the wave flattens into the rail rather than being swapped for it.
     val amplitude by animateFloatAsState(
-        targetValue = if (playing && enabled && hasDuration) 1f else 0f,
+        targetValue = if (alive && !still) 1f else 0f,
         animationSpec = Motion.lazy(),
         label = "waveAmplitude",
     )
-    val phase by rememberInfiniteTransition(label = "wave").animateFloat(
+    val travellingPhase by rememberInfiniteTransition(label = "wave").animateFloat(
         initialValue = 0f,
         targetValue = (2 * PI).toFloat(),
         animationSpec = infiniteRepeatable(
@@ -101,6 +116,7 @@ fun WaveScrubber(
         ),
         label = "wavePhase",
     )
+    val phase = if (still) 0f else travellingPhase
 
     val density = LocalDensity.current
     val seekDescription = stringResource(R.string.designsystem_seek)
@@ -175,6 +191,16 @@ fun WaveScrubber(
             )
         }
 
+        // Over the rail and the wave, under the thumb: a marker the thumb is sitting on is one
+        // the user is already at, and a tick drawn on top of the thumb reads as a defect in it.
+        drawMarkers(
+            markers = markers,
+            playedWidth = playedWidth,
+            centerY = centerY,
+            playedColor = trackColor,
+            unplayedColor = waveColor,
+        )
+
         drawCircle(color = waveColor, radius = thumbRadius, center = Offset(playedWidth, centerY))
     }
 }
@@ -190,9 +216,15 @@ fun WaveScrubber(
  * @param playing whether the wave should travel.
  * @param onSeek invoked once, on release, with the requested position.
  * @param elapsedLabel formatted elapsed time, e.g. `12:04`.
- * @param remainingLabel formatted remaining time, e.g. `-30:06`.
+ * @param remainingLabel the right-hand label, e.g. `-30:06`.
+ * @param onRemainingClick makes that label tappable — the player cycles it between what is left,
+ *   how long the episode is, and the time of day it will finish at. Null leaves it inert, which is
+ *   what a caller with only one thing to say there wants.
+ * @param remainingClickLabel names that tap for a screen reader, which cannot see that the label
+ *   changed. Required in practice whenever [onRemainingClick] is set.
  * @param modifier layout modifier.
  * @param enabled whether the control accepts input.
+ * @param markers chapter starts to tick, as fractions; see [WaveScrubber].
  */
 @Composable
 fun LabelledWaveScrubber(
@@ -204,6 +236,9 @@ fun LabelledWaveScrubber(
     remainingLabel: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    markers: List<Float> = emptyList(),
+    onRemainingClick: (() -> Unit)? = null,
+    remainingClickLabel: String? = null,
 ) {
     Column(modifier = modifier) {
         WaveScrubber(
@@ -212,6 +247,7 @@ fun LabelledWaveScrubber(
             playing = playing,
             onSeek = onSeek,
             enabled = enabled,
+            markers = markers,
         )
         Row(
             modifier = Modifier
@@ -229,8 +265,59 @@ fun LabelledWaveScrubber(
                 style = MegaPodcastPlayerTheme.type.numeric,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.End,
+                modifier = if (onRemainingClick == null) {
+                    Modifier
+                } else {
+                    // Padded rather than sized to the touch target: a 48dp box under a timecode
+                    // would push the labels apart and put the scrubber's own thumb out of reach at
+                    // the right-hand end. The label is small, and it is the only thing near it.
+                    Modifier
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = remainingClickLabel,
+                            onClick = onRemainingClick,
+                        )
+                        .padding(MegaPodcastPlayerTheme.spacing.xs)
+                },
             )
         }
+    }
+}
+
+/**
+ * Draws the chapter ticks along the rail.
+ *
+ * A separate step rather than an inline loop because the scrubber's own body is already at the
+ * edge of what the project's complexity rule allows, and this is the one part of it that is pure
+ * drawing with no state behind it.
+ *
+ * @param markers positions as fractions in `0f..1f`; anything outside is clamped.
+ * @param playedWidth where the played portion ends, which decides each tick's colour.
+ * @param centerY the rail's centre line.
+ * @param playedColor the colour for a tick over the wave — the track colour, because the wave is
+ *   already the accent there and an accent tick on it would vanish.
+ * @param unplayedColor the colour for a tick over the flat rail, for the same reason reversed.
+ */
+private fun DrawScope.drawMarkers(
+    markers: List<Float>,
+    playedWidth: Float,
+    centerY: Float,
+    playedColor: Color,
+    unplayedColor: Color,
+) {
+    if (markers.isEmpty()) return
+
+    val markerHeight = MARKER_HEIGHT.toPx()
+    val markerWidth = MARKER_WIDTH.toPx()
+    markers.forEach { fraction ->
+        val x = size.width * fraction.coerceIn(0f, 1f)
+        drawLine(
+            color = if (x <= playedWidth) playedColor else unplayedColor,
+            start = Offset(x, centerY - markerHeight / 2f),
+            end = Offset(x, centerY + markerHeight / 2f),
+            strokeWidth = markerWidth,
+            cap = StrokeCap.Butt,
+        )
     }
 }
 
@@ -243,6 +330,8 @@ private val WAVE_AMPLITUDE = 4.dp
 private val WAVE_LENGTH = 18.dp
 private val WAVE_SAMPLE_STEP = 1.5.dp
 private val THUMB_RADIUS = 6.dp
+private val MARKER_HEIGHT = 14.dp
+private val MARKER_WIDTH = 1.5.dp
 private const val WAVE_TRAVEL_MS = 1100
 
 @ThemePreviews
@@ -257,6 +346,7 @@ private fun WaveScrubberPreview() {
                 onSeek = {},
                 elapsedLabel = "12:04",
                 remainingLabel = "-30:06",
+                markers = listOf(0.12f, 0.34f, 0.61f, 0.88f),
             )
             LabelledWaveScrubber(
                 positionMs = 1_800_000L,

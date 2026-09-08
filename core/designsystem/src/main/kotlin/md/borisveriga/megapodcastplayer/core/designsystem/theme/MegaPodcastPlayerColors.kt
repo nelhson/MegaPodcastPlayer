@@ -16,7 +16,10 @@ import androidx.compose.ui.graphics.Color
  *
  * @property downloaded fill for the "available offline" affordance.
  * @property onDownloaded content drawn on [downloaded].
- * @property unplayed the new-episode dot and unplayed-count badge.
+ * @property unplayed the mark for "there is something here you have not heard": the dot on an
+ *   episode row that was never started, and the badge counting a show's new episodes. One colour
+ *   for two facts on purpose — *new* means arrived since you last looked, *unplayed* means never
+ *   started, and the words say which is which. The colour only says *look here*.
  * @property onUnplayed content drawn on [unplayed].
  * @property nowPlaying tint for the list row whose episode is currently loaded in the player.
  * @property nowPlayingContainer background wash for that same row.

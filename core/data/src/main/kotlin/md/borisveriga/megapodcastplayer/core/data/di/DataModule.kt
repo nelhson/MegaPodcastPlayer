@@ -5,15 +5,23 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapterSource
 import md.borisveriga.megapodcastplayer.core.data.repository.AutoDownloadScheduler
+import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultBackupRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultMomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultPlaybackRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultUiPreferencesRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.MediaDownloadRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.OfflineFirstPodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
+import md.borisveriga.megapodcastplayer.core.media.PlaybackChapterSource
 import md.borisveriga.megapodcastplayer.core.media.PlaybackProgressRecorder
 import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
 import md.borisveriga.megapodcastplayer.core.media.download.DownloadStatusRecorder
@@ -22,6 +30,12 @@ import md.borisveriga.megapodcastplayer.core.media.download.DownloadStatusRecord
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class DataModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindsBackupRepository(
+        implementation: DefaultBackupRepository,
+    ): BackupRepository
 
     @Binds
     @Singleton
@@ -55,6 +69,17 @@ abstract class DataModule {
         implementation: DefaultPlaybackRepository,
     ): PlaybackProgressRecorder
 
+    /**
+     * Lets the playback service resolve the loaded episode's chapters, so the notification's
+     * previous and next mean the same thing the player screen's do; see [bindsPlaybackQueueSource]
+     * for why the dependency points this way.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindsPlaybackChapterSource(
+        implementation: EpisodeChapterSource,
+    ): PlaybackChapterSource
+
     @Binds
     @Singleton
     abstract fun bindsDownloadRepository(
@@ -82,7 +107,19 @@ abstract class DataModule {
 
     @Binds
     @Singleton
+    abstract fun bindsMomentsRepository(
+        implementation: DefaultMomentsRepository,
+    ): MomentsRepository
+
+    @Binds
+    @Singleton
     abstract fun bindsUiPreferencesRepository(
         implementation: DefaultUiPreferencesRepository,
     ): UiPreferencesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindsShowSettingsRepository(
+        implementation: DefaultShowSettingsRepository,
+    ): ShowSettingsRepository
 }

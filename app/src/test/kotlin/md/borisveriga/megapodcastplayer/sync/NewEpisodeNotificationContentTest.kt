@@ -34,6 +34,20 @@ class NewEpisodeNotificationContentTest {
         assertEquals("pod-1", content?.targetPodcastId)
         assertEquals(2, content?.episodeCount)
         assertEquals(0, content?.overflowCount)
+        assertNull(
+            "Two episodes from one show is still a list; only one of them would be a guess",
+            content?.targetEpisodeId,
+        )
+    }
+
+    @Test
+    fun `one episode points the tap at the episode itself`() {
+        val content = newEpisodeNotificationContent(listOf(newEpisode("a")))
+
+        // What "a new episode" meant all along, and what the notification's own text was already
+        // naming: the tap used to land on the show and leave the user to find the row.
+        assertEquals("pod-1", content?.targetPodcastId)
+        assertEquals("a", content?.targetEpisodeId)
     }
 
     @Test

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the moments screen: the timestamped bookmarks saved while listening.
+
+    The export wording says "with links" rather than naming a file format, because the links are the
+    reason the feature exists — a moment that outlives the app is one whose document still leads
+    back to the audio.
+-->
+<resources>
+
+    <string name="moments_title">Moments</string>
+
+    <string name="moments_export">Export all, with links</string>
+
+    <string name="moments_empty_title">No moments yet</string>
+    <string name="moments_empty_description">Press the bookmark button in the player — or on your watch — to keep the spot you are listening to. Every one you save turns up here.</string>
+
+    <!-- A row's second line: the show, then the timecode. %1$s is the show, %2$s the timecode. -->
+    <string name="moments_row_subtitle">%1$s · %2$s</string>
+    <!-- What tapping a row does; %1$s is the timecode playback starts at. -->
+    <string name="moments_row_play">Play from %1$s</string>
+
+    <string name="moments_row_actions">More for this moment</string>
+    <string name="moments_action_share">Share</string>
+    <string name="moments_action_note">Edit note</string>
+    <string name="moments_action_delete">Delete</string>
+
+    <string name="moments_share_chooser">Share this moment</string>
+
+    <string name="moments_note_title">Note on this moment</string>
+    <string name="moments_note_hint">What was said?</string>
+    <string name="moments_note_save">Save</string>
+    <string name="moments_note_cancel">Cancel</string>
+
+    <string name="moments_message_deleted">Moment deleted</string>
+    <string name="moments_message_undo">Undo</string>
+    <string name="moments_message_exported">Moments exported</string>
+    <string name="moments_message_export_failed">Could not write that file</string>
+    <string name="moments_message_nothing_to_export">There are no moments to export yet</string>
+
+</resources>

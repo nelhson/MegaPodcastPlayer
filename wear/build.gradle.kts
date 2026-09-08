@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.megapodcastplayer.android.application.wear)
+    alias(libs.plugins.megapodcastplayer.android.crashlytics)
     alias(libs.plugins.megapodcastplayer.android.hilt)
     alias(libs.plugins.kotlin.serialization)
 }

@@ -4,7 +4,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
+import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
+import md.borisveriga.megapodcastplayer.core.model.LibrarySort
+import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 
 /**
  * The handful of choices a screen makes about how it draws itself.
@@ -26,6 +29,43 @@ interface UiPreferencesRepository {
      * @param layout the layout to use from now on.
      */
     suspend fun setLibraryLayout(layout: LibraryLayout)
+
+    /** How the app draws itself: which palette, from where, and how black. */
+    fun observeAppearance(): Flow<AppearanceSettings>
+
+    /**
+     * Records which palette the app draws itself in.
+     *
+     * @param theme the palette to use from now on.
+     */
+    suspend fun setTheme(theme: ThemeChoice)
+
+    /**
+     * Records whether the palette is taken from the wallpaper.
+     *
+     * @param enabled true for Material You's colours, false for the app's own.
+     */
+    suspend fun setDynamicColor(enabled: Boolean)
+
+    /**
+     * Records whether the dark theme is drawn on true black.
+     *
+     * @param enabled true for black backgrounds.
+     */
+    suspend fun setPureBlack(enabled: Boolean)
+
+    /** The order the library screen lists its shows in. */
+    fun observeLibrarySort(): Flow<LibrarySort>
+
+    /**
+     * Records the library's order so it survives process death.
+     *
+     * Stored for the same reason the layout is: an order the user has to re-choose on every cold
+     * start is one they will stop choosing.
+     *
+     * @param sort the order to use from now on.
+     */
+    suspend fun setLibrarySort(sort: LibrarySort)
 }
 
 /**
@@ -45,5 +85,25 @@ class DefaultUiPreferencesRepository @Inject constructor(
 
     override suspend fun setLibraryLayout(layout: LibraryLayout) {
         userPreferences.setLibraryLayout(layout)
+    }
+
+    override fun observeAppearance(): Flow<AppearanceSettings> = userPreferences.appearanceSettings
+
+    override suspend fun setTheme(theme: ThemeChoice) {
+        userPreferences.setTheme(theme)
+    }
+
+    override suspend fun setDynamicColor(enabled: Boolean) {
+        userPreferences.setDynamicColor(enabled)
+    }
+
+    override suspend fun setPureBlack(enabled: Boolean) {
+        userPreferences.setPureBlack(enabled)
+    }
+
+    override fun observeLibrarySort(): Flow<LibrarySort> = userPreferences.librarySort
+
+    override suspend fun setLibrarySort(sort: LibrarySort) {
+        userPreferences.setLibrarySort(sort)
     }
 }

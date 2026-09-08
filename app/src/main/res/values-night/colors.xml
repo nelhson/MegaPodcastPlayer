@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The dark half of the pre-Compose window colours; see values/colors.xml for why they exist here
+  at all. This qualifier is the fix for the white flash a dark-mode cold launch used to show.
+-->
+<resources>
+    <!-- Ink: `citronDarkScheme.background`. -->
+    <color name="window_background">#FF12140D</color>
+</resources>

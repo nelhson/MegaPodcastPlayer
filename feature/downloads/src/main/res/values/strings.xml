@@ -16,9 +16,21 @@
     <string name="downloads_empty_description">Episodes you download appear here and play without a connection.</string>
     <string name="downloads_empty_action">Go to your library</string>
 
-    <!-- The two tiers of a row's swipe; also spoken as its accessibility actions, so both name an action. -->
+    <!--
+        The headings the rows are grouped under, in the order they are drawn. Failures first: they
+        are the only rows on this screen waiting on the user. Not shown when there is only one
+        group, where a heading would name the only thing on screen.
+    -->
+    <string name="downloads_section_failed">Failed</string>
+    <string name="downloads_section_downloading">Downloading</string>
+    <string name="downloads_section_waiting">Waiting</string>
+    <string name="downloads_section_ready">Ready</string>
+
+    <!-- The tiers of a row's swipe; also spoken as its accessibility actions, so each names an action. -->
     <string name="downloads_action_queue">Add to queue</string>
     <string name="downloads_action_remove">Remove</string>
+    <!-- Only on a row that is actually waiting for Wi-Fi. Kept short: it is drawn under an icon. -->
+    <string name="downloads_action_download_now">Download now</string>
 
     <!-- A drag is invisible to a screen reader, so the reorder is published as these two actions. -->
     <string name="downloads_move_up">Move up</string>
@@ -61,6 +73,14 @@
     <string name="downloads_state_queued_wifi">Waiting for Wi-Fi</string>
     <!-- Names the action, because tapping the row is what retries it. -->
     <string name="downloads_state_failed">Download failed — tap to try again</string>
+
+    <!--
+        Said after "Download now". Names the wider effect on purpose: Media3 enforces one network
+        rule for the whole download manager, so anything else waiting starts too, and a message
+        implying one episode was singled out would be a message that spends data without saying so.
+        %1$s is the episode title.
+    -->
+    <string name="downloads_message_downloading_now">Downloading \"%1$s\" and anything else waiting, without Wi-Fi</string>
 
     <string name="downloads_message_removed">Removed \"%1$s\" from this device</string>
     <!-- The queue is another tab, so the button needs a word here or nothing visibly happens. -->

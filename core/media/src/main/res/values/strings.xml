@@ -11,4 +11,21 @@
     <string name="playback_notification_channel_name">Now playing</string>
     <!-- Explains the channel in the system's notification settings. -->
     <string name="playback_notification_channel_description">Player controls for the episode you are listening to. Turning this off hides the controls but does not stop playback.</string>
+
+    <!--
+      Labels for the notification, lock-screen and Android Auto transport buttons. The glyph shows
+      the number; these are what a screen reader and a car head unit say out loud.
+    -->
+    <plurals name="playback_action_skip_back">
+        <item quantity="one">Back %1$d second</item>
+        <item quantity="other">Back %1$d seconds</item>
+    </plurals>
+    <plurals name="playback_action_skip_forward">
+        <item quantity="one">Forward %1$d second</item>
+        <item quantity="other">Forward %1$d seconds</item>
+    </plurals>
+    <!-- Restarts this episode, or moves to the one before it. -->
+    <string name="playback_action_previous">Previous episode</string>
+    <!-- Moves to the next episode in the queue. -->
+    <string name="playback_action_next">Next episode</string>
 </resources>

@@ -13,19 +13,23 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.Dispatcher
 import md.borisveriga.megapodcastplayer.core.common.di.MegaPodcastPlayerDispatcher
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.mapper.asEpisodeEntity
+import md.borisveriga.megapodcastplayer.core.data.mapper.asEpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.data.mapper.asPodcastEntity
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
 import md.borisveriga.megapodcastplayer.core.database.dao.PodcastDao
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.database.model.asExternalModel
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastLink
 import md.borisveriga.megapodcastplayer.core.model.PodcastLinkParser
+import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
@@ -49,6 +53,9 @@ import md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher
  * @property autoDownloadScheduler told about newly discovered episodes, so the download stack
  *   can act on them without this class knowing anything about downloads.
  * @property clock injected so refresh timestamps are deterministic in tests.
+ * @property crashReporter told about a feed that failed to refresh. [refreshAll] deliberately
+ *   survives one bad feed and reports the run as a whole, so without this a show that has quietly
+ *   stopped updating leaves no trace anywhere except a `Log.w` nobody is reading.
  * @property ioDispatcher dispatcher for the database and network work.
  */
 // `flatMapLatest` picks the episode ordering from the show's source; still experimental, and
@@ -63,6 +70,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
     private val youTubePlaylists: YouTubePlaylistFetcher,
     private val autoDownloadScheduler: AutoDownloadScheduler,
     private val clock: Clock,
+    private val crashReporter: CrashReporter,
     @Dispatcher(MegaPodcastPlayerDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
 ) : PodcastRepository {
 
@@ -96,6 +104,14 @@ class OfflineFirstPodcastRepository @Inject constructor(
 
     override fun observeDownloadedEpisodes(): Flow<List<Episode>> =
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
+
+    override fun observeInProgressEpisodes(limit: Int): Flow<List<EpisodeWithShow>> =
+        episodeDao.observeInProgressWithShow(limit)
+            .map { rows -> rows.map { it.asEpisodeWithShow() } }
+
+    override fun observeNewEpisodes(limit: Int): Flow<List<EpisodeWithShow>> =
+        episodeDao.observeNewWithShow(limit)
+            .map { rows -> rows.map { it.asEpisodeWithShow() } }
 
     override fun observeEpisode(episodeId: String): Flow<Episode?> =
         episodeDao.observeById(episodeId).map { it?.asExternalModel() }
@@ -155,6 +171,55 @@ class OfflineFirstPodcastRepository @Inject constructor(
             itunesId = result.itunesId,
             fallbackTitle = result.title,
             fallbackArtworkUrl = result.artworkUrl,
+        )
+    }
+
+    override suspend fun preview(
+        result: PodcastSearchResult,
+        episodeLimit: Int,
+    ): PodcastPreviewResult = withContext(ioDispatcher) {
+        val feedUrl = result.feedUrl
+        if (feedUrl.isNullOrBlank()) {
+            return@withContext PodcastPreviewResult.NoFeedAvailable(result.title)
+        }
+
+        // suspendRunCatching rather than try/catch: a preview the user dismissed mid-fetch must
+        // unwind rather than be reported to them as a failure they are no longer looking at.
+        val fetched = suspendRunCatching {
+            fetchFeed(feedUrl, etag = null, lastModified = null, source = PodcastSource.RSS)
+        }.getOrElse { error ->
+            Log.w(TAG, "Failed to preview feed $feedUrl", error)
+            return@withContext PodcastPreviewResult.Failed(error)
+        }
+
+        val channel = when (fetched) {
+            is FeedFetchResult.Fetched -> fetched.channel
+
+            // Unreachable: nothing is sent that a server could answer 304 to, since a preview
+            // sends no validators. Explicit rather than an else branch all the same.
+            FeedFetchResult.NotModified -> return@withContext PodcastPreviewResult.Failed(
+                IllegalStateException("Server answered 304 for a feed we have never fetched"),
+            )
+        }
+
+        // Built exactly as `addFeed` would build it, and then not stored. The shared mapper is
+        // what makes "this is the show you would get" true rather than merely intended.
+        val podcast = channel.asPodcastEntity(
+            feedUrl = feedUrl,
+            itunesId = result.itunesId,
+            now = Instant.now(clock),
+            fallbackTitle = result.title,
+            fallbackArtworkUrl = result.artworkUrl,
+        ).asExternalModel()
+
+        PodcastPreviewResult.Loaded(
+            PodcastPreview(
+                podcast = podcast,
+                episodes = channel.items
+                    .take(episodeLimit)
+                    .map { it.asEpisodeEntity(podcast.id).asExternalModel() },
+                totalEpisodeCount = channel.items.size,
+            ),
         )
     }
 
@@ -271,6 +336,11 @@ class OfflineFirstPodcastRepository @Inject constructor(
                     }
                     .onFailure { error ->
                         Log.w(TAG, "Refresh failed for ${podcast.feedUrl}", error)
+                        // The feed URL is a key rather than part of the message so that every
+                        // refresh failure groups into one issue, with the offending shows listed
+                        // inside it, instead of one issue per show.
+                        crashReporter.setKey(KEY_FEED_URL, podcast.feedUrl)
+                        crashReporter.recordNonFatal(NON_FATAL_REFRESH_FAILED, error)
                         failed += podcast.title
                     }
             }
@@ -458,23 +528,6 @@ class OfflineFirstPodcastRepository @Inject constructor(
         episodeDao.clearNewFlags(podcastId)
     }
 
-    override suspend fun newestUnplayedEpisode(podcastId: String): Episode? =
-        withContext(ioDispatcher) { episodeDao.getNewestUnplayed(podcastId)?.asExternalModel() }
-
-    override suspend fun markPodcastPlayed(podcastId: String): List<String> =
-        withContext(ioDispatcher) { episodeDao.markPodcastPlayed(podcastId) }
-
-    override suspend fun setEpisodesPlayed(episodeIds: List<String>, isPlayed: Boolean) =
-        withContext(ioDispatcher) {
-            // Chunked because the caller's list is however many episodes a show holds, and
-            // `IN (:ids)` binds one SQLite parameter per id. The ceiling is 999 on the oldest
-            // Android this app supports; a back catalogue passes it easily, and the failure would
-            // be an exception on an undo — the one moment the user is least able to afford one.
-            episodeIds.chunked(SQLITE_PARAMETER_CHUNK).forEach { chunk ->
-                episodeDao.setPlayedForIds(chunk, isPlayed)
-            }
-        }
-
     override suspend fun setAutoRefresh(podcastId: String, enabled: Boolean) =
         withContext(ioDispatcher) {
             podcastDao.setAutoRefresh(podcastId, enabled)
@@ -483,13 +536,11 @@ class OfflineFirstPodcastRepository @Inject constructor(
     private companion object {
         private const val TAG = "PodcastRepository"
 
-        /**
-         * How many ids may go into one `IN (:ids)` statement.
-         *
-         * Comfortably under SQLite's 999-parameter ceiling, with room for whatever else the
-         * statement binds.
-         */
-        private const val SQLITE_PARAMETER_CHUNK = 500
+        /** Groups every failed feed refresh into one Crashlytics issue; see [refreshAll]. */
+        private const val NON_FATAL_REFRESH_FAILED = "Podcast refresh failed"
+
+        /** Crashlytics key carrying the feed that failed most recently. */
+        private const val KEY_FEED_URL = "feedUrl"
     }
 }
 

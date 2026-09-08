@@ -120,10 +120,9 @@ object MegaPodcastPlayerPolygons {
         innerRounding = CornerRounding(radius = 0.5f, smoothing = 1f),
     )
 
-    /** A soft heptagon, used to mask the artwork of the episode that is currently playing. */
-    val Heptagon: RoundedPolygon = RoundedPolygon(
-        numVertices = 7,
-        radius = 1f,
-        rounding = CornerRounding(radius = 0.4f, smoothing = 0.7f),
-    )
+    // A heptagon lived here, described as masking the artwork of the episode currently playing, and
+    // masked nothing. It was removed rather than given that job, because by the time anything could
+    // have used it the app already said "this one is playing" three ways in the same row — a tint,
+    // an equaliser and, in the queue, a heading — and the rule this design system keeps is one mark
+    // per fact. A shape nothing wears is not a shape the app has.
 }

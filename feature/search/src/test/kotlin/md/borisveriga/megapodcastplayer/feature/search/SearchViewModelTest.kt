@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.search
 
+import androidx.lifecycle.SavedStateHandle
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -13,13 +14,17 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.AddPodcastResult
+import md.borisveriga.megapodcastplayer.core.data.repository.PodcastPreviewResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.model.Podcast
+import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
+import md.borisveriga.megapodcastplayer.core.testing.testEpisode
 import md.borisveriga.megapodcastplayer.core.testing.testPodcast
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,18 +54,20 @@ class SearchViewModelTest {
 
     private lateinit var repository: PodcastRepository
     private lateinit var library: MutableStateFlow<List<PodcastWithCounts>>
+    private lateinit var episodePlayer: EpisodePlayer
     private lateinit var viewModel: SearchViewModel
 
     @Before
     fun setUp() {
         repository = mockk(relaxed = true)
+        episodePlayer = mockk(relaxed = true)
         coEvery { repository.search(any()) } returns Result.success(emptyList())
         // `uiState` combines the library in, and `combine` emits nothing until every source has
         // emitted once — so an unstubbed library flow would freeze the whole screen at its initial
         // value and quietly pass every assertion below.
         library = MutableStateFlow(emptyList())
         every { repository.observeLibrary() } returns library
-        viewModel = SearchViewModel(repository)
+        viewModel = SearchViewModel(repository, episodePlayer, SavedStateHandle())
     }
 
     /**
@@ -92,6 +99,129 @@ class SearchViewModelTest {
         episodeCount = 10,
         genres = emptyList(),
     )
+
+    /**
+     * A preview of [result] as the repository would return it.
+     *
+     * @param result the search result the sheet was opened from.
+     */
+    private fun previewOf(result: PodcastSearchResult) = PodcastPreview(
+        podcast = testPodcast(id = "podcast-${result.itunesId}", title = result.title),
+        episodes = listOf(testEpisode(id = "ep-1", podcastId = "podcast-${result.itunesId}")),
+        totalEpisodeCount = 412,
+    )
+
+    /**
+     * Tapping a result used to subscribe on the spot. The sheet is what replaced that, and the
+     * whole of its value rests on nothing being written until the user says so.
+     */
+    @Test
+    fun `opening a preview fetches the feed and adds nothing`() = runTest {
+        val result = searchResult(1L)
+        coEvery { repository.preview(result) } returns
+            PodcastPreviewResult.Loaded(previewOf(result))
+
+        subscribe()
+        viewModel.openPreview(result)
+        runCurrent()
+
+        val preview = checkNotNull(viewModel.uiState.value.preview)
+        assertFalse(preview.isLoading)
+        assertEquals(412, preview.preview?.totalEpisodeCount)
+        coVerify(exactly = 0) { repository.addFromSearchResult(any()) }
+    }
+
+    @Test
+    fun `a show with no feed is a different failure from an unreachable one`() = runTest {
+        val noFeed = searchResult(1L)
+        val broken = searchResult(2L)
+        coEvery { repository.preview(noFeed) } returns
+            PodcastPreviewResult.NoFeedAvailable(noFeed.title)
+        coEvery { repository.preview(broken) } returns
+            PodcastPreviewResult.Failed(IllegalStateException("boom"))
+
+        subscribe()
+
+        viewModel.openPreview(noFeed)
+        runCurrent()
+        assertEquals(PreviewError.NoFeed, viewModel.uiState.value.preview?.error)
+
+        viewModel.openPreview(broken)
+        runCurrent()
+        assertEquals(PreviewError.Unreachable, viewModel.uiState.value.preview?.error)
+    }
+
+    /**
+     * A slow feed must not fill in a sheet the user has moved on from — nor, worse, overwrite the
+     * one they opened next.
+     */
+    @Test
+    fun `a preview that arrives after the sheet moved on is dropped`() = runTest {
+        val first = searchResult(1L)
+        val second = searchResult(2L)
+        val release = CompletableDeferred<Unit>()
+        coEvery { repository.preview(first) } coAnswers {
+            release.await()
+            PodcastPreviewResult.Loaded(previewOf(first))
+        }
+        coEvery { repository.preview(second) } returns
+            PodcastPreviewResult.Loaded(previewOf(second))
+
+        subscribe()
+        viewModel.openPreview(first)
+        runCurrent()
+        viewModel.openPreview(second)
+        runCurrent()
+
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals(second.itunesId, viewModel.uiState.value.preview?.result?.itunesId)
+        assertEquals(second.title, viewModel.uiState.value.preview?.preview?.podcast?.title)
+    }
+
+    @Test
+    fun `subscribing from the sheet adds the show and closes it`() = runTest {
+        val result = searchResult(1L)
+        coEvery { repository.preview(result) } returns
+            PodcastPreviewResult.Loaded(previewOf(result))
+        coEvery { repository.addFromSearchResult(result) } returns
+            AddPodcastResult.Added(testPodcast(id = "podcast-1"), episodeCount = 412)
+
+        subscribe()
+        viewModel.openPreview(result)
+        runCurrent()
+        viewModel.subscribeFromPreview()
+        runCurrent()
+
+        coVerify(exactly = 1) { repository.addFromSearchResult(result) }
+        assertNull(viewModel.uiState.value.preview)
+        // Adding from a result never navigates: the user is reading a list and may want several.
+        assertNull(viewModel.uiState.value.navigateToPodcastId)
+    }
+
+    /** The half a description cannot do: hearing the show without following it first. */
+    @Test
+    fun `playing a preview episode plays it and adds nothing`() = runTest {
+        val result = searchResult(1L)
+        val preview = previewOf(result)
+        coEvery { repository.preview(result) } returns PodcastPreviewResult.Loaded(preview)
+
+        subscribe()
+        viewModel.openPreview(result)
+        runCurrent()
+        viewModel.playPreviewEpisode(preview.episodes.single())
+        runCurrent()
+
+        coVerify(exactly = 1) {
+            episodePlayer.playUnsubscribed(
+                episode = preview.episodes.single(),
+                showTitle = preview.podcast.title,
+                showArtworkUrl = preview.podcast.artworkUrl,
+            )
+        }
+        coVerify(exactly = 0) { repository.addFromSearchResult(any()) }
+    }
 
     @Test
     fun `the query is held back for the full debounce before Apple is asked`() = runTest {
@@ -352,5 +482,36 @@ class SearchViewModelTest {
 
         const val APPLE_LINK =
             "https://podcasts.apple.com/us/podcast/podlodka-podcast/id1209828744"
+    }
+
+    @Test
+    fun `a link shared from another app arrives in the field, offered rather than added`() {
+        // The route argument, as a share or a tapped link delivers it.
+        val link = "https://podcasts.apple.com/us/podcast/podlodka-podcast/id1209828744"
+        viewModel = SearchViewModel(repository, episodePlayer, SavedStateHandle(mapOf("link" to link)))
+
+        runTest {
+            subscribe()
+
+            val state = viewModel.uiState.value
+            assertEquals(link, state.query)
+            // Classified exactly as a paste would be: the screen offers "add this link".
+            assertTrue(state.isLink)
+            // And nothing has been added. An intent any app can send may fill the field; the tap
+            // that acts on it is still the user's.
+            coVerify(exactly = 0) { repository.addFromInput(any()) }
+        }
+    }
+
+    @Test
+    fun `no shared link leaves the field empty`() {
+        viewModel = SearchViewModel(repository, episodePlayer, SavedStateHandle())
+
+        runTest {
+            subscribe()
+
+            assertEquals("", viewModel.uiState.value.query)
+            assertFalse(viewModel.uiState.value.isLink)
+        }
     }
 }

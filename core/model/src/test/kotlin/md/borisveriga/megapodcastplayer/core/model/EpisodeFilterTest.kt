@@ -1,13 +1,11 @@
-package md.borisveriga.megapodcastplayer.feature.podcast
+package md.borisveriga.megapodcastplayer.core.model
 
 import java.time.Instant
-import md.borisveriga.megapodcastplayer.core.model.DownloadState
-import md.borisveriga.megapodcastplayer.core.model.Episode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Tests for the show page's filter chips.
+ * Tests for [EpisodeFilter].
  *
  * The rule worth pinning is what "Unplayed" means. An episode someone started and abandoned is not
  * new, and the obvious implementation — everything that is not finished — would put it there,

@@ -2,21 +2,24 @@ package md.borisveriga.megapodcastplayer.feature.library
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.model.LibraryFilter
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
+import md.borisveriga.megapodcastplayer.core.model.LibrarySort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 import org.junit.Assert.assertEquals
@@ -47,6 +50,10 @@ import org.robolectric.annotation.Config
  * that gesture shares the row with a tap that opens the show and with the list's own scrolling —
  * three things that a plain unit test cannot tell apart, and that a modifier applied in the wrong
  * place would silently reduce to one.
+ *
+ * The sort and the narrowing controls are covered for what they do to *each other*: an order the
+ * library did not arrange by hand, and a list that has been narrowed, must both withdraw the drag,
+ * because a drag applied to either would write an arrangement of the wrong shows.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -55,12 +62,18 @@ class LibraryScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun entry(id: String, title: String, newEpisodeCount: Int = 0) = PodcastWithCounts(
+    private fun entry(
+        id: String,
+        title: String,
+        newEpisodeCount: Int = 0,
+        unplayedCount: Int = 0,
+        author: String = "Some Author",
+    ) = PodcastWithCounts(
         podcast = Podcast(
             id = id,
             itunesId = null,
             title = title,
-            author = "Some Author",
+            author = author,
             feedUrl = "https://example.com/$id.rss",
             artworkUrl = null,
             description = "",
@@ -73,6 +86,7 @@ class LibraryScreenTest {
         episodeCount = 412,
         newEpisodeCount = newEpisodeCount,
         downloadedCount = 2,
+        unplayedCount = unplayedCount,
     )
 
     private fun setScreen(
@@ -82,35 +96,48 @@ class LibraryScreenTest {
         onSearchClick: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
         onMove: (Int, Int) -> Unit = { _, _ -> },
-        onQueueNewest: (PodcastWithCounts) -> Unit = {},
-        onMarkAllPlayed: (PodcastWithCounts) -> Unit = {},
         onRemove: (PodcastWithCounts) -> Unit = {},
+        onSortChange: (LibrarySort) -> Unit = {},
+        onQueryChange: (String) -> Unit = {},
+        onOnlyWithNewEpisodesChange: (Boolean) -> Unit = {},
+        onClearFilter: () -> Unit = {},
+        sort: LibrarySort = LibrarySort.MANUAL,
+        filter: LibraryFilter = LibraryFilter.NONE,
         podcasts: List<PodcastWithCounts> =
             listOf(entry("a", "Podlodka Podcast", newEpisodeCount = 3)),
+        libraryCount: Int = podcasts.size,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
                 LibraryScreen(
                     uiState = LibraryUiState(
                         podcasts = podcasts,
+                        libraryCount = libraryCount,
                         layout = layout,
+                        sort = sort,
+                        filter = filter,
                         isLoading = false,
                     ),
                     onPodcastClick = onPodcastClick,
                     onSearchClick = onSearchClick,
                     onOpenSettings = onOpenSettings,
                     onMove = onMove,
-                    onQueueNewest = onQueueNewest,
-                    onMarkAllPlayed = onMarkAllPlayed,
                     onRemove = onRemove,
-                    onUndoMarkAllPlayed = {},
                     onLayoutChange = onLayoutChange,
+                    onSortChange = onSortChange,
+                    onQueryChange = onQueryChange,
+                    onOnlyWithNewEpisodesChange = onOnlyWithNewEpisodesChange,
+                    onClearFilter = onClearFilter,
                     onRefresh = {},
                     onMessageShown = {},
                 )
             }
         }
     }
+
+    /** A library long enough for the narrowing controls to be drawn. */
+    private fun longLibrary(size: Int = 10) =
+        List(size) { index -> entry("p$index", "Show $index") }
 
     /**
      * The bar is what says which of the three tabs the user is on, so it has to survive the
@@ -123,7 +150,9 @@ class LibraryScreenTest {
             podcasts = List(size = 30) { index -> entry("p$index", "Show $index") },
         )
 
-        composeRule.onNode(hasScrollAction()).performTouchInput { swipeUp() }
+        // Swiped on a row rather than on "the scrollable node": a library this long also draws
+        // the narrowing controls, whose chip row scrolls sideways, and there are two of them now.
+        composeRule.onNodeWithText("Show 0").performTouchInput { swipeUp() }
 
         composeRule.onNodeWithText("Library").assertIsDisplayed()
     }
@@ -149,6 +178,128 @@ class LibraryScreenTest {
         composeRule.onNodeWithContentDescription("Show as grid").performClick()
 
         assertEquals(LibraryLayout.GRID, requested)
+    }
+
+    /**
+     * The badge says *new* — arrived since you last looked — and the row has to be able to say the
+     * other thing too, because a show with nothing new and thirty never-started episodes is the
+     * case the badge alone reads as "nothing to do here".
+     */
+    @Test
+    fun `a row reports new and unplayed as different numbers`() {
+        setScreen(
+            layout = LibraryLayout.LIST,
+            podcasts = listOf(
+                entry("a", "Podlodka Podcast", newEpisodeCount = 3, unplayedCount = 37),
+            ),
+        )
+
+        composeRule.onNodeWithText("412 episodes · 37 unplayed · 2 downloaded").assertIsDisplayed()
+        // The badge's own number is the new one, and it is announced in those words.
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .assertStateDescription("3 new episodes")
+    }
+
+    @Test
+    fun `the sort menu offers every order and reports the one chosen`() {
+        var requested: LibrarySort? = null
+        setScreen(layout = LibraryLayout.LIST, onSortChange = { requested = it })
+
+        composeRule.onNodeWithContentDescription("Sort shows").performClick()
+        composeRule.onNodeWithText("A–Z").performClick()
+
+        assertEquals(LibrarySort.TITLE, requested)
+    }
+
+    /** The chip is labelled with the order that is on, not with the word "Sort". */
+    @Test
+    fun `the sort chip says which order is applied`() {
+        setScreen(layout = LibraryLayout.LIST, sort = LibrarySort.RECENTLY_UPDATED)
+
+        composeRule.onNodeWithText("Recently updated").assertIsDisplayed()
+    }
+
+    /**
+     * A drag in a computed order would be thrown away by the next emission, and the accessibility
+     * actions are the only part of it a test can see.
+     */
+    @Test
+    fun `a computed order withdraws the reorder actions`() {
+        setScreen(
+            layout = LibraryLayout.LIST,
+            sort = LibrarySort.TITLE,
+            podcasts = listOf(entry("a", "Podlodka Podcast"), entry("b", "Acquired")),
+        )
+
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .assertHasNoCustomAccessibilityAction("Move down")
+        // The swipe is untouched by the order: removing a show means the same thing in all four.
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .assertHasCustomAccessibilityAction("Remove")
+    }
+
+    @Test
+    fun `a narrowed list withdraws the reorder actions too`() {
+        setScreen(
+            layout = LibraryLayout.LIST,
+            filter = LibraryFilter(query = "pod"),
+            podcasts = listOf(entry("a", "Podlodka Podcast")),
+            libraryCount = 12,
+        )
+
+        composeRule.onNodeWithText("Podlodka Podcast")
+            .assertHasNoCustomAccessibilityAction("Move down")
+    }
+
+    /** A search field pointing at three shows is a control aimed at something already visible. */
+    @Test
+    fun `a short library is offered no narrowing controls`() {
+        setScreen(layout = LibraryLayout.LIST)
+
+        composeRule.onNodeWithText("Find a show").assertDoesNotExist()
+        composeRule.onNodeWithText("Has new episodes").assertDoesNotExist()
+        // The order, unlike the narrowing, is worth offering at any size.
+        composeRule.onNodeWithContentDescription("Sort shows").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a long library is offered the filter field and the new chip`() {
+        val typed = mutableListOf<String>()
+        var onlyNew: Boolean? = null
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onQueryChange = { typed += it },
+            onOnlyWithNewEpisodesChange = { onlyNew = it },
+            podcasts = longLibrary(),
+        )
+
+        composeRule.onNodeWithText("Find a show").performTextInput("acq")
+        composeRule.onNodeWithText("Has new episodes").performClick()
+
+        assertEquals(listOf("acq"), typed)
+        assertEquals(true, onlyNew)
+    }
+
+    /**
+     * A filter that matches nothing is not an empty library. Offering "search Apple Podcasts" to
+     * someone who mistyped the name of a show they already follow answers a question nobody asked.
+     */
+    @Test
+    fun `a filter that matches nothing offers the way back`() {
+        var cleared = 0
+        setScreen(
+            layout = LibraryLayout.LIST,
+            onClearFilter = { cleared++ },
+            filter = LibraryFilter(query = "nothing matches this"),
+            podcasts = emptyList(),
+            libraryCount = 12,
+        )
+
+        composeRule.onNodeWithText("No podcasts yet").assertDoesNotExist()
+        composeRule.onNodeWithText("No shows match").assertIsDisplayed()
+        composeRule.onNodeWithText("Clear filter").performClick()
+
+        assertEquals(1, cleared)
     }
 
     /**
@@ -275,18 +426,19 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun `dragging a row past half its width queues the show's next episode`() {
-        var queued: String? = null
+    fun `a long drag reveals the button rather than committing anything`() {
+        // The row has no full-swipe tier at all: unsubscribing is the only thing on offer and it is
+        // far too large to fire on a gesture. However far the row is pulled, it can only open.
+        var removed: String? = null
         setScreen(
             layout = LibraryLayout.LIST,
-            onQueueNewest = { queued = it.podcast.title },
+            onRemove = { removed = it.podcast.title },
         )
 
         composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
             down(centerRight)
-            // Slowly, in steps, and past the halfway mark. Slowly because the commit tier answers
-            // to distance rather than velocity, and in steps because one jump would be read as a
-            // fling and settle by the other rule.
+            // Slowly and in steps, so this reads as a drag rather than a fling — a fling settles by
+            // velocity, and it is the distance that would have committed a full swipe.
             repeat(SWIPE_STEPS) {
                 moveBy(Offset(-width / SWIPE_STEPS.toFloat(), 0f))
                 advanceEventTime(SWIPE_STEP_MS)
@@ -294,24 +446,18 @@ class LibraryScreenTest {
             up()
         }
 
-        assertEquals("Podlodka Podcast", queued)
+        assertEquals(null, removed)
+        composeRule.onNodeWithText("Remove").assertIsDisplayed()
     }
 
     @Test
-    fun `a short swipe reveals the buttons rather than queueing anything`() {
-        var queued: String? = null
-        var marked: String? = null
-        setScreen(
-            layout = LibraryLayout.LIST,
-            onQueueNewest = { queued = it.podcast.title },
-            onMarkAllPlayed = { marked = it.podcast.title },
-        )
+    fun `a short swipe reveals the remove button`() {
+        var removed: String? = null
+        setScreen(layout = LibraryLayout.LIST, onRemove = { removed = it.podcast.title })
 
         composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
             down(centerRight)
-            // A short pull: far enough to rest open, nowhere near the commit threshold. The two
-            // tiers sharing one gesture is the whole design, and a threshold set wrong would make
-            // this fire the full swipe.
+            // Far enough to rest the row open, which is all this gesture can do.
             repeat(SWIPE_STEPS) {
                 moveBy(Offset(-SHORT_SWIPE_PX / SWIPE_STEPS, 0f))
                 advanceEventTime(SWIPE_STEP_MS)
@@ -319,9 +465,11 @@ class LibraryScreenTest {
             up()
         }
 
-        assertEquals(null, queued)
-        composeRule.onNodeWithText("Mark all played").performClick()
-        assertEquals("Podlodka Podcast", marked)
+        assertEquals(null, removed)
+        // The revealed button is there to be chosen rather than triggered: tapping it opens the
+        // confirmation, which is what proves the reveal happened.
+        composeRule.onNodeWithText("Remove").performClick()
+        composeRule.onNodeWithText("Remove Podlodka Podcast?").assertIsDisplayed()
     }
 
     @Test
@@ -332,8 +480,8 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("Podlodka Podcast")
             .performCustomAccessibilityAction("Remove")
 
-        // Nothing has gone yet: unlike the other two actions this one cannot be offered back, so
-        // the friction is in front of it rather than behind it.
+        // Nothing has gone yet: this cannot be offered back afterwards, so the friction is in
+        // front of it rather than behind it.
         assertEquals(null, removed)
         composeRule.onNodeWithText("Remove Podlodka Podcast?").assertIsDisplayed()
         // The count is what makes the warning decidable rather than merely alarming.
@@ -358,37 +506,33 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun `every swipe action is reachable without a swipe`() {
-        // A drag is invisible to a screen reader, so a row that only offered these as a gesture
+    fun `the swipe action is reachable without a swipe`() {
+        // A drag is invisible to a screen reader, so a row that only offered this as a gesture
         // would be a row TalkBack cannot act on at all.
-        val queued = mutableListOf<String>()
-        val marked = mutableListOf<String>()
+        var removed: String? = null
         setScreen(
             layout = LibraryLayout.LIST,
-            onQueueNewest = { queued += it.podcast.title },
-            onMarkAllPlayed = { marked += it.podcast.title },
+            onRemove = { removed = it.podcast.title },
         )
 
         composeRule.onNodeWithText("Podlodka Podcast")
-            .performCustomAccessibilityAction("Queue next")
-        composeRule.onNodeWithText("Podlodka Podcast")
-            .performCustomAccessibilityAction("Mark all played")
+            .performCustomAccessibilityAction("Remove")
+        // Removal confirms first, so reaching it is only half the journey.
+        composeRule.onAllNodesWithText("Remove").onLast().performClick()
 
-        assertEquals(listOf("Podlodka Podcast"), queued)
-        assertEquals(listOf("Podlodka Podcast"), marked)
+        assertEquals("Podlodka Podcast", removed)
     }
 
     @Test
     fun `the cover grid keeps its long press and gains no swipe`() {
-        // A tile is 148dp of artwork: half of one is not a distance a commit threshold can live at,
-        // and two revealed buttons would leave no tile. The gesture is confined to the list, and
-        // this is what would catch it leaking into the grid.
-        var queued: String? = null
-        setScreen(layout = LibraryLayout.GRID, onQueueNewest = { queued = it.podcast.title })
+        // A tile is 148dp of artwork, and a revealed button would leave no tile. The gesture is
+        // confined to the list, and this is what would catch it leaking into the grid.
+        var removed: String? = null
+        setScreen(layout = LibraryLayout.GRID, onRemove = { removed = it.podcast.title })
 
         composeRule.onNodeWithText("Podlodka Podcast")
-            .assertHasNoCustomAccessibilityAction("Queue next")
-        assertEquals(null, queued)
+            .assertHasNoCustomAccessibilityAction("Remove")
+        assertEquals(null, removed)
     }
 }
 
@@ -431,4 +575,24 @@ private fun SemanticsNodeInteraction.assertHasNoCustomAccessibilityAction(label:
         "Expected no \"$label\" action, found ${actions.map { it.label }}",
         actions.none { it.label == label },
     )
+}
+
+/** Asserts one custom action carries [label]; the counterpart of the assertion above. */
+private fun SemanticsNodeInteraction.assertHasCustomAccessibilityAction(label: String) {
+    val actions = fetchSemanticsNode().config
+        .getOrElse(SemanticsActions.CustomActions) { emptyList() }
+    assertTrue(
+        "Expected a \"$label\" action, found ${actions.map { it.label }}",
+        actions.any { it.label == label },
+    )
+}
+
+/**
+ * Asserts what a merged row announces beyond its text.
+ *
+ * The library's new-episode count is a state description rather than a label, because it is a fact
+ * about the show that changes while its name does not.
+ */
+private fun SemanticsNodeInteraction.assertStateDescription(expected: String) {
+    assertEquals(expected, fetchSemanticsNode().config[SemanticsProperties.StateDescription])
 }

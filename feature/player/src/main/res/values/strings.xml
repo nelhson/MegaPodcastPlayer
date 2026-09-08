@@ -4,20 +4,28 @@
 
     The playback position labels (`4:12`, `1:04:12`) stay in Kotlin: they are numeric formats, not
     copy, and they are shared with the watch.
+
+    "Play" and "Pause" are not here either: both players now draw the design system's own
+    PlayPauseButton, which carries its labels with it. Two copies of the same word would have been
+    two things to translate and one to forget.
 -->
 <resources>
-
-    <string name="player_play">Play</string>
-    <string name="player_pause">Pause</string>
-
-    <!-- The mini player has one fixed-size skip button, so its label names no interval. -->
-    <string name="player_mini_skip_ahead">Skip ahead</string>
 
     <!--
         Opening is a tap on the bar, and there is no matching label for closing: the expanded sheet
         is closed by dragging its grabber down or by the back gesture, not by a button.
     -->
     <string name="player_expand">Open the player</string>
+
+    <!--
+        Dismissing the bar. The gesture is a pull downwards on the collapsed player; this is its
+        spoken twin, offered as a custom action so a screen reader can do the same thing. It says
+        what happens rather than "close", because playback stops as well as the bar disappearing.
+    -->
+    <string name="player_dismiss">Stop playing and hide the player</string>
+    <!-- Snackbar after the gesture. The queue it emptied is offered back. -->
+    <string name="player_dismissed">Playback stopped</string>
+    <string name="player_dismiss_undo">Undo</string>
 
     <string name="player_idle_title">Nothing playing</string>
     <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>
@@ -29,8 +37,19 @@
         either — the player says that, on every screen.
     -->
     <string name="queue_title">Queue</string>
+    <!-- Under the title; %1$s is an already-formatted duration, e.g. "3 h 12 min". -->
+    <string name="queue_remaining">%1$s left</string>
+    <!--
+        The one row above the list. The screen lists only what is *next*, which used to leave it
+        saying nothing at all about the episode the queue is a queue behind.
+    -->
+    <string name="queue_now_playing">Now playing</string>
+    <!-- Empties everything after the episode playing; that episode keeps playing. -->
+    <string name="queue_clear">Clear queue</string>
     <string name="queue_empty_title">Nothing queued</string>
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>
+    <!-- An empty state with nowhere to go is a dead end; this leads to the shows. -->
+    <string name="queue_empty_action">Browse your shows</string>
 
     <!--
         Reordering is a drag and the two edits are a swipe, and a screen reader can do neither, so
@@ -40,24 +59,40 @@
     <string name="queue_move_down">Move down</string>
 
     <!--
-        The swipe actions. These are button labels first and spoken labels second, so they are kept
-        to two words: they are drawn under an icon in a 76dp column, and the row a screen reader
-        reads them from has already said which episode it is talking about.
+        The swipe action. This is a spoken label as much as a written one, so it is kept to one
+        word: the row a screen reader reads it from has already said which episode it is talking
+        about.
     -->
-    <string name="queue_action_mark_played">Mark played</string>
     <string name="queue_action_remove">Remove</string>
 
-    <!-- Snackbars after a swipe; %1$s is the episode title. Both are offered back. -->
+    <!-- Snackbar after a swipe; %1$s is the episode title. It is offered back. -->
     <string name="queue_message_removed">Removed %1$s</string>
-    <string name="queue_message_marked_played">Marked %1$s as played</string>
+    <!-- Snackbar after Clear queue; %1$d is how many episodes left it. Offered back. -->
+    <plurals name="queue_message_cleared">
+        <item quantity="one">Removed %1$d episode from the queue</item>
+        <item quantity="other">Removed %1$d episodes from the queue</item>
+    </plurals>
     <string name="queue_undo">Undo</string>
 
     <string name="player_scrubber">Playback position</string>
+    <!--
+        Spoken label for the tap that cycles the right-hand timecode. A screen reader cannot see
+        that the label changed, so the action has to say what it does rather than what it shows.
+    -->
+    <string name="player_time_label_cycle">Show time left, total length, or when it ends</string>
     <!-- Shown in place of a duration the player has not read yet; a wrong number would read as fact. -->
     <string name="player_unknown_duration">—</string>
 
     <string name="player_previous">Restart or go to the previous episode</string>
     <string name="player_next">Next episode</string>
+
+    <!--
+        The same two buttons on an episode that has chapters, where they move between chapters
+        instead. Only the spoken label changes: the chapter title under the episode's own says
+        which the buttons mean to everyone who can see it.
+    -->
+    <string name="player_previous_chapter">Restart or go to the previous chapter</string>
+    <string name="player_next_chapter">Next chapter</string>
 
     <!-- TalkBack labels for the skip buttons; the glyph carries the number visually. -->
     <plurals name="player_skip_forward">
@@ -69,13 +104,113 @@
         <item quantity="other">Skip back %1$d seconds</item>
     </plurals>
 
-    <!-- The link from the player into the queue; %1$d is how many episodes follow this one. -->
+    <!--
+        The link from the player into the queue; %1$d is how many episodes follow this one.
+
+        The empty form matters more than the others: the link used to disappear with the queue,
+        which meant the player never mentioned that a queue existed to the one person who most
+        needed telling — the one who has not put anything in it.
+    -->
+    <string name="player_queue_empty_summary">Up next · nothing queued</string>
     <plurals name="player_queue_summary">
         <item quantity="one">Up next · %1$d episode</item>
         <item quantity="other">Up next · %1$d episodes</item>
     </plurals>
 
-    <!-- %1$s is the player's own error text. -->
+    <!--
+        Playback failures, worded as what happened and what to do about it.
+
+        The player used to show the exception's own message, which is written for whoever reads the
+        bug report — "Source error", "Response code: 404" — and says neither. Three of these four
+        have something the user can act on; the fourth keeps the player's own words, because when
+        the app does not know what happened the least useful thing it can do is pretend it does.
+        %1$s is that text.
+    -->
+    <string name="player_error_no_connection">Could not reach the episode. Check your connection, or play a downloaded episode.</string>
+    <string name="player_error_episode_gone">That episode is no longer where the feed says it is. Refreshing the show may fix it.</string>
+    <string name="player_error_unsupported_format">This phone cannot play that audio format.</string>
+    <string name="player_error_youtube">Could not get the audio for this video. Try again in a moment.</string>
     <string name="player_error">Playback problem: %1$s</string>
+
+    <!--
+      The sleep timer, opened from the player by someone about to fall asleep.
+
+      It absorbed the end-of-episode bell, which is now one of its options rather than a second
+      control beside it: two "stop later" buttons on a transport row was one too many. The button's
+      two content descriptions are chosen by whether a timer is running, and the running one says
+      how long is left — a control that differs only by colour tells a TalkBack user nothing.
+    -->
+    <string name="player_sleep_arm">Sleep timer</string>
+    <!-- %1$s is an already-formatted remaining time, e.g. "18 min". -->
+    <string name="player_sleep_armed">Sleep timer, %1$s left; tap to change it</string>
+    <string name="player_sleep_armed_end_of_episode">Sleep timer set to the end of this episode; tap to change it</string>
+
+    <string name="sleep_title">Sleep timer</string>
+    <string name="sleep_description">Playback fades out and pauses. Shake the phone to add fifteen minutes.</string>
+    <plurals name="sleep_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="sleep_end_of_episode">End of episode</string>
+    <string name="sleep_end_of_chapter">End of chapter</string>
+    <string name="sleep_cancel">Turn the timer off</string>
+    <string name="sleep_shake_hint">Still awake? Shake the phone to add fifteen minutes.</string>
+
+    <!--
+      The speed picker, opened from the player.
+
+      It replaced a cycle button, whose only label was the rate itself; a control that opens a sheet
+      has to say so, which is why the button's description now ends the same way the sleep timer's
+      does. The slider is named and its value spoken separately, because "1.5x" alone tells a
+      TalkBack user a number and not what it is a number of.
+    -->
+    <!-- %1$s is an already-formatted rate, e.g. "1.5x". -->
+    <string name="player_speed">Playback speed, %1$s; tap to change it</string>
+    <!-- Same, when the rate is one the show asked for rather than the app-wide one. -->
+    <string name="player_speed_for_show">Playback speed, %1$s, set for this show; tap to change it</string>
+
+    <string name="speed_title">Playback speed</string>
+    <string name="speed_description">Applies to everything you play, until you change it.</string>
+    <string name="speed_slider">Playback speed</string>
+    <string name="speed_slower">Slower</string>
+    <string name="speed_faster">Faster</string>
+    <string name="speed_reset">Back to normal speed</string>
+
+    <!--
+      Moments: the timestamped bookmarks saved from the player.
+
+      The mark button is announced with the running count when there is one, because the number
+      beside it is the only visible evidence that pressing it did anything.
+
+      "Save moment", the same two words the watch's own button uses. The two surfaces used to say
+      "Save this moment" and "Moment" for the identical action, which is how one gesture comes to
+      look like two features.
+    -->
+    <string name="player_moment_mark">Save moment</string>
+    <plurals name="player_moment_mark_with_count">
+        <item quantity="one">Save moment; %1$d saved in this episode</item>
+        <item quantity="other">Save moment; %1$d saved in this episode</item>
+    </plurals>
+    <!--
+        The list the count opens onto. The player showed a number of moments and no way to read
+        them: they could only be seen on the Moments tab, which is a long way to go to hear a
+        sentence again. %1$d is how many this episode has.
+    -->
+    <string name="player_moments_open">Show the moments in this episode</string>
+    <plurals name="player_moments_sheet_title">
+        <item quantity="one">%1$d moment</item>
+        <item quantity="other">%1$d moments</item>
+    </plurals>
+    <string name="player_moments_sheet_description">Tap one to jump there.</string>
+    <!-- A moment saved without typing anything, which is the common case. -->
+    <string name="player_moment_no_note">No note</string>
+
+    <!-- %1$s is the timecode that was marked, e.g. "12:23". -->
+    <string name="player_moment_saved">Moment saved at %1$s</string>
+    <string name="player_moment_add_note">Note</string>
+    <string name="player_moment_note_title">Note on this moment</string>
+    <string name="player_moment_note_hint">What was said?</string>
+    <string name="player_moment_note_save">Save</string>
+    <string name="player_moment_note_cancel">Cancel</string>
 
 </resources>

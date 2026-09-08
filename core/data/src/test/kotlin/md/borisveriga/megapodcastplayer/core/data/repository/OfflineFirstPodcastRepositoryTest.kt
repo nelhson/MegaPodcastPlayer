@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import java.io.IOException
 import java.time.Clock
 import java.time.Duration
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Podcast
@@ -57,6 +59,7 @@ class OfflineFirstPodcastRepositoryTest {
     private lateinit var itunes: ItunesRemoteDataSource
     private lateinit var feeds: FeedRemoteDataSource
     private lateinit var youTubePlaylists: YouTubePlaylistFetcher
+    private lateinit var crashReporter: CrashReporter
     private lateinit var repository: OfflineFirstPodcastRepository
 
     private val clock = Clock.fixed(Instant.parse("2026-08-28T12:00:00Z"), ZoneOffset.UTC)
@@ -134,6 +137,8 @@ class OfflineFirstPodcastRepositoryTest {
         itunes = mockk()
         feeds = mockk()
         youTubePlaylists = mockk()
+        // Relaxed: most tests here do not care that a failure was reported, only the one that does.
+        crashReporter = mockk(relaxed = true)
         repository = OfflineFirstPodcastRepository(
             podcastDao = database.podcastDao(),
             episodeDao = database.episodeDao(),
@@ -144,6 +149,7 @@ class OfflineFirstPodcastRepositoryTest {
             // business, and is tested there.
             autoDownloadScheduler = mockk(relaxed = true),
             clock = clock,
+            crashReporter = crashReporter,
             ioDispatcher = UnconfinedTestDispatcher(),
         )
     }
@@ -317,6 +323,44 @@ class OfflineFirstPodcastRepositoryTest {
         assertEquals(listOf("Podlodka Podcast"), summary.failedTitles)
         assertEquals(1, summary.refreshedCount)
         assertEquals(1, summary.newEpisodeCount)
+    }
+
+    @Test
+    fun `a feed that fails to refresh is reported as a non-fatal`() = runTest {
+        coEvery { itunes.lookup(any()) } returns appleResult
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
+        repository.addFromInput("1209828744")
+
+        val failure = IOException("host unreachable")
+        coEvery { feeds.fetch(podlodkaFeedUrl, any(), any()) } throws failure
+
+        repository.refreshAll(onlyAutoRefreshable = true)
+
+        // The run itself survives — that is covered above. What is asserted here is that the
+        // failure left a trace: `refreshAll` returns a summary the caller may well ignore, so
+        // without this a show that has stopped updating is invisible.
+        verify { crashReporter.setKey("feedUrl", podlodkaFeedUrl) }
+        verify { crashReporter.recordNonFatal("Podcast refresh failed", failure) }
+    }
+
+    @Test
+    fun `a refresh that succeeds reports nothing`() = runTest {
+        coEvery { itunes.lookup(any()) } returns appleResult
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
+        repository.addFromInput("1209828744")
+        coEvery { feeds.fetch(podlodkaFeedUrl, any(), any()) } returns
+            FeedFetchResult.Fetched(
+                channel(feedItem("a"), feedItem("b")),
+                etag = null,
+                lastModified = null,
+            )
+
+        repository.refreshAll(onlyAutoRefreshable = true)
+
+        // A reporter that fires on the happy path is a reporter nobody reads.
+        verify(exactly = 0) { crashReporter.recordNonFatal(any(), any()) }
     }
 
     @Test
@@ -660,6 +704,7 @@ class OfflineFirstPodcastRepositoryTest {
         youTubePlaylists = youTubePlaylists,
         autoDownloadScheduler = mockk(relaxed = true),
         clock = Clock.fixed(clock.instant().plus(Duration.ofMinutes(minutes)), ZoneOffset.UTC),
+        crashReporter = crashReporter,
         ioDispatcher = UnconfinedTestDispatcher(),
     )
 
