@@ -14,11 +14,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.backup.LibraryRestorer
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
@@ -41,6 +44,12 @@ import md.borisveriga.megapodcastplayer.core.model.backup.OpmlDecodeResult
  * @property isRemovingDownloads true while "remove all downloads" is in flight, so the row can be
  *   disabled rather than let a second tap race the first.
  * @property backup everything the backup section renders.
+ * @property speedOverrides the shows that play at a rate of their own, alphabetically. What turns
+ *   the playback row from "the speed" into "the *default* speed": a default that never names its
+ *   exceptions is indistinguishable from a setting that is being quietly ignored (SET-6).
+ * @property isCrashReporting whether handled failures actually leave the device. A build with no
+ *   Firebase configuration reports nothing, and an app carrying a crash reporter should say which
+ *   of the two it is somewhere the user can read (SET-4).
  * @property message a one-off outcome for the snackbar.
  */
 data class SettingsUiState(
@@ -51,11 +60,24 @@ data class SettingsUiState(
     val downloadedBytes: Long = 0L,
     val isRemovingDownloads: Boolean = false,
     val backup: BackupUiState = BackupUiState(),
+    val speedOverrides: List<ShowSpeedOverride> = emptyList(),
+    val isCrashReporting: Boolean = false,
     val message: SettingsMessage? = null,
 ) {
     /** True when there is anything on disk to free. */
     val hasDownloads: Boolean get() = downloadedEpisodeCount > 0
 }
+
+/**
+ * One show that plays at a rate of its own.
+ *
+ * Carries the title rather than the id: this exists to be read, and the settings screen has no
+ * other reason to know what a podcast id is.
+ *
+ * @property title the show.
+ * @property speed the rate it plays at.
+ */
+data class ShowSpeedOverride(val title: String, val speed: Float)
 
 /** A one-off outcome to show the user. */
 sealed interface SettingsMessage {
@@ -120,6 +142,10 @@ sealed interface SettingsMessage {
  * @property libraryRestorer runs a restore somewhere that outlives this screen.
  * @property uiPreferences the appearance choices; the same repository the library's layout and
  *   order live in, for the same reason — none of it changes what the app does.
+ * @property podcastRepository the library, read only for the titles of the shows that override the
+ *   app's playback rate.
+ * @property showSettingsRepository which shows have overridden it.
+ * @property crashReporter asked one question — whether it reports at all.
  * @property clock names the exported file after the day it was written.
  */
 @HiltViewModel
@@ -130,6 +156,9 @@ class SettingsViewModel @Inject constructor(
     private val backupFileStore: BackupFileStore,
     private val libraryRestorer: LibraryRestorer,
     private val uiPreferences: UiPreferencesRepository,
+    private val podcastRepository: PodcastRepository,
+    private val showSettingsRepository: ShowSettingsRepository,
+    private val crashReporter: CrashReporter,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -156,6 +185,27 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * The shows that play at a rate other than the app's, named and in alphabetical order.
+     *
+     * Joined here rather than in the screen because it is a join: the rates are in preferences and
+     * the titles are in the database, and an override whose show has since been removed is dropped
+     * rather than drawn as a blank line. Alphabetical because there is no other order — these are
+     * decisions made at unrelated times about unrelated shows.
+     */
+    private val speedOverrides: kotlinx.coroutines.flow.Flow<List<ShowSpeedOverride>> = combine(
+        showSettingsRepository.observeAll(),
+        podcastRepository.observeLibrary(),
+    ) { settings, library ->
+        library
+            .mapNotNull { entry ->
+                settings[entry.podcast.id]
+                    ?.speed
+                    ?.let { speed -> ShowSpeedOverride(entry.podcast.title, speed) }
+            }
+            .sortedBy { it.title.lowercase() }
+    }
+
+    /**
      * The three sets of stored preferences, combined before the rest.
      *
      * Folded together for the same reason [backupState] is, with an added constraint: `combine`
@@ -166,6 +216,7 @@ class SettingsViewModel @Inject constructor(
         playbackRepository.observePlaybackSettings(),
         downloadRepository.observeDownloadSettings(),
         uiPreferences.observeAppearance(),
+        speedOverrides,
         ::StoredPreferences,
     )
 
@@ -179,6 +230,8 @@ class SettingsViewModel @Inject constructor(
             playback = stored.playback,
             downloads = stored.downloads,
             appearance = stored.appearance,
+            speedOverrides = stored.speedOverrides,
+            isCrashReporting = crashReporter.isReporting,
             downloadedEpisodeCount = downloaded.size,
             // Summed from the rows rather than read from the cache so the figure updates with the
             // list it sits next to; the exact on-disk total is refreshed by refreshStorageUsage().
@@ -494,17 +547,21 @@ class SettingsViewModel @Inject constructor(
     /**
      * The stored preferences, carried as one value.
      *
-     * A named type rather than a `Triple`, so the combine above reads as three settings rather than
-     * as `first`, `second` and `third`.
+     * A named type rather than a tuple, so the combine above reads as the settings it carries
+     * rather than as `first`, `second` and `third`.
      *
      * @property playback the playback preferences.
      * @property downloads the download rules.
      * @property appearance how the app draws itself.
+     * @property speedOverrides the shows that play at a rate of their own. Not a stored preference
+     *   in the same sense as the other three — it is a join of two of them — but it arrives from
+     *   the same combine and would otherwise need a fifth arm on the one below it.
      */
     private data class StoredPreferences(
         val playback: PlaybackSettings,
         val downloads: DownloadSettings,
         val appearance: AppearanceSettings,
+        val speedOverrides: List<ShowSpeedOverride>,
     )
 
     /**

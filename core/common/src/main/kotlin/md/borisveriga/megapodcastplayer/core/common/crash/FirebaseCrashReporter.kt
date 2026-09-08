@@ -35,6 +35,8 @@ internal class FirebaseCrashReporter(
         setKey(KEY_BUILD_TYPE, if (debuggable) "debug" else "release")
     }
 
+    override val isReporting: Boolean = true
+
     override fun recordNonFatal(message: String, throwable: Throwable) = guarded {
         // Logged first so the message is attached to this report and not merely to the next one:
         // Crashlytics groups non-fatals by the exception's top stack frame, so without it two

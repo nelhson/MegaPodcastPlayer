@@ -98,7 +98,7 @@ class ControlsTest {
             "Download",
             "Download queued",
             "Downloading, 62%",
-            "Downloaded, remove from device",
+            "Downloaded, delete from device",
             "Download failed, retry",
         ).forEach { description ->
             composeTestRule.onNodeWithContentDescription(description).assertIsDisplayed()

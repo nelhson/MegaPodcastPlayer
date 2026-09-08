@@ -29,6 +29,15 @@ interface ShowSettingsRepository {
     fun observeSettings(podcastId: String): Flow<ShowSettings>
 
     /**
+     * Observes every show that has been configured, keyed by podcast id.
+     *
+     * Shows that have said nothing are absent rather than present with defaults, which is what
+     * makes this the honest answer to "which shows depart from the app's settings" — the question
+     * the settings screen asks so that a default can be shown to be one (SET-6).
+     */
+    fun observeAll(): Flow<Map<String, ShowSettings>>
+
+    /**
      * Changes one show's settings.
      *
      * @param podcastId the show.
@@ -54,6 +63,8 @@ class DefaultShowSettingsRepository @Inject constructor(
 
     override fun observeSettings(podcastId: String): Flow<ShowSettings> =
         userPreferences.showSettings.map { it[podcastId] ?: ShowSettings.DEFAULT }
+
+    override fun observeAll(): Flow<Map<String, ShowSettings>> = userPreferences.showSettings
 
     override suspend fun update(podcastId: String, transform: (ShowSettings) -> ShowSettings) {
         userPreferences.updateShowSettings(podcastId, transform)

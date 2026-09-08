@@ -29,7 +29,8 @@
     <string name="designsystem_download">Download</string>
     <string name="designsystem_download_queued">Download queued</string>
     <string name="designsystem_download_in_progress">Downloading, %1$d%%</string>
-    <string name="designsystem_download_remove">Downloaded, remove from device</string>
+    <!-- COPY-2: the button deletes a file, and says so. -->
+    <string name="designsystem_download_remove">Downloaded, delete from device</string>
     <string name="designsystem_download_retry">Download failed, retry</string>
 
     <!-- The mark on a row that is already stored. Not a control, so it names the fact, not an action. -->

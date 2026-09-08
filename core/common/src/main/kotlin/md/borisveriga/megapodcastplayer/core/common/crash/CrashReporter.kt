@@ -28,6 +28,17 @@ package md.borisveriga.megapodcastplayer.core.common.crash
 interface CrashReporter {
 
     /**
+     * Whether anything said to this reporter actually leaves the device.
+     *
+     * False in a build with no Firebase configuration, which is a supported build rather than a
+     * broken one — see `CrashModule`. Published because an app with a crash reporter on its
+     * classpath should be able to say so where the user can read it (SET-4), and "it depends on
+     * whether a JSON file was present at build time" is not an answer a settings screen can give
+     * without asking.
+     */
+    val isReporting: Boolean
+
+    /**
      * Records a failure that was handled without telling the user.
      *
      * Reports are grouped by [message] rather than by stack trace, so give the *operation* that
@@ -69,6 +80,7 @@ interface CrashReporter {
  * to say so.
  */
 object NoOpCrashReporter : CrashReporter {
+    override val isReporting: Boolean = false
     override fun recordNonFatal(message: String, throwable: Throwable) = Unit
     override fun setKey(key: String, value: String) = Unit
     override fun log(message: String) = Unit

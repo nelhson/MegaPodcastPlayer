@@ -44,7 +44,8 @@
     <string name="settings_notification_channels">Notification settings</string>
     <string name="settings_notification_channels_description">New episodes, downloads and the bell, in Android\'s own settings</string>
 
-    <string name="settings_playback_speed">Playback speed</string>
+    <!-- SET-6: "default", because a show may override it; the row lists the ones that do. -->
+    <string name="settings_playback_speed">Default speed</string>
     <string name="settings_skip_forward">Skip forward</string>
     <string name="settings_skip_back">Skip back</string>
 
@@ -63,11 +64,12 @@
     <string name="settings_delete_after_playing_description">Free up storage when an episode finishes</string>
 
     <string name="settings_downloaded_episodes">Downloaded episodes</string>
-    <string name="settings_remove_all">Remove all downloads</string>
+    <!-- COPY-2: these are files, and files are deleted. -->
+    <string name="settings_remove_all">Delete all downloads</string>
     <!-- %1$s is the space that would be reclaimed, e.g. "512 MB". -->
     <string name="settings_remove_all_frees">Frees %1$s</string>
     <string name="settings_remove_all_nothing">Nothing is downloaded</string>
-    <string name="settings_message_downloads_removed">Removed all downloads, freeing %1$s</string>
+    <string name="settings_message_downloads_removed">Deleted all downloads, freeing %1$s</string>
 
     <!--
         The confirmation. There is no undo for deleted audio, so the question comes first and it
@@ -171,4 +173,31 @@
     <string name="settings_message_backup_read_failed">Could not read that file</string>
     <string name="settings_message_backup_not_recognised">That file is not a MegaPodcastPlayer backup</string>
     <string name="settings_message_backup_too_new">That backup was made by a newer version of the app</string>
+
+    <!--
+        SET-4. What an app should be able to say about itself: which build this is, whether its
+        crash reporter is actually sending anything, and the licences of the fonts it ships.
+    -->
+    <string name="settings_section_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_crash_reporting">Crash reporting</string>
+    <!-- This build carries a Firebase configuration, so handled failures leave the device. -->
+    <string name="settings_crash_reporting_on">On. Crashes and handled failures are sent to Firebase Crashlytics.</string>
+    <!-- A build with no Firebase configuration, which is supported rather than broken. -->
+    <string name="settings_crash_reporting_off">Off. This build has no crash reporting configured, so nothing leaves the device.</string>
+    <string name="settings_font_licences">Font licences</string>
+    <string name="settings_font_licences_description">Bricolage Grotesque and Inter, both under the SIL Open Font License 1.1</string>
+    <string name="settings_close">Close</string>
+    <!-- Displayed where the package manager reports no version at all. -->
+    <string name="settings_version_unknown">—</string>
+
+    <!--
+        SET-6. The playback rate is a default, and a default is only a default if what departs from
+        it is named. %1$s is the list of shows; each entry is settings_speed_override.
+    -->
+    <string name="settings_speed_overrides">Some shows play at their own speed: %1$s</string>
+    <!-- One show and its rate: "Podlodka Podcast at 1.5x". -->
+    <string name="settings_speed_override">%1$s at %2$s</string>
+    <!-- Joins those entries, so a translator can re-punctuate the list. -->
+    <string name="settings_list_separator">", "</string>
 </resources>

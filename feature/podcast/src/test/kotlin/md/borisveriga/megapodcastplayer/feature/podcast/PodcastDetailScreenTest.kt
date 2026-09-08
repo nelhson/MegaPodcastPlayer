@@ -106,12 +106,13 @@ class PodcastDetailScreenTest {
         settings: ShowSettings = ShowSettings.DEFAULT,
         onFilterChange: (EpisodeFilter) -> Unit = {},
         onSortChange: (EpisodeSort) -> Unit = {},
+        description: String = podcast.description,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
                 PodcastDetailScreen(
                     uiState = PodcastDetailUiState(
-                        podcast = podcast.copy(source = source),
+                        podcast = podcast.copy(source = source, description = description),
                         episodes = episodes,
                         isLoading = false,
                         isRebuilding = isRebuilding,
@@ -332,14 +333,16 @@ class PodcastDetailScreenTest {
     }
 
     @Test
-    fun `deleting the show is behind the overflow, not next to the back arrow`() {
+    fun `removing the show is behind the overflow, not next to the back arrow`() {
         var removals = 0
         setScreen(listOf(episode("a")), onRemove = { removals++ })
 
-        composeRule.onNodeWithText("Delete").assertDoesNotExist()
+        // COPY-2: a show leaves the *library*, so it is removed. It read "Delete" here and
+        // "Remove" on the library row, for the same show and the same consequence.
+        composeRule.onNodeWithText("Remove show").assertDoesNotExist()
 
         composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithText("Remove show").performClick()
 
         assertEquals(1, removals)
     }
@@ -438,13 +441,75 @@ class PodcastDetailScreenTest {
 
     @Test
     fun `the description can be opened out and closed again`() {
-        setScreen(listOf(episode("a")))
+        setScreen(listOf(episode("a")), description = LONG_DESCRIPTION)
 
         composeRule.onNodeWithText("Show more").performClick()
         composeRule.onNodeWithText("Show less").assertExists()
 
         composeRule.onNodeWithText("Show less").performClick()
         composeRule.onNodeWithText("Show more").assertExists()
+    }
+
+    /**
+     * SHOW-7. The button used to be drawn under every description, including the one-line ones it
+     * had nothing to expand — a control that answers "show more of what?" with the same four lines
+     * again. Whether the text was clipped is a question only the layout can answer, so it is asked
+     * of the layout.
+     */
+    @Test
+    fun `a description that fits is not offered a way to expand`() {
+        setScreen(listOf(episode("a")))
+
+        composeRule.onNodeWithText("A weekly show about software and the people who build it.")
+            .assertExists()
+        composeRule.onNodeWithText("Show more").assertDoesNotExist()
+    }
+
+    /**
+     * The two facts the library's row has carried since it was written, on the page that is
+     * actually about the show. Downloaded is named only when there is something downloaded: a
+     * "0 downloaded" is a fact nobody asked for.
+     */
+    @Test
+    fun `the header counts the episodes, and the copies`() {
+        setScreen(
+            listOf(
+                episode("a", downloadState = DownloadState.COMPLETED),
+                episode("b"),
+                episode("c"),
+            ),
+        )
+
+        composeRule.onNodeWithText("3 episodes · 1 downloaded").assertExists()
+    }
+
+    @Test
+    fun `a show with nothing downloaded says only how many episodes it has`() {
+        setScreen(listOf(episode("a"), episode("b")))
+
+        composeRule.onNodeWithText("2 episodes").assertExists()
+    }
+
+    /** A playlist has videos, which is what the user called them when they added it. */
+    @Test
+    fun `a youtube playlist counts videos`() {
+        setScreen(listOf(episode("a"), episode("b")), source = PodcastSource.YOUTUBE)
+
+        composeRule.onNodeWithText("2 videos").assertExists()
+    }
+
+    /**
+     * SHOW-7's other half. A show's page could hand out an episode and could not hand out the
+     * show, so a reader who wanted it in another app had to go and find it again.
+     */
+    @Test
+    fun `the overflow offers to share the show and to copy its feed`() {
+        setScreen(listOf(episode("a")))
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+
+        composeRule.onNodeWithText("Share show").assertExists()
+        composeRule.onNodeWithText("Copy feed link").assertExists()
     }
 
     @Test
@@ -533,7 +598,7 @@ class PodcastDetailScreenTest {
         // promises, and the gesture that makes them is the same one — so the label is all the
         // user, or a screen reader, has to tell them apart.
         composeRule.onNodeWithText("Episode stored")
-            .performCustomAccessibilityAction("Remove download")
+            .performCustomAccessibilityAction("Delete download")
         composeRule.onNodeWithText("Episode busy")
             .performCustomAccessibilityAction("Cancel download")
         composeRule.onNodeWithText("Episode broken")
@@ -605,3 +670,20 @@ private fun SemanticsNodeInteraction.assertHasNoCustomAccessibilityAction(label:
         actions.none { it.label == label },
     )
 }
+
+/**
+ * A description that cannot fit in four lines however it is measured.
+ *
+ * Six hard line breaks rather than one long paragraph, and that is not fussiness: a Robolectric
+ * text layout is not the device's, so a paragraph that wraps to eight lines on the Fold may wrap to
+ * one here, and a test that turned on the wrapping would be testing the test runner's font. Lines
+ * the publisher wrote are lines whatever measures them.
+ */
+private val LONG_DESCRIPTION = """
+    A weekly show about software.
+    And about the people who build it.
+    Recorded in front of nobody in particular.
+    Published on Tuesdays, mostly.
+    Occasionally on Wednesdays.
+    Never on a Friday.
+""".trimIndent()

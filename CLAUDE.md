@@ -12,8 +12,8 @@ truth rather than a summary of it:
 - `config/detekt/detekt.yml` — every override carries its own reason.
 - `gradle/libs.versions.toml` — the only place a version is written.
 - `docs/` — `REFACTORING_PLAN.md` (audit of 2026-08-29, largely applied), `RELEASE_SIGNING.md`,
-  `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, `SCREENSHOT_TESTS.md`, and dated reports under
-  `docs/reports/`.
+  `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, `SCREENSHOT_TESTS.md`, `COPY_RULES.md`, and
+  dated reports under `docs/reports/`.
 
 ## Layout
 
@@ -84,7 +84,8 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
 
 - KDoc on every file, class and function; unit tests for new or changed logic, run before done.
 - No `TODO`/`FIXME` comments and no `!!` in production code (detekt rejects both).
-- User-facing strings live in each module's `strings.xml`, never in Kotlin literals.
+- User-facing strings live in each module's `strings.xml`, never in Kotlin literals; how they are
+  worded is `docs/COPY_RULES.md`.
 - CI (`.github/workflows/ci.yml`) runs on pushes to `master` (the working branch), on pull requests
   and on manual dispatch. It includes a debug-signed release smoke build whose APKs are discarded.
 - Do not commit unless asked. Reports go to `docs/reports/YYYY-MM-DD-<name>.md`.

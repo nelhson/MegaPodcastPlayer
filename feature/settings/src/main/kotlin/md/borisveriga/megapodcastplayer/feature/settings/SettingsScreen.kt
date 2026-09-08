@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -53,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import md.borisveriga.megapodcastplayer.core.common.format.formatBytes
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
 import md.borisveriga.megapodcastplayer.core.data.backup.RestoreRun
+import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SectionHeader
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsChoiceRow
@@ -194,6 +196,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Saveable so that opening the Fold 7 mid-read does not close the licence text.
+    var fontLicencesOpen by rememberSaveable { mutableStateOf(false) }
     // WorkManager replays the last run's result for as long as the work is retained, so the dialog
     // needs a dismissal of its own; without it, reopening settings would show a week-old summary.
     var showRestoreResult by remember(uiState.backup.restore) {
@@ -342,6 +346,11 @@ fun SettingsScreen(
                     selected = uiState.playback.speed,
                     label = { speed -> formatSpeed(speed) },
                     onSelect = onSpeedChange,
+                    // A default is only a default if what departs from it is named. Until the
+                    // per-show rate existed this row *was* the speed; now it is the speed of every
+                    // show that has not said otherwise, and the ones that have are listed here so
+                    // that a rate the user does not recognise has somewhere to be explained.
+                    description = speedOverridesText(uiState.speedOverrides),
                 )
 
                 SettingsChoiceRow(
@@ -400,6 +409,14 @@ fun SettingsScreen(
                 )
             }
 
+            SectionHeader(text = stringResource(R.string.settings_section_about))
+            SettingsCard {
+                AboutRows(
+                    isCrashReporting = uiState.isCrashReporting,
+                    onOpenFontLicences = { fontLicencesOpen = true },
+                )
+            }
+
             SectionHeader(text = stringResource(R.string.settings_section_backup))
             SettingsCard {
                 BackupRows(
@@ -454,6 +471,10 @@ fun SettingsScreen(
                         .semantics { role = Role.Button },
                 )
             }
+        }
+
+        if (fontLicencesOpen) {
+            FontLicencesDialog(onDismiss = { fontLicencesOpen = false })
         }
 
         if (confirmRemoveAll) {
@@ -520,6 +541,134 @@ private fun Context.openNotificationSettings() {
     } catch (_: ActivityNotFoundException) {
         // Deliberately silent; see above.
     }
+}
+
+/**
+ * What the app can say about itself: which build, whether it reports, and whose fonts it uses.
+ *
+ * Its own composable rather than three more `ListItem`s in the screen's column, because the screen
+ * is already at the complexity the build allows — and because these three are the only rows here
+ * that report rather than change anything.
+ *
+ * @param isCrashReporting whether handled failures actually leave the device.
+ * @param onOpenFontLicences opens the licence text.
+ */
+@Composable
+private fun AboutRows(isCrashReporting: Boolean, onOpenFontLicences: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(text = stringResource(R.string.settings_version)) },
+        supportingContent = { Text(text = appVersionName()) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+
+    ListItem(
+        headlineContent = { Text(text = stringResource(R.string.settings_crash_reporting)) },
+        // States which of the two builds this is rather than offering a switch there is nothing
+        // behind: whether anything is sent was decided by whether a configuration file was present
+        // when the APK was built.
+        supportingContent = {
+            Text(
+                text = stringResource(
+                    if (isCrashReporting) {
+                        R.string.settings_crash_reporting_on
+                    } else {
+                        R.string.settings_crash_reporting_off
+                    },
+                ),
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+
+    ListItem(
+        headlineContent = { Text(text = stringResource(R.string.settings_font_licences)) },
+        supportingContent = {
+            Text(text = stringResource(R.string.settings_font_licences_description))
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier
+            .clickable(onClick = onOpenFontLicences)
+            .semantics { role = Role.Button },
+    )
+}
+
+/**
+ * The bundled fonts' licences, verbatim.
+ *
+ * Read from a raw resource rather than held in `strings.xml`: it is a page of legal text that is
+ * never translated, never interpolated and only ever displayed whole, and the OFL requires it to
+ * travel with the software — which for a user means the APK, not the repository. `docs/` used to
+ * hold the only copy, which satisfied nobody who had not cloned the project.
+ *
+ * @param onDismiss closes it.
+ */
+@Composable
+private fun FontLicencesDialog(onDismiss: () -> Unit) {
+    val resources = LocalResources.current
+    // Read once, off the composition's hot path. Ten kilobytes of text, and it is read only when
+    // the dialog is actually opened.
+    val text = remember(resources) {
+        resources.openRawResource(DesignSystemR.raw.font_licenses)
+            .bufferedReader()
+            .use { it.readText() }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.settings_font_licences)) },
+        text = {
+            Text(
+                text = text,
+                style = MegaPodcastPlayerTheme.type.numeric,
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.settings_close))
+            }
+        },
+    )
+}
+
+/**
+ * This build's version, as the package manager reports it.
+ *
+ * Read from the installed package rather than from a `BuildConfig`: this is a feature module, and
+ * its `BuildConfig` describes the library's own variant, not the APK the user is holding.
+ *
+ * @return the version name, or a dash on the platforms and test runners that report none.
+ */
+@Composable
+private fun appVersionName(): String {
+    val context = LocalContext.current
+    return remember(context) {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull().orEmpty()
+    }.ifEmpty { stringResource(R.string.settings_version_unknown) }
+}
+
+/**
+ * The shows that play at a rate other than the app's, as one line.
+ *
+ * Null when there are none: a row that said "no shows override this" would be explaining a feature
+ * rather than reporting a fact, on a screen that has twenty other rows to get through.
+ *
+ * @param overrides the shows and their rates.
+ * @return the line, or null.
+ */
+@Composable
+private fun speedOverridesText(overrides: List<ShowSpeedOverride>): String? {
+    if (overrides.isEmpty()) return null
+    val entryFormat = stringResource(R.string.settings_speed_override)
+    val separator = stringResource(R.string.settings_list_separator)
+    // Formatted rather than composed row by row: `joinToString` takes an ordinary lambda, and a
+    // composable one cannot be passed to it.
+    val named = overrides.joinToString(separator) { override ->
+        entryFormat.format(override.title, formatSpeed(override.speed))
+    }
+    return stringResource(R.string.settings_speed_overrides, named)
 }
 
 /**

@@ -2,6 +2,7 @@ package md.borisveriga.megapodcastplayer.feature.search
 
 import android.content.res.Resources
 import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,9 +18,13 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,6 +32,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
@@ -34,14 +40,19 @@ import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -66,9 +77,14 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.PodcastLinkParser
 import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
+
+/** Keys for the two fixed rows the empty field draws, so neither is recycled onto the other. */
+private const val PASTE_CHIP_KEY = "paste-chip"
+private const val RECENT_HEADER_KEY = "recent-header"
 
 /**
  * Add-a-podcast screen: Apple search plus pasted-link support in one field.
@@ -96,6 +112,8 @@ fun SearchRoute(
     SearchScreen(
         uiState = uiState,
         onQueryChange = viewModel::onQueryChange,
+        onSearchCommitted = viewModel::rememberSearch,
+        onClearRecentSearches = viewModel::clearRecentSearches,
         onAddLink = viewModel::addPastedLink,
         onOpenPreview = viewModel::openPreview,
         onDismissPreview = viewModel::dismissPreview,
@@ -119,6 +137,8 @@ fun SearchRoute(
  *
  * @param uiState what to render.
  * @param onQueryChange keystroke handler.
+ * @param onSearchCommitted called when a search has led somewhere, so the term can be remembered.
+ * @param onClearRecentSearches forgets every remembered term.
  * @param onAddLink handler for the "add this link" card.
  * @param onOpenPreview opens the preview sheet for a result.
  * @param onDismissPreview closes it.
@@ -136,6 +156,8 @@ fun SearchRoute(
 fun SearchScreen(
     uiState: SearchUiState,
     onQueryChange: (String) -> Unit,
+    onSearchCommitted: () -> Unit,
+    onClearRecentSearches: () -> Unit,
     onAddLink: () -> Unit,
     onOpenPreview: (PodcastSearchResult) -> Unit,
     onDismissPreview: () -> Unit,
@@ -155,6 +177,13 @@ fun SearchScreen(
     // change invalidates the read.
     val resources = LocalResources.current
     val focusRequester = remember { FocusRequester() }
+    val clipboard = LocalClipboard.current
+    val localContext = LocalContext.current
+    // What is on the clipboard, if it is something this app can add (ADD-4). Held rather than read
+    // where it is drawn, because reading a clipboard is a one-off act with a visible consequence:
+    // from Android 12 the system announces it, and announcing it on every recomposition would be
+    // an app that appears to be reading the clipboard continuously.
+    var pastableLink by remember { mutableStateOf<String?>(null) }
 
     // The screen exists to be typed into, and it is the library's add button's only destination, so
     // it opens ready for the first keystroke rather than making the user tap the field they just
@@ -163,6 +192,20 @@ fun SearchScreen(
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboard?.show()
+    }
+
+    // Once, on arrival. The user has just asked for this screen, which is the focus the disclosure
+    // guidance asks for, and the offer is only made for text the app could actually add — a
+    // clipboard holding a shopping list produces no chip at all.
+    LaunchedEffect(Unit) {
+        val text = clipboard.getClipEntry()
+            ?.clipData
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(localContext)
+            ?.toString()
+            ?.trim()
+        pastableLink = text?.takeIf { it.isNotEmpty() && PodcastLinkParser.parse(it) != null }
     }
 
     LaunchedEffect(uiState.message) {
@@ -187,7 +230,10 @@ fun SearchScreen(
                     SearchBarDefaults.InputField(
                         query = uiState.query,
                         onQueryChange = onQueryChange,
-                        onSearch = { keyboard?.hide() },
+                        onSearch = {
+                            keyboard?.hide()
+                            onSearchCommitted()
+                        },
                         expanded = false,
                         onExpandedChange = { },
                         modifier = Modifier.focusRequester(focusRequester),
@@ -264,6 +310,20 @@ fun SearchScreen(
                         description = stringResource(R.string.search_empty_description),
                     )
 
+                // The one moment this screen has nothing of its own to say. It used to say
+                // nothing at all; now it offers whatever is to hand — a link on the clipboard, and
+                // the terms that have found something before (ADD-4, ADD-5).
+                uiState.query.isBlank() -> EmptyFieldContent(
+                    pastableLink = pastableLink,
+                    recentSearches = uiState.recentSearches,
+                    onPaste = { link ->
+                        pastableLink = null
+                        onQueryChange(link)
+                    },
+                    onRecentSearch = onQueryChange,
+                    onClearRecentSearches = onClearRecentSearches,
+                )
+
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(items = uiState.results, key = { it.itunesId }) { result ->
                         // A show already in the library makes the row a door rather than a button:
@@ -300,6 +360,97 @@ fun SearchScreen(
             onSubscribe = onSubscribe,
             onPlayEpisode = onPlayPreviewEpisode,
         )
+    }
+}
+
+/**
+ * What the screen offers before a single character has been typed.
+ *
+ * Two offers, and both are answers to something that actually happens rather than to a blank
+ * space. A link is on the clipboard because the user copied it in another app a moment ago and
+ * came here to paste it — offering the paste is shorter than the paste. And a term has been
+ * searched for before because the show was looked up on the other device first, which is the
+ * commonest reason this screen is opened twice for one show.
+ *
+ * Draws nothing when it has nothing: an empty state inviting the user to type into the field they
+ * are already typing into would be a screen explaining itself to itself.
+ *
+ * @param pastableLink a podcast link found on the clipboard, or null.
+ * @param recentSearches the remembered terms, most recent first.
+ * @param onPaste puts the clipboard link into the field, which turns the screen into the link
+ *   card; the chip goes away rather than sitting under an offer already taken.
+ * @param onRecentSearch puts a remembered term back in the field.
+ * @param onClearRecentSearches forgets them all.
+ */
+@Composable
+private fun EmptyFieldContent(
+    pastableLink: String?,
+    recentSearches: List<String>,
+    onPaste: (String) -> Unit,
+    onRecentSearch: (String) -> Unit,
+    onClearRecentSearches: () -> Unit,
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        if (pastableLink != null) {
+            item(key = PASTE_CHIP_KEY) {
+                AssistChip(
+                    onClick = { onPaste(pastableLink) },
+                    label = { Text(text = stringResource(R.string.search_paste_link)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentPaste,
+                            contentDescription = null,
+                            modifier = Modifier.size(AssistChipDefaults.IconSize),
+                        )
+                    },
+                    modifier = Modifier.padding(
+                        horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                        vertical = MegaPodcastPlayerTheme.spacing.sm,
+                    ),
+                )
+            }
+        }
+
+        if (recentSearches.isNotEmpty()) {
+            item(key = RECENT_HEADER_KEY) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            start = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                            end = MegaPodcastPlayerTheme.spacing.sm,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.search_recent_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { heading() },
+                    )
+                    TextButton(onClick = onClearRecentSearches) {
+                        Text(text = stringResource(R.string.search_recent_clear))
+                    }
+                }
+            }
+
+            items(items = recentSearches, key = { it }) { term ->
+                ListItem(
+                    headlineContent = { Text(text = term) },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Rounded.History,
+                            // The row's text is the term; a glyph announced beside it would be
+                            // "history, podlodka" for every row on the list.
+                            contentDescription = null,
+                        )
+                    },
+                    modifier = Modifier.clickable { onRecentSearch(term) },
+                )
+            }
+        }
     }
 }
 
@@ -718,6 +869,8 @@ internal fun SearchScreenPreview() {
                 ),
             ),
             onQueryChange = {},
+            onSearchCommitted = {},
+            onClearRecentSearches = {},
             onAddLink = {},
             onOpenPreview = {},
             onDismissPreview = {},
@@ -743,6 +896,8 @@ internal fun SearchScreenLinkPreview() {
                 isLink = true,
             ),
             onQueryChange = {},
+            onSearchCommitted = {},
+            onClearRecentSearches = {},
             onAddLink = {},
             onOpenPreview = {},
             onDismissPreview = {},

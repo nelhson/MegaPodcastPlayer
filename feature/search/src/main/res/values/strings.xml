@@ -82,4 +82,16 @@
     <string name="search_message_failed">Couldn\'t read that feed: %1$s</string>
     <string name="search_message_failed_unknown_cause">unknown error</string>
 
+    <!--
+        ADD-4: what to offer when the clipboard already holds a podcast link. Only ever shown for
+        text the app could actually add, so the chip never appears over a shopping list.
+    -->
+    <string name="search_paste_link">Paste link</string>
+
+    <!--
+        ADD-5: the terms that have found something before, offered while the field is empty. Apple's
+        top charts were the declined half of the same finding (D-11).
+    -->
+    <string name="search_recent_title">Recent searches</string>
+    <string name="search_recent_clear">Clear</string>
 </resources>

@@ -99,6 +99,65 @@ class UserPreferencesDataSourceTest {
     }
 
     @Test
+    fun `recent searches are empty until something is searched for`() = runTest {
+        assertEquals(emptyList<String>(), dataSource.recentSearches.first())
+    }
+
+    /** A recent list whose order is not the order things happened in is a list, not a history. */
+    @Test
+    fun `the newest search comes first`() = runTest {
+        dataSource.addRecentSearch("podlodka")
+        dataSource.addRecentSearch("acquired")
+
+        assertEquals(listOf("acquired", "podlodka"), dataSource.recentSearches.first())
+    }
+
+    /** Looking the same show up a third time moves its term up rather than repeating it. */
+    @Test
+    fun `searching the same thing again moves it to the front`() = runTest {
+        dataSource.addRecentSearch("podlodka")
+        dataSource.addRecentSearch("acquired")
+        dataSource.addRecentSearch("PODLODKA")
+
+        assertEquals(listOf("PODLODKA", "acquired"), dataSource.recentSearches.first())
+    }
+
+    @Test
+    fun `only the last few searches are kept`() = runTest {
+        repeat(12) { index -> dataSource.addRecentSearch("term $index") }
+
+        val stored = dataSource.recentSearches.first()
+        assertEquals(8, stored.size)
+        assertEquals("term 11", stored.first())
+    }
+
+    @Test
+    fun `a blank search is not worth remembering`() = runTest {
+        dataSource.addRecentSearch("   ")
+
+        assertEquals(emptyList<String>(), dataSource.recentSearches.first())
+    }
+
+    /**
+     * The separator is a newline, so a term carrying one would come back as two. A single-line
+     * field cannot produce one today, which is exactly when a lossy round trip is cheap to close.
+     */
+    @Test
+    fun `a term carrying the separator still round trips as one term`() = runTest {
+        dataSource.addRecentSearch("pod\nlodka")
+
+        assertEquals(listOf("pod lodka"), dataSource.recentSearches.first())
+    }
+
+    @Test
+    fun `clearing forgets every term`() = runTest {
+        dataSource.addRecentSearch("podlodka")
+        dataSource.clearRecentSearches()
+
+        assertEquals(emptyList<String>(), dataSource.recentSearches.first())
+    }
+
+    @Test
     fun `auto play next round trips`() = runTest {
         dataSource.setAutoPlayNext(false)
 

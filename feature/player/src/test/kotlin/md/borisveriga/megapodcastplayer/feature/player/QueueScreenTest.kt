@@ -305,7 +305,7 @@ class QueueScreenTest {
             onUndo = { undone++ },
         )
 
-        composeRule.onNodeWithText("Removed Episode b").assertIsDisplayed()
+        composeRule.onNodeWithText("Removed \"Episode b\"").assertIsDisplayed()
         composeRule.onNodeWithText("Undo").performClick()
 
         assertEquals(1, undone)

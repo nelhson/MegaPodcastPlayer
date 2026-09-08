@@ -5,6 +5,8 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
@@ -85,6 +88,8 @@ class DownloadsScreenTest {
         onMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
         onOpenSettings: () -> Unit = {},
         scrollToTopSignal: Int = 0,
+        keepLimitPerPodcast: Int = DownloadSettings.KEEP_ALL,
+        deleteAfterPlaying: Boolean = false,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -100,6 +105,8 @@ class DownloadsScreenTest {
                         totalBytes = 90_000_000L,
                         freeBytes = 4_000_000_000L,
                         unmeteredOnly = unmeteredOnly,
+                        keepLimitPerPodcast = keepLimitPerPodcast,
+                        deleteAfterPlaying = deleteAfterPlaying,
                         isLoading = false,
                     ),
                     onEpisodeClick = {},
@@ -116,6 +123,68 @@ class DownloadsScreenTest {
                 )
             }
         }
+    }
+
+    /**
+     * DL-3. An episode that was here on Monday and gone on Tuesday was removed by one of two rules
+     * the user set once and has not thought about since, and this screen — the one it vanished
+     * from — used to say nothing about either.
+     */
+    @Test
+    fun `the storage card says what removes an episode`() {
+        setScreen(
+            listOf(download("a", DownloadState.COMPLETED)),
+            keepLimitPerPodcast = 3,
+            deleteAfterPlaying = true,
+        )
+
+        composeRule
+            .onNodeWithText(
+                "Keeps the newest 3 episodes of each show · " +
+                    "deletes an episode when you finish it",
+            )
+            .assertExists()
+    }
+
+    @Test
+    fun `only the rule in force is named`() {
+        setScreen(
+            listOf(download("a", DownloadState.COMPLETED)),
+            keepLimitPerPodcast = DownloadSettings.KEEP_ALL,
+            deleteAfterPlaying = true,
+        )
+
+        composeRule.onNodeWithText("deletes an episode when you finish it").assertExists()
+    }
+
+    /**
+     * "Nothing" is an answer to the same question, so the line stays rather than disappearing —
+     * which would also make the card's height depend on a preference.
+     */
+    @Test
+    fun `no rule in force still says so`() {
+        setScreen(
+            listOf(download("a", DownloadState.COMPLETED)),
+            keepLimitPerPodcast = DownloadSettings.KEEP_ALL,
+            deleteAfterPlaying = false,
+        )
+
+        composeRule.onNodeWithText("Nothing is deleted automatically").assertExists()
+    }
+
+    /** A sentence naming a setting the user then has to go and find is half an answer. */
+    @Test
+    fun `the housekeeping line opens settings`() {
+        var opened = false
+        setScreen(
+            listOf(download("a", DownloadState.COMPLETED)),
+            onOpenSettings = { opened = true },
+            deleteAfterPlaying = true,
+        )
+
+        composeRule.onNodeWithText("deletes an episode when you finish it").performClick()
+
+        assertTrue(opened)
     }
 
     /**
@@ -170,17 +239,17 @@ class DownloadsScreenTest {
     }
 
     @Test
-    fun `removing a downloaded episode asks first, and names what it is about to delete`() {
+    fun `deleting a downloaded episode asks first, and names what it is about to delete`() {
         var removed: String? = null
         setScreen(listOf(download("a"), download("b")), onEpisodeRemove = { removed = it })
 
-        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Remove")
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Delete")
 
         // Deleting audio is not undone by a second gesture, so it asks — and says what it frees.
-        composeRule.onNodeWithText("Remove \"Episode a\"?").assertExists()
+        composeRule.onNodeWithText("Delete \"Episode a\"?").assertExists()
         assertNull(removed)
 
-        composeRule.onNodeWithText("Remove").performClick()
+        composeRule.onAllNodesWithText("Delete").onLast().performClick()
 
         assertEquals("a", removed)
     }
@@ -190,13 +259,18 @@ class DownloadsScreenTest {
         var removed: String? = null
         setScreen(listOf(download("a")), onEpisodeRemove = { removed = it })
 
-        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Remove")
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Delete")
         composeRule.onNodeWithText("Cancel").performClick()
 
         assertNull(removed)
-        composeRule.onNodeWithText("Remove \"Episode a\"?").assertDoesNotExist()
+        composeRule.onNodeWithText("Delete \"Episode a\"?").assertDoesNotExist()
     }
 
+    /**
+     * COPY-2. One gesture, two honest names: a finished episode is a file and is deleted, while a
+     * transfer that has not finished has no file to delete and is called off. Both used to read
+     * "Remove", which is the word that says neither.
+     */
     @Test
     fun `calling off a transfer does not ask, because nothing is lost by it`() {
         var removed: String? = null
@@ -205,10 +279,11 @@ class DownloadsScreenTest {
             onEpisodeRemove = { removed = it },
         )
 
-        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Remove")
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Cancel download")
 
         assertEquals("a", removed)
-        composeRule.onNodeWithText("Remove \"Episode a\"?").assertDoesNotExist()
+        composeRule.onNodeWithText("Delete \"Episode a\"?").assertDoesNotExist()
     }
 
     @Test
@@ -218,7 +293,7 @@ class DownloadsScreenTest {
 
         // Nothing is left at the end of the row: the download controls said nothing the rest of
         // the row did not, and the queue button that replaced them is now the swipe.
-        composeRule.onNodeWithContentDescription("Downloaded, remove from device")
+        composeRule.onNodeWithContentDescription("Downloaded, delete from device")
             .assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Add Episode a to the queue").assertDoesNotExist()
 

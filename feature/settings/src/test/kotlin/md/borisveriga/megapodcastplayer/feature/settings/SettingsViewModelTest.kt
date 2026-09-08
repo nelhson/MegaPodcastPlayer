@@ -14,19 +14,26 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.common.crash.NoOpCrashReporter
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.backup.LibraryRestorer
 import md.borisveriga.megapodcastplayer.core.data.backup.RestoreRun
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
+import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupFile
@@ -74,6 +81,8 @@ class SettingsViewModelTest {
     private lateinit var backupFileStore: BackupFileStore
     private lateinit var libraryRestorer: LibraryRestorer
     private lateinit var uiPreferences: UiPreferencesRepository
+    private lateinit var podcastRepository: PodcastRepository
+    private lateinit var showSettingsRepository: ShowSettingsRepository
     private lateinit var viewModel: SettingsViewModel
 
     private val exportedAt = Instant.parse("2026-09-07T10:00:00Z")
@@ -113,6 +122,8 @@ class SettingsViewModelTest {
     """.trimIndent()
 
     private val appearance = MutableStateFlow(AppearanceSettings())
+    private val library = MutableStateFlow<List<PodcastWithCounts>>(emptyList())
+    private val showSettings = MutableStateFlow<Map<String, ShowSettings>>(emptyMap())
 
     @Before
     fun setUp() {
@@ -131,6 +142,10 @@ class SettingsViewModelTest {
         coEvery { backupFileStore.write(any(), any()) } returns Result.success(Unit)
         uiPreferences = mockk(relaxed = true)
         every { uiPreferences.observeAppearance() } returns appearance
+        podcastRepository = mockk(relaxed = true)
+        showSettingsRepository = mockk(relaxed = true)
+        every { podcastRepository.observeLibrary() } returns library
+        every { showSettingsRepository.observeAll() } returns showSettings
         viewModel = SettingsViewModel(
             playbackRepository = playbackRepository,
             downloadRepository = downloadRepository,
@@ -138,9 +153,97 @@ class SettingsViewModelTest {
             backupFileStore = backupFileStore,
             libraryRestorer = libraryRestorer,
             uiPreferences = uiPreferences,
+            podcastRepository = podcastRepository,
+            showSettingsRepository = showSettingsRepository,
+            crashReporter = NoOpCrashReporter,
             clock = Clock.fixed(exportedAt, ZoneOffset.UTC),
         )
     }
+
+    /**
+     * SET-6. Until the per-show rate existed this screen held *the* speed; it now holds the speed
+     * of every show that has not said otherwise, and a default that never names its exceptions is
+     * indistinguishable from a setting being quietly ignored.
+     */
+    @Test
+    fun `the shows that play at their own speed are named, alphabetically`() = runTest {
+        library.value = listOf(showWithCounts("b", "Zeitgeist"), showWithCounts("a", "Acquired"))
+        showSettings.value = mapOf(
+            "a" to ShowSettings(speed = 2f),
+            "b" to ShowSettings(speed = 1.5f),
+        )
+
+        viewModel.uiState.test {
+            val state = awaitItem()
+            assertEquals(
+                listOf(ShowSpeedOverride("Acquired", 2f), ShowSpeedOverride("Zeitgeist", 1.5f)),
+                state.speedOverrides,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** A show that said something other than a speed is not an override of the speed. */
+    @Test
+    fun `a show with settings but no speed is not listed`() = runTest {
+        library.value = listOf(showWithCounts("a", "Acquired"))
+        showSettings.value = mapOf("a" to ShowSettings(episodeSort = EpisodeSort.OLDEST_FIRST))
+
+        viewModel.uiState.test {
+            assertEquals(emptyList<ShowSpeedOverride>(), awaitItem().speedOverrides)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * An override whose show has been removed would otherwise be drawn as a blank name at a rate:
+     * settings outlive the library, because a removed show leaves its preferences entry behind.
+     */
+    @Test
+    fun `an override for a show that has gone is dropped`() = runTest {
+        library.value = emptyList()
+        showSettings.value = mapOf("a" to ShowSettings(speed = 2f))
+
+        viewModel.uiState.test {
+            assertEquals(emptyList<ShowSpeedOverride>(), awaitItem().speedOverrides)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** SET-4. A build with no Firebase configuration reports nothing, and should say so. */
+    @Test
+    fun `the screen is told whether anything is actually reported`() = runTest {
+        viewModel.uiState.test {
+            assertFalse(awaitItem().isCrashReporting)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * A show in the library, as the settings screen's join over it needs one.
+     *
+     * @param id the podcast id, which is the key the show's settings are stored under.
+     * @param title the show's name, which is the part that gets displayed.
+     */
+    private fun showWithCounts(id: String, title: String) = PodcastWithCounts(
+        podcast = Podcast(
+            id = id,
+            itunesId = null,
+            title = title,
+            author = "Someone",
+            feedUrl = "https://example.com/$id.rss",
+            artworkUrl = null,
+            description = "",
+            addedAt = Instant.EPOCH,
+            lastRefreshAt = null,
+            etag = null,
+            lastModified = null,
+            autoRefresh = true,
+        ),
+        episodeCount = 0,
+        newEpisodeCount = 0,
+        downloadedCount = 0,
+    )
 
     /**
      * The theme is the one setting on this screen whose effect is visible while it is chosen, and

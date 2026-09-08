@@ -65,8 +65,12 @@
     -->
     <string name="queue_action_remove">Remove</string>
 
-    <!-- Snackbar after a swipe; %1$s is the episode title. It is offered back. -->
-    <string name="queue_message_removed">Removed %1$s</string>
+    <!--
+        Snackbar after a swipe; %1$s is the episode title. It is offered back. Quoted, because an
+        episode title is a sentence and a bare one runs into the words around it — the rule the
+        other two screens already followed and this one did not (COPY-2, docs/COPY_RULES.md).
+    -->
+    <string name="queue_message_removed">Removed \"%1$s\"</string>
     <!-- Snackbar after Clear queue; %1$d is how many episodes left it. Offered back. -->
     <plurals name="queue_message_cleared">
         <item quantity="one">Removed %1$d episode from the queue</item>

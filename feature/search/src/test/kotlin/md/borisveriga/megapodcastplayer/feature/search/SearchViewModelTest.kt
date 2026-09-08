@@ -18,6 +18,7 @@ import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.AddPodcastResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastPreviewResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
@@ -55,6 +56,8 @@ class SearchViewModelTest {
     private lateinit var repository: PodcastRepository
     private lateinit var library: MutableStateFlow<List<PodcastWithCounts>>
     private lateinit var episodePlayer: EpisodePlayer
+    private lateinit var uiPreferences: UiPreferencesRepository
+    private lateinit var recentSearches: MutableStateFlow<List<String>>
     private lateinit var viewModel: SearchViewModel
 
     @Before
@@ -67,8 +70,28 @@ class SearchViewModelTest {
         // value and quietly pass every assertion below.
         library = MutableStateFlow(emptyList())
         every { repository.observeLibrary() } returns library
-        viewModel = SearchViewModel(repository, episodePlayer, SavedStateHandle())
+        // Combined in for the same reason, and stubbed for the same reason.
+        uiPreferences = mockk(relaxed = true)
+        recentSearches = MutableStateFlow(emptyList())
+        every { uiPreferences.observeRecentSearches() } returns recentSearches
+        viewModel = viewModel()
     }
+
+    /**
+     * The view model under test.
+     *
+     * @param link the route's `link` argument, as a share or a tapped link delivers it.
+     */
+    private fun viewModel(link: String? = null) = SearchViewModel(
+        repository = repository,
+        episodePlayer = episodePlayer,
+        uiPreferences = uiPreferences,
+        savedStateHandle = if (link == null) {
+            SavedStateHandle()
+        } else {
+            SavedStateHandle(mapOf("link" to link))
+        },
+    )
 
     /**
      * Wraps shows as the library observes them.
@@ -110,6 +133,47 @@ class SearchViewModelTest {
         episodes = listOf(testEpisode(id = "ep-1", podcastId = "podcast-${result.itunesId}")),
         totalEpisodeCount = 412,
     )
+
+    /**
+     * ADD-5. Recorded when a search led somewhere rather than on every debounced query: a pause in
+     * the middle of typing "podlodka" is not a search for "podl", and recording what the debounce
+     * settles on would fill the list with the prefixes of one word.
+     */
+    @Test
+    fun `a search that led somewhere is remembered`() = runTest {
+        val result = searchResult(1L)
+        coEvery { repository.preview(result) } returns
+            PodcastPreviewResult.Loaded(previewOf(result))
+        subscribe()
+        viewModel.onQueryChange("podlodka")
+        runCurrent()
+
+        viewModel.openPreview(result)
+        runCurrent()
+
+        coVerify { uiPreferences.addRecentSearch("podlodka") }
+    }
+
+    /** A link is not a search; it is the show, and the show is in the library a moment later. */
+    @Test
+    fun `a pasted link is never remembered as a search`() = runTest {
+        subscribe()
+        viewModel.onQueryChange(APPLE_LINK)
+        runCurrent()
+
+        viewModel.rememberSearch()
+        runCurrent()
+
+        coVerify(exactly = 0) { uiPreferences.addRecentSearch(any()) }
+    }
+
+    @Test
+    fun `the remembered terms reach the screen`() = runTest {
+        recentSearches.value = listOf("podlodka", "acquired")
+        subscribe()
+
+        assertEquals(listOf("podlodka", "acquired"), viewModel.uiState.value.recentSearches)
+    }
 
     /**
      * Tapping a result used to subscribe on the spot. The sheet is what replaced that, and the
@@ -488,7 +552,7 @@ class SearchViewModelTest {
     fun `a link shared from another app arrives in the field, offered rather than added`() {
         // The route argument, as a share or a tapped link delivers it.
         val link = "https://podcasts.apple.com/us/podcast/podlodka-podcast/id1209828744"
-        viewModel = SearchViewModel(repository, episodePlayer, SavedStateHandle(mapOf("link" to link)))
+        viewModel = viewModel(link = link)
 
         runTest {
             subscribe()
@@ -505,7 +569,7 @@ class SearchViewModelTest {
 
     @Test
     fun `no shared link leaves the field empty`() {
-        viewModel = SearchViewModel(repository, episodePlayer, SavedStateHandle())
+        viewModel = viewModel()
 
         runTest {
             subscribe()
