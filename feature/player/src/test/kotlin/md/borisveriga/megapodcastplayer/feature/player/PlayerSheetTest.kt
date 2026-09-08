@@ -314,4 +314,73 @@ class PlayerSheetTest {
             .onNodeWithContentDescription("Sleep timer")
             .assertDoesNotExist()
     }
+
+    /**
+     * The inner display, where the sheet has room to set the artwork beside the controls rather
+     * than above them. Where things sit is asserted in halves rather than dp, for the reason the
+     * stacked case gives: the point is which side each block is on, not the padding around it.
+     *
+     * The arithmetic that chooses the shape is pinned in [ExpandedPlayerLayoutTest]. What is worth
+     * asserting here is that choosing it actually moved anything — the layout swap is a `Row` this
+     * composable is capable of drawing with the artwork's half empty and the controls still stacked
+     * under it, and only a rendering can say otherwise.
+     */
+    @Test
+    @Config(qualifiers = "w882dp-h830dp-xxhdpi")
+    fun `on a wide window the controls take the trailing half`() {
+        setContent(PlayerSheetValue.Expanded)
+
+        val middle = composeRule.onRoot().getBoundsInRoot().right / 2
+        val title = composeRule.onNodeWithText("Podlodka #400", useUnmergedTree = true)
+            .getBoundsInRoot()
+        val scrubber = composeRule.onNodeWithContentDescription("Playback position")
+            .getBoundsInRoot()
+
+        // Both blocks are past halfway, which is what "beside the artwork" means: the leading half
+        // holds nothing but the room the sheet draws its one piece of artwork into.
+        assertTrue(title.left > middle)
+        assertTrue(scrubber.left > middle)
+    }
+
+    /**
+     * The other half of the same change. Stacked, the controls are pushed to the bottom edge; side
+     * by side there is no bottom edge to push to, and a panel that kept doing it would leave the
+     * transport under the artwork's midpoint with a column of empty surface above it.
+     */
+    @Test
+    @Config(qualifiers = "w882dp-h830dp-xxhdpi")
+    fun `on a wide window the controls are centred rather than pinned to the bottom`() {
+        setContent(PlayerSheetValue.Expanded)
+
+        val sheetBottom = composeRule.onRoot().getBoundsInRoot().bottom
+        val upNext = composeRule.onNodeWithText("Up next · nothing queued", useUnmergedTree = true)
+            .getBoundsInRoot()
+
+        // The last thing in the panel still ends well clear of the bottom of the window.
+        assertTrue(upNext.bottom < sheetBottom * WIDE_PANEL_BOTTOM_CLEARANCE)
+    }
+
+    @Test
+    @Config(qualifiers = "w882dp-h830dp-xxhdpi")
+    fun `on a wide window every control is still there`() {
+        // The shape changed; the player did not. Each of these is drawn by a different one of the
+        // four blocks the wide panel stacks.
+        setContent(PlayerSheetValue.Expanded)
+
+        composeRule.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Next episode").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Sleep timer").assertIsDisplayed()
+        composeRule.onNodeWithText("Up next · nothing queued").assertIsDisplayed()
+    }
+
+    private companion object {
+        /**
+         * How far down the window the wide panel's last row is allowed to reach.
+         *
+         * Loose on purpose: the assertion is "centred, not pinned", and pinned means flush with the
+         * bottom edge.
+         */
+        const val WIDE_PANEL_BOTTOM_CLEARANCE = 0.9f
+    }
 }

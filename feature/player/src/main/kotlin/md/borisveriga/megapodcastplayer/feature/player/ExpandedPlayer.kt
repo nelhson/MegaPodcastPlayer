@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.window.core.layout.WindowSizeClass
 import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatEndsAt
@@ -61,22 +63,30 @@ import md.borisveriga.megapodcastplayer.core.media.SleepTimerState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 
 /**
- * The player fully open: titles, scrubber, transport controls and the way into the queue.
+ * The player fully open, in whichever of its two shapes the window has room for.
  *
  * Like [CollapsedPlayer] this draws no artwork — [PlayerSheet] owns the single copy that travels
- * between the two — but it does leave room for it, along with room for the sheet's own header. Both
- * gaps are at the top, so everything below flows normally and scrolls as one column at large font
- * scales.
+ * between the two — but it does leave room for it, along with room for the sheet's own header.
  *
- * Split into two blocks pushed to opposite ends. What the episode *is* — artwork, title, show —
- * belongs at the top where the artwork lands; what the user *does* — scrub, play, skip, open the
- * queue — belongs within reach of a thumb at the bottom, rather than stranded in the middle of the
- * screen with dead space under it. The column is still scrollable and still at least a screenful
- * tall, so at a large font scale the two blocks meet and the whole thing scrolls as one instead of
- * clipping.
+ * Both shapes are the same two blocks; what changes is whether they are stacked or set beside each
+ * other. What the episode *is* — artwork, title, show — is one block, and what the user *does* —
+ * scrub, play, skip, open the queue — is the other.
+ *
+ * **Stacked**, which is every phone held upright: the episode at the top where the artwork lands,
+ * the controls within reach of a thumb at the bottom, rather than stranded in the middle of the
+ * screen with dead space under them. The column is scrollable and at least a screenful tall, so at
+ * a large font scale the two blocks meet and the whole thing scrolls as one instead of clipping.
+ *
+ * **Side by side**, on a window wide enough for it — the inner display of a folded phone, a phone
+ * laid on its side: the artwork takes the leading half and everything that is words or buttons
+ * takes the trailing one. Stacked there, the artwork is the only thing that grows with the window,
+ * which makes a square the size of a dinner plate with the transport pressed against the bottom
+ * edge — the largest share of a large screen given to the one thing that gains least from it.
  *
  * @param uiState what to render.
  * @param heroArtworkSize how tall the artwork will be, so the right amount of room is left for it.
+ * @param sideBySide whether to set the artwork beside the controls rather than above them. Decided
+ *   by [PlayerSheet], which is the thing that measures the window.
  * @param onPlayPause play/pause handler.
  * @param onSeek absolute-seek handler, called once when the user releases the scrubber.
  * @param onSkipForward skip-ahead handler.
@@ -95,6 +105,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 fun ExpandedPlayer(
     uiState: PlayerUiState,
     heroArtworkSize: Dp,
+    sideBySide: Boolean,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSkipForward: () -> Unit,
@@ -109,8 +120,55 @@ fun ExpandedPlayer(
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val playback = uiState.playback
+    // The two blocks as slots, built once and handed to whichever arrangement is in force. A
+    // composable per shape, each taking the same fourteen parameters, would be two places for the
+    // next control to be added to and one of them for it to be forgotten in.
+    val heading: @Composable () -> Unit = { EpisodeHeading(uiState = uiState) }
+    val controls: @Composable () -> Unit = {
+        PlayerControls(
+            uiState = uiState,
+            onPlayPause = onPlayPause,
+            onSeek = onSeek,
+            onSkipForward = onSkipForward,
+            onSkipBack = onSkipBack,
+            onSkipToNext = onSkipToNext,
+            onSkipToPrevious = onSkipToPrevious,
+            onOpenSpeed = onOpenSpeed,
+            onOpenSleepTimer = onOpenSleepTimer,
+            onToggleDownload = onToggleDownload,
+            onMarkMoment = onMarkMoment,
+            onOpenMoments = onOpenMoments,
+            onOpenQueue = onOpenQueue,
+        )
+    }
 
+    if (sideBySide) {
+        WidePlayer(heading = heading, controls = controls, modifier = modifier)
+    } else {
+        TallPlayer(
+            heroArtworkSize = heroArtworkSize,
+            heading = heading,
+            controls = controls,
+            modifier = modifier,
+        )
+    }
+}
+
+/**
+ * The stacked shape: the episode at the top, the controls at the bottom.
+ *
+ * @param heroArtworkSize how tall the hole left for the artwork is.
+ * @param heading title, show and current chapter.
+ * @param controls scrubber, transport, per-episode actions and the way into the queue.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun TallPlayer(
+    heroArtworkSize: Dp,
+    heading: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         // `fillMaxSize` ahead of `verticalScroll` is what makes both true at once: the scroll
         // relaxes the maximum height to infinity but leaves the minimum at a full screen, so the
@@ -126,43 +184,14 @@ fun ExpandedPlayer(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // The sheet's header and the shared artwork are drawn over this column, not in it.
+            // Both gaps are at the top, so everything below flows normally.
             Spacer(
                 modifier = Modifier.height(
                     expandedHeaderHeight + expandedArtworkTopGap + heroArtworkSize,
                 ),
             )
 
-            Text(
-                text = playback.title,
-                style = MaterialTheme.typography.titleLarge,
-                textAlign = TextAlign.Center,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.xl),
-            )
-            Text(
-                text = playback.showTitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.xs),
-            )
-
-            // Where in the episode you are, in words. The scrubber says it as a position and the
-            // ticks say it as a shape; this is the only one of the three you can read at a glance
-            // while walking, and it is the whole reason chapters are worth having.
-            uiState.currentChapter?.let { chapter ->
-                Text(
-                    text = chapter.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.sm),
-                )
-            }
+            heading()
         }
 
         // The controls sit on a strip of the sheet's own surface, laid over the artwork backdrop
@@ -184,40 +213,186 @@ fun ExpandedPlayer(
                 .padding(horizontal = expandedHorizontalPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Scrubber(
-                playback = playback,
-                markers = uiState.chapterMarks,
-                onSeek = onSeek,
-            )
-
-            TransportControls(
-                playback = playback,
-                settings = uiState.settings,
-                hasChapters = uiState.chapters.isNotEmpty(),
-                onPlayPause = onPlayPause,
-                onSkipForward = onSkipForward,
-                onSkipBack = onSkipBack,
-                onSkipToNext = onSkipToNext,
-                onSkipToPrevious = onSkipToPrevious,
-            )
-
-            SecondaryActions(
-                uiState = uiState,
-                onOpenSpeed = onOpenSpeed,
-                onOpenSleepTimer = onOpenSleepTimer,
-                onToggleDownload = onToggleDownload,
-                onMarkMoment = onMarkMoment,
-                onOpenMoments = onOpenMoments,
-            )
-
-            // Drawn at zero too. The link used to vanish with the queue, which meant the player
-            // never mentioned that a queue existed to the one user who most needed telling: the one
-            // who has not put anything in it.
-            UpNextLink(count = uiState.upNext.size, onClick = onOpenQueue)
+            controls()
 
             Spacer(modifier = Modifier.height(MegaPodcastPlayerTheme.spacing.xl))
         }
     }
+}
+
+/**
+ * The side-by-side shape: the artwork's half, then everything else.
+ *
+ * The leading half holds nothing at all. What is drawn there is the sheet's one travelling copy of
+ * the artwork, centred by the same arithmetic that sizes it, so this side's whole job is to reserve
+ * the room — the bargain [TallPlayer] makes with a `Spacer`, made here with a weight.
+ *
+ * The trailing half is a solid panel rather than the stacked shape's fading strip, and for the
+ * reason the strip fades: a strip stops in the middle of a page, where a hard horizontal line would
+ * read as a floating card, while an edge that runs the full height of the window reads as what it
+ * is — a screen divided in two. Both exist to answer the same problem, that the blurred cover
+ * behind them is arbitrary third-party imagery and a timecode's contrast against it cannot be
+ * reasoned about.
+ *
+ * Centred, then scrolling: vertically centred while the controls fit, scrolling from the top once a
+ * large font scale means they do not.
+ *
+ * @param heading title, show and current chapter.
+ * @param controls scrubber, transport, per-episode actions and the way into the queue.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun WidePlayer(
+    heading: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        // The sheet's header strip is drawn over the top of both halves, so both start below it.
+        modifier = modifier
+            .fillMaxSize()
+            .padding(top = expandedHeaderHeight),
+    ) {
+        Spacer(modifier = Modifier.weight(1f))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                // Before the scroll, so the panel is the pane's full height rather than the
+                // content's: a wash that stopped where the buttons do would be the floating card
+                // the stacked shape's gradient exists to avoid.
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = expandedHorizontalPadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            heading()
+
+            controls()
+        }
+    }
+}
+
+/**
+ * What the episode is: its title, its show, and where in it the playhead currently is.
+ *
+ * @param uiState what to render.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun EpisodeHeading(
+    uiState: PlayerUiState,
+    modifier: Modifier = Modifier,
+) {
+    val playback = uiState.playback
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = playback.title,
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.xl),
+        )
+        Text(
+            text = playback.showTitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.xs),
+        )
+
+        // Where in the episode you are, in words. The scrubber says it as a position and the
+        // ticks say it as a shape; this is the only one of the three you can read at a glance
+        // while walking, and it is the whole reason chapters are worth having.
+        uiState.currentChapter?.let { chapter ->
+            Text(
+                text = chapter.title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.sm),
+            )
+        }
+    }
+}
+
+/**
+ * What the user does: the scrubber, the transport, the per-episode actions and the queue.
+ *
+ * Emits its four children rather than wrapping them in a column of its own, so that the shape
+ * around it decides their side padding and their ground — a fading strip at the bottom of a stacked
+ * player, a full-height panel beside a wide one.
+ *
+ * @param uiState what to render.
+ * @param onPlayPause play/pause handler.
+ * @param onSeek absolute-seek handler, called once when the user releases the scrubber.
+ * @param onSkipForward skip-ahead handler.
+ * @param onSkipBack skip-back handler.
+ * @param onSkipToNext next-episode handler.
+ * @param onSkipToPrevious previous-episode handler.
+ * @param onOpenSpeed opens the speed sheet.
+ * @param onOpenSleepTimer opens the sleep timer sheet.
+ * @param onToggleDownload starts, cancels, retries or deletes the episode's offline copy.
+ * @param onMarkMoment saves a moment at the playhead.
+ * @param onOpenMoments opens the list of this episode's moments.
+ * @param onOpenQueue opens the queue screen.
+ */
+@Composable
+private fun PlayerControls(
+    uiState: PlayerUiState,
+    onPlayPause: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onSkipForward: () -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipToNext: () -> Unit,
+    onSkipToPrevious: () -> Unit,
+    onOpenSpeed: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
+    onToggleDownload: () -> Unit,
+    onMarkMoment: () -> Unit,
+    onOpenMoments: () -> Unit,
+    onOpenQueue: () -> Unit,
+) {
+    Scrubber(
+        playback = uiState.playback,
+        markers = uiState.chapterMarks,
+        onSeek = onSeek,
+    )
+
+    TransportControls(
+        playback = uiState.playback,
+        settings = uiState.settings,
+        hasChapters = uiState.chapters.isNotEmpty(),
+        onPlayPause = onPlayPause,
+        onSkipForward = onSkipForward,
+        onSkipBack = onSkipBack,
+        onSkipToNext = onSkipToNext,
+        onSkipToPrevious = onSkipToPrevious,
+    )
+
+    SecondaryActions(
+        uiState = uiState,
+        onOpenSpeed = onOpenSpeed,
+        onOpenSleepTimer = onOpenSleepTimer,
+        onToggleDownload = onToggleDownload,
+        onMarkMoment = onMarkMoment,
+        onOpenMoments = onOpenMoments,
+    )
+
+    // Drawn at zero too. The link used to vanish with the queue, which meant the player never
+    // mentioned that a queue existed to the one user who most needed telling: the one who has not
+    // put anything in it.
+    UpNextLink(count = uiState.upNext.size, onClick = onOpenQueue)
 }
 
 /**
@@ -653,7 +828,7 @@ private fun UpNextLink(
 /** Height of the sheet's own header strip, which the body has to leave room for. */
 internal val expandedHeaderHeight: Dp = 56.dp
 
-/** Gap between the header and the top of the artwork. */
+/** Gap between the header and the top of the artwork, in the stacked shape. */
 internal val expandedArtworkTopGap: Dp = 8.dp
 
 /**
@@ -665,8 +840,88 @@ internal val expandedArtworkTopGap: Dp = 8.dp
 internal val expandedHorizontalPadding: Dp
     @Composable get() = MegaPodcastPlayerTheme.spacing.screenHorizontal
 
-/** Fraction of the sheet's width the artwork occupies when fully expanded. */
+/**
+ * The shape the expanded player is in, and where in it the hero artwork lands.
+ *
+ * @property sideBySide whether the artwork is set beside the controls rather than above them.
+ * @property heroSize how large the artwork is when the sheet is fully open.
+ * @property heroLeft where its leading edge lands then.
+ * @property heroTop where its top edge lands then.
+ */
+internal data class ExpandedPlayerLayout(
+    val sideBySide: Boolean,
+    val heroSize: Dp,
+    val heroLeft: Dp,
+    val heroTop: Dp,
+)
+
+/**
+ * Works out the four of them, which are one decision taken in order.
+ *
+ * How wide the window is says whether the artwork gets a half of it or the whole; how much room
+ * that leaves says how big the artwork may be; how big it is says where its corner goes.
+ *
+ * Arithmetic rather than layout, and pure, so that the shapes can be asserted at sizes there is no
+ * screenshot of — `ExpandedPlayerLayoutTest` walks six windows this app will meet and the goldens
+ * cannot afford one image each of.
+ *
+ * @param windowWidth how wide the sheet is; it is given the whole window.
+ * @param contentHeight how tall it is, less the system bars the expanded sheet clears for itself.
+ * @return where everything goes.
+ */
+internal fun expandedPlayerLayout(windowWidth: Dp, contentHeight: Dp): ExpandedPlayerLayout {
+    val sideBySide = windowWidth >= SideBySideWidth
+    val paneWidth = if (sideBySide) windowWidth / 2 else windowWidth
+    // The room under the header strip. Coerced, because a window shorter than its own header is
+    // not a layout to reason about but `Modifier.size` still refuses a negative number.
+    val paneHeight = (contentHeight - expandedHeaderHeight).coerceAtLeast(0.dp)
+    val heroSize = (paneWidth * HERO_ARTWORK_WIDTH_FRACTION)
+        .coerceAtMost(paneHeight * HERO_ARTWORK_HEIGHT_FRACTION)
+
+    return ExpandedPlayerLayout(
+        sideBySide = sideBySide,
+        heroSize = heroSize,
+        heroLeft = (paneWidth - heroSize) / 2,
+        // Stacked, the artwork hangs from the header with the titles flowing under it, so its top
+        // is a constant. Side by side there is nothing under it to leave room for, so it is
+        // centred in the half it has to itself.
+        heroTop = if (sideBySide) {
+            expandedHeaderHeight + (paneHeight - heroSize) / 2
+        } else {
+            expandedHeaderHeight + expandedArtworkTopGap
+        },
+    )
+}
+
+/**
+ * How wide the window has to be before the artwork is set beside the controls.
+ *
+ * Material 3's expanded width breakpoint, named by `androidx.window` rather than written out here,
+ * so the player changes shape at the width the app's other adaptive surfaces change at. The Fold 7
+ * opened out is over it and folded is well under, which is the whole point: one phone, two windows,
+ * and this is the number between them.
+ */
+private val SideBySideWidth: Dp = WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND.dp
+
+/**
+ * Fraction of *its half of the window* the artwork occupies when fully expanded.
+ *
+ * Its half, not the window. Stacked, the artwork has the whole width and the two are the same
+ * number; side by side it has the leading half, and the same fraction then describes the same
+ * proportion of the room it was actually given.
+ */
 internal const val HERO_ARTWORK_WIDTH_FRACTION: Float = 0.72f
+
+/**
+ * The other half of the cap: the fraction of the height below the header the artwork may take.
+ *
+ * Width alone was the whole rule, and a rule about width alone is only ever right on a window
+ * taller than it is wide. On anything else — a phone laid on its side, the inner display of a
+ * folded one — 72 % of the width is a square the screen has no room for, and what gets crushed is
+ * the half of the player that has buttons in it. Whichever of the two caps bites is the one whose
+ * side had less to give.
+ */
+internal const val HERO_ARTWORK_HEIGHT_FRACTION: Float = 0.45f
 
 private val SkipGlyphSize: Dp = 32.dp
 
