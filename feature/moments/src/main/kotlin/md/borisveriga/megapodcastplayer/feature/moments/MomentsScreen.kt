@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -73,7 +75,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
 import md.borisveriga.megapodcastplayer.core.designsystem.component.NoteDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ScrollToTopEffect
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SectionHeader
+import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
@@ -96,11 +100,16 @@ import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
  * both need an activity result registry or a context, and neither exists under
  * `createComposeRule`, which is what the stateless screen is tested with.
  *
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
+ *   at the top (NAV-4).
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
 @Composable
 fun MomentsRoute(
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     viewModel: MomentsViewModel = hiltViewModel(),
 ) {
@@ -123,6 +132,8 @@ fun MomentsRoute(
         onQueryChange = viewModel::setQuery,
         onShowChange = viewModel::setShow,
         onGroupByShowChange = viewModel::setGroupByShow,
+        onOpenSettings = onOpenSettings,
+        scrollToTopSignal = scrollToTopSignal,
         onSaveNote = viewModel::saveNote,
         onCancelEdit = viewModel::cancelEdit,
         onUndoDelete = viewModel::undoDelete,
@@ -152,6 +163,9 @@ fun MomentsRoute(
  * @param onQueryChange invoked as the search field is typed into.
  * @param onShowChange invoked with the show to keep, or null for every show.
  * @param onGroupByShowChange invoked when the grouping is toggled.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
+ *   back at the top (NAV-4).
  * @param onSaveNote saves the note being edited.
  * @param onCancelEdit closes the note editor without saving.
  * @param onUndoDelete puts back the moment the last delete removed.
@@ -170,6 +184,8 @@ fun MomentsScreen(
     onQueryChange: (String) -> Unit,
     onShowChange: (String?) -> Unit,
     onGroupByShowChange: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     onSaveNote: (String) -> Unit,
     onCancelEdit: () -> Unit,
     onUndoDelete: () -> Unit,
@@ -177,6 +193,10 @@ fun MomentsScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Hoisted so the re-tap effect can reach it, and passed down to the list below.
+    val listState = rememberLazyListState()
+
+    ScrollToTopEffect(signal = scrollToTopSignal, state = listState)
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     // LocalResources rather than LocalContext.current.resources, so a configuration change
     // invalidates the read. Resolved here because `LaunchedEffect` runs outside composition.
@@ -202,6 +222,7 @@ fun MomentsScreen(
                 title = stringResource(R.string.moments_title),
                 scrollBehavior = scrollBehavior,
                 actions = {
+                    SettingsAction(onClick = onOpenSettings)
                     IconButton(onClick = onExport, enabled = uiState.moments.isNotEmpty()) {
                         Icon(
                             imageVector = Icons.Rounded.Upload,
@@ -247,6 +268,7 @@ fun MomentsScreen(
                     )
 
                     else -> MomentList(
+                        listState = listState,
                         moments = uiState.moments,
                         groups = uiState.groups,
                         onPlay = onPlay,
@@ -455,6 +477,7 @@ private fun GroupByShowChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
  * the open overflow menu belongs to the moment it was opened on even as rows above it disappear.
  * The headings are keyed by feed URL for the same reason.
  *
+ * @param listState the scroll position, hoisted so a re-tap on the tab can reset it (NAV-4).
  * @param moments what to draw when the list is flat, newest first.
  * @param groups the same moments under headings; empty unless grouping is on.
  * @param onPlay plays a moment.
@@ -465,6 +488,7 @@ private fun GroupByShowChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
  */
 @Composable
 private fun MomentList(
+    listState: LazyListState,
     moments: List<MomentWithEpisode>,
     groups: List<MomentGroup>,
     onPlay: (MomentWithEpisode) -> Unit,
@@ -473,7 +497,7 @@ private fun MomentList(
     onDelete: (MomentWithEpisode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(modifier = modifier.fillMaxSize()) {
+    LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
         if (groups.isEmpty()) {
             items(items = moments, key = { it.moment.id }) { entry ->
                 MomentRow(
@@ -812,6 +836,8 @@ internal fun MomentsScreenPreview() {
             onQueryChange = {},
             onShowChange = {},
             onGroupByShowChange = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
             onSaveNote = {},
             onCancelEdit = {},
             onUndoDelete = {},
@@ -846,6 +872,8 @@ internal fun MomentsScreenGroupedPreview() {
             onQueryChange = {},
             onShowChange = {},
             onGroupByShowChange = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
             onSaveNote = {},
             onCancelEdit = {},
             onUndoDelete = {},
@@ -868,6 +896,8 @@ internal fun MomentsScreenEmptyPreview() {
             onQueryChange = {},
             onShowChange = {},
             onGroupByShowChange = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
             onSaveNote = {},
             onCancelEdit = {},
             onUndoDelete = {},

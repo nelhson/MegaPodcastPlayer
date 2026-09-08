@@ -96,6 +96,7 @@ class LibraryScreenTest {
         onPodcastClick: (String) -> Unit = {},
         onSearchClick: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
+        scrollToTopSignal: Int = 0,
         onMove: (Int, Int) -> Unit = { _, _ -> },
         onRemove: (PodcastWithCounts) -> Unit = {},
         onSortChange: (LibrarySort) -> Unit = {},
@@ -132,6 +133,7 @@ class LibraryScreenTest {
                     onClearFilter = onClearFilter,
                     onRefresh = {},
                     onMessageShown = {},
+                    scrollToTopSignal = scrollToTopSignal,
                     selectedPodcastId = selectedPodcastId,
                 )
             }

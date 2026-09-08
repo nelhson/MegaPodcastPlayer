@@ -8,6 +8,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS
 import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
+import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenEmptyPreview
 import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenListPreview
 import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenPreview
 import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenSelectedPreview
@@ -53,6 +54,9 @@ class LibraryScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun librarySelected() = capture("library-selected") { LibraryScreenSelectedPreview() }
+
+    @Test
+    fun libraryEmpty() = capture("library-empty") { LibraryScreenEmptyPreview() }
 
     companion object {
         @JvmStatic

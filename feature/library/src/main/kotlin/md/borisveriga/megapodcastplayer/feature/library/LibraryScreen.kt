@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ScrollToTopEffect
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowTile
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SortMenuChip
@@ -114,6 +116,7 @@ fun LibraryRoute(
     onPodcastClick: (String) -> Unit,
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     selectedPodcastId: String? = null,
     viewModel: LibraryViewModel = hiltViewModel(),
@@ -147,6 +150,7 @@ fun LibraryRoute(
         onRefresh = viewModel::refreshAll,
         onMessageShown = viewModel::onMessageShown,
         selectedPodcastId = selectedPodcastId,
+        scrollToTopSignal = scrollToTopSignal,
         modifier = modifier,
     )
 }
@@ -158,6 +162,7 @@ fun LibraryRoute(
  * @param onPodcastClick show tap handler.
  * @param onSearchClick opens search by name.
  * @param onOpenSettings opens the settings screen.
+ * @param scrollToTopSignal see [LibraryScreen].
  * @param onMove applies a completed reorder, as positions within [LibraryUiState.podcasts].
  *   Called once on release rather than per frame: one gesture is one edit.
  * @param onRemove removes a show, once the confirmation this screen owns has been accepted.
@@ -168,6 +173,8 @@ fun LibraryRoute(
  * @param onClearFilter drops every narrowing, showing the whole library again.
  * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
+ *   or grid back at the top (NAV-4).
  * @param modifier layout modifier.
  * @param selectedPodcastId the show a detail pane beside this list is showing, or null.
  */
@@ -187,6 +194,7 @@ fun LibraryScreen(
     onClearFilter: () -> Unit,
     onRefresh: () -> Unit,
     onMessageShown: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     selectedPodcastId: String? = null,
 ) {
@@ -293,7 +301,10 @@ fun LibraryScreen(
                 // No pull-to-refresh here: there are no feeds to fetch, and the gesture needs
                 // something scrollable underneath it to work at all.
                 uiState.podcasts.isEmpty() -> EmptyState(
-                    icon = Icons.Rounded.GridView,
+                    // The podcast mark, not a layout glyph. `GridView` says "grid", which is a way
+                    // of *arranging* shows and not a way of having none — the same mark the artwork
+                    // placeholder uses is what "no shows yet" actually looks like (NAV-8).
+                    icon = Icons.Rounded.Podcasts,
                     title = stringResource(R.string.library_empty_title),
                     description = stringResource(R.string.library_empty_description),
                     actionLabel = stringResource(R.string.library_add_search),
@@ -307,6 +318,7 @@ fun LibraryScreen(
                 ) {
                     when (uiState.layout) {
                         LibraryLayout.GRID -> ShowGrid(
+                            scrollToTopSignal = scrollToTopSignal,
                             podcasts = uiState.podcasts,
                             isReorderable = uiState.isReorderable,
                             selectedPodcastId = selectedPodcastId,
@@ -315,6 +327,7 @@ fun LibraryScreen(
                         )
 
                         LibraryLayout.LIST -> ShowList(
+                            scrollToTopSignal = scrollToTopSignal,
                             podcasts = uiState.podcasts,
                             isReorderable = uiState.isReorderable,
                             selectedPodcastId = selectedPodcastId,
@@ -487,6 +500,7 @@ private fun NewEpisodesChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
  */
 @Composable
 private fun ShowGrid(
+    scrollToTopSignal: Int,
     podcasts: List<PodcastWithCounts>,
     isReorderable: Boolean,
     selectedPodcastId: String?,
@@ -497,6 +511,9 @@ private fun ShowGrid(
     val moveUp = stringResource(R.string.library_move_up)
     val moveDown = stringResource(R.string.library_move_down)
     val gridState = rememberLazyGridState()
+
+    ScrollToTopEffect(signal = scrollToTopSignal, state = gridState)
+
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(gridState),
         items = podcasts,
@@ -574,6 +591,7 @@ private fun ShowGrid(
  */
 @Composable
 private fun ShowList(
+    scrollToTopSignal: Int,
     podcasts: List<PodcastWithCounts>,
     isReorderable: Boolean,
     selectedPodcastId: String?,
@@ -582,6 +600,9 @@ private fun ShowList(
     onRemoveRequest: (PodcastWithCounts) -> Unit,
 ) {
     val listState = rememberLazyListState()
+
+    ScrollToTopEffect(signal = scrollToTopSignal, state = listState)
+
     val drag = rememberReorderableState(
         layout = rememberReorderableLayout(listState),
         items = podcasts,
@@ -945,6 +966,37 @@ private val AddButtonEndPadding = 32.dp
 /** How far a dragged show is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
 
+/**
+ * A library with nothing in it.
+ *
+ * It had no preview and therefore no golden, which is how it kept a `GridView` glyph — a picture of
+ * a *layout* — as its answer to "no shows yet" for as long as it did (NAV-8). The state a new
+ * install opens on is worth a picture.
+ */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+internal fun LibraryScreenEmptyPreview() {
+    MegaPodcastPlayerTheme {
+        LibraryScreen(
+            uiState = LibraryUiState(isLoading = false, podcasts = emptyList()),
+            onPodcastClick = {},
+            onSearchClick = {},
+            onOpenSettings = {},
+            onMove = { _, _ -> },
+            onRemove = {},
+            onLayoutChange = {},
+            onSortChange = {},
+            onQueryChange = {},
+            onOnlyWithNewEpisodesChange = {},
+            onClearFilter = {},
+            onRefresh = {},
+            onMessageShown = {},
+            scrollToTopSignal = 0,
+        )
+    }
+}
+
 @ThemePreviews
 @FontScalePreviews
 @Composable
@@ -970,6 +1022,7 @@ internal fun LibraryScreenPreview() {
             onClearFilter = {},
             onRefresh = {},
             onMessageShown = {},
+            scrollToTopSignal = 0,
         )
     }
 }
@@ -997,6 +1050,7 @@ internal fun LibraryScreenListPreview() {
             onClearFilter = {},
             onRefresh = {},
             onMessageShown = {},
+            scrollToTopSignal = 0,
         )
     }
 }
@@ -1033,6 +1087,7 @@ internal fun LibraryScreenSelectedPreview() {
             onClearFilter = {},
             onRefresh = {},
             onMessageShown = {},
+            scrollToTopSignal = 0,
             selectedPodcastId = "1",
         )
     }

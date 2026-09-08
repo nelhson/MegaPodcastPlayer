@@ -10,7 +10,10 @@ import androidx.compose.material3.adaptive.navigationsuite.rememberNavigationSui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
@@ -128,6 +131,14 @@ fun MegaPodcastPlayerApp(
         onPendingShortcutHandled()
     }
 
+    // How many times the tab the user is already standing on has been tapped again (NAV-4).
+    //
+    // A count rather than a flag, because the same request can be made twice and a boolean that
+    // was already true the second time would do nothing. It is held here rather than in each
+    // screen because only the shell knows a tap was a *re*-tap; what to do about it is the
+    // screen's, and every top-level screen answers it the same way through `ScrollToTopEffect`.
+    var reTapCount by rememberSaveable { mutableIntStateOf(0) }
+
     val navigationSuiteState = rememberNavigationSuiteScaffoldState()
 
     LaunchedEffect(playerSheetState.isExpanded) {
@@ -141,7 +152,11 @@ fun MegaPodcastPlayerApp(
             TopLevelDestination.entries.forEach { destination ->
                 item(
                     selected = currentDestination.isOn(destination),
-                    onClick = { navController.navigateToTopLevel(destination) },
+                    onClick = {
+                        // False means "you were already there", which is the platform convention's
+                        // cue: scroll the list back to the top.
+                        if (!navController.navigateToTopLevel(destination)) reTapCount++
+                    },
                     icon = { Icon(destination.icon, contentDescription = null) },
                     label = { Text(stringResource(destination.labelResId)) },
                 )
@@ -180,6 +195,8 @@ fun MegaPodcastPlayerApp(
                         onBrowseLibrary = {
                             navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
                         },
+                        onOpenSettings = { navController.navigate(Route.Settings) },
+                        scrollToTopSignal = reTapCount,
                     )
                 }
 
@@ -194,6 +211,7 @@ fun MegaPodcastPlayerApp(
                         onSearchClick = { navController.navigate(Route.Search()) },
                         onOpenSettings = { navController.navigate(Route.Settings) },
                         onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
+                        scrollToTopSignal = reTapCount,
                     )
                 }
 
@@ -203,6 +221,8 @@ fun MegaPodcastPlayerApp(
                         onBrowseLibrary = {
                             navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
                         },
+                        onOpenSettings = { navController.navigate(Route.Settings) },
+                        scrollToTopSignal = reTapCount,
                     )
                 }
 
@@ -254,11 +274,16 @@ fun MegaPodcastPlayerApp(
                         onBrowseLibrary = {
                             navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
                         },
+                        onOpenSettings = { navController.navigate(Route.Settings) },
+                        scrollToTopSignal = reTapCount,
                     )
                 }
 
                 composable<Route.Moments> {
-                    MomentsRoute()
+                    MomentsRoute(
+                        onOpenSettings = { navController.navigate(Route.Settings) },
+                        scrollToTopSignal = reTapCount,
+                    )
                 }
             }
         }

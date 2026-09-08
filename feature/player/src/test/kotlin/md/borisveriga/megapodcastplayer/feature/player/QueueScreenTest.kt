@@ -19,6 +19,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +86,8 @@ class QueueScreenTest {
         onUndo: () -> Unit = {},
         onMessageShown: () -> Unit = {},
         onBrowseLibrary: () -> Unit = {},
+        onOpenSettings: () -> Unit = {},
+        scrollToTopSignal: Int = 0,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -96,6 +99,8 @@ class QueueScreenTest {
                     onClear = onClear,
                     onUndo = onUndo,
                     onMessageShown = onMessageShown,
+                    onOpenSettings = onOpenSettings,
+                    scrollToTopSignal = scrollToTopSignal,
                     onBrowseLibrary = onBrowseLibrary,
                 )
             }
@@ -325,5 +330,19 @@ class QueueScreenTest {
          * around 616px, so this sits comfortably between the two.
          */
         const val SHORT_SWIPE_PX = 300f
+    }
+
+    /**
+     * NAV-5: the gear is on every top-level bar, not the library's alone. From here it used to be a
+     * tab switch plus a tap.
+     */
+    @Test
+    fun `the bar carries the settings gear`() {
+        var opened = false
+        setContent(onOpenSettings = { opened = true })
+
+        composeRule.onNodeWithContentDescription("Settings").performClick()
+
+        assertTrue(opened)
     }
 }

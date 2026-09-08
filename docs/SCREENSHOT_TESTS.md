@@ -79,6 +79,12 @@ and a small fraction of changed pixels for exactly that; the constants and the r
 If CI still disagrees, record on the platform CI runs. Do not widen the tolerance: past a point it
 stops being a fact about renderers and starts hiding the regressions the suite exists to find.
 
+**And do not ask a golden whether a control exists.** The same tolerance that absorbs antialiasing
+absorbs a small icon: a 24 dp glyph added to an app bar is about 0.16 %% of a 411x891 image, well
+under the 1 %% of changed pixels allowed, and NAV-5 put a gear on four bars without failing a single
+golden. Whether a button is there, and whether it reaches its handler, is a behaviour assertion.
+What a golden is for is what a screen *looks like* once it is.
+
 ## What is not covered
 
 - **Dialogs and bottom sheets.** They compose into their own window, so the capture — which takes

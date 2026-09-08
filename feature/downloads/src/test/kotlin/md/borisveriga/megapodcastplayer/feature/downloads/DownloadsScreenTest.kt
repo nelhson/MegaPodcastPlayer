@@ -20,6 +20,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -82,6 +83,8 @@ class DownloadsScreenTest {
         onEpisodeQueue: (String) -> Unit = {},
         onEpisodeDownloadNow: (String) -> Unit = {},
         onMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
+        onOpenSettings: () -> Unit = {},
+        scrollToTopSignal: Int = 0,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -108,6 +111,8 @@ class DownloadsScreenTest {
                     onRefresh = {},
                     onBrowseLibrary = {},
                     onMessageShown = {},
+                    onOpenSettings = onOpenSettings,
+                    scrollToTopSignal = scrollToTopSignal,
                 )
             }
         }
@@ -405,5 +410,19 @@ class DownloadsScreenTest {
     private companion object {
         /** Comfortably past `ViewConfiguration`'s 500 ms long-press timeout. */
         const val LONG_PRESS_MS = 1_000L
+    }
+
+    /**
+     * NAV-5: the gear is on every top-level bar, not the library's alone. From here it used to be a
+     * tab switch plus a tap.
+     */
+    @Test
+    fun `the bar carries the settings gear`() {
+        var opened = false
+        setScreen(downloads = emptyList(), onOpenSettings = { opened = true })
+
+        composeRule.onNodeWithContentDescription("Settings").performClick()
+
+        assertTrue(opened)
     }
 }

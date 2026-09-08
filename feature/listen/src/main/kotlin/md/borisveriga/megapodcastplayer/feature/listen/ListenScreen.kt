@@ -30,6 +30,8 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeCard
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeShelf
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ScrollToTopEffect
+import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsAction
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
@@ -43,6 +45,9 @@ import md.borisveriga.megapodcastplayer.feature.podcast.EpisodeDetailSheet
  * @param onEpisodePlaying invoked once an episode has been handed to the player, so the shell can
  *   open the player sheet.
  * @param onBrowseLibrary opens the library, from the empty state.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the shelves
+ *   back at the top (NAV-4).
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
@@ -50,6 +55,8 @@ import md.borisveriga.megapodcastplayer.feature.podcast.EpisodeDetailSheet
 fun ListenRoute(
     onEpisodePlaying: () -> Unit,
     onBrowseLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     viewModel: ListenViewModel = hiltViewModel(),
 ) {
@@ -63,6 +70,8 @@ fun ListenRoute(
         onEpisodePlay = { episodeId -> viewModel.togglePlay(episodeId, onEpisodePlaying) },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onBrowseLibrary = onBrowseLibrary,
+        onOpenSettings = onOpenSettings,
+        scrollToTopSignal = scrollToTopSignal,
         modifier = modifier,
     )
 }
@@ -89,6 +98,9 @@ fun ListenRoute(
  * @param onEpisodePlay plays an episode, or pauses the one playing.
  * @param onEpisodeSheetDismiss closes the sheet.
  * @param onBrowseLibrary opens the library from the empty state.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the shelves
+ *   back at the top (NAV-4).
  * @param modifier layout modifier.
  * @param now the reference point for relative dates, injected so previews and tests are stable.
  */
@@ -101,10 +113,16 @@ fun ListenScreen(
     onEpisodePlay: (String) -> Unit,
     onEpisodeSheetDismiss: () -> Unit,
     onBrowseLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     now: Instant = remember { Instant.now() },
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    // Hoisted out of the Column below so the re-tap effect can reach it; see ScrollToTopEffect.
+    val scrollState = rememberScrollState()
+
+    ScrollToTopEffect(signal = scrollToTopSignal, state = scrollState)
 
     openEpisodeId?.let { episodeId ->
         uiState.episodeById(episodeId)?.let { entry ->
@@ -128,6 +146,7 @@ fun ListenScreen(
             MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.listen_title),
                 scrollBehavior = scrollBehavior,
+                actions = { SettingsAction(onClick = onOpenSettings) },
             )
         },
     ) { padding ->
@@ -147,7 +166,7 @@ fun ListenScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.lg),
             ) {
                 Shelf(
@@ -287,6 +306,8 @@ internal fun ListenScreenPreview() {
             onEpisodePlay = {},
             onEpisodeSheetDismiss = {},
             onBrowseLibrary = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
             now = PREVIEW_NOW,
         )
     }
@@ -303,6 +324,8 @@ internal fun ListenScreenEmptyPreview() {
             onEpisodePlay = {},
             onEpisodeSheetDismiss = {},
             onBrowseLibrary = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
             now = PREVIEW_NOW,
         )
     }

@@ -21,6 +21,7 @@ import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
 import md.borisveriga.megapodcastplayer.core.model.MomentsFilter
 import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,6 +73,8 @@ class MomentsScreenTest {
         onQueryChange: (String) -> Unit = {},
         onShowChange: (String?) -> Unit = {},
         onGroupByShowChange: (Boolean) -> Unit = {},
+        onOpenSettings: () -> Unit = {},
+        scrollToTopSignal: Int = 0,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -89,6 +92,8 @@ class MomentsScreenTest {
                     onCancelEdit = {},
                     onUndoDelete = {},
                     onMessageShown = {},
+                    onOpenSettings = onOpenSettings,
+                    scrollToTopSignal = scrollToTopSignal,
                 )
             }
         }
@@ -324,6 +329,23 @@ class MomentsScreenTest {
                 .orEmpty()
                 .any { action -> action.label == label }
         }
+
+    /**
+     * NAV-5: the gear is on every top-level bar, not the library's alone. From here it used to be a
+     * tab switch plus a tap.
+     */
+    @Test
+    fun `the bar carries the settings gear`() {
+        var opened = false
+        setContent(
+            MomentsUiState(isLoading = false, moments = listOf(entry(1L))),
+            onOpenSettings = { opened = true },
+        )
+
+        composeRule.onNodeWithContentDescription("Settings").performClick()
+
+        assertTrue(opened)
+    }
 }
 
 /*
