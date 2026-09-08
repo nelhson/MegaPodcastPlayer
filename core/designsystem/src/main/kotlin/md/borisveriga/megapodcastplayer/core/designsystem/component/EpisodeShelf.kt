@@ -24,7 +24,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 
 /**
  * A row of episode cards, read across rather than scrolled through.
@@ -194,3 +196,61 @@ private val CARD_WIDTH: Dp = 168.dp
 
 /** Two lines of title: enough to tell two episodes of one show apart, and no more. */
 private const val CARD_TITLE_LINES = 2
+
+/**
+ * A shelf of three, the middle one playing.
+ *
+ * The two things worth seeing side by side are the progress hairline under a part-heard card and
+ * the way a playing card's button changes colour rather than shape.
+ */
+@ThemePreviews
+@Composable
+internal fun EpisodeShelfPreview() {
+    MegaPodcastPlayerTheme {
+        EpisodeShelf(
+            title = "Continue listening",
+            episodes = listOf(
+                Triple("The AI bubble, revisited", "Hard Fork", 0.62f),
+                Triple("Nvidia, Part III", "Acquired", 0.18f),
+                Triple("Why is it so hard to buy a mattress?", "Search Engine", 0f),
+            ),
+            key = { it.first },
+        ) { (title, show, played) ->
+            EpisodeCard(
+                title = title,
+                showTitle = show,
+                metadata = "42 min left",
+                artworkUrl = null,
+                playedFraction = played,
+                isNowPlaying = played == 0.18f,
+                isPlaying = played == 0.18f,
+                isBuffering = false,
+                stateDescription = "",
+                onClick = {},
+                onPlay = {},
+            )
+        }
+    }
+}
+
+/** One card on its own, at every text size, because two lines of title is where it gives. */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+internal fun EpisodeCardPreview() {
+    MegaPodcastPlayerTheme {
+        EpisodeCard(
+            title = "Nvidia, Part III: The Dan Ives Chronicles",
+            showTitle = "Acquired",
+            metadata = "2 h 41 min left",
+            artworkUrl = null,
+            playedFraction = 0.3f,
+            isNowPlaying = true,
+            isPlaying = true,
+            isBuffering = false,
+            stateDescription = "Playing",
+            onClick = {},
+            onPlay = {},
+        )
+    }
+}

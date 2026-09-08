@@ -171,7 +171,7 @@ private const val START_ANGLE = -90f
 
 @ThemePreviews
 @Composable
-private fun DownloadButtonPreview() {
+internal fun DownloadButtonPreview() {
     MegaPodcastPlayerTheme {
         Row(
             modifier = Modifier.padding(16.dp),

@@ -12,7 +12,8 @@ truth rather than a summary of it:
 - `config/detekt/detekt.yml` — every override carries its own reason.
 - `gradle/libs.versions.toml` — the only place a version is written.
 - `docs/` — `REFACTORING_PLAN.md` (audit of 2026-08-29, largely applied), `RELEASE_SIGNING.md`,
-  `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, and dated reports under `docs/reports/`.
+  `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, `SCREENSHOT_TESTS.md`, and dated reports under
+  `docs/reports/`.
 
 ## Layout
 
@@ -33,7 +34,11 @@ Twenty modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapod
 .\gradlew.bat lintDebug --continue                   # warningsAsErrors; baselines are opt-in per module
 .\gradlew.bat assembleDebug
 .\gradlew.bat koverHtmlReportUnit koverLogUnit       # coverage of every module's unit tests; reporting only
+.\gradlew.bat testDebugUnitTest -Pmegapodcastplayer.screenshots.record   # re-record the screenshot goldens
 ```
+
+`testDebugUnitTest` verifies the screenshot goldens; the flag above is the only way they are
+rewritten, and the images are then read before committing. See `docs/SCREENSHOT_TESTS.md`.
 
 `adb` is not on PATH; the `install_on_devices` skill knows where it is. Release builds fail
 without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.

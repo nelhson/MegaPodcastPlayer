@@ -1236,7 +1236,7 @@ private const val COLLAPSED_LINES = 4
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun PodcastDetailScreenPreview() {
+internal fun PodcastDetailScreenPreview() {
     MegaPodcastPlayerTheme {
         PodcastDetailScreen(
             uiState = PodcastDetailUiState(

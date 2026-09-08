@@ -121,7 +121,7 @@ private val WAVE_SAMPLE_STEP = 2.dp
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun WavyProgressLinePreview() {
+internal fun WavyProgressLinePreview() {
     MegaPodcastPlayerTheme {
         WavyProgressLine()
     }

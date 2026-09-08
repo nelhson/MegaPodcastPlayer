@@ -138,7 +138,7 @@ fun <T> SortMenuChip(
 
 @ThemePreviews
 @Composable
-private fun SortToggleChipPreview() {
+internal fun SortToggleChipPreview() {
     MegaPodcastPlayerTheme {
         SortToggleChip(
             label = "Newest first",
@@ -151,7 +151,7 @@ private fun SortToggleChipPreview() {
 
 @ThemePreviews
 @Composable
-private fun SortMenuChipPreview() {
+internal fun SortMenuChipPreview() {
     MegaPodcastPlayerTheme {
         SortMenuChip(
             label = "Recently updated",

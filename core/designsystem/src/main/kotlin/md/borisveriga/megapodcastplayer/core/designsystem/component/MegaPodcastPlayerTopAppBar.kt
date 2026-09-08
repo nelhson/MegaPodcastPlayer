@@ -7,11 +7,9 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -81,46 +79,13 @@ fun MegaPodcastPlayerTopAppBar(
     )
 }
 
-/**
- * The app bar for a screen whose name is part of its identity.
- *
- * Collapses into [MegaPodcastPlayerTopAppBar]'s proportions as the list under it scrolls: expanded, Material
- * sets the title in `headlineMedium`, which is Bricolage, so the screen opens on the brand's face
- * and gives it up to Inter's `titleLarge` once the content matters more than the label. Both styles
- * come from the theme's own typography rather than being restated here.
- *
- * @param title the screen's name.
- * @param scrollBehavior required rather than optional: a large bar that never collapses is a large
- *   bar that permanently spends a third of the screen on one word.
- * @param modifier layout modifier.
- * @param onBack invoked by the back arrow; no arrow is drawn when null.
- * @param backDescription what TalkBack announces for the back arrow.
- * @param actions trailing icon buttons.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MegaPodcastPlayerLargeTopAppBar(
-    title: String,
-    scrollBehavior: TopAppBarScrollBehavior,
-    modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null,
-    backDescription: String = stringResource(R.string.designsystem_back),
-    actions: @Composable RowScope.() -> Unit = {},
-) {
-    LargeTopAppBar(
-        title = {
-            Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        modifier = modifier,
-        navigationIcon = { BackAction(onBack = onBack, contentDescription = backDescription) },
-        actions = actions,
-        scrollBehavior = scrollBehavior,
-    )
-}
+// There was a `MegaPodcastPlayerLargeTopAppBar` here, a collapsing bar for "a screen whose name is
+// part of its identity". Listen and Moments were its two callers and both gave it up when NAV-7
+// settled on one bar for all five top-level destinations: a collapsing bar on two of five reads as
+// an accident rather than as emphasis, and a list you came to scroll should not open with a third
+// of the screen naming the tab you just tapped. It is removed rather than kept for the detail
+// screen that might one day earn it — the design system describes the app, and Material's
+// `LargeTopAppBar` is one import away on the day a screen does.
 
 /**
  * The back arrow, or nothing at all.
@@ -143,21 +108,8 @@ private fun BackAction(onBack: (() -> Unit)?, contentDescription: String) {
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun MegaPodcastPlayerTopAppBarPreview() {
+internal fun MegaPodcastPlayerTopAppBarPreview() {
     MegaPodcastPlayerTheme {
         MegaPodcastPlayerTopAppBar(title = "Settings", onBack = {})
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@ThemePreviews
-@FontScalePreviews
-@Composable
-private fun MegaPodcastPlayerLargeTopAppBarPreview() {
-    MegaPodcastPlayerTheme {
-        MegaPodcastPlayerLargeTopAppBar(
-            title = "Library",
-            scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(),
-        )
     }
 }

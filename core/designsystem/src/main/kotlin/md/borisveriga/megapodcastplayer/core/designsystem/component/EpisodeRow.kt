@@ -300,7 +300,7 @@ private const val PERCENT = 100f
 
 @ThemePreviews
 @Composable
-private fun EpisodeRowPreview() {
+internal fun EpisodeRowPreview() {
     MegaPodcastPlayerTheme {
         Column {
             EpisodeRow(

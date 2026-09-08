@@ -87,7 +87,7 @@ fun NoteDialog(
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun NoteDialogPreview() {
+internal fun NoteDialogPreview() {
     MegaPodcastPlayerTheme {
         NoteDialog(
             title = "Note on this moment",

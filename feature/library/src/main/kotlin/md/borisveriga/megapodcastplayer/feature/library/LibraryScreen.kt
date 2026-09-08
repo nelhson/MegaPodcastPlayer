@@ -929,7 +929,7 @@ private const val DRAG_ELEVATION = 8f
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun LibraryScreenPreview() {
+internal fun LibraryScreenPreview() {
     MegaPodcastPlayerTheme {
         LibraryScreen(
             uiState = LibraryUiState(
@@ -958,7 +958,7 @@ private fun LibraryScreenPreview() {
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun LibraryScreenListPreview() {
+internal fun LibraryScreenListPreview() {
     MegaPodcastPlayerTheme {
         LibraryScreen(
             uiState = LibraryUiState(

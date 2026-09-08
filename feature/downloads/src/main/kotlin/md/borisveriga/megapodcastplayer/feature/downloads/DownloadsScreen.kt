@@ -744,7 +744,7 @@ private val MIN_SEGMENT_WIDTH = 12.dp
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun DownloadsScreenPreview() {
+internal fun DownloadsScreenPreview() {
     MegaPodcastPlayerTheme {
         DownloadsScreen(
             uiState = DownloadsUiState(

@@ -684,7 +684,7 @@ private const val COLLAPSED_FADE_END = 0.35f
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun ExpandedPlayerPreview() {
+internal fun ExpandedPlayerPreview() {
     MegaPodcastPlayerTheme {
         PlayerSheet(
             uiState = PlayerUiState(

@@ -135,7 +135,7 @@ private const val BUFFERING_GLYPH_ALPHA = 0.35f
 
 @ThemePreviews
 @Composable
-private fun PlayPauseButtonPreview() {
+internal fun PlayPauseButtonPreview() {
     MegaPodcastPlayerTheme {
         Row(
             modifier = Modifier.padding(16.dp),
