@@ -99,7 +99,7 @@ class WatchPlayerViewModelTest {
         viewModel.skipToPrevious()
         viewModel.cycleSpeed()
         viewModel.seekTo(90_000L)
-        viewModel.playQueued("ep-7")
+        viewModel.playOnPhone("ep-7")
 
         coVerify(exactly = 1) { client.send(WearCommand.TogglePlayPause) }
         coVerify(exactly = 1) { client.send(WearCommand.SkipForward) }

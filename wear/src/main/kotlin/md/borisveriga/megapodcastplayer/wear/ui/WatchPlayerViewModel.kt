@@ -332,11 +332,15 @@ class WatchPlayerViewModel @Inject constructor(
     }
 
     /**
-     * Plays a queued episode on the phone.
+     * Plays an episode on the phone.
      *
-     * @param episodeId the episode, as it arrived in the snapshot's queue.
+     * Serves both of the lists that describe the phone: the queue, and what the phone has
+     * downloaded. The phone resolves the id against its whole library rather than against the
+     * queue, so an episode that was only ever downloaded starts exactly as a queued one does.
+     *
+     * @param episodeId the episode, as it arrived in the snapshot's queue or the offered library.
      */
-    fun playQueued(episodeId: String) = send(WearCommand.PlayEpisode(episodeId))
+    fun playOnPhone(episodeId: String) = send(WearCommand.PlayEpisode(episodeId))
 
     /**
      * Plays an episode the watch holds, on the watch.

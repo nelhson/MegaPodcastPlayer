@@ -20,6 +20,7 @@ import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
 import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -124,7 +125,7 @@ class WatchPlayerScreenTest {
         var played: String? = null
         setScreen(
             uiState = WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing),
-            onPlayQueued = { played = it },
+            onPlayOnPhone = { played = it },
         )
 
         openEpisodes()
@@ -420,10 +421,39 @@ class WatchPlayerScreenTest {
         )
 
         openEpisodes()
+        scrollToDescription("Copy to watch")
+        composeTestRule.onNodeWithContentDescription("Copy to watch").performClick()
+
+        assertEquals("ep-8", copied)
+    }
+
+    /**
+     * The common want, and the one this list could not serve before: the phone is in a pocket and
+     * the episode should come out of it now, without minutes of Bluetooth first.
+     */
+    @Test
+    fun `tapping a downloaded-on-phone episode starts it on the phone`() {
+        var played: String? = null
+        var copied: String? = null
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                offered = listOf(
+                    OfflineEpisode(id = "ep-8", title = "The one about resistors", showTitle = "Radio Hardware"),
+                ),
+            ),
+            onPlayOnPhone = { played = it },
+            onCopyToWatch = { copied = it },
+        )
+
+        openEpisodes()
         scrollTo("The one about resistors")
         composeTestRule.onNodeWithText("The one about resistors").performClick()
 
-        assertEquals("ep-8", copied)
+        assertEquals("ep-8", played)
+        // The expensive half of the row must stay behind its own button.
+        assertNull(copied)
     }
 
     /**
@@ -500,11 +530,11 @@ class WatchPlayerScreenTest {
     }
 
     /**
-     * With the header naming the list rather than the action, the row's icon is the only thing left
-     * saying what a tap does — and TalkBack cannot see an icon.
+     * With the header naming the list rather than the action, the row's two icons are the only
+     * thing left saying which device each target reaches — and TalkBack cannot see an icon.
      */
     @Test
-    fun `a downloaded-on-phone row announces that tapping it copies the episode`() {
+    fun `a downloaded-on-phone row announces both of the things it can do`() {
         setScreen(
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
@@ -521,6 +551,7 @@ class WatchPlayerScreenTest {
 
         openEpisodes()
         scrollTo("The one about resistors")
+        composeTestRule.onNodeWithContentDescription("Play on phone").assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Copy to watch").assertIsDisplayed()
     }
 
@@ -604,7 +635,7 @@ class WatchPlayerScreenTest {
     private fun setScreen(
         uiState: WatchPlayerUiState,
         onTogglePlayPause: () -> Unit = {},
-        onPlayQueued: (String) -> Unit = {},
+        onPlayOnPhone: (String) -> Unit = {},
         onRetry: () -> Unit = {},
         onPlayOnWatch: (StoredEpisode) -> Unit = {},
         onCopyToWatch: (String) -> Unit = {},
@@ -621,7 +652,7 @@ class WatchPlayerScreenTest {
                         onSkipToNext = {},
                         onSkipToPrevious = {},
                         onCycleSpeed = {},
-                        onPlayQueued = onPlayQueued,
+                        onPlayOnPhone = onPlayOnPhone,
                         onRetry = onRetry,
                         onPlayOnWatch = onPlayOnWatch,
                         onCopyToWatch = onCopyToWatch,

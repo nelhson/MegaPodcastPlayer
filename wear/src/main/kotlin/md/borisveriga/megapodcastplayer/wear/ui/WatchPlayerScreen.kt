@@ -123,7 +123,7 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onSkipToPrevious = viewModel::skipToPrevious,
         onCycleSpeed = viewModel::cycleSpeed,
         onMarkMoment = viewModel::markMoment,
-        onPlayQueued = viewModel::playQueued,
+        onPlayOnPhone = viewModel::playOnPhone,
         onRetry = viewModel::retry,
         onBeginScrub = viewModel::beginScrub,
         onScrubBy = viewModel::scrubBy,
@@ -163,7 +163,8 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onSkipToPrevious invoked by the previous-episode button.
  * @param onCycleSpeed invoked by the speed button.
  * @param onMarkMoment invoked by the mark-a-moment button.
- * @param onPlayQueued invoked with the episode id when a queue row is tapped.
+ * @param onPlayOnPhone invoked with the episode id when a row describing the phone is tapped,
+ *   whether it is queued there or merely downloaded there.
  * @param onRetry invoked when the user retries a failed connection.
  * @param onBeginScrub invoked when the user takes hold of the progress bar.
  * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
@@ -184,7 +185,7 @@ fun WatchPlayerScreen(
     onSkipToNext: () -> Unit,
     onSkipToPrevious: () -> Unit,
     onCycleSpeed: () -> Unit,
-    onPlayQueued: (String) -> Unit,
+    onPlayOnPhone: (String) -> Unit,
     onRetry: () -> Unit,
     onMarkMoment: () -> Unit = {},
     onBeginScrub: () -> Unit = {},
@@ -208,7 +209,7 @@ fun WatchPlayerScreen(
     val episodesPage: @Composable () -> Unit = {
         EpisodesPage(
             uiState = uiState,
-            onPlayQueued = onPlayQueued,
+            onPlayOnPhone = onPlayOnPhone,
             onPlayOnWatch = onPlayOnWatch,
             onCopyToWatch = onCopyToWatch,
             onCancelCopyToWatch = onCancelCopyToWatch,
@@ -353,7 +354,7 @@ private fun NowPlayingPage(
  * sentence about an idle phone is at the top of it rather than on a page of its own.
  *
  * @param uiState what to draw.
- * @param onPlayQueued invoked with the episode id when a queue row is tapped.
+ * @param onPlayOnPhone invoked with the episode id when a row describing the phone is tapped.
  * @param onPlayOnWatch invoked with a stored episode to play it on the watch itself.
  * @param onCopyToWatch invoked with an episode id to ask the phone to send its audio over.
  * @param onCancelCopyToWatch invoked with an episode id to abandon a copy that is arriving.
@@ -363,7 +364,7 @@ private fun NowPlayingPage(
 @Composable
 private fun EpisodesPage(
     uiState: WatchPlayerUiState,
-    onPlayQueued: (String) -> Unit,
+    onPlayOnPhone: (String) -> Unit,
     onPlayOnWatch: (StoredEpisode) -> Unit,
     onCopyToWatch: (String) -> Unit,
     onCancelCopyToWatch: (String) -> Unit,
@@ -391,7 +392,7 @@ private fun EpisodesPage(
             if (uiState.source == PlaybackSource.PHONE && uiState.snapshot.upNext.isNotEmpty()) {
                 item { ListHeader { Text(text = stringResource(R.string.watch_phone_queue)) } }
                 items(uiState.snapshot.upNext) { episode ->
-                    QueueRow(episode = episode, onClick = { onPlayQueued(episode.id) })
+                    QueueRow(episode = episode, onClick = { onPlayOnPhone(episode.id) })
                 }
             }
 
@@ -402,7 +403,11 @@ private fun EpisodesPage(
                     ListHeader { Text(text = stringResource(R.string.watch_downloaded_on_phone)) }
                 }
                 items(uiState.copyable) { episode ->
-                    CopyableRow(episode = episode, onClick = { onCopyToWatch(episode.id) })
+                    CopyableRow(
+                        episode = episode,
+                        onPlay = { onPlayOnPhone(episode.id) },
+                        onCopy = { onCopyToWatch(episode.id) },
+                    )
                 }
             }
 
@@ -1066,28 +1071,54 @@ private fun ArrivingRow(arriving: ArrivingEpisode, onCancel: () -> Unit) {
 }
 
 /**
- * One episode the phone has and the watch does not; tapping asks for it.
+ * One episode the phone has downloaded and the watch does not hold: play it there, or fetch it here.
+ *
+ * Two targets rather than one, because this list answers two different wants with the same rows.
+ * Most of the time the phone is in a pocket and the episode is meant to come out of it now, which
+ * was previously impossible from this list — the only thing a row did was start a multi-minute
+ * Bluetooth copy, and the wearer had to find the episode again in the phone's own queue to hear it.
+ * So the row itself now does the common thing, and the copy keeps its own button beside it, laid
+ * out exactly as the delete button on a stored row is; see [StoredRow].
+ *
+ * The play glyph is described rather than decorative for the same reason the download one is: the
+ * header above names the list ("Downloaded on phone") and not the action, so between them the two
+ * glyphs are the only thing saying which device each target reaches — and TalkBack cannot see a
+ * glyph.
  *
  * @param episode what the phone offered.
- * @param onClick invoked to start the transfer.
+ * @param onPlay invoked to start the episode on the phone.
+ * @param onCopy invoked to start the transfer to the watch.
  */
 @Composable
-private fun CopyableRow(episode: OfflineEpisode, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
+private fun CopyableRow(
+    episode: OfflineEpisode,
+    onPlay: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        icon = {
-            // Described rather than decorative: the header above now names the list ("Downloaded on
-            // phone") instead of the action, so this glyph is the only thing left saying what a tap
-            // does — and TalkBack cannot see a glyph.
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = onPlay,
+            modifier = Modifier.weight(1f),
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = stringResource(R.string.watch_play_on_phone),
+                )
+            },
+            label = { Text(text = episode.title, maxLines = 2) },
+            secondaryLabel = { Text(text = episode.showTitle, maxLines = 1) },
+        )
+        IconButton(onClick = onCopy) {
             Icon(
                 imageVector = Icons.Rounded.Download,
                 contentDescription = stringResource(R.string.watch_copy_to_watch),
             )
-        },
-        label = { Text(text = episode.title, maxLines = 2) },
-        secondaryLabel = { Text(text = episode.showTitle, maxLines = 1) },
-    )
+        }
+    }
 }
 
 /**

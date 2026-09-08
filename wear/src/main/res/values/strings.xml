@@ -64,7 +64,12 @@
       phone out of range, so its copy says "on this watch" rather than naming the phone at all.
     -->
     <string name="watch_on_this_watch">On this watch</string>
-    <!-- The action a downloaded-on-phone row performs; read by TalkBack from its icon. -->
+    <!--
+      The two things a downloaded-on-phone row offers, read by TalkBack from the glyph on each.
+      Tapping the row starts the episode on the phone, which is what is usually wanted; the button
+      beside it fetches the audio over so the watch can play it with the phone left behind.
+    -->
+    <string name="watch_play_on_phone">Play on phone</string>
     <string name="watch_copy_to_watch">Copy to watch</string>
     <string name="watch_copying">Copying…</string>
     <!-- The action beside an arriving episode's bar; read by TalkBack from its icon. -->
