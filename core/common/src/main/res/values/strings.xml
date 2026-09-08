@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The words the formatters say.
+
+    These used to be Kotlin literals — "1 h 23 min", "12 min left", "Today", "3 days ago", "340 MB"
+    — while every other word in the app was a resource. A translation would therefore have produced
+    a screen half in one language and half in English, and the halves sit on the same line: an
+    episode row reads "24 Aug · 1 h 23 min · 90 MB".
+
+    Units are abbreviations rather than words on purpose. They are read at a glance, in a row that
+    already carries three other facts, and a translator is expected to pick their language's
+    abbreviation rather than to spell "hours" out.
+-->
+<resources>
+
+    <!-- A duration, never in seconds: the shortest useful unit for an episode is a minute. -->
+    <plurals name="common_duration_hours">
+        <item quantity="one">%1$d h</item>
+        <item quantity="other">%1$d h</item>
+    </plurals>
+    <plurals name="common_duration_minutes">
+        <item quantity="one">%1$d min</item>
+        <item quantity="other">%1$d min</item>
+    </plurals>
+
+    <!-- Joins the hours (%1$s) and the minutes (%2$s) of one duration. -->
+    <string name="common_duration_hours_minutes">%1$s %2$s</string>
+
+    <!-- How much of an episode is left, as prose; %1$s is a duration from the strings above. -->
+    <string name="common_duration_remaining">%1$s left</string>
+
+    <!--
+        A publication date, read the way a person reads an episode list: the last few days
+        relatively, everything older by date. The dates themselves are formatted by the platform.
+    -->
+    <string name="common_date_today">Today</string>
+    <string name="common_date_yesterday">Yesterday</string>
+    <plurals name="common_date_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+
+    <!--
+        Storage sizes. %1$s is the number, already formatted in the device\'s own digits and
+        decimal separator, so a translator moves the unit rather than re-punctuating the figure.
+    -->
+    <string name="common_size_megabytes">%1$s MB</string>
+    <string name="common_size_gigabytes">%1$s GB</string>
+
+</resources>

@@ -43,17 +43,78 @@
         <!--
           singleTop so a new-episode notification tapped while the app is running is delivered to
           the running instance through onNewIntent, rather than stacking a second copy of the app.
+
+          The theme is the *starting* one: the system draws the splash from it before the process
+          exists, and `installSplashScreen()` in MainActivity swaps it for Theme.MegaPodcastPlayer
+          once there is a frame to show. Naming the post-splash theme here instead would leave the
+          launch looking like a blank window for as long as Hilt and Room take to come up.
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.MegaPodcastPlayer"
+            android:theme="@style/Theme.MegaPodcastPlayer.Starting"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Share sheet: a podcast link shared out of a browser, a chat or Apple Podcasts.
+
+              This is the ordinary way a show is discovered, and until now it took five steps —
+              copy the link, leave the app you were in, open this one, tap add, paste. The text
+              lands on the Search screen with the link already in the field, where the same
+              classifier the paste path uses decides whether it is an Apple show, a YouTube
+              playlist or a feed. Nothing is added without a tap; a shared link is untrusted input
+              and gets the same one-tap confirmation a typed one does.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!--
+              Tapping a podcast link, rather than sharing it.
+
+              Deliberately narrow. `android:host` is named for every shape the link parser can
+              actually resolve, so this app never appears in the chooser for a URL it would only
+              fail on — a generic `http` filter would put it in front of every link on the device.
+              RSS feeds live on hosts we cannot enumerate, so they arrive through the share sheet
+              above instead; the `podcast://` and `feed://` schemes are the two conventional ones
+              that name a feed unambiguously and cost nothing to accept.
+
+              `autoVerify="false"` is stated rather than left out. These are other people's
+              domains: no assetlinks.json of ours will ever be served from apple.com or youtube.com,
+              so verification could only ever fail, and the app should be *offered* in the chooser
+              rather than take the link over. Saying so explicitly is also what tells lint this is a
+              deliberate share target and not a half-configured App Link.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="podcasts.apple.com" />
+                <data android:host="itunes.apple.com" />
+                <data android:host="music.apple.com" />
+                <data android:host="youtube.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="music.youtube.com" />
+                <data android:host="youtu.be" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="podcast" />
+                <data android:scheme="feed" />
             </intent-filter>
         </activity>
 

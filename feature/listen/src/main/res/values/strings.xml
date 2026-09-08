@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copy for the Listen tab.
+
+    Every shelf heading is a sentence fragment answering the same question — "what shall I listen to
+    now" — so they are phrased as answers rather than as categories: *Continue listening*, not
+    "In progress".
+-->
+<resources>
+
+    <string name="listen_title">Listen</string>
+
+    <string name="listen_continue">Continue listening</string>
+    <string name="listen_new">New episodes</string>
+    <string name="listen_up_next">Up next</string>
+
+    <!--
+        Reached before anything has been subscribed to, and again by someone who is fully caught
+        up. The action leads to the shows rather than to the add screen, because the second case is
+        far commoner than the first.
+    -->
+    <string name="listen_empty_title">Nothing waiting</string>
+    <string name="listen_empty_description">Episodes you have started, ones that have just arrived, and anything you have queued will appear here.</string>
+    <string name="listen_empty_action">Browse your shows</string>
+
+    <!--
+        Spoken state for one card. The same four the episode rows announce, in the same order of
+        precedence, so an episode reads identically wherever it is met, and worded exactly as
+        `designsystem_state_in_progress` words it. %1$d is a percentage.
+    -->
+    <string name="listen_state_now_playing">Now playing</string>
+    <string name="listen_state_played">Played</string>
+    <string name="listen_state_in_progress">%1$d%% played</string>
+    <string name="listen_state_unplayed">Not played</string>
+
+</resources>

@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
@@ -36,6 +37,8 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearPaths
  * @property playbackRepository resolves an episode id into its audio URL and download state.
  * @property downloadedAudio reads the bytes back out of the download cache.
  * @property channelClient opens the channel to the watch.
+ * @property crashReporter told when a transfer fails. Nothing on either device shows this: the
+ *   watch simply never gets the episode, and the phone has already returned to the caller.
  * @property scope application scope: a transfer must survive the screen, and the process being
  *   backgrounded, but not the process dying — a half-sent episode is discarded by the watch.
  */
@@ -44,6 +47,7 @@ internal class EpisodeAudioSender @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val downloadedAudio: DownloadedAudio,
     private val channelClient: ChannelClient,
+    private val crashReporter: CrashReporter,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
 
@@ -131,19 +135,22 @@ internal class EpisodeAudioSender @Inject constructor(
 
         val channel = suspendRunCatching {
             channelClient.openChannel(nodeId, WearPaths.episodeAudioPath(episodeId)).await()
-        }.getOrNull() ?: run {
-            Log.w(TAG, "Could not open a channel to $nodeId")
-            return
-        }
+        }.onFailure { error ->
+            Log.w(TAG, "Could not open a channel to $nodeId", error)
+            crashReporter.recordNonFatal(NON_FATAL_CHANNEL_REFUSED, error)
+        }.getOrNull() ?: return
 
         try {
-            val written = suspendRunCatching {
+            suspendRunCatching {
                 val stream = channelClient.getOutputStream(channel).await()
                 stream.use { downloadedAudio.copyTo(episode.audioUrl, it) }
-            }.getOrNull()
-
-            if (written == null) {
-                Log.w(TAG, "Sending $episodeId to the watch failed part way")
+            }.onFailure { error ->
+                Log.w(TAG, "Sending $episodeId to the watch failed part way", error)
+                // The failure is kept whole rather than collapsed into a null, because the two
+                // causes want opposite responses and only the stack trace tells them apart: a
+                // dropped link is the link's problem, a read that ran off the end of the cache is
+                // this app's.
+                crashReporter.recordNonFatal(NON_FATAL_TRANSFER_INCOMPLETE, error)
             }
         } finally {
             withContext(NonCancellable) {
@@ -154,5 +161,11 @@ internal class EpisodeAudioSender @Inject constructor(
 
     private companion object {
         const val TAG = "EpisodeAudioSender"
+
+        /** The watch would not accept a channel at all — usually out of range, sometimes not. */
+        const val NON_FATAL_CHANNEL_REFUSED = "Wear audio channel refused"
+
+        /** The channel opened and then the copy stopped short. */
+        const val NON_FATAL_TRANSFER_INCOMPLETE = "Wear audio transfer incomplete"
     }
 }

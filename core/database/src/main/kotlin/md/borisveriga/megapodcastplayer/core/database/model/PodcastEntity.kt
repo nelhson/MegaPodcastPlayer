@@ -61,12 +61,18 @@ data class PodcastEntity(
  * @property episodeCount total episodes stored locally.
  * @property newEpisodeCount episodes flagged new by the last refresh.
  * @property downloadedCount episodes fully downloaded.
+ * @property unplayedCount episodes never started, by the same rule the show page's *Unplayed*
+ *   filter applies.
+ * @property latestPublishedAt the newest publication date across the show's episodes, in epoch
+ *   milliseconds; null when no episode carries one.
  */
 data class PodcastWithCountsEntity(
     @Embedded val podcast: PodcastEntity,
     @ColumnInfo(name = "episode_count") val episodeCount: Int,
     @ColumnInfo(name = "new_episode_count") val newEpisodeCount: Int,
     @ColumnInfo(name = "downloaded_count") val downloadedCount: Int,
+    @ColumnInfo(name = "unplayed_count") val unplayedCount: Int,
+    @ColumnInfo(name = "latest_published_at") val latestPublishedAt: Long?,
 )
 
 /** Maps a Room row to the domain model. */
@@ -92,6 +98,8 @@ fun PodcastWithCountsEntity.asExternalModel(): PodcastWithCounts = PodcastWithCo
     episodeCount = episodeCount,
     newEpisodeCount = newEpisodeCount,
     downloadedCount = downloadedCount,
+    unplayedCount = unplayedCount,
+    latestPublishedAt = latestPublishedAt?.let(Instant::ofEpochMilli),
 )
 
 /** Maps the domain model to a Room row. */

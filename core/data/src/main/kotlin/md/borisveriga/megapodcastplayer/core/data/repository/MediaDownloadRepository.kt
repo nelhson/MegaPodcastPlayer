@@ -3,11 +3,15 @@ package md.borisveriga.megapodcastplayer.core.data.repository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.di.Dispatcher
 import md.borisveriga.megapodcastplayer.core.common.di.MegaPodcastPlayerDispatcher
 import md.borisveriga.megapodcastplayer.core.data.mapper.asEpisodeWithShow
@@ -22,6 +26,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 
 /**
  * Media3- and Room-backed implementation of the download stack.
@@ -40,6 +45,8 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
  * @property userPreferences the download rules.
  * @property downloader the handle on Media3's download machinery.
  * @property ioDispatcher dispatcher for the database work.
+ * @property scope application scope, for the one piece of work here that outlives its caller: the
+ *   wait that puts the "Wi-Fi only" rule back after [downloadNow] lifted it.
  */
 @Singleton
 class MediaDownloadRepository @Inject constructor(
@@ -48,7 +55,16 @@ class MediaDownloadRepository @Inject constructor(
     private val userPreferences: UserPreferencesDataSource,
     private val downloader: EpisodeDownloader,
     @Dispatcher(MegaPodcastPlayerDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
+    @ApplicationScope private val scope: CoroutineScope,
 ) : DownloadRepository, AutoDownloadScheduler, DownloadStatusRecorder {
+
+    /**
+     * The wait for the queue to drain after [downloadNow] lifted the Wi-Fi rule.
+     *
+     * One at a time: a second *download now* while the first is still running is the same wait, and
+     * two of them would put the rule back twice.
+     */
+    private var requirementRestore: Job? = null
 
     override fun observeDownloadSettings(): Flow<DownloadSettings> = userPreferences.downloadSettings
 
@@ -93,6 +109,21 @@ class MediaDownloadRepository @Inject constructor(
         return true
     }
 
+    override suspend fun downloadNow(episodeId: String): Boolean {
+        // Lifted before the request rather than after: Media3 evaluates the requirement when the
+        // download is added, and a request sent first would sit waiting until something else woke
+        // the manager up.
+        downloader.setUnmeteredOnly(false)
+        val requested = download(episodeId)
+        if (requested) {
+            restoreRequirements()
+        } else {
+            // Nothing was started, so nothing will finish and put the rule back. Do it here.
+            applyStoredRequirements()
+        }
+        return requested
+    }
+
     override suspend fun removeDownload(episodeId: String) {
         downloader.remove(episodeId)
         // Media3 confirms the removal with an event, but only once the file is actually gone. The
@@ -106,6 +137,27 @@ class MediaDownloadRepository @Inject constructor(
                 percent = 0f,
             )
         }
+    }
+
+    /**
+     * Puts the stored "Wi-Fi only" rule back once nothing is downloading any more.
+     *
+     * The scope is the application's, not a caller's: the wait outlives the screen that started it,
+     * and a download that takes four minutes must not leave the rule lifted because the user
+     * switched tabs. If the process dies first, the rule is re-applied on the next start anyway —
+     * see `DownloadStateSynchroniser.applyStoredRequirements`.
+     */
+    private fun restoreRequirements() {
+        requirementRestore?.cancel()
+        requirementRestore = scope.launch {
+            episodeDao.observeActiveDownloadCount().first { it == 0 }
+            applyStoredRequirements()
+        }
+    }
+
+    /** Re-applies whatever the user's download settings say the network rule is. */
+    private suspend fun applyStoredRequirements() {
+        downloader.setUnmeteredOnly(userPreferences.downloadSettings.first().unmeteredOnly)
     }
 
     override suspend fun removeAllDownloads() {
@@ -130,7 +182,11 @@ class MediaDownloadRepository @Inject constructor(
     override suspend fun onEpisodesDiscovered(podcastId: String, episodeIds: List<String>) {
         if (episodeIds.isEmpty()) return
         val settings = userPreferences.downloadSettings.first()
-        if (!settings.autoDownloadNewEpisodes) return
+        // The show has the last word. A weekly show worth keeping offline and a daily one that is
+        // only ever streamed are the same app-wide setting and two different answers, which is
+        // what makes auto-download a per-show decision in practice.
+        val show = userPreferences.showSettings.first()[podcastId] ?: ShowSettings.DEFAULT
+        if (!show.autoDownloadOr(settings.autoDownloadNewEpisodes)) return
 
         // A refresh that discovered fifty back-catalogue episodes must not queue fifty downloads;
         // the keep-limit is what the user asked to hold, so it also bounds what is fetched.

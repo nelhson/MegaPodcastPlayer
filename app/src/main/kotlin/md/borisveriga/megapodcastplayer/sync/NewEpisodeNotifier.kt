@@ -31,12 +31,16 @@ interface NewEpisodeNotifier {
  *   it is not showing rather than quietly dropping them.
  * @property targetPodcastId the show to open when the notification is tapped, or null when the
  *   episodes span more than one show and there is no single right destination.
+ * @property targetEpisodeId the episode to open, when the refresh found exactly one. The tap then
+ *   lands on the episode itself rather than on its show — which is what "a new episode" meant, and
+ *   what the notification's own text was already naming.
  */
 internal data class NewEpisodeNotificationContent(
     val episodeCount: Int,
     val lines: List<NewEpisode>,
     val overflowCount: Int,
     val targetPodcastId: String?,
+    val targetEpisodeId: String?,
 )
 
 /** How many episodes the notification lists before it starts counting the rest. */
@@ -60,5 +64,8 @@ internal fun newEpisodeNotificationContent(
         // `singleOrNull` is doing the deciding: one show means the tap can go straight to it, two
         // or more means the library is the only honest destination.
         targetPodcastId = newEpisodes.map { it.podcastId }.distinct().singleOrNull(),
+        // One episode means the tap has an unambiguous destination: that episode, opened. Two or
+        // more and the show — or the library — is the only honest answer, exactly as above.
+        targetEpisodeId = newEpisodes.singleOrNull()?.episodeId,
     )
 }

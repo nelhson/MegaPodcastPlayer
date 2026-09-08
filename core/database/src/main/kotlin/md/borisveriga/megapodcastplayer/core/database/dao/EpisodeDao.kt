@@ -6,6 +6,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
+import md.borisveriga.megapodcastplayer.core.database.model.DownloadBackupRow
+import md.borisveriga.megapodcastplayer.core.database.model.EpisodeBackupRow
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeWithShowEntity
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -87,6 +89,69 @@ interface EpisodeDao {
     )
     fun observeDownloadsWithShow(): Flow<List<EpisodeWithShowEntity>>
 
+    /**
+     * Observes how many downloads are still owed to the user: asked for, and not yet arrived.
+     *
+     * A count rather than the rows, because the one caller only needs to know when it reaches zero
+     * — that is the moment a temporarily lifted "Wi-Fi only" rule can safely be put back.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM episodes
+        WHERE download_state IN ('QUEUED', 'DOWNLOADING')
+        """,
+    )
+    fun observeActiveDownloadCount(): Flow<Int>
+
+    /**
+     * Episodes the user has started and not finished, across every show — *Continue listening*.
+     *
+     * `position_ms > 0 AND is_played = 0` is the same question `Episode.isInProgress` asks, asked
+     * in SQL because the alternative is reading every episode in the database into memory to filter
+     * three of them out.
+     *
+     * Ordered by publication date rather than by when it was last played, and that is a compromise
+     * worth naming: the database does not record when an episode was last *touched*, only where the
+     * playhead is. Newest-first is the next best answer and matches every other list in the app.
+     * The limit exists because a shelf is read across, not scrolled: someone with forty
+     * half-finished episodes wants the recent ones, not all of them.
+     *
+     * @param limit how many to return.
+     */
+    @Query(
+        """
+        SELECT e.*, p.title AS show_title, p.artwork_url AS show_artwork_url
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.position_ms > 0 AND e.is_played = 0
+        ORDER BY e.published_at IS NULL, e.published_at DESC
+        LIMIT :limit
+        """,
+    )
+    fun observeInProgressWithShow(limit: Int): Flow<List<EpisodeWithShowEntity>>
+
+    /**
+     * Episodes that arrived in a refresh and have not been looked at, across every show.
+     *
+     * The same `is_new` flag the library's badge counts, read as a list rather than as a number —
+     * which is the whole difference between "three of your shows have something" and "here is what
+     * arrived". Played episodes are excluded: an episode marked new that the user has since
+     * finished is a badge that has not been cleared, not something to offer them again.
+     *
+     * @param limit how many to return; see [observeInProgressWithShow].
+     */
+    @Query(
+        """
+        SELECT e.*, p.title AS show_title, p.artwork_url AS show_artwork_url
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.is_new = 1 AND e.is_played = 0
+        ORDER BY e.published_at IS NULL, e.published_at DESC
+        LIMIT :limit
+        """,
+    )
+    fun observeNewWithShow(limit: Int): Flow<List<EpisodeWithShowEntity>>
+
     @Query("SELECT * FROM episodes WHERE id = :id")
     fun observeById(id: String): Flow<EpisodeEntity?>
 
@@ -112,66 +177,6 @@ interface EpisodeDao {
     @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId")
     suspend fun getIdsForPodcast(podcastId: String): List<String>
 
-    /**
-     * The most recent episode of a show that has not been played, or null when there is none.
-     *
-     * Ordered exactly like [observeByPodcast], so "the newest one" means the row the user would
-     * find at the top of the show's page. Deliberately not [observeByPodcastOrdered]: a hand-made
-     * order says where the user likes to *see* an episode, not which one is newest, and a YouTube
-     * playlist arranged by hand would otherwise answer this question with whatever sits in position
-     * zero.
-     */
-    @Query(
-        """
-        SELECT * FROM episodes
-        WHERE podcast_id = :podcastId AND is_played = 0
-        ORDER BY published_at IS NULL, published_at DESC
-        LIMIT 1
-        """,
-    )
-    suspend fun getNewestUnplayed(podcastId: String): EpisodeEntity?
-
-    /** Every unplayed episode of a show, which is the set [markPodcastPlayed] is about to change. */
-    @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId AND is_played = 0")
-    suspend fun getUnplayedIdsForPodcast(podcastId: String): List<String>
-
-    /**
-     * Marks a whole show played, and reports what it changed.
-     *
-     * The ids are read first so the caller can offer an undo; the update itself goes by
-     * `podcast_id` rather than by that list, because a show can hold hundreds of episodes and
-     * SQLite has a hard ceiling on how many parameters one statement may bind.
-     *
-     * Only `is_played` moves. [setPlayed] also resets `position_ms`, which is right for finishing
-     * one episode and wrong here: an undo could not put back a position this had thrown away, and
-     * a bulk gesture that silently lost the user's place in a half-listened episode would be a bad
-     * way to find that out.
-     *
-     * @param podcastId the show to mark.
-     * @return the ids that were unplayed beforehand, in no particular order.
-     */
-    @Transaction
-    suspend fun markPodcastPlayed(podcastId: String): List<String> {
-        val changed = getUnplayedIdsForPodcast(podcastId)
-        if (changed.isNotEmpty()) setPlayedForPodcast(podcastId)
-        return changed
-    }
-
-    @Query("UPDATE episodes SET is_played = 1 WHERE podcast_id = :podcastId AND is_played = 0")
-    suspend fun setPlayedForPodcast(podcastId: String)
-
-    /**
-     * Sets the played flag on specific episodes, leaving their positions alone.
-     *
-     * The undo of [markPodcastPlayed], and the only reason it takes a list. Callers chunk: see
-     * `OfflineFirstPodcastRepository`.
-     *
-     * @param ids the episodes to change.
-     * @param isPlayed the flag to write.
-     */
-    @Query("UPDATE episodes SET is_played = :isPlayed WHERE id IN (:ids)")
-    suspend fun setPlayedForIds(ids: List<String>, isPlayed: Boolean)
-
     /** Total bytes on disk for one show, used by the storage screen. */
     @Query(
         """
@@ -195,7 +200,8 @@ interface EpisodeDao {
      *
      * Used when a publisher fixes a typo or re-uploads audio; user state is deliberately excluded.
      * `duration_ms` is coalesced rather than overwritten so that a feed which stops publishing
-     * `itunes:duration` does not erase the duration the player measured while streaming.
+     * `itunes:duration` does not erase the duration the player measured while streaming. The
+     * chapter columns *are* overwritten, because a publisher who re-cuts their chapters means it.
      */
     @Query(
         """
@@ -206,7 +212,9 @@ interface EpisodeDao {
             artwork_url = :artworkUrl,
             duration_ms = COALESCE(:durationMs, duration_ms),
             published_at = :publishedAt,
-            size_bytes = :sizeBytes
+            size_bytes = :sizeBytes,
+            chapters_url = :chaptersUrl,
+            chapters_json = :chaptersJson
         WHERE id = :id
         """,
     )
@@ -219,6 +227,8 @@ interface EpisodeDao {
         durationMs: Long?,
         publishedAt: Long?,
         sizeBytes: Long?,
+        chaptersUrl: String?,
+        chaptersJson: String?,
     )
 
     /**
@@ -252,6 +262,8 @@ interface EpisodeDao {
                     durationMs = episode.durationMs,
                     publishedAt = episode.publishedAt,
                     sizeBytes = episode.sizeBytes,
+                    chaptersUrl = episode.chaptersUrl,
+                    chaptersJson = episode.chaptersJson,
                 )
             } else {
                 newIds += episode.id
@@ -378,6 +390,19 @@ interface EpisodeDao {
     suspend fun setPlayed(id: String, isPlayed: Boolean, positionMs: Long)
 
     /**
+     * Caches a chapter list fetched from the publisher's own `podcast:chapters` document.
+     *
+     * The column is otherwise written only by a feed refresh, which is why this exists separately:
+     * a fetched list is the app filling in something the feed pointed at rather than published,
+     * and the next refresh is free to overwrite it from the feed if the feed grows an inline list.
+     *
+     * Storing it at all is what stops the same file being fetched every time the episode sheet is
+     * opened, on a document that changes about as often as the episode does.
+     */
+    @Query("UPDATE episodes SET chapters_json = :chaptersJson WHERE id = :id")
+    suspend fun setChaptersJson(id: String, chaptersJson: String)
+
+    /**
      * One show's downloaded episodes, newest first — the order the keep-limit sweep expects.
      *
      * Matches [observeDownloaded]'s ordering so that "the oldest downloads" means the same thing
@@ -433,6 +458,57 @@ interface EpisodeDao {
         percent: Float,
     )
 
+    /**
+     * Every episode the user has actually touched, as the strings a backup stores.
+     *
+     * Restricted to rows with a position or a played flag because everything else is implied by its
+     * absence: a library holds thousands of untouched episodes whose state a restore recreates for
+     * free by re-fetching the feed.
+     */
+    @Query(
+        """
+        SELECT p.feed_url AS feed_url, e.guid AS guid,
+               e.position_ms AS position_ms, e.is_played AS is_played
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.position_ms > 0 OR e.is_played = 1
+        """,
+    )
+    suspend fun getBackupState(): List<EpisodeBackupRow>
+
+    /** Every downloaded episode, as the strings a backup stores. */
+    @Query(
+        """
+        SELECT p.feed_url AS feed_url, e.guid AS guid
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.download_state = 'COMPLETED'
+        """,
+    )
+    suspend fun getBackupDownloads(): List<DownloadBackupRow>
+
+    /**
+     * Narrows [ids] to those that exist.
+     *
+     * A restore derives ids arithmetically from a backup, so some of them name episodes the
+     * publisher has since pruned. `queue.episode_id` is a cascading foreign key, which means an
+     * entry for a missing episode is a constraint violation rather than a harmless orphan — this is
+     * how the queue is filtered before it is written.
+     *
+     * Callers must chunk: Room expands `IN (:ids)` into one host variable per element, against
+     * SQLite's limit of 999.
+     */
+    @Query("SELECT id FROM episodes WHERE id IN (:ids)")
+    suspend fun getExistingIds(ids: List<String>): List<String>
+
+    /**
+     * Re-applies listening state a backup recorded.
+     *
+     * @return the number of rows updated: zero means the guid no longer appears in the feed, which
+     *   a restore counts rather than treats as a failure.
+     */
+    @Query("UPDATE episodes SET position_ms = :positionMs, is_played = :isPlayed WHERE id = :id")
+    suspend fun applyRestoredState(id: String, positionMs: Long, isPlayed: Boolean): Int
 }
 
 /** `@Insert(IGNORE)` reports a skipped row as `-1`. */

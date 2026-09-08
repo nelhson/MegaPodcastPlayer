@@ -6,7 +6,6 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -192,26 +191,16 @@ class EpisodeRowTest {
     }
 
     @Test
-    fun `a selected row says so`() {
-        composeTestRule.setContent {
-            MegaPodcastPlayerTheme {
-                EpisodeRow(title = "Picked", isSelected = true, onClick = {})
-            }
-        }
-
-        composeTestRule.onNodeWithText("Picked").assert(isSelected())
-    }
-
-    @Test
-    fun `a row outside a selection does not announce itself as unselected`() {
+    fun `a row carries no selection state at all`() {
         composeTestRule.setContent {
             MegaPodcastPlayerTheme {
                 EpisodeRow(title = "Ordinary", onClick = {})
             }
         }
 
-        // `isNotSelected()` would also match a row carrying `selected = false`, which is exactly
-        // the noise this avoids: the property must be absent, not present and false.
+        // The row has no notion of being selected, and this is what says so: the property must be
+        // absent, not present and false. `isNotSelected()` would match either, and would pass again
+        // the day a half-restored multi-selection starts writing `selected = false` on every row.
         composeTestRule.onNodeWithText("Ordinary").assert(
             SemanticsMatcher("carries no selection state") { node ->
                 node.config.getOrNull(SemanticsProperties.Selected) == null

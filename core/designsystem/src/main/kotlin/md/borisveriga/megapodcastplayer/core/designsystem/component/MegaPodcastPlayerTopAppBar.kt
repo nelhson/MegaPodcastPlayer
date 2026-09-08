@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.core.designsystem.component
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -16,9 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import md.borisveriga.megapodcastplayer.core.designsystem.R
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 
 /**
  * The app bar every screen uses.
@@ -31,6 +33,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
  *
  * @param title the screen's name.
  * @param modifier layout modifier.
+ * @param subtitle a second, quieter line under the title, for a fact about the screen's contents
+ *   rather than a second name for it — "3 h 12 min left" over a queue. Null draws one line, which
+ *   is what every screen but the queue wants.
  * @param onBack invoked by the back arrow; no arrow is drawn when null, which is what a top-level
  *   destination wants.
  * @param backDescription what TalkBack announces for the back arrow. Defaulted rather than
@@ -43,6 +48,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 fun MegaPodcastPlayerTopAppBar(
     title: String,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     onBack: (() -> Unit)? = null,
     backDescription: String = stringResource(R.string.designsystem_back),
     scrollBehavior: TopAppBarScrollBehavior? = null,
@@ -50,12 +56,23 @@ fun MegaPodcastPlayerTopAppBar(
 ) {
     TopAppBar(
         title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         },
         modifier = modifier,
         navigationIcon = { BackAction(onBack = onBack, contentDescription = backDescription) },
@@ -123,7 +140,8 @@ private fun BackAction(onBack: (() -> Unit)?, contentDescription: String) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun MegaPodcastPlayerTopAppBarPreview() {
     MegaPodcastPlayerTheme {
@@ -132,7 +150,8 @@ private fun MegaPodcastPlayerTopAppBarPreview() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun MegaPodcastPlayerLargeTopAppBarPreview() {
     MegaPodcastPlayerTheme {

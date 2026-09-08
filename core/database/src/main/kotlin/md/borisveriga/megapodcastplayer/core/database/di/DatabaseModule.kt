@@ -10,6 +10,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
+import md.borisveriga.megapodcastplayer.core.database.dao.MomentDao
 import md.borisveriga.megapodcastplayer.core.database.dao.PodcastDao
 import md.borisveriga.megapodcastplayer.core.database.dao.QueueDao
 
@@ -40,4 +41,7 @@ object DatabaseModule {
 
     @Provides
     fun providesQueueDao(database: MegaPodcastPlayerDatabase): QueueDao = database.queueDao()
+
+    @Provides
+    fun providesMomentDao(database: MegaPodcastPlayerDatabase): MomentDao = database.momentDao()
 }

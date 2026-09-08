@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <!-- The end-of-episode bell, which reaches a sleeping wearer through the wrist and not the ear. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!--
       No backup. What the watch keeps of its own is episode audio the phone sent it and how far
       through each one the wearer got — tens of megabytes that would be pointless to back up and are
@@ -89,6 +92,23 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/megapodcastplayer/episode_audio" />
+            </intent-filter>
+        </service>
+
+        <!--
+          Buzzes the wrist when the phone's end-of-episode bell rings. Play Services starts this -
+          and the watch app's process - when the message arrives, which is the whole point: the
+          wearer is asleep and nothing of ours has been running for hours.
+        -->
+        <service
+            android:name=".alert.BellReceiverService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/megapodcastplayer/bell" />
             </intent-filter>
         </service>
 

@@ -1,79 +1,33 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
 import app.cash.turbine.test
+import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockk
-import java.time.Instant
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
-import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
-import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
-import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
-import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
+import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
-import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
-import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
+import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import org.junit.Assert.assertEquals
-import org.junit.Before
-import org.junit.Rule
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Tests for [PlayerViewModel].
  *
- * The connection and the repositories are mocked: what this class contributes is the combining of
- * three sources and the translation of a button press into a command with the right argument, and
- * both are visible from the outside without a real player.
+ * What it does to *playback*: the combining of six sources into one state, and the translation of a
+ * button press into a command with the right argument. Both are visible from the outside without a
+ * real player, which is why the connection and the repositories are mocked.
+ *
+ * What it does to the *queue* is [PlayerQueueTest]; the fixture both share is
+ * [PlayerViewModelFixture].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class PlayerViewModelTest {
-
-    @get:Rule
-    val mainDispatcherRule = MainDispatcherRule()
-
-    private val playbackState = MutableStateFlow(PlaybackState())
-    private val settings = MutableStateFlow(PlaybackSettings())
-    private val queue = MutableStateFlow(emptyList<PlayableEpisode>())
-    private val lastPlayedEpisodeId = MutableStateFlow<String?>(null)
-
-    private lateinit var connection: PlaybackConnection
-    private lateinit var playbackRepository: PlaybackRepository
-    private lateinit var episodePlayer: EpisodePlayer
-    private lateinit var viewModel: PlayerViewModel
-
-    private fun playable(id: String, title: String = "Episode $id") = PlayableEpisode(
-        episode = Episode(
-            id = id,
-            podcastId = "podcast-1",
-            guid = "guid-$id",
-            title = title,
-            description = "",
-            audioUrl = "https://cdn.example.com/$id.mp3",
-            artworkUrl = null,
-            durationMs = 60_000L,
-            publishedAt = Instant.parse("2026-08-24T06:00:00Z"),
-            sizeBytes = null,
-        ),
-        showTitle = "Podlodka Podcast",
-        showArtworkUrl = null,
-    )
-
-    @Before
-    fun setUp() {
-        connection = mockk(relaxed = true)
-        playbackRepository = mockk(relaxed = true)
-        episodePlayer = mockk(relaxed = true)
-
-        every { connection.playbackState } returns playbackState
-        every { playbackRepository.observePlaybackSettings() } returns settings
-        every { playbackRepository.observeQueue() } returns queue
-        every { playbackRepository.observeLastPlayedEpisodeId() } returns lastPlayedEpisodeId
-
-        viewModel = PlayerViewModel(connection, playbackRepository, episodePlayer)
-    }
+class PlayerViewModelTest : PlayerViewModelFixture() {
 
     @Test
     fun `the persisted queue is restored as soon as the player is on screen`() = runTest {
@@ -184,18 +138,56 @@ class PlayerViewModelTest {
     }
 
     @Test
-    fun `cycling the speed both applies it and persists it`() = runTest {
+    fun `setting the speed both applies it and persists it`() = runTest {
         settings.value = PlaybackSettings(speed = 1f)
 
         viewModel.uiState.test {
             awaitItem()
 
-            viewModel.cycleSpeed()
+            viewModel.setSpeed(1.2f)
 
             // Persisted so the service picks it up again after being killed, and applied so the
             // change is audible now.
             coVerify { playbackRepository.setSpeed(1.2f) }
             coVerify { connection.setSpeed(1.2f) }
+        }
+    }
+
+    @Test
+    fun `a rate the app did not ask for is reported as the show's`() = runTest {
+        settings.value = PlaybackSettings(speed = 1f)
+        // What `ShowSpeedApplier` does when an episode of a show with its own rate starts: the
+        // player runs at 2x while the app-wide preference still says 1x.
+        playbackState.value = PlaybackState(episodeId = "a", speed = 2f)
+
+        viewModel.uiState.test {
+            assertTrue(awaitItem().hasShowSpeed)
+        }
+    }
+
+    @Test
+    fun `a rate that matches the app's is not badged`() = runTest {
+        settings.value = PlaybackSettings(speed = 1.5f)
+        playbackState.value = PlaybackState(episodeId = "a", speed = 1.5f)
+
+        viewModel.uiState.test {
+            assertFalse(awaitItem().hasShowSpeed)
+        }
+    }
+
+    @Test
+    fun `previewing a speed applies it without writing the preference`() = runTest {
+        settings.value = PlaybackSettings(speed = 1f)
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.previewSpeed(1.35f)
+
+            // The whole point of the split: a drag is heard immediately and costs no disk write,
+            // and only the release that ends it is remembered.
+            coVerify { connection.setSpeed(1.35f) }
+            coVerify(exactly = 0) { playbackRepository.setSpeed(any()) }
         }
     }
 
@@ -208,8 +200,9 @@ class PlayerViewModelTest {
 
             viewModel.markCurrentPlayed()
 
-            coVerify { playbackRepository.setPlayed("a", true) }
-            coVerify { episodePlayer.removeFromQueue("a") }
+            // Through the player, which is where marking-and-dequeuing is one behaviour shared
+            // with the same action on a list row.
+            coVerify { episodePlayer.setPlayed("a", true) }
         }
     }
 
@@ -241,180 +234,152 @@ class PlayerViewModelTest {
     }
 
     @Test
-    fun `a reorder is translated from list positions to player indices`() = runTest {
-        // The screen lists what comes after "b", so its index 0 is "c" and its index 1 is "d" —
-        // while the player's queue still holds "a" and "b" in front of them. Passing the list
-        // indices straight through would move "a" onto "b" and leave the queue in an order the
-        // user never asked for.
-        playbackState.value = PlaybackState(
-            episodeId = "b",
-            queueEpisodeIds = listOf("a", "b", "c", "d"),
-            queueIndex = 1,
+    fun `the outer transport buttons move between chapters when the episode has them`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(
+            chapters = listOf(
+                Chapter(startMs = 0L, title = "Intro"),
+                Chapter(startMs = 120_000L, title = "The interview"),
+                Chapter(startMs = 600_000L, title = "Outro"),
+            ),
         )
-        queue.value = listOf(playable("a"), playable("b"), playable("c"), playable("d"))
 
         viewModel.uiState.test {
             awaitItem()
+            playbackState.value = PlaybackState(episodeId = "a", positionMs = 200_000L)
+            currentEpisode.value = episode("a")
+            expectMostRecentItem()
 
-            viewModel.moveInUpNext(fromIndex = 1, toIndex = 0)
+            viewModel.skipToNext()
+            viewModel.skipToPrevious()
 
-            coVerify { episodePlayer.moveInQueue(3, 2, listOf("a", "b", "d", "c")) }
+            // Seeks within the episode, not moves through the queue: an episode with chapters is a
+            // list of segments, and "next" means the next segment.
+            coVerify { connection.seekTo(600_000L) }
+            coVerify { connection.seekTo(120_000L) }
+            coVerify(exactly = 0) { connection.skipToNext() }
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `a reorder is refused when the player queue disagrees with the stored one`() = runTest {
-        // The player has moved on and no longer holds "d"; reordering by position would move
-        // whatever now sits at that index. There is no safe interpretation, so nothing happens.
-        playbackState.value = PlaybackState(
-            episodeId = "b",
-            queueEpisodeIds = listOf("a", "b", "c"),
-            queueIndex = 1,
+    fun `without chapters the same buttons move between episodes`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+            playing("a")
+            expectMostRecentItem()
+
+            viewModel.skipToNext()
+            viewModel.skipToPrevious()
+
+            coVerify { connection.skipToNext() }
+            coVerify { connection.skipToPrevious() }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the player says which chapter the playhead is in, and where the rest start`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(
+            chapters = listOf(
+                Chapter(startMs = 0L, title = "Intro"),
+                Chapter(startMs = 30_000L, title = "The interview", imageUrl = "https://x/i.png"),
+            ),
         )
-        queue.value = listOf(playable("a"), playable("b"), playable("c"), playable("d"))
 
         viewModel.uiState.test {
             awaitItem()
+            playbackState.value = PlaybackState(
+                episodeId = "a",
+                positionMs = 45_000L,
+                durationMs = 60_000L,
+            )
+            currentEpisode.value = episode("a")
 
-            viewModel.moveInUpNext(fromIndex = 1, toIndex = 0)
-
-            coVerify(exactly = 0) { episodePlayer.moveInQueue(any(), any(), any()) }
+            val state = expectMostRecentItem()
+            assertEquals("The interview", state.currentChapter?.title)
+            assertEquals(listOf(0f, 0.5f), state.chapterMarks)
+            // A publisher who attaches chapter artwork means it to be seen.
+            assertEquals("https://x/i.png", state.artworkUrl)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `a reorder off the end of the list does nothing`() = runTest {
-        playbackState.value = PlaybackState(
-            episodeId = "b",
-            queueEpisodeIds = listOf("a", "b", "c"),
-            queueIndex = 1,
+    fun `the sleep timer is armed with the length that was chosen`() = runTest {
+        viewModel.armSleepTimer(30 * 60_000L)
+
+        verify { sleepTimer.armAfter(30 * 60_000L) }
+    }
+
+    @Test
+    fun `the end-of-episode option is the old bell, unchanged`() = runTest {
+        viewModel.armSleepAtEndOfEpisode()
+
+        // One control now, two behaviours behind it. The bell's own rule about which discontinuity
+        // counts as an episode ending is untouched — it lives on the player's thread, where it
+        // has to.
+        verify { sleepTimer.armEndOfEpisode() }
+    }
+
+    @Test
+    fun `a shake adds a quarter of an hour`() = runTest {
+        viewModel.extendSleepTimer()
+
+        verify { sleepTimer.extend(15 * 60_000L) }
+    }
+
+    @Test
+    fun `end of chapter is however much of the current chapter is left`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(
+            chapters = listOf(
+                Chapter(startMs = 0L, title = "Intro"),
+                Chapter(startMs = 600_000L, title = "The interview"),
+            ),
         )
-        queue.value = listOf(playable("a"), playable("b"), playable("c"))
 
         viewModel.uiState.test {
             awaitItem()
+            playbackState.value = PlaybackState(
+                episodeId = "a",
+                positionMs = 120_000L,
+                durationMs = 1_800_000L,
+            )
+            currentEpisode.value = episode("a")
 
-            viewModel.moveInUpNext(fromIndex = 0, toIndex = 5)
-
-            coVerify(exactly = 0) { episodePlayer.moveInQueue(any(), any(), any()) }
+            // Eight minutes to the next chapter, not thirty to the end of the episode.
+            assertEquals(480_000L, expectMostRecentItem().chapterRemainingMs)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `dropping an episode back where it started does nothing`() = runTest {
-        playbackState.value = PlaybackState(
-            episodeId = "a",
-            queueEpisodeIds = listOf("a", "b", "c"),
-            queueIndex = 0,
+    fun `the last chapter runs to the end of the episode`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(
+            chapters = listOf(Chapter(startMs = 0L, title = "The whole thing")),
         )
-        queue.value = listOf(playable("a"), playable("b"), playable("c"))
 
         viewModel.uiState.test {
             awaitItem()
+            playbackState.value = PlaybackState(
+                episodeId = "a",
+                positionMs = 120_000L,
+                durationMs = 1_800_000L,
+            )
+            currentEpisode.value = episode("a")
 
-            viewModel.moveInUpNext(fromIndex = 1, toIndex = 1)
-
-            coVerify(exactly = 0) { episodePlayer.moveInQueue(any(), any(), any()) }
+            assertEquals(1_680_000L, expectMostRecentItem().chapterRemainingMs)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `a removal is offered back, and the undo puts the episode where it was`() = runTest {
-        queue.value = listOf(playable("a"), playable("b"), playable("c"))
-
+    fun `an episode with no chapters offers no end-of-chapter option`() = runTest {
         viewModel.uiState.test {
             awaitItem()
+            playing("a")
+            expectMostRecentItem()
 
-            viewModel.removeFromQueue("b")
-
-            coVerify { episodePlayer.removeFromQueue("b") }
-            assertEquals(QueueMessage.Removed("Episode b"), expectMostRecentItem().message)
-
-            // The queue as it stood *before* the removal, which is the only description of where
-            // "b" belongs that survives it. Restoring it by appending would put it after "c".
-            viewModel.undoQueueChange()
-            coVerify { episodePlayer.restoreToQueue("b", listOf("a", "b", "c")) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `marking a queued episode played drops it, and the undo restores its position`() = runTest {
-        val partlyHeard = playable("b").let {
-            it.copy(episode = it.episode.copy(positionMs = 42_000L))
-        }
-        queue.value = listOf(playable("a"), partlyHeard, playable("c"))
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.markQueuedPlayed("b")
-
-            coVerify { playbackRepository.setPlayed("b", true) }
-            // A finished episode has no business sitting in "up next"; leaving it there would make
-            // the gesture need a second one every time.
-            coVerify { episodePlayer.removeFromQueue("b") }
-            assertEquals(QueueMessage.MarkedPlayed("Episode b"), expectMostRecentItem().message)
-
-            viewModel.undoQueueChange()
-
-            // Both halves, and the position with them: an undo that put the flag back but left the
-            // user at zero would cost them the 42 seconds they were trying to save.
-            coVerify {
-                playbackRepository.setPlayed(
-                    episodeId = "b",
-                    isPlayed = false,
-                    positionMs = 42_000L,
-                )
-            }
-            coVerify { episodePlayer.restoreToQueue("b", listOf("a", "b", "c")) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `the undo is spent once, and does not survive its snackbar`() = runTest {
-        queue.value = listOf(playable("a"), playable("b"))
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.removeFromQueue("b")
-            viewModel.undoQueueChange()
-            // A second tap on a snackbar that has already been acted on.
-            viewModel.undoQueueChange()
-
-            coVerify(exactly = 1) { episodePlayer.restoreToQueue(any(), any()) }
-
-            viewModel.removeFromQueue("a")
-            // The snackbar timed out rather than being tapped. An undo still armed here would fire
-            // against whichever message came next.
-            viewModel.onQueueMessageShown()
-            viewModel.undoQueueChange()
-
-            coVerify(exactly = 1) { episodePlayer.restoreToQueue(any(), any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `removing an episode the queue does not hold reports nothing`() = runTest {
-        queue.value = listOf(playable("a"))
-
-        viewModel.uiState.test {
-            awaitItem()
-
-            // The gesture raced the player finishing the episode.
-            viewModel.removeFromQueue("gone")
-
-            coVerify(exactly = 0) { episodePlayer.removeFromQueue(any()) }
-            // Nothing changed, so nothing is emitted and there is no snackbar to dismiss.
-            expectNoEvents()
-            assertEquals(null, viewModel.uiState.value.message)
+            assertNull(viewModel.uiState.value.chapterRemainingMs)
             cancelAndIgnoreRemainingEvents()
         }
     }

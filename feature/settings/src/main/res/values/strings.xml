@@ -10,9 +10,39 @@
     <string name="settings_title">Settings</string>
     <string name="settings_back">Back</string>
 
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_notifications">Notifications</string>
     <string name="settings_section_playback">Playback</string>
     <string name="settings_section_downloads">Downloads</string>
     <string name="settings_section_storage">Storage</string>
+
+    <!-- The three palettes, as the chip row lists them. "System" is the default. -->
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+
+    <!--
+        Off by default, and that is the considered answer: the app has a palette of its own and
+        wears it. This is here for people who would rather their phone matched itself.
+    -->
+    <string name="settings_dynamic_color_title">Use wallpaper colours</string>
+    <string name="settings_dynamic_color_description">Take the palette from your wallpaper instead of the app\'s own</string>
+
+    <!--
+        Two descriptions for one switch: in a light theme it currently does nothing, and a switch
+        that visibly changes nothing is worse than one that says why.
+    -->
+    <string name="settings_pure_black_title">Pure black in dark theme</string>
+    <string name="settings_pure_black_description">True black backgrounds, which an OLED screen does not light at all</string>
+    <string name="settings_pure_black_description_light">True black backgrounds; takes effect when the app is dark</string>
+
+    <!--
+        A link out rather than a set of switches: Android already owns every one of them, and per
+        show — the part this app does own — lives on the show\'s own page.
+    -->
+    <string name="settings_notification_channels">Notification settings</string>
+    <string name="settings_notification_channels_description">New episodes, downloads and the bell, in Android\'s own settings</string>
 
     <string name="settings_playback_speed">Playback speed</string>
     <string name="settings_skip_forward">Skip forward</string>
@@ -39,6 +69,18 @@
     <string name="settings_remove_all_nothing">Nothing is downloaded</string>
     <string name="settings_message_downloads_removed">Removed all downloads, freeing %1$s</string>
 
+    <!--
+        The confirmation. There is no undo for deleted audio, so the question comes first and it
+        counts what is at stake in both units: %1$d episodes and %2$s of space. The action names the
+        verb rather than saying "OK", which is the rule every destructive dialog here follows.
+    -->
+    <string name="settings_remove_all_confirm_title">Delete every downloaded episode?</string>
+    <plurals name="settings_remove_all_confirm_body">
+        <item quantity="one">%1$d episode will be deleted from this device, freeing %2$s. You can download it again later.</item>
+        <item quantity="other">%1$d episodes will be deleted from this device, freeing %2$s. You can download them again later.</item>
+    </plurals>
+    <string name="settings_remove_all_confirm_action">Delete</string>
+
     <!-- TalkBack label for a switch row: the setting name (%1$s) then its explanation (%2$s). -->
     <!-- TalkBack label for one chip: the setting name (%1$s) then the option (%2$s). -->
 
@@ -59,4 +101,47 @@
     <!-- Joins the episode count (%1$s) with the size on disk (%2$s). -->
     <string name="settings_storage_summary">%1$s · %2$s</string>
 
+
+    <!-- Backup -->
+    <string name="settings_section_backup">Backup</string>
+    <string name="settings_backup_export">Export library</string>
+    <string name="settings_backup_never">No backup yet</string>
+    <string name="settings_backup_last">Last backup: %1$s</string>
+    <string name="settings_backup_restore">Restore from a file</string>
+    <string name="settings_backup_restore_description">Re-adds your shows and puts your positions back</string>
+    <string name="settings_backup_restoring">Restoring…</string>
+    <string name="settings_backup_restoring_progress">Restoring %1$d of %2$d — %3$s</string>
+    <string name="settings_backup_restore_failed">Restore did not finish</string>
+    <string name="settings_backup_restore_confirm_title">Restore this backup?</string>
+    <plurals name="settings_backup_restore_confirm_body">
+        <item quantity="one">This backup holds %1$d show. Your play queue will be replaced by the one in the file; everything else is merged.</item>
+        <item quantity="other">This backup holds %1$d shows. Your play queue will be replaced by the one in the file; everything else is merged.</item>
+    </plurals>
+    <string name="settings_backup_re_download">Download the episodes I had offline</string>
+    <string name="settings_backup_restore_confirm_action">Restore</string>
+    <string name="settings_backup_cancel">Cancel</string>
+    <string name="settings_backup_done">Done</string>
+    <string name="settings_backup_restore_done_title">Restore finished</string>
+    <plurals name="settings_backup_restore_done_shows">
+        <item quantity="one">%1$d show restored.</item>
+        <item quantity="other">%1$d shows restored.</item>
+    </plurals>
+    <plurals name="settings_backup_restore_done_episodes">
+        <item quantity="one">%1$d episode is back where you left it.</item>
+        <item quantity="other">%1$d episodes are back where you left them.</item>
+    </plurals>
+    <plurals name="settings_backup_restore_done_missing">
+        <item quantity="one">%1$d episode is no longer in its feed.</item>
+        <item quantity="other">%1$d episodes are no longer in their feeds.</item>
+    </plurals>
+    <plurals name="settings_backup_restore_done_moments">
+        <item quantity="one">%1$d moment restored.</item>
+        <item quantity="other">%1$d moments restored.</item>
+    </plurals>
+    <string name="settings_backup_restore_done_failed">Could not fetch: %1$s</string>
+    <string name="settings_message_backup_exported">Backup saved</string>
+    <string name="settings_message_backup_export_failed">Could not write the backup file</string>
+    <string name="settings_message_backup_read_failed">Could not read that file</string>
+    <string name="settings_message_backup_not_recognised">That file is not a MegaPodcastPlayer backup</string>
+    <string name="settings_message_backup_too_new">That backup was made by a newer version of the app</string>
 </resources>

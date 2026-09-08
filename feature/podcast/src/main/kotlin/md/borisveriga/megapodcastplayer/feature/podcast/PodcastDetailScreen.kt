@@ -1,5 +1,7 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
+import android.content.Context
+import android.content.Intent
 import android.content.res.Resources
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
@@ -16,13 +18,18 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
+import androidx.compose.material.icons.rounded.RemoveDone
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -35,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,15 +59,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,11 +78,15 @@ import md.borisveriga.megapodcastplayer.core.common.format.toPlainText
 import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
+import md.borisveriga.megapodcastplayer.core.designsystem.component.SortToggleChip
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SourceBadge
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
@@ -86,11 +97,19 @@ import md.borisveriga.megapodcastplayer.core.designsystem.reorder.moveActions
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.reorderableLongPressDrag
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
+import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.episodeShareText
+import md.borisveriga.megapodcastplayer.core.model.filterBy
+import md.borisveriga.megapodcastplayer.core.model.orderedBy
 
 /**
  * Podcast detail screen: the show's header and its episode list.
@@ -129,10 +148,23 @@ fun PodcastDetailRoute(
     PodcastDetailScreen(
         uiState = uiState,
         onBack = onBack,
-        onEpisodeClick = { episodeId -> viewModel.playEpisode(episodeId, onEpisodePlaying) },
+        // A tap opens the episode; the row's own play button plays it. See the sheet's KDoc for
+        // why an episode had to become readable before it could become one tap away.
+        onEpisodeClick = viewModel::openEpisode,
+        onEpisodePlay = { episodeId -> viewModel.togglePlay(episodeId, onEpisodePlaying) },
+        onEpisodePlayFrom = { episodeId, positionMs ->
+            viewModel.playFrom(episodeId, positionMs, onEpisodePlaying)
+        },
+        onEpisodeAddToQueue = viewModel::addToQueue,
+        onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onEpisodePlayNext = viewModel::playNext,
+        onEpisodeSetPlayed = viewModel::setPlayed,
+        onUndoPlayedChange = viewModel::undoPlayedChange,
         onEpisodeMove = viewModel::moveEpisode,
+        onFilterChange = viewModel::setFilter,
+        onSortChange = viewModel::setSort,
+        onShowSettingsChange = viewModel::setShowSettings,
         onRefresh = viewModel::refresh,
         onRebuild = viewModel::rebuild,
         onRemove = viewModel::removePodcast,
@@ -152,9 +184,18 @@ fun PodcastDetailRoute(
  *   meaning follows the episode's download state.
  * @param onEpisodePlayNext queues an episode to play after the current one, without interrupting
  *   it — which is the half of "what shall I listen to" that a tap on the row cannot express.
+ * @param onEpisodePlay plays an episode, or pauses the one already playing.
+ * @param onEpisodePlayFrom plays an episode from a position — what a chapter tap does.
+ * @param onEpisodeAddToQueue puts an episode at the end of the queue.
+ * @param onEpisodeSheetDismiss closes the episode sheet.
+ * @param onEpisodeSetPlayed marks an episode played, or puts it back to unplayed.
+ * @param onUndoPlayedChange reverses the last mark, from the snackbar that offered it.
  * @param onEpisodeMove applies a completed reorder on a hand-ordered show. Takes the ids currently
  *   on screen alongside the two positions, because a filter means those are a subset and the
  *   positions alone would name the wrong episodes.
+ * @param onFilterChange remembers which episodes this show lists.
+ * @param onSortChange remembers which end of this show the list starts at.
+ * @param onShowSettingsChange applies a change made in the show settings sheet.
  * @param onRefresh pull-to-refresh handler; also the empty state's action.
  * @param onRebuild deletes the episode list and imports the feed again from scratch; the screen
  *   confirms first, so this is only ever called once the user has said yes.
@@ -169,9 +210,18 @@ fun PodcastDetailScreen(
     uiState: PodcastDetailUiState,
     onBack: () -> Unit,
     onEpisodeClick: (String) -> Unit,
+    onEpisodePlay: (String) -> Unit,
+    onEpisodePlayFrom: (String, Long) -> Unit,
+    onEpisodeAddToQueue: (String) -> Unit,
+    onEpisodeSheetDismiss: () -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
     onEpisodePlayNext: (String) -> Unit,
+    onEpisodeSetPlayed: (String, Boolean) -> Unit,
+    onUndoPlayedChange: () -> Unit,
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
+    onFilterChange: (EpisodeFilter) -> Unit,
+    onSortChange: (EpisodeSort) -> Unit,
+    onShowSettingsChange: (ShowSettings) -> Unit,
     onRefresh: () -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
@@ -185,18 +235,84 @@ fun PodcastDetailScreen(
     // change invalidates the read.
     val resources = LocalResources.current
     val now = remember { Instant.now() }
-    // Saveable so neither choice — nor a confirmation mid-decision — is lost when the Fold 7 is
-    // opened.
-    var filter by rememberSaveable { mutableStateOf(EpisodeFilter.ALL) }
+    // The filter and the sort order used to live here, as screen state. They are the show's now:
+    // see [ShowSettings]. What is still screen state is a confirmation the user is halfway through,
+    // saveable so opening the Fold 7 does not abandon it.
+    val filter = uiState.settings.episodeFilter
     var confirmingRebuild by rememberSaveable { mutableStateOf(false) }
+    // Saveable so opening the Fold 7 mid-decision does not close the sheet.
+    var showSettingsOpen by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val moveUp = stringResource(R.string.podcast_move_up)
     val moveDown = stringResource(R.string.podcast_move_down)
+    val context = LocalContext.current
+    val shareTitle = stringResource(R.string.episode_share_title)
+
+    val undoLabel = stringResource(R.string.podcast_undo)
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message.toText(resources))
-        onMessageShown()
+        // Only the mark is offered back. The rest report something that already happened and
+        // cannot be taken back — a refresh, a download — and a dead Undo beside them would teach
+        // the user to stop reading the action.
+        val result = snackbarHostState.showSnackbar(
+            message = message.toText(resources),
+            actionLabel = undoLabel.takeIf { message is PodcastDetailMessage.PlayedChanged },
+        )
+        if (result == SnackbarResult.ActionPerformed) onUndoPlayedChange() else onMessageShown()
+    }
+
+    uiState.openEpisode?.let { episode ->
+        EpisodeSheet(
+            episode = episode,
+            showTitle = uiState.podcast?.title.orEmpty(),
+            artworkUrl = episode.artworkUrl ?: uiState.podcast?.artworkUrl,
+            chapters = uiState.chapters,
+            isChaptersLoading = uiState.isChaptersLoading,
+            now = now,
+            onPlay = {
+                onEpisodeSheetDismiss()
+                onEpisodePlay(episode.id)
+            },
+            onPlayChapter = { chapter ->
+                onEpisodeSheetDismiss()
+                onEpisodePlayFrom(episode.id, chapter.startMs)
+            },
+            onPlayNext = {
+                onEpisodeSheetDismiss()
+                onEpisodePlayNext(episode.id)
+            },
+            onAddToQueue = {
+                onEpisodeSheetDismiss()
+                onEpisodeAddToQueue(episode.id)
+            },
+            // The two that leave the sheet open, because both are things you do *while* reading an
+            // episode and both change what the sheet itself shows.
+            onToggleDownload = { onEpisodeDownloadToggle(episode.id) },
+            onSetPlayed = { played -> onEpisodeSetPlayed(episode.id, played) },
+            onShare = {
+                context.shareEpisode(
+                    episode = episode,
+                    showTitle = uiState.podcast?.title.orEmpty(),
+                    chooserTitle = shareTitle,
+                )
+            },
+            onDismiss = onEpisodeSheetDismiss,
+        )
+    }
+
+    // Only with a show to be about: the sheet names it in its header, and the settings belong to
+    // it. A removal that lands while the sheet is open therefore closes it rather than leaving a
+    // sheet of controls attached to nothing.
+    uiState.podcast?.takeIf { showSettingsOpen }?.let { podcast ->
+        ShowSettingsSheet(
+            showTitle = podcast.title,
+            settings = uiState.settings,
+            appSpeed = uiState.appSpeed,
+            appAutoDownload = uiState.appAutoDownload,
+            onSettingsChange = onShowSettingsChange,
+            onDismiss = { showSettingsOpen = false },
+        )
     }
 
     if (confirmingRebuild) {
@@ -223,6 +339,7 @@ fun PodcastDetailScreen(
                 actions = {
                     if (uiState.podcast != null) {
                         OverflowMenu(
+                            onOpenSettings = { showSettingsOpen = true },
                             // A confirmation that protects nothing is only a tax, so a show with
                             // no episodes stored rebuilds on the tap. Everywhere else it asks.
                             onRebuild = {
@@ -283,11 +400,16 @@ fun PodcastDetailScreen(
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    val shown = uiState.episodes.filterBy(filter)
                     // Only a YouTube playlist is arranged by hand. An RSS show is a chronology,
                     // and offering to rearrange one would promise an order the next refresh
                     // could not keep.
                     val isReorderable = podcast.source == PodcastSource.YOUTUBE
+                    // A show is either arranged by hand or sorted, never both: reversing a
+                    // playlist the user has dragged into shape would leave the drag computing
+                    // positions against an order nobody can see.
+                    val shown = uiState.episodes
+                        .filterBy(filter)
+                        .let { if (isReorderable) it else it.orderedBy(uiState.settings.episodeSort) }
                     val drag = rememberReorderableState(
                         layout = rememberReorderableLayout(listState),
                         items = shown,
@@ -299,19 +421,24 @@ fun PodcastDetailScreen(
                         item(key = HEADER_KEY) {
                             PodcastHeader(
                                 podcast = podcast,
-                                onPlayLatest = {
-                                    uiState.episodes.firstOrNull()
-                                        ?.let { onEpisodeClick(it.id) }
-                                },
+                                // Derived from the show's whole list, not from the filtered view
+                                // and not from `first()`; see [headerAction].
+                                action = uiState.episodes.headerAction(),
+                                onPlay = onEpisodePlay,
                             )
                         }
                         item(key = FILTERS_KEY) {
-                            FilterChips(selected = filter, onSelect = { filter = it })
+                            ListControls(
+                                filter = filter,
+                                onFilterChange = onFilterChange,
+                                sort = uiState.settings.episodeSort.takeUnless { isReorderable },
+                                onSortChange = onSortChange,
+                            )
                         }
 
                         if (shown.isEmpty()) {
                             item(key = FILTER_EMPTY_KEY) {
-                                FilterEmptyState(onShowAll = { filter = EpisodeFilter.ALL })
+                                FilterEmptyState(onShowAll = { onFilterChange(EpisodeFilter.ALL) })
                             }
                         }
 
@@ -328,9 +455,14 @@ fun PodcastDetailScreen(
                                 isReorderable = isReorderable,
                                 moveUp = moveUp,
                                 moveDown = moveDown,
+                                nowPlaying = uiState.nowPlaying,
                                 onClick = { onEpisodeClick(episode.id) },
+                                onPlay = { onEpisodePlay(episode.id) },
                                 onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
                                 onPlayNext = { onEpisodePlayNext(episode.id) },
+                                onSetPlayed = { played ->
+                                    onEpisodeSetPlayed(episode.id, played)
+                                },
                             )
                         }
                     }
@@ -366,10 +498,13 @@ fun PodcastDetailScreen(
  * @param isReorderable whether this show's order is the user's to keep; only a YouTube playlist is.
  * @param moveUp accessibility label for moving the row up.
  * @param moveDown accessibility label for moving the row down.
- * @param onClick plays the episode.
+ * @param nowPlaying which episode the player has loaded, so the row's own control can show it.
+ * @param onClick opens the episode's sheet.
+ * @param onPlay plays it, or pauses it when it is the one already playing.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
  * @param onPlayNext queues it to play after whatever is playing now.
+ * @param onSetPlayed marks the episode played, or puts it back to unplayed.
  */
 @Composable
 private fun EpisodeListRow(
@@ -381,11 +516,15 @@ private fun EpisodeListRow(
     isReorderable: Boolean,
     moveUp: String,
     moveDown: String,
+    nowPlaying: NowPlaying,
     onClick: () -> Unit,
+    onPlay: () -> Unit,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
+    onSetPlayed: (Boolean) -> Unit,
 ) {
     val isDragging = drag.draggingKey == episode.id
+    val isNowPlaying = nowPlaying.episodeId == episode.id
     val download = episode.downloadSwipeAction(onDownloadToggle)
     val playNext = SwipeAction(
         icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
@@ -394,12 +533,24 @@ private fun EpisodeListRow(
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         onClick = onPlayNext,
     )
+    // One button with two faces rather than two buttons, because an episode is only ever one of the
+    // two: the label says which way the tap goes, and the row's own dimming says which way it went.
+    val markPlayed = SwipeAction(
+        icon = if (episode.isPlayed) Icons.Rounded.RemoveDone else Icons.Rounded.DoneAll,
+        label = stringResource(
+            if (episode.isPlayed) R.string.podcast_action_mark_unplayed else R.string.podcast_action_mark_played,
+        ),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        onClick = { onSetPlayed(!episode.isPlayed) },
+    )
 
     SwipeActionsRow(
-        // Revealed rather than committed: queueing changes what happens after the thing the user is
-        // listening to, which is worth a deliberate tap rather than a gesture that fires on release
-        // — and the pull that would fire it is already spoken for by the download.
-        actions = listOf(playNext),
+        // Revealed rather than committed: neither of these fires on release. Queueing changes what
+        // happens after the thing the user is listening to, and marking played takes an episode out
+        // of a filtered list under the finger — both are worth a deliberate tap, and the pull that
+        // would fire one of them is already spoken for by the download.
+        actions = listOf(playNext, markPlayed),
         fullSwipeAction = download,
         modifier = Modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the order
@@ -416,7 +567,7 @@ private fun EpisodeListRow(
                 .semantics {
                     customActions = (
                         if (isReorderable) drag.moveActions(index, moveUp, moveDown) else emptyList()
-                        ) + listOf(playNext, download).asAccessibilityActions()
+                        ) + listOf(playNext, markPlayed, download).asAccessibilityActions()
                 }
                 // Inside the swipe box rather than around it, so the row's two drags are settled
                 // by the pointer that started them: this one consumes movement only once the
@@ -436,10 +587,64 @@ private fun EpisodeListRow(
             artworkUrl = artworkUrl,
             isUnplayed = episode.isNew,
             isPlayed = episode.isPlayed,
+            // The show page used to be the one list that hid this. The mark is how a list is read
+            // down for what will play on a train with no signal, and the only ways to find out here
+            // were the Downloaded filter chip or swiping a row to see what the backdrop said.
+            isDownloaded = episode.downloadState == DownloadState.COMPLETED,
             playedFraction = episode.playedFraction,
+            isNowPlaying = isNowPlaying,
+            isPlaying = nowPlaying.isPlaying,
+            // The trailing control below says which row is loaded and whether it is running; the
+            // inline bars would say the same fact a second time, three pills to the left of it.
+            showNowPlayingBars = false,
             onClick = onClick,
+            trailing = {
+                // The ring, and only while there is a transfer to draw one for. A permanent
+                // download button on every row was rejected once and stays rejected, but a transfer
+                // already under way is not an offer — it is progress, and progress with no visible
+                // ring is what made a running download look like nothing happening.
+                episode.runningDownload()?.let { running ->
+                    DownloadButton(
+                        state = running,
+                        progressPercent = episode.downloadPercent,
+                        onClick = onDownloadToggle,
+                    )
+                }
+                // The one control a list of episodes exists for. It is what keeps playing at a
+                // single tap now that the row's own tap opens the episode instead, and it doubles
+                // as the now-playing mark: it is the only row in the list showing a pause.
+                PlayPauseButton(
+                    playing = isNowPlaying && nowPlaying.isPlaying,
+                    onToggle = { onPlay() },
+                    size = PlayPauseSize.Small,
+                    buffering = isNowPlaying && nowPlaying.isBuffering,
+                    containerColor = if (isNowPlaying) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    },
+                    contentColor = if (isNowPlaying) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    },
+                )
+            },
         )
     }
+}
+
+/**
+ * The download state of an episode whose transfer is under way, or null.
+ *
+ * Three of the five states are settled facts about the episode — not downloaded, downloaded, failed
+ * — and the row says all three in other ways. The two that are *happening* are the ones worth a
+ * control that moves.
+ *
+ * @return [DownloadState.QUEUED] or [DownloadState.DOWNLOADING], or null for anything at rest.
+ */
+private fun Episode.runningDownload(): DownloadState? = downloadState.takeIf {
+    it == DownloadState.QUEUED || it == DownloadState.DOWNLOADING
 }
 
 /**
@@ -489,13 +694,15 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
  * what makes a show's page feel like that show's page rather than another list.
  *
  * @param podcast the show.
- * @param onPlayLatest starts the newest episode; the one thing most visits to this screen want.
+ * @param action what the one button does, or null for a show with no episodes yet.
+ * @param onPlay plays the episode the action names.
  * @param modifier layout modifier.
  */
 @Composable
 private fun PodcastHeader(
     podcast: Podcast,
-    onPlayLatest: () -> Unit,
+    action: HeaderAction?,
+    onPlay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
@@ -563,12 +770,14 @@ private fun PodcastHeader(
                 )
             }
 
-            Button(onClick = onPlayLatest) {
-                Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null)
-                Text(
-                    text = stringResource(R.string.podcast_play_latest),
-                    modifier = Modifier.padding(start = MegaPodcastPlayerTheme.spacing.sm),
-                )
+            action?.let { headerAction ->
+                Button(onClick = { onPlay(headerAction.episodeId) }) {
+                    Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null)
+                    Text(
+                        text = headerAction.label(),
+                        modifier = Modifier.padding(start = MegaPodcastPlayerTheme.spacing.sm),
+                    )
+                }
             }
 
             if (description.isNotBlank()) {
@@ -599,16 +808,26 @@ private fun PodcastHeader(
 }
 
 /**
- * The four ways of looking at a show's episodes.
+ * The one row that says what this list is showing: which episodes, and from which end.
  *
- * @param selected the current filter.
- * @param onSelect invoked with the chosen filter.
+ * The two controls sit together because they answer the same question and are used in the same
+ * breath — "the downloaded ones, oldest first" is one thought — and because a sort control parked
+ * anywhere else on this screen would be a second, quieter place to look.
+ *
+ * The order button is drawn only for a show that is not arranged by hand; see [sort].
+ *
+ * @param filter the current filter.
+ * @param onFilterChange invoked with the chosen filter.
+ * @param sort the current order, or null for a hand-arranged show, which has no order to choose.
+ * @param onSortChange invoked with the chosen order.
  * @param modifier layout modifier.
  */
 @Composable
-private fun FilterChips(
-    selected: EpisodeFilter,
-    onSelect: (EpisodeFilter) -> Unit,
+private fun ListControls(
+    filter: EpisodeFilter,
+    onFilterChange: (EpisodeFilter) -> Unit,
+    sort: EpisodeSort?,
+    onSortChange: (EpisodeSort) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -620,9 +839,10 @@ private fun FilterChips(
                 vertical = MegaPodcastPlayerTheme.spacing.sm,
             ),
         horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         EpisodeFilter.entries.forEach { option ->
-            val isSelected = option == selected
+            val isSelected = option == filter
             // Built here rather than inside `semantics`, which is not a composable scope.
             // The same two words the settings chips announce, from the design system, rather than
             // a second copy of "Selected" that a translator would have to find twice.
@@ -635,12 +855,53 @@ private fun FilterChips(
             )
             FilterChip(
                 selected = isSelected,
-                onClick = { onSelect(option) },
+                onClick = { onFilterChange(option) },
                 label = { Text(text = stringResource(option.labelResId)) },
                 modifier = Modifier.semantics { stateDescription = state },
             )
         }
+
+        sort?.let { current -> SortButton(sort = current, onSortChange = onSortChange) }
     }
+}
+
+/**
+ * Flips the show between newest-first and oldest-first.
+ *
+ * The words and the two enum values are this screen's; everything about how a sort control looks
+ * and announces itself is the design system's [SortToggleChip], which the library's own sort
+ * control is the other half of.
+ *
+ * @param sort the order currently applied.
+ * @param onSortChange invoked with the other one.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun SortButton(
+    sort: EpisodeSort,
+    onSortChange: (EpisodeSort) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isNewestFirst = sort == EpisodeSort.NEWEST_FIRST
+    SortToggleChip(
+        label = stringResource(
+            if (isNewestFirst) R.string.podcast_sort_newest else R.string.podcast_sort_oldest,
+        ),
+        icon = if (isNewestFirst) Icons.Rounded.ArrowDownward else Icons.Rounded.ArrowUpward,
+        switchToDescription = stringResource(
+            if (isNewestFirst) {
+                R.string.podcast_sort_switch_to_oldest
+            } else {
+                R.string.podcast_sort_switch_to_newest
+            },
+        ),
+        onClick = {
+            onSortChange(
+                if (isNewestFirst) EpisodeSort.OLDEST_FIRST else EpisodeSort.NEWEST_FIRST,
+            )
+        },
+        modifier = modifier,
+    )
 }
 
 /**
@@ -691,12 +952,15 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  * state the opposite — and it made the two destructive entries below it that much easier to reach
  * by accident. Background refreshing now follows whatever the show was added with.
  *
+ * @param onOpenSettings opens the per-show settings sheet. First, and separated from the two
+ *   below by being the only entry here that changes nothing on its own.
  * @param onRebuild opens the rebuild confirmation, or rebuilds outright when there is nothing
  *   stored to lose.
  * @param onRemove remove-show handler.
  */
 @Composable
 private fun OverflowMenu(
+    onOpenSettings: () -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -709,6 +973,16 @@ private fun OverflowMenu(
         )
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.podcast_show_settings)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Tune, contentDescription = null)
+            },
+            onClick = {
+                expanded = false
+                onOpenSettings()
+            },
+        )
         DropdownMenuItem(
             text = { Text(text = stringResource(R.string.podcast_rebuild)) },
             leadingIcon = {
@@ -818,9 +1092,72 @@ private val Episode.isAtStakeInARebuild: Boolean
  * @return the line to show.
  */
 private fun Episode.metadataLine(now: Instant, resources: Resources): String = listOfNotNull(
-    formatPublishedDate(publishedAt, now),
-    formatRemaining(durationMs, positionMs)?.takeIf { positionMs > 0 } ?: formatDuration(durationMs),
+    formatPublishedDate(resources, publishedAt, now),
+    formatRemaining(resources, durationMs, positionMs)?.takeIf { positionMs > 0 }
+        ?: formatDuration(resources, durationMs),
 ).joinToString(resources.getString(R.string.podcast_metadata_separator))
+
+/**
+ * The header button's caption.
+ *
+ * Composable rather than a property on [HeaderAction] because it is copy, and copy lives in
+ * resources; the type itself stays a pure decision that a test can make without a `Context`.
+ *
+ * *Continue* carries the remaining time when the duration is known — the number is what decides
+ * whether to start now or wait — and drops it silently when it is not, rather than saying
+ * "Continue · unknown".
+ *
+ * @return the words on the button.
+ */
+@Composable
+private fun HeaderAction.label(): String = when (this) {
+    is HeaderAction.Continue -> {
+        val remaining = formatRemaining(
+            LocalResources.current,
+            durationMs = remainingMs,
+            positionMs = 0L,
+        )
+        if (remaining == null) {
+            stringResource(R.string.podcast_continue)
+        } else {
+            stringResource(R.string.podcast_continue_with_remaining, remaining)
+        }
+    }
+
+    // "Newest", not "latest": *latest* reads as "the most recent one I played" as readily as "the
+    // most recent one published", and on this screen both are plausible.
+    is HeaderAction.Play -> stringResource(
+        if (isReplay) R.string.podcast_play_newest_again else R.string.podcast_play_newest,
+    )
+}
+
+/**
+ * Hands an episode to the system share sheet.
+ *
+ * The same path a moment takes, and deliberately so: this app does not have a share screen, it has
+ * the platform's, and the only decision it makes is what text goes into it.
+ *
+ * @param episode the episode being shared.
+ * @param showTitle the show it belongs to, which the message leads with.
+ * @param chooserTitle what the chooser is headed.
+ */
+internal fun Context.shareEpisode(episode: Episode, showTitle: String, chooserTitle: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = SHARE_MIME_TYPE
+        putExtra(
+            Intent.EXTRA_TEXT,
+            episodeShareText(
+                showTitle = showTitle,
+                episodeTitle = episode.title,
+                audioUrl = episode.audioUrl,
+            ),
+        )
+    }
+    startActivity(Intent.createChooser(send, chooserTitle))
+}
+
+/** Plain text: a share is a sentence and a link, not a file. */
+private const val SHARE_MIME_TYPE = "text/plain"
 
 /**
  * Turns a [PodcastDetailMessage] into snackbar text.
@@ -872,6 +1209,18 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 
     is PodcastDetailMessage.QueuedNext ->
         resources.getString(R.string.podcast_message_queued_next, title)
+
+    is PodcastDetailMessage.Queued ->
+        resources.getString(R.string.podcast_message_queued, title)
+
+    is PodcastDetailMessage.PlayedChanged -> resources.getString(
+        if (isPlayed) {
+            R.string.podcast_message_marked_played
+        } else {
+            R.string.podcast_message_marked_unplayed
+        },
+        title,
+    )
 }
 
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
@@ -884,7 +1233,8 @@ private const val FILTER_EMPTY_KEY = "filter-empty"
 /** How much of a show's description is shown before it has been asked for in full. */
 private const val COLLAPSED_LINES = 4
 
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun PodcastDetailScreenPreview() {
     MegaPodcastPlayerTheme {
@@ -925,8 +1275,17 @@ private fun PodcastDetailScreenPreview() {
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
+            onEpisodePlay = {},
+            onEpisodePlayFrom = { _, _ -> },
+            onEpisodeAddToQueue = {},
+            onEpisodeSheetDismiss = {},
             onEpisodePlayNext = {},
+            onEpisodeSetPlayed = { _, _ -> },
+            onUndoPlayedChange = {},
             onEpisodeMove = { _, _, _ -> },
+            onFilterChange = {},
+            onSortChange = {},
+            onShowSettingsChange = {},
             onRefresh = {},
             onRebuild = {},
             onRemove = {},

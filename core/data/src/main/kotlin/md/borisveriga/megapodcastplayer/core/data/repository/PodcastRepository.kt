@@ -3,7 +3,9 @@ package md.borisveriga.megapodcastplayer.core.data.repository
 import java.time.Duration
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.Podcast
+import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 
@@ -50,6 +52,32 @@ sealed interface AddPodcastResult {
      * @property cause the underlying network or parse failure, for logging.
      */
     data class Failed(val cause: Throwable) : AddPodcastResult
+}
+
+/**
+ * Outcome of looking at a show without adding it.
+ *
+ * Its own closed set rather than a `Result`, for the same reason [AddPodcastResult] is one: two of
+ * the three answers are not errors, and the screen words each of them differently.
+ */
+sealed interface PodcastPreviewResult {
+
+    /** The feed was fetched and parsed. */
+    data class Loaded(val preview: PodcastPreview) : PodcastPreviewResult
+
+    /**
+     * Apple knows the show but publishes no RSS feed for it.
+     *
+     * @property title the show's name, so the message can be specific.
+     */
+    data class NoFeedAvailable(val title: String) : PodcastPreviewResult
+
+    /**
+     * The feed could not be fetched or parsed.
+     *
+     * @property cause the underlying network or parse failure, for logging.
+     */
+    data class Failed(val cause: Throwable) : PodcastPreviewResult
 }
 
 /**
@@ -146,6 +174,27 @@ interface PodcastRepository {
     /** Observes every episode available offline. */
     fun observeDownloadedEpisodes(): Flow<List<Episode>>
 
+    /**
+     * Observes the episodes the user has started and not finished, across every show.
+     *
+     * The *Continue listening* shelf. Everything the app knew to answer this was already in the
+     * database — `positionMs`, `isPlayed` — and no screen had ever asked the question across shows,
+     * which is why picking up where you left off meant remembering which show it was in.
+     *
+     * @param limit how many to return; a shelf is read across rather than scrolled.
+     */
+    fun observeInProgressEpisodes(limit: Int): Flow<List<EpisodeWithShow>>
+
+    /**
+     * Observes the episodes that arrived in a refresh and have not been looked at, across shows.
+     *
+     * The *New episodes* shelf: the same `isNew` flag the library badges count, as a list rather
+     * than as a number.
+     *
+     * @param limit how many to return.
+     */
+    fun observeNewEpisodes(limit: Int): Flow<List<EpisodeWithShow>>
+
     /** Observes a single episode. */
     fun observeEpisode(episodeId: String): Flow<Episode?>
 
@@ -165,6 +214,25 @@ interface PodcastRepository {
 
     /** Adds a show the user picked from search results. */
     suspend fun addFromSearchResult(result: PodcastSearchResult): AddPodcastResult
+
+    /**
+     * Fetches and parses a show's feed without storing any of it.
+     *
+     * What lets the user look before subscribing. Nothing is written: no podcast row, no episodes,
+     * no refresh timestamp — so a preview of a show that is then not added leaves the library
+     * exactly as it was, which is the entire point.
+     *
+     * The values it returns are the ones a subscription *would* write, ids included; see
+     * [PodcastPreview].
+     *
+     * @param result the show to look at.
+     * @param episodeLimit how many episodes to carry back.
+     * @return what was found, or why nothing was.
+     */
+    suspend fun preview(
+        result: PodcastSearchResult,
+        episodeLimit: Int = PodcastPreview.EPISODE_LIMIT,
+    ): PodcastPreviewResult
 
     /**
      * Re-fetches one feed and stores any new episodes.
@@ -222,40 +290,6 @@ interface PodcastRepository {
 
     /** Clears the "new" badges for a show once its episode list has been opened. */
     suspend fun markEpisodesSeen(podcastId: String)
-
-    /**
-     * The newest episode of a show that has not been played yet.
-     *
-     * What "queue the next one from this show" resolves to, from a row that knows only the show.
-     *
-     * @param podcastId the show to look in.
-     * @return the episode, or null when the show is finished or empty.
-     */
-    suspend fun newestUnplayedEpisode(podcastId: String): Episode?
-
-    /**
-     * Marks every unplayed episode of a show played.
-     *
-     * Returns what it changed rather than nothing, so the caller can offer an undo that puts back
-     * exactly the episodes this touched — not "everything in the show", which would also unplay
-     * episodes the user had finished long before.
-     *
-     * Playback positions are left alone; see `EpisodeDao.markPodcastPlayed`.
-     *
-     * @param podcastId the show to mark.
-     * @return the ids that were unplayed beforehand.
-     */
-    suspend fun markPodcastPlayed(podcastId: String): List<String>
-
-    /**
-     * Sets the played flag on specific episodes, without touching their positions.
-     *
-     * The undo of [markPodcastPlayed].
-     *
-     * @param episodeIds the episodes to change; an empty list is a no-op.
-     * @param isPlayed the flag to write.
-     */
-    suspend fun setEpisodesPlayed(episodeIds: List<String>, isPlayed: Boolean)
 
     /** Enables or disables background refresh for one show. */
     suspend fun setAutoRefresh(podcastId: String, enabled: Boolean)

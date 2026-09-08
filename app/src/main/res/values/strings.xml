@@ -9,8 +9,10 @@
     <string name="app_name">MegaPodcastPlayer</string>
 
     <!-- Navigation bar / rail destinations. -->
+    <string name="destination_listen">Listen</string>
     <string name="destination_library">Library</string>
     <string name="destination_queue">Queue</string>
+    <string name="destination_moments">Moments</string>
     <string name="destination_downloads">Downloads</string>
 
     <!--
@@ -47,5 +49,19 @@
     <string name="watch_transfer_channel_description">Shown while an episode is being sent to your watch</string>
     <string name="watch_transfer_title">Copying to your watch</string>
     <string name="watch_transfer_text">Episodes cross over Bluetooth, which takes a few minutes.</string>
+
+    <!--
+      The end-of-episode bell, armed from the player by someone who is about to fall asleep.
+
+      Deliberately plain: it is read half-awake, in the dark, and its whole job is to say which
+      thing made the noise. The episode title is a separate string so the card still says something
+      sensible when the player has no title to hand.
+    -->
+    <string name="bell_channel_name">End-of-episode bell</string>
+    <string name="bell_channel_description">Rings when an episode you armed the bell for finishes</string>
+    <string name="bell_title">Episode finished</string>
+    <!-- %1$s is the episode title. -->
+    <string name="bell_text">%1$s has ended. Playback is stopped.</string>
+    <string name="bell_text_unknown_episode">Your episode has ended. Playback is stopped.</string>
 
 </resources>

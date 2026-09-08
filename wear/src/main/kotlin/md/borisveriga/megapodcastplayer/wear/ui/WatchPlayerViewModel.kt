@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineEpisode
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
+import md.borisveriga.megapodcastplayer.wear.data.PendingMoments
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.PhonePlayerClient
 import md.borisveriga.megapodcastplayer.wear.data.PositionReporter
@@ -28,6 +29,7 @@ import md.borisveriga.megapodcastplayer.wear.data.ReceivedSnapshot
 import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
 import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
 import md.borisveriga.megapodcastplayer.wear.data.WatchEpisodeStore
+import md.borisveriga.megapodcastplayer.wear.data.WatchHints
 import md.borisveriga.megapodcastplayer.wear.data.WatchLibrary
 import md.borisveriga.megapodcastplayer.wear.playback.WatchPlayback
 import md.borisveriga.megapodcastplayer.wear.playback.WatchPlaybackState
@@ -49,6 +51,9 @@ import md.borisveriga.megapodcastplayer.wear.playback.WatchPlaybackState
  * @property store the episodes the watch holds.
  * @property library what the phone has offered to send.
  * @property reporter carries positions played here back to the phone.
+ * @property pendingMoments carries marks made here back to the phone, now or when it is next in
+ *   range.
+ * @property hints what the watch has already explained once.
  */
 @HiltViewModel
 class WatchPlayerViewModel @Inject constructor(
@@ -56,6 +61,8 @@ class WatchPlayerViewModel @Inject constructor(
     private val playback: WatchPlayback,
     private val store: WatchEpisodeStore,
     private val reporter: PositionReporter,
+    private val pendingMoments: PendingMoments,
+    private val hints: WatchHints,
     library: WatchLibrary,
 ) : ViewModel() {
 
@@ -64,6 +71,21 @@ class WatchPlayerViewModel @Inject constructor(
 
     /** Where the user has dragged the progress bar, or null when they are not touching it. */
     private val scrub = MutableStateFlow<ScrubState?>(null)
+
+    /** True for a few seconds after a moment is marked; see [WatchPlayerUiState.momentSaved]. */
+    private val momentSaved = MutableStateFlow(false)
+
+    /** True while the first scrub of this watch's life is being explained; see [WatchHints]. */
+    private val scrubHintVisible = MutableStateFlow(false)
+
+    /**
+     * The two things the screen says over the top of what is playing.
+     *
+     * Grouped for the reason [phone] is grouped: `combine` gives typed lambdas only up to five
+     * sources, and these two are the same kind of thing — a sentence the screen shows for a moment
+     * and then takes away.
+     */
+    private val cues = combine(momentSaved, scrubHintVisible, ::Cues)
 
     /**
      * What the phone is doing, and when it said so.
@@ -90,7 +112,8 @@ class WatchPlayerViewModel @Inject constructor(
         watch,
         lastCommandFailed,
         scrub,
-    ) { phone, watch, failed, scrubState ->
+        cues,
+    ) { phone, watch, failed, scrubState, cues ->
         watchPlayerUiState(
             link = phone.link,
             received = phone.received,
@@ -101,7 +124,7 @@ class WatchPlayerViewModel @Inject constructor(
             stored = watch.stored,
             offered = watch.offered,
             transfers = watch.transfers,
-        )
+        ).copy(momentSaved = cues.momentSaved, showsScrubHint = cues.scrubHint)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
@@ -113,12 +136,17 @@ class WatchPlayerViewModel @Inject constructor(
         // phone's process if it is not running — so the first thing the watch does is ask.
         send(WearCommand.RequestState)
 
-        // Anything played out of range is still owed to the phone; this is what settles the debt.
+        // Anything played or marked out of range is still owed to the phone; this settles both
+        // debts, in that order — a position is what the phone needs to agree about, a moment is
+        // what the wearer would notice missing.
         viewModelScope.launch {
             client.phoneLink
                 .distinctUntilChanged()
                 .filter { it == PhoneLink.CONNECTED }
-                .collect { reporter.flush() }
+                .collect {
+                    reporter.flush()
+                    pendingMoments.flush()
+                }
         }
     }
 
@@ -190,6 +218,23 @@ class WatchPlayerViewModel @Inject constructor(
     fun beginScrub() {
         if (!uiState.value.canScrub) return
         scrub.value = ScrubState(positionMs = uiState.value.positionMs)
+        explainScrubbingOnce()
+    }
+
+    /**
+     * Says how to scrub, the first time anyone does it on this watch.
+     *
+     * Marked seen as it is shown rather than when it is dismissed. The hint is a sentence, not a
+     * dialog: there is nothing to acknowledge, and a wearer who taps the bar and immediately taps
+     * away has still been told. Recording it later would mean a hint that came back after every
+     * scrub the wearer abandoned, which is the failure mode a one-time hint exists to avoid.
+     */
+    private fun explainScrubbingOnce() {
+        viewModelScope.launch {
+            if (hints.hasSeenScrubHint()) return@launch
+            scrubHintVisible.value = true
+            hints.markScrubHintSeen()
+        }
     }
 
     /**
@@ -207,11 +252,15 @@ class WatchPlayerViewModel @Inject constructor(
         scrub.value = current.copy(
             positionMs = (current.positionMs + deltaMs).coerceIn(0L, duration),
         )
+        // The bar has moved, so the wearer has worked out how; the sentence has done its job and
+        // is now covering the times it was explaining.
+        scrubHintVisible.value = false
     }
 
     /** Abandons a scrub without seeking, leaving playback where it was. */
     fun cancelScrub() {
         scrub.value = null
+        scrubHintVisible.value = false
     }
 
     /**
@@ -228,6 +277,7 @@ class WatchPlayerViewModel @Inject constructor(
 
         val committed = current.copy(committedAtElapsedMs = SystemClock.elapsedRealtime())
         scrub.value = committed
+        scrubHintVisible.value = false
         seekTo(committed.positionMs)
 
         viewModelScope.launch {
@@ -235,6 +285,49 @@ class WatchPlayerViewModel @Inject constructor(
             // Compared by identity of the whole value: a scrub the user has since restarted is a
             // different one, and must not be cleared out from under them.
             scrub.compareAndSet(expect = committed, update = null)
+        }
+    }
+
+    /**
+     * Marks the moment the wearer just heard.
+     *
+     * The two sources are genuinely different requests, not one request with a different sender.
+     * Controlling the phone, the watch does not know where the phone's playhead is — what the bar
+     * shows is an extrapolation of a snapshot up to a second old — so it asks the phone to mark its
+     * own position. Playing its own copy, the watch is the only device that knows the episode and
+     * the second, and the phone may not even be in range: that mark is queued if it cannot be
+     * delivered, because unlike a position it cannot be reconstructed later. See [PendingMoments].
+     */
+    fun markMoment() {
+        viewModelScope.launch {
+            val state = uiState.value
+            val reached = if (state.source == PlaybackSource.WATCH) {
+                val episodeId = state.snapshot.episodeId ?: return@launch
+                // Queued when it cannot be delivered, so from the wearer's side this always
+                // worked — which is why the outcome is discarded rather than reported.
+                pendingMoments.mark(episodeId, state.positionMs)
+                true
+            } else {
+                client.send(WearCommand.MarkMoment())
+            }
+
+            lastCommandFailed.value = !reached
+            if (reached) confirmMoment()
+        }
+    }
+
+    /**
+     * Shows the "saved" confirmation for a moment, then takes it away.
+     *
+     * Held for a few seconds rather than until the next state change: everything else on this
+     * screen moves once a second, and a confirmation that outlived its press would be attached to
+     * whatever the wearer did next.
+     */
+    private fun confirmMoment() {
+        momentSaved.value = true
+        viewModelScope.launch {
+            delay(MOMENT_CONFIRM_MS)
+            momentSaved.value = false
         }
     }
 
@@ -369,6 +462,17 @@ class WatchPlayerViewModel @Inject constructor(
     )
 
     /**
+     * The transient cues drawn over the player.
+     *
+     * @property momentSaved true while the mark-a-moment confirmation is up.
+     * @property scrubHint true while the first-scrub explanation is up.
+     */
+    private data class Cues(
+        val momentSaved: Boolean,
+        val scrubHint: Boolean,
+    )
+
+    /**
      * The watch's half.
      *
      * @property local what its own player is doing, or null.
@@ -389,6 +493,9 @@ class WatchPlayerViewModel @Inject constructor(
 
         /** How often the extrapolated position is recomputed. */
         const val POSITION_TICK_MS = 1_000L
+
+        /** How long the "moment saved" confirmation stays on the screen. */
+        const val MOMENT_CONFIRM_MS = 3_000L
 
         /**
          * Emits the watch's elapsed-realtime clock once a second.

@@ -405,6 +405,39 @@ class WatchPlayerScreenTest {
     )
 
     /** Renders the screen with no-op callbacks except the ones a test cares about. */
+    @Test
+    fun theFirstScrubSaysWhatTheBezelDoes() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                positionMs = 252_000L,
+                isScrubbing = true,
+                showsScrubHint = true,
+            ),
+        )
+
+        composeTestRule.onNodeWithText("Turn the bezel to seek").assertIsDisplayed()
+    }
+
+    @Test
+    fun aScrubThatHasBeenExplainedBeforeSaysNothing() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                positionMs = 252_000L,
+                isScrubbing = true,
+            ),
+        )
+
+        composeTestRule.onNodeWithText("Turn the bezel to seek").assertDoesNotExist()
+        // The mode is still entered, and the bar still says so to TalkBack.
+        composeTestRule
+            .onNodeWithContentDescription("Adjusting position. Turn the bezel, then tap to confirm")
+            .assertIsDisplayed()
+    }
+
     private fun setScreen(
         uiState: WatchPlayerUiState,
         onTogglePlayPause: () -> Unit = {},

@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -81,6 +82,18 @@ class PlayerSheetState internal constructor(initialValue: PlayerSheetValue) {
     /** How open the sheet is, `0f` collapsed to `1f` expanded. */
     val progress: Float get() = expansion.value
 
+    /**
+     * How far the collapsed bar has been pulled down in the current gesture, in pixels.
+     *
+     * A collapsed sheet cannot open any less, so downward movement used to be thrown away at the
+     * clamp. Keeping it is what gives the bar a dismiss gesture — the convention every other player
+     * has and this one did not — and keeping it *here*, as a number, is what lets the bar follow the
+     * finger and spring back when the pull is abandoned rather than committing on a threshold the
+     * user cannot see.
+     */
+    var pullDownPx: Float by mutableFloatStateOf(0f)
+        private set
+
     /** True while the sheet is expanded or on its way there. */
     val isExpanded: Boolean get() = targetValue == PlayerSheetValue.Expanded
 
@@ -117,7 +130,35 @@ class PlayerSheetState internal constructor(initialValue: PlayerSheetValue) {
      */
     suspend fun dragBy(deltaPx: Float, sheetTravelPx: Float) {
         if (isSettling || sheetTravelPx <= 0f) return
-        expansion.snapTo((expansion.value - deltaPx / sheetTravelPx).coerceIn(0f, 1f))
+
+        // Downward movement against a fully collapsed sheet becomes the dismiss pull. Upward
+        // movement pays that pull back before it starts opening the sheet again, so the bar stays
+        // under the finger through a change of mind instead of jumping back to its rest position.
+        var remaining = deltaPx
+        if (pullDownPx > 0f || (expansion.value == 0f && deltaPx > 0f)) {
+            val pulled = (pullDownPx + remaining).coerceAtLeast(0f)
+            remaining -= pulled - pullDownPx
+            pullDownPx = pulled
+            if (remaining == 0f) return
+        }
+
+        expansion.snapTo((expansion.value - remaining / sheetTravelPx).coerceIn(0f, 1f))
+    }
+
+    /**
+     * Ends a dismiss pull, saying whether it went far enough to count.
+     *
+     * Consuming and answering in one call rather than exposing a setter: the pull is per gesture, so
+     * there is no state to leave behind once the finger is up, and the answer is only ever wanted at
+     * that moment.
+     *
+     * @param thresholdPx how far the bar has to travel for the gesture to commit.
+     * @return true when the caller should dismiss the player.
+     */
+    fun consumePullDown(thresholdPx: Float): Boolean {
+        val dismissed = pullDownPx >= thresholdPx
+        pullDownPx = 0f
+        return dismissed
     }
 
     /**

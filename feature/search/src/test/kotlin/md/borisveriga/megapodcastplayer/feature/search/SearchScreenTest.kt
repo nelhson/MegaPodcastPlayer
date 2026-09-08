@@ -1,11 +1,16 @@
 package md.borisveriga.megapodcastplayer.feature.search
 
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.Podcast
+import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -42,10 +47,50 @@ class SearchScreenTest {
         genres = listOf("Technology"),
     )
 
+    /**
+     * A loaded preview of [row], as the repository would return it.
+     *
+     * @param row the search result the sheet was opened from.
+     * @param episodeTitles the episodes it carries, newest first.
+     */
+    private fun preview(row: PodcastSearchResult, episodeTitles: List<String>) = PodcastPreview(
+        podcast = Podcast(
+            id = "podcast-1",
+            itunesId = row.itunesId,
+            title = row.title,
+            author = row.author,
+            feedUrl = "https://example.com/feed.rss",
+            artworkUrl = null,
+            description = "A show about software.",
+            addedAt = Instant.EPOCH,
+            lastRefreshAt = null,
+            etag = null,
+            lastModified = null,
+            autoRefresh = true,
+        ),
+        episodes = episodeTitles.mapIndexed { index, title ->
+            Episode(
+                id = "episode-$index",
+                podcastId = "podcast-1",
+                guid = "guid-$index",
+                title = title,
+                description = "",
+                audioUrl = "https://cdn.example.com/$index.mp3",
+                artworkUrl = null,
+                durationMs = 3_600_000L,
+                publishedAt = Instant.parse("2026-08-24T06:00:00Z"),
+                sizeBytes = null,
+            )
+        },
+        totalEpisodeCount = 412,
+    )
+
     private fun setScreen(
         uiState: SearchUiState,
         onAddLink: () -> Unit = {},
-        onAddResult: (PodcastSearchResult) -> Unit = {},
+        onOpenPreview: (PodcastSearchResult) -> Unit = {},
+        onSubscribe: () -> Unit = {},
+        onPlayPreviewEpisode: (Episode) -> Unit = {},
         onOpenPodcast: (String) -> Unit = {},
         onBack: () -> Unit = {},
     ) {
@@ -55,7 +100,10 @@ class SearchScreenTest {
                     uiState = uiState,
                     onQueryChange = {},
                     onAddLink = onAddLink,
-                    onAddResult = onAddResult,
+                    onOpenPreview = onOpenPreview,
+                    onDismissPreview = {},
+                    onSubscribe = onSubscribe,
+                    onPlayPreviewEpisode = onPlayPreviewEpisode,
                     onMessageShown = {},
                     onNavigationHandled = {},
                     onPodcastAdded = {},
@@ -93,6 +141,64 @@ class SearchScreenTest {
         composeRule.onNodeWithText("Add this YouTube playlist").assertExists()
     }
 
+    /**
+     * The sheet is a look at a show, and everything on it has to be readable before anything is
+     * committed to: what the show says about itself, what it last published, and — the part a
+     * description cannot do — two minutes of it.
+     */
+    @Test
+    fun `the preview sheet shows the show, its latest episodes, and plays one`() {
+        var played: Episode? = null
+        var subscribed = 0
+        val row = result(1L, "Podlodka Podcast")
+        setScreen(
+            SearchUiState(
+                query = "podlodka",
+                results = listOf(row),
+                preview = PreviewUiState(
+                    result = row,
+                    isLoading = false,
+                    preview = preview(row, episodeTitles = listOf("Episode 402", "Episode 401")),
+                ),
+            ),
+            onSubscribe = { subscribed++ },
+            onPlayPreviewEpisode = { played = it },
+        )
+
+        composeRule.onNodeWithText("Latest episodes").assertExists()
+        composeRule.onNodeWithText("Episode 402").assertExists()
+
+        composeRule.onNodeWithContentDescription("Play Episode 402").performClick()
+        assertEquals("Episode 402", played?.title)
+        // Playing is not subscribing, and the whole sheet rests on that being true.
+        assertEquals(0, subscribed)
+
+        composeRule.onNodeWithText("Subscribe").performClick()
+        assertEquals(1, subscribed)
+    }
+
+    /** A show Apple lists but publishes no feed for cannot be previewed and cannot be added. */
+    @Test
+    fun `a preview with no feed says so and offers no subscribe`() {
+        val row = result(2L, "Exclusive Show", feedUrl = null)
+        setScreen(
+            SearchUiState(
+                query = "exclusive",
+                results = listOf(row),
+                preview = PreviewUiState(
+                    result = row,
+                    isLoading = false,
+                    error = PreviewError.NoFeed,
+                ),
+            ),
+        )
+
+        composeRule
+            .onNodeWithText("This show publishes no feed, so there is nothing to play or follow.")
+            .assertExists()
+        composeRule.onNodeWithText("Subscribe").assertIsNotEnabled()
+    }
+
     @Test
     fun `ordinary text offers no link card`() {
         setScreen(SearchUiState(query = "podlodka", results = listOf(result(1L, "Podlodka"))))
@@ -100,15 +206,22 @@ class SearchScreenTest {
         composeRule.onNodeWithText("This looks like a podcast link").assertDoesNotExist()
     }
 
+    /**
+     * Tapping a result used to subscribe on the spot, which made looking at an unfamiliar show a
+     * subscribe-and-unsubscribe — and unsubscribing is the one action here that cannot be undone.
+     */
     @Test
-    fun `a result can be added`() {
-        var added: PodcastSearchResult? = null
+    fun `a result opens a preview rather than subscribing on the spot`() {
+        var opened: PodcastSearchResult? = null
         val row = result(1L, "Podlodka Podcast")
-        setScreen(SearchUiState(query = "podlodka", results = listOf(row)), onAddResult = { added = it })
+        setScreen(
+            SearchUiState(query = "podlodka", results = listOf(row)),
+            onOpenPreview = { opened = it },
+        )
 
         composeRule.onNodeWithText("Podlodka Podcast").performClick()
 
-        assertEquals(row, added)
+        assertEquals(row, opened)
     }
 
     @Test
@@ -119,7 +232,7 @@ class SearchScreenTest {
                 query = "exclusive",
                 results = listOf(result(2L, "Exclusive Show", feedUrl = null)),
             ),
-            onAddResult = { added = it },
+            onOpenPreview = { added = it },
         )
 
         composeRule.onNodeWithText("Apple Podcasts exclusive — no RSS feed to download").assertExists()
@@ -134,7 +247,7 @@ class SearchScreenTest {
         val row = result(1L, "Podlodka Podcast")
         setScreen(
             SearchUiState(query = "podlodka", results = listOf(row), addingId = "1"),
-            onAddResult = { adds++ },
+            onOpenPreview = { adds++ },
         )
 
         composeRule.onNodeWithContentDescription("Add Podlodka Podcast").assertDoesNotExist()
@@ -159,7 +272,7 @@ class SearchScreenTest {
                 results = listOf(row),
                 addedPodcastIds = mapOf(1L to "stored-1"),
             ),
-            onAddResult = { adds++ },
+            onOpenPreview = { adds++ },
             onOpenPodcast = { opened = it },
         )
 

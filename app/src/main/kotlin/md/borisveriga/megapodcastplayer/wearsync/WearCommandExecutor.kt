@@ -4,6 +4,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
+import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
@@ -21,6 +22,7 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
  *
  * @property connection the phone's player.
  * @property playbackRepository the durable queue and playback preferences.
+ * @property momentsRepository where a mark from the wrist is written.
  * @property episodePlayer resolves an episode id into something the player can accept.
  * @property publisher used to answer
  *   [WearCommand.RequestState] and to confirm the outcome of the rest.
@@ -31,6 +33,7 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
 internal class WearCommandExecutor @Inject constructor(
     private val connection: PlaybackConnection,
     private val playbackRepository: PlaybackRepository,
+    private val momentsRepository: MomentsRepository,
     private val episodePlayer: EpisodePlayer,
     private val publisher: NowPlayingPublisher,
     private val libraryPublisher: OfflineLibraryPublisher,
@@ -84,6 +87,8 @@ internal class WearCommandExecutor @Inject constructor(
             // stopping the phone from spending the next few minutes sending bytes into nothing.
             is WearCommand.CancelCopyToWatch -> audioTransfers.cancel(command.episodeId)
 
+            is WearCommand.MarkMoment -> markMoment(command)
+
             // Audio the watch played is audio the phone did not, so this is the one command that
             // writes playback state rather than asking for it. A finished episode goes back to the
             // start, exactly as finishing it on the phone would.
@@ -98,5 +103,31 @@ internal class WearCommandExecutor @Inject constructor(
         // the player has finished reacting. Publishing here closes the gap between the tap and the
         // button changing shape, which on a watch is the difference between working and broken.
         publisher.publishCurrent()
+    }
+
+    /**
+     * Saves a moment for whichever device is actually playing.
+     *
+     * A command naming an episode and a position is the watch playing its own copy: it is the only
+     * device that knows either, so it is believed. An empty one is the watch as a remote control,
+     * and the position is read from the phone's player here rather than taken from the watch's
+     * screen — what the watch draws is an extrapolation of a snapshot that is up to a second old,
+     * and a moment is a claim about a particular second.
+     *
+     * A mark with nothing playing is dropped rather than guessed at.
+     *
+     * @param command the request, in either of its two shapes.
+     */
+    private suspend fun markMoment(command: WearCommand.MarkMoment) {
+        val episodeId = command.episodeId
+        val positionMs = command.positionMs
+        if (episodeId != null && positionMs != null) {
+            momentsRepository.mark(episodeId, positionMs)
+            return
+        }
+
+        val state = connection.currentState()
+        val playing = state.episodeId ?: return
+        momentsRepository.mark(playing, state.positionMs)
     }
 }

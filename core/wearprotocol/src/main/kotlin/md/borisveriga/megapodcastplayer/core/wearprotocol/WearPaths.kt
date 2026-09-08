@@ -39,6 +39,16 @@ object WearPaths {
     const val OFFLINE_LIBRARY = "$PREFIX/offline_library"
 
     /**
+     * Phone -> watch: buzz the wrist, because an episode the user armed a bell for has ended.
+     *
+     * A message rather than a data item, and the first thing the phone sends as one. A bell is an
+     * event: two episodes ending must buzz twice, and a data item holding the same bytes both times
+     * would be de-duplicated into one. It carries no payload — the path is the whole message —
+     * which is why nothing was added to [WearMessages] for it.
+     */
+    const val BELL = "$PREFIX/bell"
+
+    /**
      * Phone -> watch: one episode's audio, over a **channel**.
      *
      * Neither a message nor a data item: an episode is tens of megabytes, a message is capped at

@@ -91,8 +91,12 @@ fun MorphingIndicator(
     // the cheap MorphShape wrapper is allocated per frame.
     val morph = remember { Morph(MegaPodcastPlayerPolygons.Cookie, MegaPodcastPlayerPolygons.Clover) }
     val transition = rememberInfiniteTransition(label = "loading")
+    // Held at the cookie, unrotated, for a user who has turned animations off. A spinner is the one
+    // place where stopping costs something — it is the evidence that work is happening — so the
+    // callers that draw this always draw a message beside it.
+    val still = MegaPodcastPlayerTheme.reduceMotion
 
-    val progress by transition.animateFloat(
+    val morphing by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -101,7 +105,8 @@ fun MorphingIndicator(
         ),
         label = "morph",
     )
-    val rotation by transition.animateFloat(
+    val progress = if (still) 0f else morphing
+    val spin by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
@@ -110,6 +115,7 @@ fun MorphingIndicator(
         ),
         label = "spin",
     )
+    val rotation = if (still) 0f else spin
 
     Box(
         modifier = modifier

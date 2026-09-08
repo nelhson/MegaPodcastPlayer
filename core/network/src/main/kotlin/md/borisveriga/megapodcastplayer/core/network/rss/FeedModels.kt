@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.network.rss
 
 import java.time.Instant
+import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 
 /**
  * A parsed RSS channel — the show plus every item the feed currently exposes.
@@ -32,6 +33,8 @@ data class FeedChannel(
  * @property artworkUrl episode-level `<itunes:image href>`, when present.
  * @property durationMs `<itunes:duration>` normalised to milliseconds, null when absent or unparseable.
  * @property publishedAt `<pubDate>`, null when absent or in a format we cannot read.
+ * @property chaptersUrl `<podcast:chapters url>`, when the publisher hosts a chapters document.
+ * @property chapters the inline `<psc:chapter>` list, in order, empty when the feed has none.
  */
 data class FeedItem(
     val guid: String,
@@ -42,6 +45,8 @@ data class FeedItem(
     val artworkUrl: String?,
     val durationMs: Long?,
     val publishedAt: Instant?,
+    val chaptersUrl: String? = null,
+    val chapters: List<Chapter> = emptyList(),
 )
 
 /**

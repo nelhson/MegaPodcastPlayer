@@ -19,6 +19,10 @@ import org.junit.Test
  * fraction and cannot leave `0f..1f`, and a release lands wherever the gesture actually asked for.
  * The settle rule is the one a user would notice being wrong — a quick flick up from the bar has to
  * open the player even though the finger barely moved, which position alone would refuse.
+ *
+ * The dismiss pull is the second number, and it is trickier than it looks: the same finger movement
+ * has to mean "open the sheet" or "put the player away" depending only on where the sheet already
+ * is, and a change of mind mid-gesture has to hand the movement back rather than jumping.
  */
 @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 class PlayerSheetStateTest {
@@ -181,6 +185,68 @@ class PlayerSheetStateTest {
         sheet.dragBy(deltaPx = 1_000f, sheetTravelPx = travelPx)
 
         assertEquals(0.5f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
+    fun `dragging down on a collapsed sheet accumulates a dismiss pull`() = runTest {
+        val sheet = state()
+
+        sheet.dragBy(deltaPx = 40f, sheetTravelPx = travelPx)
+        sheet.dragBy(deltaPx = 30f, sheetTravelPx = travelPx)
+
+        // The sheet cannot open any less, so the movement went to the pull rather than nowhere.
+        assertEquals(0f, sheet.progress, TOLERANCE)
+        assertEquals(70f, sheet.pullDownPx, TOLERANCE)
+    }
+
+    @Test
+    fun `dragging down on an open sheet closes it before any pull begins`() = runTest {
+        val sheet = state(PlayerSheetValue.Expanded)
+
+        sheet.dragBy(deltaPx = 500f, sheetTravelPx = travelPx)
+
+        assertEquals(0.75f, sheet.progress, TOLERANCE)
+        assertEquals(0f, sheet.pullDownPx, TOLERANCE)
+    }
+
+    @Test
+    fun `pulling back up pays off the pull before it opens the sheet`() = runTest {
+        // The change of mind: the bar has to stay under the finger on the way back rather than
+        // snapping to its rest position and then starting to open.
+        val sheet = state()
+        sheet.dragBy(deltaPx = 100f, sheetTravelPx = travelPx)
+
+        sheet.dragBy(deltaPx = -60f, sheetTravelPx = travelPx)
+
+        assertEquals(40f, sheet.pullDownPx, TOLERANCE)
+        assertEquals(0f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
+    fun `movement past the pull goes on to open the sheet`() = runTest {
+        val sheet = state()
+        sheet.dragBy(deltaPx = 100f, sheetTravelPx = travelPx)
+
+        sheet.dragBy(deltaPx = -600f, sheetTravelPx = travelPx)
+
+        assertEquals(0f, sheet.pullDownPx, TOLERANCE)
+        // 100px paid off the pull; the remaining 500 is a quarter of the travel.
+        assertEquals(0.25f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
+    fun `a pull past the threshold dismisses, and a shorter one does not`() = runTest {
+        val sheet = state()
+        sheet.dragBy(deltaPx = 200f, sheetTravelPx = travelPx)
+
+        assertTrue(sheet.consumePullDown(thresholdPx = 150f))
+
+        // Consumed: the gesture is over, and nothing is left to commit a second time.
+        assertEquals(0f, sheet.pullDownPx, TOLERANCE)
+
+        sheet.dragBy(deltaPx = 100f, sheetTravelPx = travelPx)
+        assertFalse(sheet.consumePullDown(thresholdPx = 150f))
+        assertEquals(0f, sheet.pullDownPx, TOLERANCE)
     }
 
     /**

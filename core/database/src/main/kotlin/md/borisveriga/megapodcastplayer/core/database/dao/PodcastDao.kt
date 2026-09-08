@@ -22,6 +22,13 @@ interface PodcastDao {
      *
      * The counts are computed as correlated sub-selects rather than joins so that a show with no
      * episodes still appears (with zeroes) instead of disappearing.
+     *
+     * `unplayed_count` repeats `EpisodeFilter.UNPLAYED`'s rule in SQL — never played *and* never
+     * started — rather than counting `is_played = 0`, so that the number the library sorts by and
+     * the list the show page's *Unplayed* chip produces are the same set of episodes.
+     *
+     * `latest_published_at` is null for a show whose feed dates nothing; the sort treats that as
+     * "has published nothing" rather than as the epoch.
      */
     @Query(
         """
@@ -30,7 +37,11 @@ interface PodcastDao {
             (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.is_new = 1)
                 AS new_episode_count,
             (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id
-                AND e.download_state = 'COMPLETED') AS downloaded_count
+                AND e.download_state = 'COMPLETED') AS downloaded_count,
+            (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id
+                AND e.is_played = 0 AND e.position_ms <= 0) AS unplayed_count,
+            (SELECT MAX(e.published_at) FROM episodes e WHERE e.podcast_id = p.id)
+                AS latest_published_at
         FROM podcasts p
         ORDER BY p.sort_order ASC
         """,
@@ -115,4 +126,17 @@ interface PodcastDao {
     suspend fun reorder(ids: List<String>) {
         ids.forEachIndexed { index, id -> setSortOrder(id, index) }
     }
+
+    /**
+     * Re-applies the show metadata a backup recorded but a fresh add cannot know.
+     *
+     * A targeted `UPDATE` rather than a read-modify-write of the whole row: a restore re-fetches
+     * every feed, so a refresh may well be writing the title, artwork and etag of this same show
+     * while this runs, and a whole-row write would quietly undo it.
+     *
+     * `added_at` is restored because it is the one column that records something about the *user*
+     * rather than the feed — how long they have had the show.
+     */
+    @Query("UPDATE podcasts SET itunes_id = :itunesId, added_at = :addedAt WHERE id = :id")
+    suspend fun restoreMetadata(id: String, itunesId: Long?, addedAt: Long)
 }

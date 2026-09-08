@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -64,14 +63,15 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  * @param playedFraction progress through the episode in `0f..1f`; drawn as a hairline under the row.
  * @param isNowPlaying whether this episode is the one loaded in the player.
  * @param isPlaying whether that episode is actually running, as opposed to loaded and paused.
- * @param isSelected whether the row is part of a multi-selection; tints the row and announces
- *   itself as selected.
+ * @param showNowPlayingBars whether the loaded episode is marked with the three-bar equaliser
+ *   beside its title. False for a list that puts a play/pause control in [trailing]: that control
+ *   already says which row is loaded and whether it is running, and two marks for one fact read as
+ *   two facts. The row's own tint and its spoken state stay either way.
  * @param onClick invoked when the row is pressed; the row is not focusable when null.
- * @param onLongClick invoked on a long press, usually to start selecting. Published to
- *   accessibility services as a named custom action, because a long press is a gesture a TalkBack
- *   user cannot make.
- * @param longClickLabel names that custom action, e.g. "Select". Required in practice whenever
- *   [onLongClick] is set.
+ * @param onLongClick invoked on a long press. Published to accessibility services as a named custom
+ *   action, because a long press is a gesture a TalkBack user cannot make.
+ * @param longClickLabel names that custom action. Required in practice whenever [onLongClick] is
+ *   set.
  * @param trailing actions pinned to the end of the row, e.g. a [DownloadButton].
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -89,21 +89,17 @@ fun EpisodeRow(
     playedFraction: Float = 0f,
     isNowPlaying: Boolean = false,
     isPlaying: Boolean = false,
-    isSelected: Boolean = false,
+    showNowPlayingBars: Boolean = true,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     longClickLabel: String? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val background by animateColorAsState(
-        targetValue = when {
-            // Selection wins over now-playing: while a selection is being made, which rows are in
-            // it is the only thing the user is looking for.
-            isSelected -> MaterialTheme.colorScheme.secondaryContainer
-
-            isNowPlaying -> MegaPodcastPlayerTheme.colors.nowPlayingContainer
-
-            else -> MaterialTheme.colorScheme.surface
+        targetValue = if (isNowPlaying) {
+            MegaPodcastPlayerTheme.colors.nowPlayingContainer
+        } else {
+            MaterialTheme.colorScheme.surface
         },
         animationSpec = Motion.fade(),
         label = "rowBackground",
@@ -133,12 +129,7 @@ fun EpisodeRow(
             )
             // One node per row: TalkBack should say "Hard Fork, The AI bubble, 42 minutes, 30
             // percent played", not walk four separate labels.
-            .semantics(mergeDescendants = true) {
-                stateDescription = state
-                // Only when true: every row announcing "not selected" outside a selection would be
-                // noise on a screen where nothing is selectable yet.
-                if (isSelected) selected = true
-            },
+            .semantics(mergeDescendants = true) { stateDescription = state },
     ) {
         Row(
             modifier = Modifier
@@ -169,27 +160,13 @@ fun EpisodeRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
                 ) {
-                    if (isUnplayed && !isNowPlaying) {
-                        Box(
-                            modifier = Modifier
-                                .size(UNPLAYED_DOT)
-                                .clip(MegaPodcastPlayerTheme.shapes.pill)
-                                .background(MegaPodcastPlayerTheme.colors.unplayed),
-                        )
-                    }
-                    if (isNowPlaying) {
-                        NowPlayingBars(playing = isPlaying)
-                    }
-                    // With the dot and the bars rather than out at the end of the row: all three
-                    // are marks on the title, and a lone glyph on the far side would be read as a
-                    // control. The title takes what is left and ellipsises, as it already did.
-                    if (isDownloaded) {
-                        DownloadedMark(
-                            contentDescription = stringResource(
-                                R.string.designsystem_downloaded,
-                            ),
-                        )
-                    }
+                    TitleMarks(
+                        isUnplayed = isUnplayed,
+                        isNowPlaying = isNowPlaying,
+                        isPlaying = isPlaying,
+                        isDownloaded = isDownloaded,
+                        showNowPlayingBars = showNowPlayingBars,
+                    )
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
@@ -240,6 +217,49 @@ fun EpisodeRow(
                 )
             }
         }
+    }
+}
+
+/**
+ * The three marks that sit in front of an episode's title.
+ *
+ * Kept together and in front of the title rather than out at the end of the row: all three are
+ * facts *about* the title, and a lone glyph on the far side of a row reads as a control. The title
+ * takes whatever width is left and ellipsises.
+ *
+ * Extracted from the row itself because the row was over the project's complexity limit, and these
+ * five booleans are the part of it that is purely "which marks does this row wear".
+ *
+ * @param isUnplayed whether to draw the new-episode dot.
+ * @param isNowPlaying whether this is the episode the player has loaded.
+ * @param isPlaying whether that episode is running, which the bars show.
+ * @param isDownloaded whether the audio is on the device.
+ * @param showNowPlayingBars whether the loaded episode is marked here at all; false where the
+ *   caller draws its own play/pause control instead.
+ */
+@Composable
+private fun TitleMarks(
+    isUnplayed: Boolean,
+    isNowPlaying: Boolean,
+    isPlaying: Boolean,
+    isDownloaded: Boolean,
+    showNowPlayingBars: Boolean,
+) {
+    val marksNowPlaying = isNowPlaying && showNowPlayingBars
+
+    if (isUnplayed && !marksNowPlaying) {
+        Box(
+            modifier = Modifier
+                .size(UNPLAYED_DOT)
+                .clip(MegaPodcastPlayerTheme.shapes.pill)
+                .background(MegaPodcastPlayerTheme.colors.unplayed),
+        )
+    }
+    if (marksNowPlaying) {
+        NowPlayingBars(playing = isPlaying)
+    }
+    if (isDownloaded) {
+        DownloadedMark(contentDescription = stringResource(R.string.designsystem_downloaded))
     }
 }
 

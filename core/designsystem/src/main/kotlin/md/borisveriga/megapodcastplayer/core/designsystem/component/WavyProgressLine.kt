@@ -22,12 +22,13 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.sin
 import md.borisveriga.megapodcastplayer.core.designsystem.R
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 
 /**
  * An indeterminate hairline for work the user did not ask for.
@@ -52,7 +53,12 @@ fun WavyProgressLine(
     val waveColor = MegaPodcastPlayerTheme.colors.waveform
     val density = LocalDensity.current
 
-    val phase by rememberInfiniteTransition(label = "wavyLine").animateFloat(
+    // Held still for a user who has turned animations off. The line stays, and so does the
+    // indeterminate progress semantics that tell a screen reader work is under way; only the
+    // travelling stops.
+    val still = MegaPodcastPlayerTheme.reduceMotion
+
+    val travellingPhase by rememberInfiniteTransition(label = "wavyLine").animateFloat(
         initialValue = 0f,
         targetValue = 2 * PI.toFloat(),
         animationSpec = infiniteRepeatable(
@@ -61,6 +67,7 @@ fun WavyProgressLine(
         ),
         label = "wavyLinePhase",
     )
+    val phase = if (still) 0f else travellingPhase
 
     Canvas(
         modifier = modifier
@@ -111,7 +118,8 @@ private val WAVE_AMPLITUDE = 1.5.dp
 private val WAVE_LENGTH = 20.dp
 private val WAVE_SAMPLE_STEP = 2.dp
 
-@Preview
+@ThemePreviews
+@FontScalePreviews
 @Composable
 private fun WavyProgressLinePreview() {
     MegaPodcastPlayerTheme {

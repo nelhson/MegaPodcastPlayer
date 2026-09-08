@@ -18,6 +18,23 @@
     <string name="search_add_link">Add this link</string>
     <string name="search_add_youtube_playlist">Add this YouTube playlist</string>
 
+    <!--
+        The preview sheet: a show as it would be if it were added. %1$s is the episode title on the
+        play button, which is the one control here that does something the sheet did not already
+        promise — it starts audio from a show the user has not subscribed to.
+    -->
+    <string name="search_preview_subscribe">Subscribe</string>
+    <string name="search_preview_latest">Latest episodes</string>
+    <string name="search_preview_play">Play %1$s</string>
+    <plurals name="search_preview_episode_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+
+    <!-- The two ways a preview can fail. Only one of them is worth trying again. -->
+    <string name="search_preview_no_feed">This show publishes no feed, so there is nothing to play or follow.</string>
+    <string name="search_preview_unreachable">Couldn\'t read this show’s feed. Check your connection and try again.</string>
+
     <string name="search_error_title">Couldn\'t search</string>
     <string name="search_error_no_connection">No connection</string>
     <string name="search_error_timeout">Apple didn\'t respond in time</string>

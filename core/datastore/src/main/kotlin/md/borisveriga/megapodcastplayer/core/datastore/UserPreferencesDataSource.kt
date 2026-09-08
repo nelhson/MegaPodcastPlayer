@@ -12,9 +12,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
+import md.borisveriga.megapodcastplayer.core.model.LibrarySort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.ShowSettingsCodec
+import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 
 /**
  * Reads and writes the small, user-owned settings that are not worth a database table.
@@ -69,6 +74,38 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Observes how the app should draw itself; the defaults until anything is chosen.
+     *
+     * One flow for the three values rather than three, because the theme cannot be applied one
+     * third at a time: every reader of this wants all of it at once.
+     */
+    val appearanceSettings: Flow<AppearanceSettings> = dataStore.data.map { preferences ->
+        AppearanceSettings(
+            // A name this build does not know falls back to the default rather than throwing, for
+            // the same reason the sort order does — nothing wipes this file between builds.
+            theme = preferences[Keys.THEME]
+                ?.let { stored -> ThemeChoice.entries.firstOrNull { it.name == stored } }
+                ?: AppearanceSettings.DEFAULT.theme,
+            dynamicColor = preferences[Keys.DYNAMIC_COLOR]
+                ?: AppearanceSettings.DEFAULT.dynamicColor,
+            pureBlack = preferences[Keys.PURE_BLACK] ?: AppearanceSettings.DEFAULT.pureBlack,
+        )
+    }
+
+    /**
+     * Observes the order the library lists its shows in; the default until one is chosen.
+     *
+     * A name this build does not know falls back to the default rather than throwing. Preferences
+     * outlive an install in a way the database does not — nothing wipes this file — so a sort order
+     * dropped from the enum between builds must not be able to crash the library screen.
+     */
+    val librarySort: Flow<LibrarySort> = dataStore.data.map { preferences ->
+        preferences[Keys.LIBRARY_SORT]
+            ?.let { stored -> LibrarySort.entries.firstOrNull { it.name == stored } }
+            ?: LibrarySort.DEFAULT
+    }
+
+    /**
      * Observes the hand-made ordering of the downloads screen, first row first.
      *
      * Empty until the user drags something, which is what leaves the screen on the state-based
@@ -93,6 +130,16 @@ class UserPreferencesDataSource @Inject constructor(
      */
     val lastPlayedEpisodeId: Flow<String?> =
         dataStore.data.map { preferences -> preferences[Keys.LAST_PLAYED_EPISODE_ID] }
+
+    /**
+     * Observes when a backup was last exported, or null if one never has been.
+     *
+     * The settings screen shows this so that "no backup yet" is on screen *before* a release that
+     * changes the database schema and therefore wipes it — the warning has to reach the user while
+     * they can still act on it.
+     */
+    val lastBackupAtMs: Flow<Long?> =
+        dataStore.data.map { preferences -> preferences[Keys.LAST_BACKUP_AT_MS] }
 
     /**
      * Sets the playback rate.
@@ -160,6 +207,43 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Records which palette the app draws itself in.
+     *
+     * @param theme the chosen palette; stored by name, as the layout and the sort order are.
+     */
+    suspend fun setTheme(theme: ThemeChoice) {
+        dataStore.edit { it[Keys.THEME] = theme.name }
+    }
+
+    /**
+     * Records whether the palette comes from the wallpaper.
+     *
+     * @param enabled true to take Material You's colours instead of the app's own.
+     */
+    suspend fun setDynamicColor(enabled: Boolean) {
+        dataStore.edit { it[Keys.DYNAMIC_COLOR] = enabled }
+    }
+
+    /**
+     * Records whether the dark theme is drawn on true black.
+     *
+     * @param enabled true for black backgrounds rather than very dark grey.
+     */
+    suspend fun setPureBlack(enabled: Boolean) {
+        dataStore.edit { it[Keys.PURE_BLACK] = enabled }
+    }
+
+    /**
+     * Records the order the library lists its shows in.
+     *
+     * @param sort the chosen order; stored by name, as [setLibraryLayout] stores its layout and for
+     *   the same reason.
+     */
+    suspend fun setLibrarySort(sort: LibrarySort) {
+        dataStore.edit { it[Keys.LIBRARY_SORT] = sort.name }
+    }
+
+    /**
      * Stores the hand-made ordering of the downloads screen.
      *
      * Written as one separated string rather than a `stringSet`, which DataStore does not order.
@@ -187,6 +271,54 @@ class UserPreferencesDataSource @Inject constructor(
         }
     }
 
+    /**
+     * Records that a backup was exported successfully.
+     *
+     * @param exportedAtMs when the export was written, epoch milliseconds.
+     */
+    suspend fun setLastBackupAt(exportedAtMs: Long) {
+        dataStore.edit { it[Keys.LAST_BACKUP_AT_MS] = exportedAtMs }
+    }
+
+    /**
+     * Observes what the user has decided about individual shows, keyed by podcast id.
+     *
+     * A show that has never been touched is absent rather than present with defaults, so the map
+     * stays the size of the decisions actually made rather than the size of the library.
+     */
+    val showSettings: Flow<Map<String, ShowSettings>> = dataStore.data.map { preferences ->
+        ShowSettingsCodec.decode(preferences[Keys.SHOW_SETTINGS])
+    }
+
+    /**
+     * Changes one show's settings.
+     *
+     * Read-modify-write inside `edit`, which DataStore serialises, so two screens changing two
+     * different shows at once cannot lose one of the changes — the failure a naive "read the flow,
+     * write the map" would have.
+     *
+     * A show whose settings come back to the defaults is removed rather than stored, so the map
+     * does not accumulate a row for every show the user has ever glanced at with a filter on.
+     *
+     * @param podcastId the show being changed.
+     * @param transform receives the show's current settings and returns the new ones.
+     */
+    suspend fun updateShowSettings(
+        podcastId: String,
+        transform: (ShowSettings) -> ShowSettings,
+    ) {
+        dataStore.edit { preferences ->
+            val current = ShowSettingsCodec.decode(preferences[Keys.SHOW_SETTINGS])
+            val updated = transform(current[podcastId] ?: ShowSettings.DEFAULT)
+            val next = if (updated.isDefault) {
+                current - podcastId
+            } else {
+                current + (podcastId to updated)
+            }
+            preferences[Keys.SHOW_SETTINGS] = ShowSettingsCodec.encode(next)
+        }
+    }
+
     /** Preference keys, kept private so the key strings are a storage detail. */
     private object Keys {
         val SPEED = floatPreferencesKey("playback_speed")
@@ -199,7 +331,13 @@ class UserPreferencesDataSource @Inject constructor(
         val KEEP_LIMIT = intPreferencesKey("download_keep_limit_per_podcast")
         val DELETE_AFTER_PLAYING = booleanPreferencesKey("delete_after_playing")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
+        val LIBRARY_SORT = stringPreferencesKey("library_sort")
+        val THEME = stringPreferencesKey("theme")
+        val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val PURE_BLACK = booleanPreferencesKey("pure_black")
         val DOWNLOAD_ORDER = stringPreferencesKey("download_order")
+        val LAST_BACKUP_AT_MS = longPreferencesKey("last_backup_at_ms")
+        val SHOW_SETTINGS = stringPreferencesKey("show_settings")
     }
 
     private companion object {

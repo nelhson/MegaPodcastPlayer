@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The two colours the window needs before Compose exists.
+
+  Everything else is themed in Compose; these are the platform's copy of the brand's two grounds,
+  and they have to be duplicated here because a window background is painted by the system before
+  a single composable has run. They are the `background` role of `citronLightScheme` and
+  `citronDarkScheme` in :core:designsystem — change one and change the other, or a cold launch
+  flashes a colour the app never uses again.
+-->
+<resources>
+    <!-- Bone white: `citronLightScheme.background`. -->
+    <color name="window_background">#FFFBFBF3</color>
+</resources>

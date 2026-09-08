@@ -1,7 +1,11 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
 import android.content.res.Resources
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -9,19 +13,24 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -29,12 +38,18 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
+import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
+import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.NowPlayingBars
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
@@ -43,17 +58,24 @@ import md.borisveriga.megapodcastplayer.core.designsystem.reorder.moveActions
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableLayout
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.reorderableLongPressDrag
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
+import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 
 /**
  * The play queue.
  *
+ * @param onBrowseLibrary opens the library, which is where episodes are queued from; the empty
+ *   state's only action, because "nothing queued" with nowhere to go is a dead end.
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt; shared with the player, because it is the same queue.
  */
 @Composable
 fun QueueRoute(
+    onBrowseLibrary: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
@@ -63,10 +85,11 @@ fun QueueRoute(
         uiState = uiState,
         onPlay = viewModel::playQueued,
         onRemove = viewModel::removeFromQueue,
-        onMarkPlayed = viewModel::markQueuedPlayed,
         onMove = viewModel::moveInUpNext,
+        onClear = viewModel::clearQueue,
         onUndo = viewModel::undoQueueChange,
         onMessageShown = viewModel::onQueueMessageShown,
+        onBrowseLibrary = onBrowseLibrary,
         modifier = modifier,
     )
 }
@@ -83,12 +106,13 @@ fun QueueRoute(
  * @param uiState what to render; [PlayerUiState.upNext] is the editable part.
  * @param onPlay plays a queued episode immediately.
  * @param onRemove drops a queued episode.
- * @param onMarkPlayed marks a queued episode played, which also drops it.
  * @param onMove applies a completed drag, as positions within [PlayerUiState.upNext]. Called once
  *   on release rather than on every frame of the drag: one gesture is one edit, and a stream of
  *   them would make the player and the database renegotiate the order dozens of times.
+ * @param onClear empties the queue of everything after the episode playing.
  * @param onUndo reverses whichever of the two the snackbar is currently offering back.
  * @param onMessageShown called once a snackbar message has been displayed.
+ * @param onBrowseLibrary opens the library from the empty state.
  * @param modifier layout modifier.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,10 +121,11 @@ fun QueueScreen(
     uiState: PlayerUiState,
     onPlay: (String) -> Unit,
     onRemove: (String) -> Unit,
-    onMarkPlayed: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onClear: () -> Unit,
     onUndo: () -> Unit,
     onMessageShown: () -> Unit,
+    onBrowseLibrary: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -141,7 +166,21 @@ fun QueueScreen(
         topBar = {
             MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.queue_title),
+                // How long the queue is, in the unit a queue is actually measured in. A count of
+                // episodes says nothing about whether it fits the walk home.
+                subtitle = formatDuration(resources, uiState.upNext.remainingMs())
+                    ?.let { stringResource(R.string.queue_remaining, it) },
                 scrollBehavior = scrollBehavior,
+                actions = {
+                    if (uiState.upNext.isNotEmpty()) {
+                        IconButton(onClick = onClear) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlaylistRemove,
+                                contentDescription = stringResource(R.string.queue_clear),
+                            )
+                        }
+                    }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -151,6 +190,10 @@ fun QueueScreen(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 title = stringResource(R.string.queue_empty_title),
                 description = stringResource(R.string.queue_empty_description),
+                // An empty state with nothing to press is a dead end, and this one is reached by
+                // tapping a tab rather than by running out of something.
+                actionLabel = stringResource(R.string.queue_empty_action),
+                onAction = onBrowseLibrary,
                 modifier = Modifier.padding(padding),
             )
             return@Scaffold
@@ -162,6 +205,15 @@ fun QueueScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            // What is playing, above what is waiting. By design this screen lists only "up next",
+            // which left it saying nothing at all about the episode the queue is a queue *behind* —
+            // so the first row the user reads was the second thing that will play.
+            uiState.nowPlaying?.let { playing ->
+                item(key = NOW_PLAYING_KEY) {
+                    NowPlayingHeader(entry = playing, playback = uiState.playback)
+                }
+            }
+
             itemsIndexed(drag.order, key = { _, entry -> entry.episode.id }) { index, entry ->
                 QueueEntry(
                     entry = entry,
@@ -169,7 +221,6 @@ fun QueueScreen(
                     drag = drag,
                     onPlay = { onPlay(entry.episode.id) },
                     onRemove = { onRemove(entry.episode.id) },
-                    onMarkPlayed = { onMarkPlayed(entry.episode.id) },
                 )
             }
         }
@@ -179,14 +230,13 @@ fun QueueScreen(
 /**
  * One reorderable, swipeable queue row.
  *
- * Four gestures share it, and they stay out of each other's way by asking for different things: a
- * tap plays the episode, a short right-to-left swipe reveals "mark played", a long one removes the
- * row, and a long press picks it up. The press is the one that has to be *held*, which is what
- * leaves the other three — and the queue's own scrolling — free to happen first.
+ * Three gestures share it, and they stay out of each other's way by asking for different things: a
+ * tap plays the episode, a right-to-left swipe removes the row, and a long press picks it up. The
+ * press is the one that has to be *held*, which is what leaves the other two — and the queue's own
+ * scrolling — free to happen first.
  *
- * Removal is the full swipe rather than the button because it is the one done constantly: a queue
- * is pruned far more often than it is marked off. Marking played is the rarer, more considered
- * choice, so it is the one that has to be aimed at.
+ * Removal is the full swipe rather than a revealed button because it is the one thing a queue row
+ * is asked for, and it is done constantly: a queue is pruned far more often than it is reordered.
  *
  * Every one of them is invisible to a screen reader, so all of them are also published as custom
  * accessibility actions. That is not a nicety here: without them the queue would be readable and
@@ -197,7 +247,6 @@ fun QueueScreen(
  * @param drag the shared drag state, which owns the visual offset and the pending move.
  * @param onPlay plays this episode now.
  * @param onRemove drops it from the queue.
- * @param onMarkPlayed marks it played, which also drops it.
  * @param modifier layout modifier.
  */
 @Composable
@@ -207,33 +256,24 @@ private fun QueueEntry(
     drag: ReorderableState<PlayableEpisode>,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
-    onMarkPlayed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isDragging = drag.draggingKey == entry.episode.id
     val moveUp = stringResource(R.string.queue_move_up)
     val moveDown = stringResource(R.string.queue_move_down)
 
-    val markPlayed = SwipeAction(
-        icon = Icons.Rounded.DoneAll,
-        label = stringResource(R.string.queue_action_mark_played),
-        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        onClick = onMarkPlayed,
-    )
     val remove = SwipeAction(
         icon = Icons.Rounded.Delete,
         label = stringResource(R.string.queue_action_remove),
-        // The error palette, because this is the row leaving. Both actions take the episode out of
-        // the queue, and the colour is what distinguishes "I have listened to this" from "I am not
-        // going to".
+        // The error palette, because this is the row leaving.
         containerColor = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         onClick = onRemove,
     )
 
     SwipeActionsRow(
-        actions = listOf(markPlayed),
+        // Nothing to reveal: the row's one action is the full swipe.
+        actions = emptyList(),
         fullSwipeAction = remove,
         modifier = modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the underlying
@@ -252,10 +292,10 @@ private fun QueueEntry(
                 // press has been held, and a swipe claims the gesture long before that.
                 .reorderableLongPressDrag(drag, entry.episode.id)
                 .semantics {
-                    // Both tiers of the swipe, flattened: to a screen reader they are not two
-                    // tiers, they are simply the two things this row can do.
+                    // The swipe is invisible to a screen reader, so what it commits is published
+                    // here as something that can simply be chosen.
                     customActions = drag.moveActions(index, moveUp, moveDown) +
-                        listOf(markPlayed, remove).asAccessibilityActions()
+                        listOf(remove).asAccessibilityActions()
                 },
             title = entry.episode.title,
             showTitle = entry.showTitle,
@@ -271,6 +311,96 @@ private fun QueueEntry(
 }
 
 /**
+ * What is playing, above the list of what is not yet.
+ *
+ * Slim on purpose: a second full episode row at the top of the queue would read as the first thing
+ * in it. This is a status line — artwork, title, and how far through — with no gestures of its own,
+ * because everything you can do to the episode playing is on the player a tap away.
+ *
+ * @param entry the episode the player has loaded.
+ * @param playback where the player has it, for the position line.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun NowPlayingHeader(
+    entry: PlayableEpisode,
+    playback: PlaybackState,
+    modifier: Modifier = Modifier,
+) {
+    val position = formatPosition(playback.positionMs)
+    val remaining = formatCountdown(playback.knownDurationMs, playback.positionMs)
+    val label = stringResource(R.string.queue_now_playing)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                vertical = MegaPodcastPlayerTheme.spacing.md,
+            )
+            // One node, like every row in the app: a screen reader lands on "Now playing,
+            // <episode>, 12:04" rather than walking three anonymous fragments.
+            .semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
+        ) {
+            PodcastArtwork(
+                url = entry.episode.artworkUrl ?: entry.showArtworkUrl,
+                size = ArtworkSize.Mini,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = entry.episode.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = listOfNotNull(position, remaining).joinToString(SEPARATOR),
+                    style = MegaPodcastPlayerTheme.type.numeric,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            NowPlayingBars(playing = playback.isPlaying)
+        }
+
+        HorizontalDivider()
+    }
+}
+
+/**
+ * How much listening the queue holds.
+ *
+ * Sums what is *left* of each episode rather than each episode's length: a queue of three
+ * half-finished episodes is not three hours of listening, and the number exists to answer "does
+ * this fit the walk home".
+ *
+ * @return the total in milliseconds, or null when no episode has a duration to add.
+ */
+private fun List<PlayableEpisode>.remainingMs(): Long? {
+    val total = sumOf { entry ->
+        val duration = entry.episode.durationMs ?: 0L
+        (duration - entry.episode.positionMs).coerceAtLeast(0L)
+    }
+    return total.takeIf { it > 0L }
+}
+
+/** Between the elapsed and remaining timecodes on the now-playing line. */
+private const val SEPARATOR = " · "
+
+/** Stable key for the now-playing header, so the list does not confuse it with a row. */
+private const val NOW_PLAYING_KEY = "now-playing"
+
+/**
  * Turns a [QueueMessage] into snackbar text.
  *
  * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
@@ -281,8 +411,47 @@ private fun QueueEntry(
 private fun QueueMessage.toText(resources: Resources): String = when (this) {
     is QueueMessage.Removed -> resources.getString(R.string.queue_message_removed, episodeTitle)
 
-    is QueueMessage.MarkedPlayed ->
-        resources.getString(R.string.queue_message_marked_played, episodeTitle)
+    is QueueMessage.Cleared ->
+        resources.getQuantityString(R.plurals.queue_message_cleared, count, count)
 }
 
 private const val DRAG_ELEVATION = 8f
+
+@ThemePreviews
+@FontScalePreviews
+@Composable
+private fun QueueScreenPreview() {
+    MegaPodcastPlayerTheme {
+        QueueScreen(
+            uiState = PlayerUiState(
+                playback = previewPlayback,
+                queue = previewQueue,
+                lastPlayedEpisodeId = "e1",
+            ),
+            onPlay = {},
+            onRemove = {},
+            onMove = { _, _ -> },
+            onClear = {},
+            onUndo = {},
+            onMessageShown = {},
+            onBrowseLibrary = {},
+        )
+    }
+}
+
+@ThemePreviews
+@Composable
+private fun QueueScreenEmptyPreview() {
+    MegaPodcastPlayerTheme {
+        QueueScreen(
+            uiState = PlayerUiState(),
+            onPlay = {},
+            onRemove = {},
+            onMove = { _, _ -> },
+            onClear = {},
+            onUndo = {},
+            onMessageShown = {},
+            onBrowseLibrary = {},
+        )
+    }
+}

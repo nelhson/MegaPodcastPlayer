@@ -17,6 +17,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.rememberHaptics
 
 /**
  * Drag-to-reorder for any keyed lazy layout.
@@ -325,14 +326,27 @@ private fun ReorderableItem.contains(point: Offset): Boolean =
  * consumed until the press has been held, so a tap still taps and a flick still scrolls — either
  * of them cancels the long press long before it fires.
  *
+ * Ticks when the item is picked up and again when it is dropped. `detectDragGesturesAfterLongPress`
+ * gives no feedback of its own — unlike `combinedClickable`, which the platform ticks for free — so
+ * without this the only sign that a press had been held long enough was the item starting to move,
+ * which is a frame too late to be reassuring.
+ *
  * @param state the reorder state to drive.
  * @param key the dragged item's key.
  */
-fun <T> Modifier.reorderableLongPressDrag(state: ReorderableState<T>, key: Any): Modifier =
-    pointerInput(key) {
+@Composable
+fun <T> Modifier.reorderableLongPressDrag(state: ReorderableState<T>, key: Any): Modifier {
+    val haptics = rememberHaptics()
+    return pointerInput(key) {
         detectDragGesturesAfterLongPress(
-            onDragStart = { state.onDragStart(key) },
-            onDragEnd = { state.onDragEnd() },
+            onDragStart = {
+                haptics.pickUp()
+                state.onDragStart(key)
+            },
+            onDragEnd = {
+                haptics.drop()
+                state.onDragEnd()
+            },
             onDragCancel = { state.onDragCancel() },
             onDrag = { change, amount ->
                 change.consume()
@@ -340,6 +354,7 @@ fun <T> Modifier.reorderableLongPressDrag(state: ReorderableState<T>, key: Any):
             },
         )
     }
+}
 
 /**
  * The reorder gesture, published as accessibility actions.

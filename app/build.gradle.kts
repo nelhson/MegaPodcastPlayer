@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.megapodcastplayer.android.application)
     alias(libs.plugins.megapodcastplayer.android.application.compose)
+    alias(libs.plugins.megapodcastplayer.android.crashlytics)
     alias(libs.plugins.megapodcastplayer.android.hilt)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -24,11 +25,13 @@ dependencies {
     // Shared phone <-> watch message contract; the phone side of the Data Layer lives here.
     implementation(projects.core.wearprotocol)
 
+    implementation(projects.feature.listen)
     implementation(projects.feature.library)
     implementation(projects.feature.downloads)
     implementation(projects.feature.search)
     implementation(projects.feature.podcast)
     implementation(projects.feature.player)
+    implementation(projects.feature.moments)
     implementation(projects.feature.settings)
 
     implementation(libs.androidx.core.ktx)

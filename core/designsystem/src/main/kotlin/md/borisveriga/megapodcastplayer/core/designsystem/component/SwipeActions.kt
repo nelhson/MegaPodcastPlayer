@@ -47,6 +47,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.rememberHaptics
 
 /**
  * A list row with a two-tier right-to-left swipe: a short pull reveals buttons, a long one commits.
@@ -120,6 +121,15 @@ fun SwipeActionsRow(
     val isCommitting = fullSwipeAction != null && pulled > revealWidth
     val isArmed = commitThreshold > 0f && pulled >= commitThreshold
     val gesturesEnabled = enabled && (actions.isNotEmpty() || fullSwipeAction != null)
+
+    // A tick the instant the backdrop lights up. Both say the same thing — "let go now and this
+    // happens" — and the hand is the half of the pair the user can perceive while their thumb is
+    // covering the row. Keyed on the crossing rather than fired per frame, so it happens once each
+    // way; pulling back below the threshold and over it again is a second decision and ticks again.
+    val haptics = rememberHaptics()
+    LaunchedEffect(isArmed) {
+        if (isArmed) haptics.arm()
+    }
 
     // The settle animation, held so a new gesture can interrupt one still in flight.
     var settleJob by remember { mutableStateOf<Job?>(null) }
@@ -402,8 +412,9 @@ private fun SwipeActionButton(action: SwipeAction, onClick: () -> Unit) {
             style = MaterialTheme.typography.labelSmall,
             color = action.contentColor,
             textAlign = TextAlign.Center,
-            // Two lines, because the honest labels are two and three words — "Mark all played"
-            // does not fit one line at this width and is not worth abbreviating into a guess.
+            // Two lines, because the honest labels are two words — "Queue next" already fills the
+            // width at some font scales, and a translation of it is not worth abbreviating into a
+            // guess.
             maxLines = BUTTON_LABEL_MAX_LINES,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.xs),
@@ -460,5 +471,5 @@ private val BUTTON_MIN_WIDTH = 84.dp
 /** Slightly under the 24dp default, so the icon and its label read as one stacked unit. */
 private val BUTTON_ICON_SIZE = 22.dp
 
-/** "Mark all played" is three words and wraps; anything longer than this is the caller's problem. */
+/** A two-word label wraps at large font scales; anything longer than this is the caller's problem. */
 private const val BUTTON_LABEL_MAX_LINES = 2

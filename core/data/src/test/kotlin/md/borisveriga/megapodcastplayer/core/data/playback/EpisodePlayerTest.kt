@@ -2,15 +2,19 @@ package md.borisveriga.megapodcastplayer.core.data.playback
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -48,12 +52,17 @@ class EpisodePlayerTest {
         showArtworkUrl = null,
     )
 
+    private lateinit var showSettings: ShowSettingsRepository
+
     @Before
     fun setUp() {
         playbackRepository = mockk(relaxed = true)
         queueSource = mockk(relaxed = true)
         connection = mockk(relaxed = true)
-        episodePlayer = EpisodePlayer(playbackRepository, queueSource, connection)
+        showSettings = mockk(relaxed = true)
+        // No show has an intro until a test gives it one; every start then resumes as before.
+        every { showSettings.observeSettings(any()) } returns flowOf(ShowSettings.DEFAULT)
+        episodePlayer = EpisodePlayer(playbackRepository, queueSource, showSettings, connection)
     }
 
     @Test
@@ -63,6 +72,30 @@ class EpisodePlayerTest {
         assertTrue(episodePlayer.play("a"))
 
         coVerify { connection.playNow(playable("a"), 0L) }
+    }
+
+    @Test
+    fun `an unstarted episode of a show with an intro begins after it`() = runTest {
+        coEvery { playbackRepository.playableEpisode("a") } returns playable("a")
+        every { showSettings.observeSettings(any()) } returns
+            flowOf(ShowSettings(skipIntroMs = 40_000L))
+
+        assertTrue(episodePlayer.play("a"))
+
+        coVerify { connection.playNow(playable("a"), 40_000L) }
+    }
+
+    @Test
+    fun `an episode already in progress resumes rather than jumping past the intro`() = runTest {
+        coEvery { playbackRepository.playableEpisode("a") } returns playable("a", positionMs = 5_000L)
+        every { showSettings.observeSettings(any()) } returns
+            flowOf(ShowSettings(skipIntroMs = 40_000L))
+
+        assertTrue(episodePlayer.play("a"))
+
+        // Skipping ahead here would be the app losing the user's place rather than saving them a
+        // tap: they are already past the intro, or deliberately inside it.
+        coVerify { connection.playNow(playable("a", positionMs = 5_000L), 5_000L) }
     }
 
     @Test

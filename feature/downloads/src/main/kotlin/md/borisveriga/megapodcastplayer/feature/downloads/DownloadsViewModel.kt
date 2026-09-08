@@ -12,15 +12,21 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 
 /**
  * State rendered by the downloads screen.
  *
  * @property downloads every episode the download stack is tracking: completed, transferring,
  *   waiting and failed. In the order the user dragged them into, and failures first before they
- *   have dragged anything; see [DownloadsViewModel.move].
+ *   have dragged anything; see [DownloadsViewModel.move]. Kept flat alongside [sections] because
+ *   it is what "is this episode still listed" is answered from.
+ * @property sections the same downloads grouped by what is happening to them, problems first. The
+ *   screen draws this rather than [downloads]: four states in one list, told apart only by a grey
+ *   line under the title, is the thing this screen was worst at.
  * @property completedCount how many of [downloads] are actually on the device. Counted separately
  *   because the storage summary answers "what is this costing me", and a transfer that is half done
  *   or has failed is not yet costing anything worth reporting.
@@ -39,6 +45,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
  */
 data class DownloadsUiState(
     val downloads: List<EpisodeWithShow> = emptyList(),
+    val sections: List<DownloadGroup> = emptyList(),
     val completedCount: Int = 0,
     val totalBytes: Long = 0L,
     val freeBytes: Long = 0L,
@@ -62,6 +69,16 @@ sealed interface DownloadsMessage {
      * @property title the episode's title.
      */
     data class Removed(val title: String) : DownloadsMessage
+
+    /**
+     * A download that was waiting for Wi-Fi was told to go now.
+     *
+     * Says so plainly because the effect is wider than the row it was asked from: Media3 enforces
+     * one network rule for the whole download manager, so everything else waiting starts too.
+     *
+     * @property title the episode's title.
+     */
+    data class DownloadingNow(val title: String) : DownloadsMessage
 
     /**
      * A failed download was asked for again.
@@ -137,6 +154,7 @@ class DownloadsViewModel @Inject constructor(
         val completed = downloads.filter { it.episode.downloadState == DownloadState.COMPLETED }
         DownloadsUiState(
             downloads = downloads,
+            sections = downloads.groupIntoSections(),
             completedCount = completed.size,
             // Only the finished episodes: a partial transfer's bytes are on disk but are not
             // storage the user can act on, and counting them would make the figure jump about
@@ -222,6 +240,26 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
+     * Starts a waiting download now, without waiting for Wi-Fi.
+     *
+     * The one thing a row that says *Waiting for Wi-Fi* could not previously express. What it
+     * actually does is app-wide — see [DownloadRepository.downloadNow] — so the confirmation says
+     * as much rather than pretending one row was singled out.
+     *
+     * @param episodeId the episode to fetch now.
+     */
+    fun downloadNow(episodeId: String) {
+        val title = titleOf(episodeId) ?: return
+        viewModelScope.launch {
+            transientState.value = if (downloadRepository.downloadNow(episodeId)) {
+                DownloadsMessage.DownloadingNow(title)
+            } else {
+                DownloadsMessage.EpisodeUnavailable
+            }
+        }
+    }
+
+    /**
      * Deletes one episode's audio, or cancels the transfer if it has not finished.
      *
      * One handler for both, because `removeDownload` already cancels an in-flight download
@@ -269,6 +307,11 @@ class DownloadsViewModel @Inject constructor(
      * stored order is — see [DownloadRepository.reorderDownloads]. [visibleIds] is the list as it
      * stood *before* the gesture, taken from the screen rather than re-read here: a transfer that
      * finished mid-drag would otherwise re-sort the list under the indices and move the wrong row.
+     *
+     * Since the screen was sectioned, those ids are the *Ready* section's alone — the only rows
+     * that can be dragged. The stored order is a list of ids the repository sorts by, and ids it
+     * does not name keep the state ordering the query gives them, so naming fewer of them is not a
+     * loss.
      *
      * @param visibleIds the downloads on screen, in the order they were in before the drag.
      * @param from the row's position among those, before the drag.

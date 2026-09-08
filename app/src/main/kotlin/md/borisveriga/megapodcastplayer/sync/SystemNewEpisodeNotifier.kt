@@ -104,7 +104,7 @@ class SystemNewEpisodeNotifier @Inject constructor(
             .setContentText(lines.first())
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
-            .setContentIntent(contentIntent(content.targetPodcastId))
+            .setContentIntent(contentIntent(content.targetPodcastId, content.targetEpisodeId))
             .setAutoCancel(true)
             .build()
     }
@@ -118,11 +118,14 @@ class SystemNewEpisodeNotifier @Inject constructor(
      * second copy of itself on the stack.
      *
      * @param podcastId the show to open, or null to open the app where it left off.
+     * @param episodeId the episode to open within it, when the refresh found exactly one. The tap
+     *   then lands on the episode the notification named rather than on a list containing it.
      */
-    private fun contentIntent(podcastId: String?): PendingIntent {
+    private fun contentIntent(podcastId: String?, episodeId: String?): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             if (podcastId != null) putExtra(MainActivity.EXTRA_PODCAST_ID, podcastId)
+            if (episodeId != null) putExtra(MainActivity.EXTRA_EPISODE_ID, episodeId)
         }
         return PendingIntent.getActivity(
             context,

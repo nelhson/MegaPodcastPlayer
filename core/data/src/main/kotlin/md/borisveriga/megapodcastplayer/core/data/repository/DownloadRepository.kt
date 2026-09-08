@@ -77,6 +77,25 @@ interface DownloadRepository {
     suspend fun download(episodeId: String): Boolean
 
     /**
+     * Starts a waiting download now, without waiting for Wi-Fi.
+     *
+     * What the downloads screen offers on a row that says *Waiting for Wi-Fi*. The user is standing
+     * somewhere without it and wants this episode on the phone before they leave, which no other
+     * control on that screen can express — the setting that put it there is app-wide and turning it
+     * off is a trip to Settings and back.
+     *
+     * The lifted rule is app-wide too, because Media3 enforces one network requirement for the
+     * whole download manager and has no per-download equivalent. Anything else already waiting will
+     * therefore start as well, which is why the screen says so rather than implying the one row was
+     * singled out. The stored preference is untouched and comes back into force as soon as nothing
+     * is left downloading.
+     *
+     * @param episodeId the episode to fetch now.
+     * @return true if the request was made; false if the episode is not stored.
+     */
+    suspend fun downloadNow(episodeId: String): Boolean
+
+    /**
      * Removes an episode's downloaded audio, cancelling it first if it is still in progress.
      *
      * @param episodeId the episode to remove.

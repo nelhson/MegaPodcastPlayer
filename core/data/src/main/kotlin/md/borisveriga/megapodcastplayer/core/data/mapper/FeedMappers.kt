@@ -4,6 +4,8 @@ import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
+import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
+import md.borisveriga.megapodcastplayer.core.model.chapters.ChapterJson
 import md.borisveriga.megapodcastplayer.core.model.episodeIdOf
 import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedChannel
@@ -70,4 +72,17 @@ fun FeedItem.asEpisodeEntity(podcastId: String): EpisodeEntity = EpisodeEntity(
     publishedAt = publishedAt?.toEpochMilli(),
     sizeBytes = audioLengthBytes,
     isNew = true,
+    chaptersUrl = chaptersUrl,
+    // Stored as text rather than as a table: the inline list exists only in the feed body, which is
+    // not kept, while every other chapter source can be derived again on demand.
+    chaptersJson = chapters.takeIf { it.isNotEmpty() }?.let(::encodeChapters),
 )
+
+/**
+ * Serialises an inline chapter list for storage on the episode row.
+ *
+ * @param chapters the chapters as parsed, in order.
+ * @return the JSON stored in `episodes.chapters_json`.
+ */
+private fun encodeChapters(chapters: List<Chapter>): String =
+    ChapterJson.encode(chapters)

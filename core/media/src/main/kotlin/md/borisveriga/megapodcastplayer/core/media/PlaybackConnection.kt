@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.core.media
 import android.content.ComponentName
 import android.content.Context
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -298,6 +299,20 @@ class PlaybackConnection @Inject constructor(
         player.setPlaybackSpeed(speed.coerceIn(PlaybackSettings.SPEED_RANGE))
     }
 
+    /**
+     * Sets the player's own volume, in `0f..1f`.
+     *
+     * The *player's* volume, not the device's: this scales the audio the app produces and leaves
+     * the user's media volume alone. It exists for the sleep timer's fade-out, which is the only
+     * thing that should ever move it, and which puts it back to [FULL_VOLUME] afterwards — a player
+     * left at zero volume by a crash mid-fade is a player that appears to be broken.
+     *
+     * @param volume the new volume; clamped, because a value out of range would throw.
+     */
+    suspend fun setVolume(volume: Float) = onController { player ->
+        player.volume = volume.coerceIn(0f, FULL_VOLUME)
+    }
+
     /** Stops playback and empties the queue. */
     suspend fun stop() = onController { player ->
         player.stop()
@@ -350,6 +365,9 @@ class PlaybackConnection @Inject constructor(
         }
 
     private companion object {
+        /** Full volume: what the player runs at whenever the sleep timer is not fading it out. */
+        const val FULL_VOLUME = 1f
+
         /** How often the scrubber is refreshed while playing. */
         const val POSITION_TICK_MS = 500L
 
@@ -390,8 +408,21 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
         queueEpisodeIds = (0 until mediaItemCount).mapNotNull { getMediaItemAt(it).episodeId },
         queueIndex = currentMediaItemIndex,
         errorMessage = playerError?.message ?: errorMessage,
+        // Classified here rather than at the screen, because this is the only place that has both
+        // the exception and the episode it belongs to; see [playbackErrorOf] on why the second
+        // one matters. A command that failed with no player error is still an unknown failure —
+        // the message is all there is for it.
+        error = playbackErrorOf(playerError, isYouTube = currentMediaItem.isYouTubeSourced())
+            ?: errorMessage?.let { PlaybackError.UNKNOWN },
     )
 }
+
+/** Whether this item's audio is a `youtube://` sentinel rather than a real enclosure. */
+private fun MediaItem?.isYouTubeSourced(): Boolean =
+    this?.localConfiguration?.uri?.scheme == YOUTUBE_SCHEME
+
+/** The scheme of the internal sentinel; see `youTubeAudioSentinel` in `:core:model`. */
+private const val YOUTUBE_SCHEME = "youtube"
 
 /**
  * Suspends until a [ListenableFuture] completes.

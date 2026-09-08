@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
+import android.content.res.Resources
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,12 +24,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +41,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -44,10 +52,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.NoteDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
-import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.rememberHaptics
+import md.borisveriga.megapodcastplayer.core.media.PlaybackError
+import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 
 /**
  * The app shell's player layer: content, then the sheet on top of it.
@@ -76,13 +91,15 @@ fun PlayerSheetScaffold(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val haptics = rememberHaptics()
     // LocalResources rather than LocalContext.current.resources, so a configuration change
     // invalidates the read. Resolved here because `LaunchedEffect` runs outside composition.
     val resources = LocalResources.current
 
-    LaunchedEffect(uiState.playback.errorMessage) {
-        val error = uiState.playback.errorMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(resources.getString(R.string.player_error, error))
+    LaunchedEffect(uiState.playback.error) {
+        val playback = uiState.playback
+        val error = playback.error ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(error.toText(resources, playback.errorMessage))
         viewModel.onErrorShown()
     }
 
@@ -93,17 +110,113 @@ fun PlayerSheetScaffold(
         if (uiState.isIdle) sheetState.collapse()
     }
 
-    val reserved = if (uiState.isIdle) 0.dp else collapsedPlayerHeight
+    // Whether the list of this episode's moments is open. Held here, like the sleep timer's, for
+    // the same reason: it is a question about this screen, and the moments themselves are saved.
+    var momentsOpen by rememberSaveable { mutableStateOf(false) }
+
+    if (momentsOpen) {
+        MomentsSheet(
+            moments = uiState.moments,
+            onJumpTo = { moment ->
+                momentsOpen = false
+                viewModel.seekTo(moment.positionMs)
+            },
+            onDismiss = { momentsOpen = false },
+        )
+    }
+
+    // Whether the speed sheet is open. Saved, so a rotation mid-drag does not close the picker and
+    // strand the rate wherever the thumb happened to be. The rate itself is not held here: it is a
+    // preference, and the sheet only ever writes it.
+    var speedOpen by rememberSaveable { mutableStateOf(false) }
+
+    if (speedOpen) {
+        SpeedSheet(
+            speed = uiState.playback.speed,
+            onPreview = viewModel::previewSpeed,
+            onCommit = viewModel::setSpeed,
+            onDismiss = { speedOpen = false },
+        )
+    }
+
+    // Whether the sleep timer sheet is open. A question about this screen rather than about the
+    // app: the timer itself is in memory in `:core:media`, and a sheet reopened by a rotation would
+    // be the app asking a question the user has already answered.
+    var sleepTimerOpen by rememberSaveable { mutableStateOf(false) }
+
+    if (sleepTimerOpen) {
+        SleepTimerSheet(
+            state = uiState.sleep,
+            chapterRemainingMs = uiState.chapterRemainingMs,
+            onArmAfter = viewModel::armSleepTimer,
+            onArmEndOfEpisode = viewModel::armSleepAtEndOfEpisode,
+            onCancel = viewModel::cancelSleepTimer,
+            onDismiss = { sleepTimerOpen = false },
+        )
+    }
+
+    // Only while a countdown is running: the sensor is the one thing here with a battery cost, and
+    // "shake to add fifteen minutes" is meaningless with nothing to add to.
+    ShakeToExtendEffect(
+        enabled = uiState.sleep.remainingMs != null,
+        onShake = viewModel::extendSleepTimer,
+    )
+
+    // The moment the note dialog is being written for, or null. Held here rather than in the view
+    // model because it is a question about this screen — the moment itself is already saved, and
+    // closing the dialog without typing anything is not a state worth surviving a process death.
+    var noteFor by remember { mutableStateOf<SavedMoment?>(null) }
+
+    LaunchedEffect(uiState.momentSaved) {
+        val saved = uiState.momentSaved ?: return@LaunchedEffect
+        // A tick first, because the button this confirms is meant to be pressed without looking —
+        // walking, in a pocket, through a sleeve. The snackbar is for the case where the user *is*
+        // looking; the hand is for the case where they are not.
+        haptics.saved()
+        // The action is offered rather than the dialog opened: the button exists to be pressed
+        // without looking, and stopping to type is the exception, not the follow-through.
+        val result = snackbarHostState.showSnackbar(
+            message = resources.getString(
+                R.string.player_moment_saved,
+                formatPosition(saved.positionMs),
+            ),
+            actionLabel = resources.getString(R.string.player_moment_add_note),
+        )
+        if (result == SnackbarResult.ActionPerformed) noteFor = saved
+        viewModel.onMomentMessageShown()
+    }
+
+    // Dismissing stops playback and empties the queue, which is not a small thing to do on a
+    // gesture — so it follows the app's own rule and is offered straight back. The undo restores
+    // both the queue and the position it was dismissed at.
+    LaunchedEffect(uiState.dismissed) {
+        if (!uiState.dismissed) return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = resources.getString(R.string.player_dismissed),
+            actionLabel = resources.getString(R.string.player_dismiss_undo),
+        )
+        if (result == SnackbarResult.ActionPerformed) viewModel.undoDismiss()
+        viewModel.onDismissMessageShown()
+    }
+
+    noteFor?.let { saved ->
+        NoteDialog(
+            title = stringResource(R.string.player_moment_note_title),
+            placeholder = stringResource(R.string.player_moment_note_hint),
+            confirmLabel = stringResource(R.string.player_moment_note_save),
+            dismissLabel = stringResource(R.string.player_moment_note_cancel),
+            onSave = { note ->
+                viewModel.setMomentNote(saved.id, note)
+                noteFor = null
+            },
+            onDismiss = { noteFor = null },
+        )
+    }
+
+    val reserved = if (uiState.isIdle) 0.dp else collapsedPlayerHeight()
 
     Box(modifier = modifier.fillMaxSize()) {
         content(PaddingValues(bottom = reserved))
-
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = reserved),
-        )
 
         if (!uiState.isIdle) {
             PlayerSheet(
@@ -115,11 +228,27 @@ fun PlayerSheetScaffold(
                 onSkipBack = viewModel::skipBack,
                 onSkipToNext = viewModel::skipToNext,
                 onSkipToPrevious = viewModel::skipToPrevious,
-                onCycleSpeed = viewModel::cycleSpeed,
+                onOpenSpeed = { speedOpen = true },
+                onOpenSleepTimer = { sleepTimerOpen = true },
+                onToggleDownload = viewModel::toggleCurrentDownload,
+                onMarkMoment = viewModel::markMoment,
+                onOpenMoments = { momentsOpen = true },
                 onOpenQueue = onOpenQueue,
+                onDismiss = viewModel::dismiss,
                 modifier = Modifier.fillMaxSize(),
             )
         }
+
+        // Last, so it draws over the sheet rather than under it. Every message here is about
+        // something the user did *in* the player — marking a moment, a playback error — and the
+        // expanded sheet fills the screen, so a host drawn before it would put the confirmation
+        // for a button press behind the button that was pressed.
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = reserved),
+        )
     }
 }
 
@@ -149,8 +278,14 @@ fun PlayerSheetScaffold(
  * @param onSkipBack skip-back handler.
  * @param onSkipToNext next-episode handler.
  * @param onSkipToPrevious previous-episode handler.
- * @param onCycleSpeed speed-button handler.
+ * @param onOpenSpeed opens the speed sheet.
+ * @param onOpenSleepTimer opens the sleep timer sheet.
+ * @param onToggleDownload starts, cancels, retries or deletes the episode's offline copy.
+ * @param onMarkMoment saves a moment at the playhead.
+ * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
+ * @param onDismiss stops playback and puts the player away; what a downward pull on the collapsed
+ *   bar commits to, and what the bar's spoken action does.
  * @param modifier layout modifier; must be given the space the sheet may grow into.
  */
 @Composable
@@ -163,12 +298,31 @@ fun PlayerSheet(
     onSkipBack: () -> Unit,
     onSkipToNext: () -> Unit,
     onSkipToPrevious: () -> Unit,
-    onCycleSpeed: () -> Unit,
+    onOpenSpeed: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
+    onToggleDownload: () -> Unit,
+    onMarkMoment: () -> Unit,
+    onOpenMoments: () -> Unit,
     onOpenQueue: () -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val collapsedHeight = collapsedPlayerHeight()
+    val dismissLabel = stringResource(R.string.player_dismiss)
+
+    // One tick each time the sheet commits to an end, whether it got there by a drag, a fling, a
+    // tap or the back gesture. Keyed on the intent rather than the fraction: the sheet is settling
+    // for the length of a spring, and the hand should be told when the decision was made.
+    val haptics = rememberHaptics()
+    var settledAt by remember { mutableStateOf(sheetState.targetValue) }
+    LaunchedEffect(sheetState.targetValue) {
+        if (sheetState.targetValue != settledAt) {
+            settledAt = sheetState.targetValue
+            haptics.snap()
+        }
+    }
 
     BoxWithConstraints(modifier = modifier) {
         val progress = sheetState.progress
@@ -185,8 +339,9 @@ fun PlayerSheet(
         val navigationBarBottom = WindowInsets.navigationBars
             .asPaddingValues()
             .calculateBottomPadding()
-        val travelPx = with(density) { (sheetHeight - collapsedPlayerHeight).toPx() }
+        val travelPx = with(density) { (sheetHeight - collapsedHeight).toPx() }
         val flingPx = with(density) { FlingThreshold.toPx() }
+        val dismissPx = with(density) { DismissThreshold.toPx() }
 
         // The back gesture drags the sheet down instead of dismissing it, and letting go mid-way
         // puts it back — which is the whole point of predictive back, and only possible because
@@ -216,7 +371,15 @@ fun PlayerSheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(lerp(collapsedPlayerHeight, sheetHeight, progress))
+                .height(lerp(collapsedHeight, sheetHeight, progress))
+                // The bar follows a downward pull and fades as it goes, so the gesture shows its
+                // own progress rather than committing at an invisible threshold. Nothing moves
+                // while the sheet is expanded: `pullDownPx` only accumulates against a collapsed one.
+                .graphicsLayer {
+                    translationY = sheetState.pullDownPx
+                    alpha = 1f - (sheetState.pullDownPx / dismissPx).coerceIn(0f, 1f) *
+                        DISMISS_FADE_DEPTH
+                }
                 .draggable(
                     state = dragState,
                     orientation = Orientation.Vertical,
@@ -227,13 +390,41 @@ fun PlayerSheet(
                     // to false — and disabling a `draggable` tears down the very coroutine the
                     // animation is suspended in, stranding the sheet part-open.
                     onDragStopped = { velocity ->
-                        scope.launch { sheetState.settle(velocity, flingPx) }
+                        scope.launch {
+                            if (sheetState.consumePullDown(dismissPx)) {
+                                onDismiss()
+                            } else {
+                                sheetState.settle(velocity, flingPx)
+                            }
+                        }
                     },
                 )
-                .clickable(
-                    enabled = !sheetState.isExpanded,
-                    onClickLabel = stringResource(R.string.player_expand),
-                    onClick = { scope.launch { sheetState.expand() } },
+                // Added and removed rather than merely disabled, which is not the same thing to a
+                // screen reader: a `clickable` merges every descendant into one node whatever its
+                // `enabled` says, so leaving it on the expanded player would fold the titles, the
+                // timecodes and the scrubber into a single unreadable node the size of the screen.
+                // Collapsed, that merge is exactly right — the bar is one thing that opens.
+                .then(
+                    if (sheetState.isExpanded) {
+                        Modifier
+                    } else {
+                        Modifier
+                            .clickable(
+                                onClickLabel = stringResource(R.string.player_expand),
+                                onClick = { scope.launch { sheetState.expand() } },
+                            )
+                            // The pull's spoken twin. A gesture without one is a control a
+                            // TalkBack user does not have, and dismissing is the only way to stop
+                            // playback from the bar.
+                            .semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction(dismissLabel) {
+                                        onDismiss()
+                                        true
+                                    },
+                                )
+                            }
+                    },
                 ),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(
@@ -242,67 +433,122 @@ fun PlayerSheet(
             ),
             tonalElevation = SheetTonalElevation,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(
-                        top = statusBarTop * progress,
-                        bottom = navigationBarBottom * progress,
-                    ),
-            ) {
-                if (progress < 1f) {
-                    CollapsedPlayer(
-                        playback = uiState.playback,
-                        onPlayPause = onPlayPause,
-                        onSkipForward = onSkipForward,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .height(collapsedPlayerHeight)
-                            .graphicsLayer { alpha = collapsedAlpha(progress) },
-                    )
-                }
-
+            Box(modifier = Modifier.fillMaxSize()) {
                 if (progress > 0f) {
-                    ExpandedPlayer(
-                        uiState = uiState,
-                        heroArtworkSize = heroSize,
-                        onPlayPause = onPlayPause,
-                        onSeek = onSeek,
-                        onSkipForward = onSkipForward,
-                        onSkipBack = onSkipBack,
-                        onSkipToNext = onSkipToNext,
-                        onSkipToPrevious = onSkipToPrevious,
-                        onCycleSpeed = onCycleSpeed,
-                        onOpenQueue = onOpenQueue,
+                    // The cover, blurred into a wash behind everything else. Outside the inset
+                    // padding, so the wash reaches the status bar the way a full-screen player's
+                    // should; the content it sits behind is inset separately below. It fades in
+                    // with the expanded body — a backdrop that arrived while the collapsed bar was
+                    // still legible would put the bar's text on someone's artwork.
+                    ArtworkBackdrop(
+                        url = uiState.artworkUrl,
                         modifier = Modifier
-                            .fillMaxSize()
+                            .matchParentSize()
                             .graphicsLayer { alpha = expandedAlpha(progress) },
-                    )
-
-                    SheetHeader(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .graphicsLayer { alpha = expandedAlpha(progress) }
-                            .draggable(
-                                state = dragState,
-                                orientation = Orientation.Vertical,
-                                onDragStarted = { sheetState.onDragStarted() },
-                                onDragStopped = { velocity ->
-                                    scope.launch { sheetState.settle(velocity, flingPx) }
-                                },
-                            ),
+                        content = {},
                     )
                 }
 
-                TravellingArtwork(
-                    playback = uiState.playback,
-                    progress = progress,
-                    heroSize = heroSize,
-                    sheetWidth = sheetWidth,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(
+                            top = statusBarTop * progress,
+                            bottom = navigationBarBottom * progress,
+                        ),
+                ) {
+                    if (progress < 1f) {
+                        CollapsedPlayer(
+                            playback = uiState.playback,
+                            settings = uiState.settings,
+                            onPlayPause = onPlayPause,
+                            onSkipBack = onSkipBack,
+                            onSkipForward = onSkipForward,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .height(collapsedHeight)
+                                .graphicsLayer { alpha = collapsedAlpha(progress) },
+                        )
+                    }
+
+                    if (progress > 0f) {
+                        ExpandedPlayer(
+                            uiState = uiState,
+                            heroArtworkSize = heroSize,
+                            onPlayPause = onPlayPause,
+                            onSeek = onSeek,
+                            onSkipForward = onSkipForward,
+                            onSkipBack = onSkipBack,
+                            onSkipToNext = onSkipToNext,
+                            onSkipToPrevious = onSkipToPrevious,
+                            onOpenSpeed = onOpenSpeed,
+                            onOpenSleepTimer = onOpenSleepTimer,
+                            onToggleDownload = onToggleDownload,
+                            onMarkMoment = onMarkMoment,
+                            onOpenMoments = onOpenMoments,
+                            onOpenQueue = onOpenQueue,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = expandedAlpha(progress) },
+                        )
+
+                        SheetHeader(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .graphicsLayer { alpha = expandedAlpha(progress) }
+                                .draggable(
+                                    state = dragState,
+                                    orientation = Orientation.Vertical,
+                                    onDragStarted = { sheetState.onDragStarted() },
+                                    onDragStopped = { velocity ->
+                                        scope.launch { sheetState.settle(velocity, flingPx) }
+                                    },
+                                ),
+                        )
+                    }
+
+                    TravellingArtwork(
+                        artworkUrl = uiState.artworkUrl,
+                        progress = progress,
+                        heroSize = heroSize,
+                        sheetWidth = sheetWidth,
+                    )
+                }
             }
         }
     }
+}
+
+/**
+ * Turns a playback failure into a sentence.
+ *
+ * The player used to show *Playback problem: <exception message>*, and the exception's message is
+ * written for whoever reads the bug report: "Source error", "Response code: 404". Three of the four
+ * common causes have something the user can do about them, and none of those strings says what.
+ *
+ * [PlaybackError.UNKNOWN] keeps the player's own words, because when the app does not know what
+ * happened, the least useful thing it can do is pretend it does.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @param detail the player's own message, for the unknown case.
+ * @return the text to show.
+ */
+private fun PlaybackError.toText(resources: Resources, detail: String?): String = when (this) {
+    PlaybackError.NO_CONNECTION -> resources.getString(R.string.player_error_no_connection)
+
+    PlaybackError.EPISODE_GONE -> resources.getString(R.string.player_error_episode_gone)
+
+    PlaybackError.UNSUPPORTED_FORMAT ->
+        resources.getString(R.string.player_error_unsupported_format)
+
+    PlaybackError.YOUTUBE_UNAVAILABLE -> resources.getString(R.string.player_error_youtube)
+
+    PlaybackError.UNKNOWN -> resources.getString(
+        R.string.player_error,
+        detail.orEmpty(),
+    )
 }
 
 /**
@@ -313,7 +559,7 @@ fun PlayerSheet(
  * where [CollapsedPlayer] leaves its hole, and where [ExpandedPlayer] leaves its — live next to
  * those composables, so the gap and the artwork cannot drift apart silently.
  *
- * @param playback supplies the artwork URL.
+ * @param artworkUrl what to draw: the current chapter's image when it has one, else the episode's.
  * @param progress how open the sheet is.
  * @param heroSize the artwork's size when fully expanded.
  * @param sheetWidth the sheet's width, which centres the expanded artwork.
@@ -321,7 +567,7 @@ fun PlayerSheet(
  */
 @Composable
 private fun TravellingArtwork(
-    playback: PlaybackState,
+    artworkUrl: String?,
     progress: Float,
     heroSize: Dp,
     sheetWidth: Dp,
@@ -337,7 +583,7 @@ private fun TravellingArtwork(
     )
 
     PodcastArtwork(
-        url = playback.artworkUrl,
+        url = artworkUrl,
         // No named rung: the whole point is that the size is continuous between two of them.
         size = null,
         shape = RoundedCornerShape(radius),
@@ -395,10 +641,22 @@ private fun expandedAlpha(progress: Float): Float =
     ((progress - COLLAPSED_FADE_END) / (1f - COLLAPSED_FADE_END)).coerceIn(0f, 1f)
 
 /** Where [CollapsedPlayer] leaves the top of its artwork hole: under the progress line. */
-private val CollapsedArtworkTop: Dp = collapsedProgressHeight + collapsedVerticalPadding
+private val CollapsedArtworkTop: Dp
+    @Composable get() = collapsedProgressHeight + collapsedVerticalPadding
 
 /** Drag speed, per second, above which the direction of the flick decides where the sheet goes. */
 private val FlingThreshold: Dp = 200.dp
+
+/**
+ * How far the collapsed bar has to be pulled down before letting go dismisses the player.
+ *
+ * Most of the bar's own height, so the gesture is unmistakably deliberate: an accidental downward
+ * graze on the way to the navigation bar stops well short of it and springs back.
+ */
+private val DismissThreshold: Dp = 56.dp
+
+/** How much of the bar's opacity the pull takes away by the time it commits. */
+private const val DISMISS_FADE_DEPTH = 0.6f
 
 private val SheetTonalElevation: Dp = 3.dp
 
@@ -415,3 +673,40 @@ private const val GRABBER_ALPHA = 0.4f
 
 /** The fraction by which the collapsed bar has completely faded out. */
 private const val COLLAPSED_FADE_END = 0.35f
+
+/**
+ * The expanded player, in both schemes and at three font scales.
+ *
+ * Rendered through [PlayerSheet] rather than [ExpandedPlayer] directly, because the artwork, the
+ * backdrop and the header strip belong to the sheet: a preview of the body alone would show a
+ * layout that never appears, with a hole where the cover should be.
+ */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+private fun ExpandedPlayerPreview() {
+    MegaPodcastPlayerTheme {
+        PlayerSheet(
+            uiState = PlayerUiState(
+                playback = previewPlayback,
+                settings = PlaybackSettings(),
+                moments = emptyList(),
+            ),
+            sheetState = rememberPlayerSheetState(PlayerSheetValue.Expanded),
+            onPlayPause = {},
+            onSeek = {},
+            onSkipForward = {},
+            onSkipBack = {},
+            onSkipToNext = {},
+            onSkipToPrevious = {},
+            onOpenSpeed = {},
+            onOpenSleepTimer = {},
+            onToggleDownload = {},
+            onMarkMoment = {},
+            onOpenMoments = {},
+            onOpenQueue = {},
+            onDismiss = {},
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}

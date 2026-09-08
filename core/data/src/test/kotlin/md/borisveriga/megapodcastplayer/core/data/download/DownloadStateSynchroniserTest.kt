@@ -95,6 +95,8 @@ class DownloadStateSynchroniserTest {
             userPreferences = UserPreferencesDataSource(InMemoryDataStore()),
             downloader = downloader,
             ioDispatcher = UnconfinedTestDispatcher(),
+            // Nothing here calls `downloadNow`, so the scope this hands over is never used.
+            scope = backgroundScope,
         )
 
         database.podcastDao().upsert(podcast)

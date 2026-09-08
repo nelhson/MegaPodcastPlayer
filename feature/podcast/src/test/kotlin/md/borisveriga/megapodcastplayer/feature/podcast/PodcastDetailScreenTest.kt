@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.podcast
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -13,9 +14,13 @@ import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
+import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
+import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -74,7 +79,7 @@ class PodcastDetailScreenTest {
         podcastId = "1",
         guid = "guid-$id",
         title = "Episode $id",
-        description = "",
+        description = "<p>What was said, with <a href=\"https://example.com\">a link</a>.</p>",
         audioUrl = "https://example.com/$id.mp3",
         artworkUrl = null,
         durationMs = 5_025_000L,
@@ -94,7 +99,13 @@ class PodcastDetailScreenTest {
         onRemove: () -> Unit = {},
         onEpisodeDownloadToggle: (String) -> Unit = {},
         onEpisodePlayNext: (String) -> Unit = {},
+        onEpisodeSetPlayed: (String, Boolean) -> Unit = { _, _ -> },
+        onEpisodePlay: (String) -> Unit = {},
+        openEpisodeId: String? = null,
         isRebuilding: Boolean = false,
+        settings: ShowSettings = ShowSettings.DEFAULT,
+        onFilterChange: (EpisodeFilter) -> Unit = {},
+        onSortChange: (EpisodeSort) -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -104,12 +115,23 @@ class PodcastDetailScreenTest {
                         episodes = episodes,
                         isLoading = false,
                         isRebuilding = isRebuilding,
+                        openEpisodeId = openEpisodeId,
+                        settings = settings,
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
+                    onEpisodePlay = onEpisodePlay,
+                    onEpisodePlayFrom = { _, _ -> },
+                    onEpisodeAddToQueue = {},
+                    onEpisodeSheetDismiss = {},
                     onEpisodeDownloadToggle = onEpisodeDownloadToggle,
                     onEpisodePlayNext = onEpisodePlayNext,
+                    onEpisodeSetPlayed = onEpisodeSetPlayed,
+                    onUndoPlayedChange = {},
                     onEpisodeMove = onEpisodeMove,
+                    onFilterChange = onFilterChange,
+                    onSortChange = onSortChange,
+                    onShowSettingsChange = {},
                     onRefresh = {},
                     onRebuild = onRebuild,
                     onRemove = onRemove,
@@ -126,51 +148,187 @@ class PodcastDetailScreenTest {
                 episode("a"),
                 episode("b", downloadState = DownloadState.COMPLETED),
             ),
+            settings = ShowSettings(episodeFilter = EpisodeFilter.DOWNLOADED),
         )
-
-        composeRule.onNodeWithText("Episode a").assertExists()
-
-        composeRule.onNodeWithText("Downloaded").performClick()
 
         composeRule.onNodeWithText("Episode b").assertExists()
         composeRule.onNodeWithText("Episode a").assertDoesNotExist()
     }
 
     @Test
-    fun `a filter that matches nothing offers the full list back`() {
-        setScreen(listOf(episode("a")))
+    fun `picking a filter reports it rather than keeping it`() {
+        // The choice is the show's now, not the screen's: it is stored and comes back as state.
+        // What the chip does here is ask for it.
+        var chosen: EpisodeFilter? = null
+        setScreen(listOf(episode("a")), onFilterChange = { chosen = it })
 
-        composeRule.onNodeWithText("In progress").performClick()
+        composeRule.onNodeWithText("Downloaded").performClick()
+
+        assertEquals(EpisodeFilter.DOWNLOADED, chosen)
+    }
+
+    @Test
+    fun `a filter that matches nothing offers the full list back`() {
+        var chosen: EpisodeFilter? = null
+        setScreen(
+            listOf(episode("a")),
+            settings = ShowSettings(episodeFilter = EpisodeFilter.IN_PROGRESS),
+            onFilterChange = { chosen = it },
+        )
 
         composeRule.onNodeWithText("Episode a").assertDoesNotExist()
         composeRule.onNodeWithText("Nothing here").assertExists()
 
         composeRule.onNodeWithText("Show all episodes").performClick()
 
-        composeRule.onNodeWithText("Episode a").assertExists()
+        assertEquals(EpisodeFilter.ALL, chosen)
     }
 
     @Test
-    fun `an abandoned episode is in progress rather than unplayed`() {
-        setScreen(listOf(episode("started", positionMs = 600_000L), episode("fresh")))
+    fun `oldest first turns the list over`() {
+        setScreen(
+            listOf(episode("newest"), episode("oldest")),
+            settings = ShowSettings(episodeSort = EpisodeSort.OLDEST_FIRST),
+        )
 
-        composeRule.onNodeWithText("Unplayed").performClick()
+        val first = composeRule.onNodeWithText("Episode oldest").getBoundsInRoot()
+        val second = composeRule.onNodeWithText("Episode newest").getBoundsInRoot()
 
-        composeRule.onNodeWithText("Episode fresh").assertExists()
-        composeRule.onNodeWithText("Episode started").assertDoesNotExist()
+        assertTrue(
+            "Expected the oldest episode above the newest, got $first and $second",
+            first.top < second.top,
+        )
     }
 
     @Test
-    fun `play latest starts the newest episode`() {
+    fun `the order toggle asks for the other order`() {
+        var chosen: EpisodeSort? = null
+        setScreen(listOf(episode("a")), onSortChange = { chosen = it })
+
+        composeRule.onNodeWithText("Newest first").performClick()
+
+        assertEquals(EpisodeSort.OLDEST_FIRST, chosen)
+    }
+
+    @Test
+    fun `a hand-arranged show is not offered an order`() {
+        // A YouTube playlist is dragged into shape. Offering to reverse it would leave the drag
+        // computing positions against an order nobody can see.
+        setScreen(listOf(episode("a")), source = PodcastSource.YOUTUBE)
+
+        composeRule.onNodeWithText("Newest first").assertDoesNotExist()
+        composeRule.onNodeWithText("Oldest first").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the header button starts the newest unplayed episode`() {
         var played: String? = null
         setScreen(
             listOf(episode("newest"), episode("older")),
-            onEpisodeClick = { played = it },
+            onEpisodePlay = { played = it },
         )
 
-        composeRule.onNodeWithText("Play latest").performClick()
+        composeRule.onNodeWithText("Play newest").performClick()
 
         assertEquals("newest", played)
+    }
+
+    @Test
+    fun `the header button continues an episode already in progress`() {
+        // The commonest reason to open a show's page, and the one thing the button could not do:
+        // it played the newest episode from wherever its position happened to be.
+        var played: String? = null
+        setScreen(
+            listOf(episode("newest"), episode("started", positionMs = 1_800_000L)),
+            onEpisodePlay = { played = it },
+        )
+
+        composeRule.onNodeWithText("Continue · 53 min left").performClick()
+
+        assertEquals("started", played)
+    }
+
+    @Test
+    fun `a show that is fully caught up says it is offering a replay`() {
+        // Silently restarting the newest episode reads as the app having forgotten you heard it.
+        var played: String? = null
+        setScreen(
+            listOf(episode("newest", isPlayed = true), episode("older", isPlayed = true)),
+            onEpisodePlay = { played = it },
+        )
+
+        composeRule.onNodeWithText("Play newest again").performClick()
+
+        assertEquals("newest", played)
+    }
+
+    @Test
+    fun `marking an episode played reports it`() {
+        var marked: Pair<String, Boolean>? = null
+        setScreen(
+            listOf(episode("a")),
+            onEpisodeSetPlayed = { id, played -> marked = id to played },
+        )
+
+        // The revealed tier, beside Play next; the swipe is the only way to reach it visually, so
+        // the spoken action is what a test can press.
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Mark played")
+
+        assertEquals("a" to true, marked)
+    }
+
+    @Test
+    fun `tapping a row opens the episode rather than playing it`() {
+        var opened: String? = null
+        var played: String? = null
+        setScreen(
+            listOf(episode("a")),
+            onEpisodeClick = { opened = it },
+            onEpisodePlay = { played = it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performClick()
+
+        // The change D-1 asked for: an episode can be read before it is heard.
+        assertEquals("a", opened)
+        assertNull(played)
+    }
+
+    @Test
+    fun `the row's own button is what plays it, in one tap`() {
+        var played: String? = null
+        setScreen(listOf(episode("a")), onEpisodePlay = { played = it })
+
+        composeRule.onNodeWithContentDescription("Play").performClick()
+
+        assertEquals("a", played)
+    }
+
+    @Test
+    fun `the open episode's notes and chapters are on the sheet`() {
+        setScreen(listOf(episode("a")), openEpisodeId = "a")
+
+        composeRule.onNodeWithText("Show notes").assertExists()
+    }
+
+    @Test
+    fun `no sheet is drawn when no episode is open`() {
+        setScreen(listOf(episode("a")))
+
+        composeRule.onNodeWithText("Show notes").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a played episode offers to be marked unplayed instead`() {
+        var marked: Pair<String, Boolean>? = null
+        setScreen(
+            listOf(episode("a", isPlayed = true)),
+            onEpisodeSetPlayed = { id, played -> marked = id to played },
+        )
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Mark unplayed")
+
+        assertEquals("a" to false, marked)
     }
 
     @Test
