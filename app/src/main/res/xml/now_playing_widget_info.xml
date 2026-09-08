@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The home-screen widget: what you are listening to, a transport, and what to carry on with.
+
+    `minWidth`/`minHeight` are the smallest the launcher may make it — two cells by one, which is
+    the size at which the episode and one button still fit. `minResizeHeight` is smaller than
+    `minHeight` on purpose: it is the floor a *resize* may reach, and a user who drags the handle
+    up should get the compact face rather than be refused. `targetCellWidth`/`targetCellHeight` are
+    what a launcher on Android 12 and later actually places, and they are the size the shelf appears
+    at, because that is the widget as it is meant to be seen.
+
+    `updatePeriodMillis` is zero, and that is not an omission. The widget follows playback by
+    collecting it — see NowPlayingWidget — so a periodic broadcast would wake the app to redraw a
+    thing that has not changed. The platform's minimum is half an hour in any case, which is both
+    far too slow to follow an episode and far too often to do nothing.
+
+    `resizeMode` allows both axes: the two responsive sizes differ in height, and a user who wants
+    it wider is asking for longer titles, which costs nothing.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description"
+    android:minWidth="180dp"
+    android:minHeight="100dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="100dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="3"
+    android:previewImage="@drawable/ic_launcher_foreground"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

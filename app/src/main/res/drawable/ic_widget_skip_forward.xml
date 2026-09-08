@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Skip ahead, for the home-screen widget; tinted at draw time.
+
+    The same arc as ic_widget_skip_back.xml, mirrored by the group rather than by a second hand-
+    written path — two paths that are meant to be reflections of each other are two paths that can
+    stop being reflections of each other. It carries no number for the reason that file gives.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="-1">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M12,5V2.21c0,-0.45 -0.54,-0.67 -0.85,-0.35l-3.8,3.79c-0.2,0.2 -0.2,0.51 0,0.71l3.79,3.79C11.46,10.46 12,10.24 12,9.79V7c3.31,0 6,2.69 6,6s-2.69,6 -6,6s-6,-2.69 -6,-6c0,-0.79 -0.62,-1.42 -1.4,-1.42S3.18,12.21 3.18,13c0,4.42 3.58,8 8,8s8,-3.58 8,-8S15.31,5 12,5z" />
+    </group>
+</vector>
