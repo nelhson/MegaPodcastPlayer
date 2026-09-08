@@ -23,6 +23,7 @@ import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.AddPodcastResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastPreviewResult
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastLink
@@ -54,6 +55,10 @@ import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
  *   result deliberately leaves the user in the list they were reading, so it never sets this.
  * @property preview the show the user is looking at without having added it, or null when no sheet
  *   is open.
+ * @property recentSearches the last few terms that found something, most recent first (ADD-5).
+ *   Drawn only while the field is empty, which is the one moment this screen has nothing else to
+ *   say. Apple's top charts were the other half of that row and are declined (D-11): a browsing
+ *   surface for a store, on a screen whose job here is to find a show already decided on.
  */
 data class SearchUiState(
     val query: String = "",
@@ -67,6 +72,7 @@ data class SearchUiState(
     val message: AddPodcastResult? = null,
     val navigateToPodcastId: String? = null,
     val preview: PreviewUiState? = null,
+    val recentSearches: List<String> = emptyList(),
 )
 
 /**
@@ -139,6 +145,7 @@ sealed interface SearchError {
  * @property repository the single source of podcast truth.
  * @property episodePlayer plays an episode of a show the user has not added; the preview sheet's
  *   own reason for existing beyond the description it shows.
+ * @property uiPreferences where the recent search terms are kept.
  * @param savedStateHandle carries the route's `link` argument.
  */
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -146,6 +153,7 @@ sealed interface SearchError {
 class SearchViewModel @Inject constructor(
     private val repository: PodcastRepository,
     private val episodePlayer: EpisodePlayer,
+    private val uiPreferences: UiPreferencesRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -191,7 +199,8 @@ class SearchViewModel @Inject constructor(
             searchResults,
             addState,
             repository.observeLibrary(),
-        ) { text, search, adding, library ->
+            uiPreferences.observeRecentSearches(),
+        ) { text, search, adding, library, recent ->
             val link = PodcastLinkParser.parse(text)
             SearchUiState(
                 query = text,
@@ -205,6 +214,7 @@ class SearchViewModel @Inject constructor(
                 message = adding.message,
                 navigateToPodcastId = adding.navigateToPodcastId,
                 preview = adding.preview,
+                recentSearches = recent,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -215,6 +225,28 @@ class SearchViewModel @Inject constructor(
     /** Called on every keystroke. */
     fun onQueryChange(value: String) {
         query.value = value
+    }
+
+    /**
+     * Remembers the current query as one worth offering again.
+     *
+     * Called when a search *led somewhere* — the keyboard's search key, opening a result, adding
+     * one — rather than on every debounced query. Recording what the debounce happens to settle on
+     * would fill the list with the prefixes of one word: a pause in the middle of typing
+     * "podlodka" is not a search for "podl".
+     *
+     * A link is never recorded. It is not a search, it is the show itself, and the show is in the
+     * library a moment later.
+     */
+    fun rememberSearch() {
+        val text = query.value
+        if (text.isBlank() || PodcastLinkParser.parse(text) != null) return
+        viewModelScope.launch { uiPreferences.addRecentSearch(text) }
+    }
+
+    /** Forgets every stored term; the list's own way out. */
+    fun clearRecentSearches() {
+        viewModelScope.launch { uiPreferences.clearRecentSearches() }
     }
 
     /**
@@ -238,6 +270,7 @@ class SearchViewModel @Inject constructor(
      * @param result the chosen show.
      */
     fun addSearchResult(result: PodcastSearchResult) {
+        rememberSearch()
         add(id = result.itunesId.toString(), navigateOnSuccess = false) {
             repository.addFromSearchResult(result)
         }
@@ -253,6 +286,7 @@ class SearchViewModel @Inject constructor(
      * @param result the show to look at.
      */
     fun openPreview(result: PodcastSearchResult) {
+        rememberSearch()
         addState.value = addState.value.copy(preview = PreviewUiState(result = result))
         viewModelScope.launch {
             val outcome = repository.preview(result)

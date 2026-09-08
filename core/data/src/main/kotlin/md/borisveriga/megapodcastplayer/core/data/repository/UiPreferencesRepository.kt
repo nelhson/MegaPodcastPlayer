@@ -66,6 +66,19 @@ interface UiPreferencesRepository {
      * @param sort the order to use from now on.
      */
     suspend fun setLibrarySort(sort: LibrarySort)
+
+    /** The last few things searched for, most recent first; empty until something is (ADD-5). */
+    fun observeRecentSearches(): Flow<List<String>>
+
+    /**
+     * Records a search worth offering again.
+     *
+     * @param term what was searched for; blank is ignored.
+     */
+    suspend fun addRecentSearch(term: String)
+
+    /** Forgets every stored search term. */
+    suspend fun clearRecentSearches()
 }
 
 /**
@@ -105,5 +118,15 @@ class DefaultUiPreferencesRepository @Inject constructor(
 
     override suspend fun setLibrarySort(sort: LibrarySort) {
         userPreferences.setLibrarySort(sort)
+    }
+
+    override fun observeRecentSearches(): Flow<List<String>> = userPreferences.recentSearches
+
+    override suspend fun addRecentSearch(term: String) {
+        userPreferences.addRecentSearch(term)
+    }
+
+    override suspend fun clearRecentSearches() {
+        userPreferences.clearRecentSearches()
     }
 }

@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.downloads
 import android.content.res.Resources
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
@@ -26,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -41,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -48,6 +52,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -80,9 +85,11 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
+import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 
 /**
  * Downloads screen: everything the download stack is tracking, across all shows — finished
@@ -248,6 +255,7 @@ fun DownloadsScreen(
                         // A finished episode is a file the user would have to fetch again, so it
                         // asks first. A transfer that has not finished is not: calling it off is
                         // exactly what the ring on the same row already does with one tap.
+                        onOpenSettings = onOpenSettings,
                         onEpisodeRemove = { download ->
                             if (download.episode.downloadState == DownloadState.COMPLETED) {
                                 pendingRemovalId = download.episode.id
@@ -287,6 +295,7 @@ fun DownloadsScreen(
  * @param onEpisodeQueue add-to-queue handler for a row's full swipe.
  * @param onEpisodeRemove delete-or-cancel handler, called with the whole row so the caller can
  *   decide whether it is destructive enough to confirm.
+ * @param onOpenSettings opens settings, from the storage card's housekeeping line.
  * @param onMove applies a completed drag; see [DownloadsScreen].
  */
 @Composable
@@ -299,6 +308,7 @@ private fun DownloadList(
     onEpisodeDownloadNow: (String) -> Unit,
     onEpisodeQueue: (String) -> Unit,
     onEpisodeRemove: (EpisodeWithShow) -> Unit,
+    onOpenSettings: () -> Unit,
     onMove: (List<String>, Int, Int) -> Unit,
 ) {
     val resources = LocalResources.current
@@ -334,6 +344,9 @@ private fun DownloadList(
                 episodeCount = uiState.completedCount,
                 totalBytes = uiState.totalBytes,
                 freeBytes = uiState.freeBytes,
+                keepLimitPerPodcast = uiState.keepLimitPerPodcast,
+                deleteAfterPlaying = uiState.deleteAfterPlaying,
+                onOpenSettings = onOpenSettings,
             )
         }
 
@@ -444,7 +457,16 @@ private fun DownloadRow(
     )
     val remove = SwipeAction(
         icon = Icons.Rounded.Delete,
-        label = stringResource(R.string.downloads_action_remove),
+        // Two names for one gesture, because it does two things: a finished episode is a file and
+        // is deleted, and a transfer still running has no file yet and is called off. Naming both
+        // "Remove" was the vaguer half of COPY-2's terminology drift.
+        label = stringResource(
+            if (isCompleted) {
+                R.string.downloads_action_delete
+            } else {
+                R.string.downloads_action_cancel
+            },
+        ),
         // The error palette, because the file is going. On this screen that is the whole point of
         // the gesture, and it should not look like a tidy-up.
         containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -529,8 +551,17 @@ private fun DownloadRow(
  *
  * @param episodeCount how many episodes are stored on the device.
  * @param totalBytes what they occupy.
+ * The housekeeping line under the bar is DL-3, and it is here rather than in Settings because
+ * this is the screen the question is asked on. An episode that was on the device on Monday and
+ * gone on Tuesday was removed by one of two rules the user set once and has not thought about
+ * since, and the screen it vanished from said nothing about either. The line states both, and
+ * opens the place they are changed.
+ *
  * @param freeBytes what is left on the volume; zero when it could not be read, which draws the
  *   figures without the bar rather than a bar that is a guess.
+ * @param keepLimitPerPodcast how many downloads a show may keep, or [DownloadSettings.KEEP_ALL].
+ * @param deleteAfterPlaying whether finishing an episode deletes its audio.
+ * @param onOpenSettings opens the settings screen, where both rules are set.
  * @param modifier layout modifier.
  */
 @Composable
@@ -538,6 +569,9 @@ private fun StorageCard(
     episodeCount: Int,
     totalBytes: Long,
     freeBytes: Long,
+    keepLimitPerPodcast: Int,
+    deleteAfterPlaying: Boolean,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val resources = LocalResources.current
@@ -625,7 +659,98 @@ private fun StorageCard(
                     )
                 }
             }
+
+            HousekeepingLine(
+                keepLimitPerPodcast = keepLimitPerPodcast,
+                deleteAfterPlaying = deleteAfterPlaying,
+                onOpenSettings = onOpenSettings,
+            )
         }
+    }
+}
+
+/**
+ * What removes an episode from this device without being asked, and where to change it.
+ *
+ * One row rather than two lines of prose, and a row that goes somewhere: the two rules are set in
+ * Settings, and a sentence naming a setting the user then has to go and find is half an answer.
+ * The chevron is what says the line is a door; the click label is what says so to TalkBack, which
+ * cannot see one.
+ *
+ * @param keepLimitPerPodcast how many downloads a show may keep, or [DownloadSettings.KEEP_ALL].
+ * @param deleteAfterPlaying whether finishing an episode deletes its audio.
+ * @param onOpenSettings opens the settings screen.
+ */
+@Composable
+private fun HousekeepingLine(
+    keepLimitPerPodcast: Int,
+    deleteAfterPlaying: Boolean,
+    onOpenSettings: () -> Unit,
+) {
+    val resources = LocalResources.current
+    val rules = remember(keepLimitPerPodcast, deleteAfterPlaying, resources) {
+        housekeepingText(resources, keepLimitPerPodcast, deleteAfterPlaying)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Button,
+                onClickLabel = stringResource(R.string.downloads_rules_action),
+                onClick = onOpenSettings,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+    ) {
+        Text(
+            text = rules,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            // The row's own label already says where this goes; a second announcement would be
+            // the same sentence twice.
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The housekeeping rules as one sentence.
+ *
+ * Says nothing is deleted when nothing is, rather than leaving the line out: "no rule is in force"
+ * is the answer to "why did that episode disappear" just as much as a rule is, and a line that
+ * came and went with the settings would make the card's height depend on a preference.
+ *
+ * @param resources for the plural and the joiner.
+ * @param keepLimitPerPodcast how many downloads a show may keep, or [DownloadSettings.KEEP_ALL].
+ * @param deleteAfterPlaying whether finishing an episode deletes its audio.
+ * @return the sentence.
+ */
+private fun housekeepingText(
+    resources: Resources,
+    keepLimitPerPodcast: Int,
+    deleteAfterPlaying: Boolean,
+): String {
+    val parts = buildList {
+        if (keepLimitPerPodcast > DownloadSettings.KEEP_ALL) {
+            add(
+                resources.getQuantityString(
+                    R.plurals.downloads_rules_keep,
+                    keepLimitPerPodcast,
+                    keepLimitPerPodcast,
+                ),
+            )
+        }
+        if (deleteAfterPlaying) add(resources.getString(R.string.downloads_rules_delete_played))
+    }
+    if (parts.isEmpty()) return resources.getString(R.string.downloads_rules_none)
+    return parts.reduce { line, part ->
+        resources.getString(R.string.downloads_rules_combined, line, part)
     }
 }
 
@@ -767,6 +892,35 @@ private val MIN_SEGMENT_WIDTH = 12.dp
 @FontScalePreviews
 @Composable
 internal fun DownloadsScreenPreview() {
+    // One row per state, in the order the query returns them, because the states are the whole
+    // point of this screen and only a preview shows all four at once.
+    //
+    // Grouped through the same function the view model uses. The preview used to set `downloads`
+    // and not `sections`, and the screen draws `sections` — so it, and the three goldens recorded
+    // from it, showed the storage card over an empty screen. Four row states nobody was looking at.
+    val downloads = listOf(
+        previewDownload(id = "e1", title = "Podlodka #402 – Сети", state = DownloadState.FAILED),
+        previewDownload(
+            id = "e2",
+            title = "Podlodka #401 – Архитектура",
+            state = DownloadState.DOWNLOADING,
+            downloadPercent = 42f,
+        ),
+        previewDownload(
+            id = "e3",
+            title = "Podlodka #400.5 – Вопросы",
+            state = DownloadState.QUEUED,
+        ),
+        previewDownload(
+            id = "e4",
+            title = "Podlodka #400 – Мультиплатформа",
+            state = DownloadState.COMPLETED,
+            downloadedBytes = 90_000_000L,
+            downloadPercent = 100f,
+            positionMs = 1_200_000L,
+        ),
+    )
+
     MegaPodcastPlayerTheme {
         DownloadsScreen(
             uiState = DownloadsUiState(
@@ -775,34 +929,10 @@ internal fun DownloadsScreenPreview() {
                 totalBytes = 90_000_000L,
                 freeBytes = 4_000_000_000L,
                 unmeteredOnly = true,
-                // One row per state, in the order the query returns them, because the states are
-                // the whole point of this screen and only a preview shows all four at once.
-                downloads = listOf(
-                    previewDownload(
-                        id = "e1",
-                        title = "Podlodka #402 – Сети",
-                        state = DownloadState.FAILED,
-                    ),
-                    previewDownload(
-                        id = "e2",
-                        title = "Podlodka #401 – Архитектура",
-                        state = DownloadState.DOWNLOADING,
-                        downloadPercent = 42f,
-                    ),
-                    previewDownload(
-                        id = "e3",
-                        title = "Podlodka #400.5 – Вопросы",
-                        state = DownloadState.QUEUED,
-                    ),
-                    previewDownload(
-                        id = "e4",
-                        title = "Podlodka #400 – Мультиплатформа",
-                        state = DownloadState.COMPLETED,
-                        downloadedBytes = 90_000_000L,
-                        downloadPercent = 100f,
-                        positionMs = 1_200_000L,
-                    ),
-                ),
+                keepLimitPerPodcast = 3,
+                deleteAfterPlaying = true,
+                downloads = downloads,
+                sections = downloads.groupIntoSections(),
             ),
             onEpisodeClick = {},
             onEpisodeRetry = {},

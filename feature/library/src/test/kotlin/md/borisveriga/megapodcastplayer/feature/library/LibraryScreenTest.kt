@@ -5,6 +5,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -529,15 +530,157 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun `the cover grid keeps its long press and gains no swipe`() {
+    fun `the cover grid gains no swipe`() {
         // A tile is 148dp of artwork, and a revealed button would leave no tile. The gesture is
-        // confined to the list, and this is what would catch it leaking into the grid.
+        // confined to the list, and this is what would catch it leaking into the grid: a swipe
+        // across a tile must do nothing at all, not open the removal the menu now offers.
+        var removed: String? = null
+        setScreen(layout = LibraryLayout.GRID, onRemove = { removed = it.podcast.title })
+
+        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
+            down(centerRight)
+            repeat(SWIPE_STEPS) {
+                moveBy(Offset(-SHORT_SWIPE_PX / SWIPE_STEPS, 0f))
+                advanceEventTime(SWIPE_STEP_MS)
+            }
+            up()
+        }
+
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(0)
+        assertEquals(null, removed)
+    }
+
+    /**
+     * LIB-4. The grid used to be the layout a show could not be got out of: the list has its
+     * swipe and the show's own page has its overflow, and a library kept as covers had neither.
+     * The press that rearranges the grid does this too, told apart by whether it travelled.
+     */
+    @Test
+    fun `a press held and released in place opens the tile's menu`() {
+        setScreen(layout = LibraryLayout.GRID)
+
+        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
+            down(center)
+            advanceEventTime(LONG_PRESS_MS)
+            up()
+        }
+
+        composeRule.onNodeWithText("Remove").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the tile's menu removes the show, once confirmed`() {
+        var removed: String? = null
+        setScreen(layout = LibraryLayout.GRID, onRemove = { removed = it.podcast.title })
+
+        composeRule.onNodeWithText("Podlodka Podcast").performTouchInput {
+            down(center)
+            advanceEventTime(LONG_PRESS_MS)
+            up()
+        }
+        composeRule.onNodeWithText("Remove").performClick()
+
+        // The grid confirms through the same dialog the list does; reaching the action is half
+        // the journey, exactly as it is from a swipe.
+        composeRule.onNodeWithText("Remove Podlodka Podcast?").assertIsDisplayed()
+        assertEquals(null, removed)
+
+        composeRule.onAllNodesWithText("Remove").onLast().performClick()
+        assertEquals("Podlodka Podcast", removed)
+    }
+
+    /**
+     * The two halves of one gesture. A press that travels is a rearrangement and must not leave a
+     * menu behind it — which is the failure this whole item risks, since a menu opening at the end
+     * of every drag would make the grid unusable rather than merely incomplete.
+     */
+    @Test
+    fun `a press that moves rearranges the grid and opens nothing`() {
+        val moves = mutableListOf<Pair<Int, Int>>()
+        setScreen(
+            layout = LibraryLayout.GRID,
+            onMove = { from, to -> moves += from to to },
+            podcasts = listOf(
+                entry("a", "Podlodka Podcast"),
+                entry("b", "Acquired"),
+                entry("c", "Zeitgeist"),
+            ),
+        )
+
+        composeRule.onNodeWithText("Acquired").performTouchInput {
+            down(center)
+            advanceEventTime(LONG_PRESS_MS)
+            // One tile to the left puts the dragged tile's centre inside its neighbour's.
+            moveBy(Offset(-width.toFloat(), 0f))
+            up()
+        }
+
+        assertEquals(listOf(1 to 0), moves)
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(0)
+    }
+
+    /**
+     * The drag and the menu are withdrawn by different things. An order the library did not
+     * arrange by hand takes the drag away — positions on screen are not positions in the library —
+     * but removing a show means the same thing in every order, so the menu stays. Without this the
+     * only way out of a subscription would depend on which order the grid happened to be in.
+     */
+    @Test
+    fun `the menu survives an order the grid cannot be dragged in`() {
+        val moves = mutableListOf<Pair<Int, Int>>()
+        setScreen(
+            layout = LibraryLayout.GRID,
+            sort = LibrarySort.TITLE,
+            onMove = { from, to -> moves += from to to },
+            podcasts = listOf(entry("a", "Podlodka Podcast"), entry("b", "Acquired")),
+        )
+
+        composeRule.onNodeWithText("Acquired").performTouchInput {
+            down(center)
+            advanceEventTime(LONG_PRESS_MS)
+            moveBy(Offset(-width.toFloat(), 0f))
+            up()
+        }
+        assertEquals(emptyList<Pair<Int, Int>>(), moves)
+
+        composeRule.onNodeWithText("Acquired").performTouchInput {
+            down(center)
+            advanceEventTime(LONG_PRESS_MS)
+            up()
+        }
+        composeRule.onNodeWithText("Remove").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a tap on a tile still opens the show`() {
+        var opened: String? = null
+        setScreen(
+            layout = LibraryLayout.GRID,
+            onPodcastClick = { opened = it },
+            podcasts = listOf(entry("a", "Podlodka Podcast"), entry("b", "Acquired")),
+        )
+
+        // Three gestures now share a tile — tap, hold, drag — and a detector that claimed the
+        // press outright would leave the grid unable to open anything.
+        composeRule.onNodeWithText("Acquired").performClick()
+
+        assertEquals("b", opened)
+    }
+
+    /**
+     * A menu is a way of reaching a thing; the thing is what a screen reader is handed. Without
+     * this the grid would be removable only by a gesture TalkBack cannot perform.
+     */
+    @Test
+    fun `the tile publishes its removal as an accessibility action`() {
         var removed: String? = null
         setScreen(layout = LibraryLayout.GRID, onRemove = { removed = it.podcast.title })
 
         composeRule.onNodeWithText("Podlodka Podcast")
-            .assertHasNoCustomAccessibilityAction("Remove")
-        assertEquals(null, removed)
+            .performCustomAccessibilityAction("Remove")
+        composeRule.onAllNodesWithText("Remove").onLast().performClick()
+
+        assertEquals("Podlodka Podcast", removed)
     }
 
     /**

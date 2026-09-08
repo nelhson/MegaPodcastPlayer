@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
+import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
@@ -37,6 +38,11 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  *   zero if the read fails, in which case the bar shows only the stored share.
  * @property unmeteredOnly whether downloads wait for Wi-Fi, which is what lets a waiting row say
  *   why it is waiting rather than just that it is.
+ * @property keepLimitPerPodcast how many downloads a show is allowed to keep, or
+ *   [DownloadSettings.KEEP_ALL] for no sweep at all. Here so the storage card can say what removes
+ *   an episode, which is the question this screen provokes and used to answer nowhere (DL-3).
+ * @property deleteAfterPlaying whether finishing an episode deletes its audio, the other half of
+ *   the same answer.
  * @property isLoading true until the first database emission arrives.
  * @property isRefreshing true while a pull-to-refresh is re-reading the storage figures; drives
  *   the gesture's own spinner, which is the only feedback it has.
@@ -50,6 +56,8 @@ data class DownloadsUiState(
     val totalBytes: Long = 0L,
     val freeBytes: Long = 0L,
     val unmeteredOnly: Boolean = false,
+    val keepLimitPerPodcast: Int = DownloadSettings.KEEP_ALL,
+    val deleteAfterPlaying: Boolean = false,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val message: DownloadsMessage? = null,
@@ -162,6 +170,8 @@ class DownloadsViewModel @Inject constructor(
             totalBytes = completed.sumOf { it.episode.downloadedBytes },
             freeBytes = free,
             unmeteredOnly = settings.unmeteredOnly,
+            keepLimitPerPodcast = settings.keepLimitPerPodcast,
+            deleteAfterPlaying = settings.deleteAfterPlaying,
             isLoading = false,
             isRefreshing = isRefreshing,
             message = message,

@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
@@ -24,11 +25,13 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.RemoveDone
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -110,6 +114,7 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.episodeShareText
 import md.borisveriga.megapodcastplayer.core.model.filterBy
 import md.borisveriga.megapodcastplayer.core.model.orderedBy
+import md.borisveriga.megapodcastplayer.core.model.showShareText
 
 /**
  * Podcast detail screen: the show's header and its episode list.
@@ -246,7 +251,10 @@ fun PodcastDetailScreen(
     val moveUp = stringResource(R.string.podcast_move_up)
     val moveDown = stringResource(R.string.podcast_move_down)
     val context = LocalContext.current
+    val clipboard = LocalClipboard.current
     val shareTitle = stringResource(R.string.episode_share_title)
+    val shareShowTitle = stringResource(R.string.podcast_share_show_title)
+    val feedClipLabel = stringResource(R.string.podcast_feed_clip_label)
 
     val undoLabel = stringResource(R.string.podcast_undo)
 
@@ -339,6 +347,23 @@ fun PodcastDetailScreen(
                 actions = {
                     if (uiState.podcast != null) {
                         OverflowMenu(
+                            onShare = {
+                                context.shareShow(
+                                    podcast = uiState.podcast,
+                                    chooserTitle = shareShowTitle,
+                                )
+                            },
+                            onCopyFeed = {
+                                // No confirmation of our own: from Android 13 the system draws its
+                                // own when anything is copied, and a snackbar under it would be the
+                                // same news twice.
+                                clipboard.nativeClipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        feedClipLabel,
+                                        uiState.podcast.feedUrl,
+                                    ),
+                                )
+                            },
                             onOpenSettings = { showSettingsOpen = true },
                             // A confirmation that protects nothing is only a tax, so a show with
                             // no episodes stored rebuilds on the tap. Everywhere else it asks.
@@ -424,6 +449,9 @@ fun PodcastDetailScreen(
                                 // Derived from the show's whole list, not from the filtered view
                                 // and not from `first()`; see [headerAction].
                                 action = uiState.episodes.headerAction(),
+                                // The whole list too, for the same reason: the line says what the
+                                // show holds, not what the chips are showing of it.
+                                counts = uiState.episodes.countsLine(podcast.source, resources),
                                 onPlay = onEpisodePlay,
                             )
                         }
@@ -679,7 +707,7 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
 
     DownloadState.COMPLETED -> SwipeAction(
         icon = Icons.Rounded.Delete,
-        label = stringResource(R.string.podcast_action_remove_download),
+        label = stringResource(R.string.podcast_action_delete_download),
         containerColor = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         onClick = onToggle,
@@ -695,6 +723,9 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
  *
  * @param podcast the show.
  * @param action what the one button does, or null for a show with no episodes yet.
+ * @param counts how many episodes there are and how many are on the device, already assembled;
+ *   null for a show with none. The library's row has carried this line since it was written and
+ *   the page *about* the show did not, which is the wrong way round (SHOW-7).
  * @param onPlay plays the episode the action names.
  * @param modifier layout modifier.
  */
@@ -702,10 +733,16 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
 private fun PodcastHeader(
     podcast: Podcast,
     action: HeaderAction?,
+    counts: String?,
     onPlay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var descriptionExpanded by rememberSaveable { mutableStateOf(false) }
+    // Whether the four collapsed lines were not enough. Measured rather than guessed: a character
+    // count cannot know the width, the font scale or the language, and the button used to be drawn
+    // under every description including the one-liners it had nothing to expand (SHOW-7).
+    // Keyed to the text so a different show starts the question again.
+    var isDescriptionClipped by remember(podcast.description) { mutableStateOf(false) }
     // Feed descriptions are HTML fragments, often double-escaped.
     val description = remember(podcast.description) { podcast.description.toPlainText() }
 
@@ -770,6 +807,14 @@ private fun PodcastHeader(
                 )
             }
 
+            if (counts != null) {
+                Text(
+                    text = counts,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             action?.let { headerAction ->
                 Button(onClick = { onPlay(headerAction.episodeId) }) {
                     Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null)
@@ -789,18 +834,26 @@ private fun PodcastHeader(
                     // it is how a show's own summary becomes unreadable in the app that shows it.
                     maxLines = if (descriptionExpanded) Int.MAX_VALUE else COLLAPSED_LINES,
                     overflow = TextOverflow.Ellipsis,
+                    // Recorded only while collapsed. Expanded, nothing overflows by definition, and
+                    // reading the answer then would take the button away at the moment it is the
+                    // only way back.
+                    onTextLayout = { layout ->
+                        if (!descriptionExpanded) isDescriptionClipped = layout.hasVisualOverflow
+                    },
                     modifier = Modifier.animateContentSize(),
                 )
-                TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
-                    Text(
-                        text = stringResource(
-                            if (descriptionExpanded) {
-                                R.string.podcast_description_collapse
-                            } else {
-                                R.string.podcast_description_expand
-                            },
-                        ),
-                    )
+                if (isDescriptionClipped) {
+                    TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
+                        Text(
+                            text = stringResource(
+                                if (descriptionExpanded) {
+                                    R.string.podcast_description_collapse
+                                } else {
+                                    R.string.podcast_description_expand
+                                },
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -952,14 +1005,25 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  * state the opposite — and it made the two destructive entries below it that much easier to reach
  * by accident. Background refreshing now follows whatever the show was added with.
  *
- * @param onOpenSettings opens the per-show settings sheet. First, and separated from the two
- *   below by being the only entry here that changes nothing on its own.
+ * The two that give the show away rather than change it — sharing it and copying its feed — head
+ * the menu (SHOW-7). A show's page had no way to hand the show to anybody: the episode sheet could
+ * share an episode and the moments export could name a feed, and a reader who wanted *this show* in
+ * another app had to go and find it again. They are first because they are the two entries here
+ * that leave everything exactly as it was.
+ *
+ * @param onShare hands the show to the system share sheet.
+ * @param onCopyFeed puts the feed URL on the clipboard. Copying rather than opening: a feed URL
+ *   opened in a browser is a page of XML, and what it is actually for is being pasted into another
+ *   podcast app.
+ * @param onOpenSettings opens the per-show settings sheet.
  * @param onRebuild opens the rebuild confirmation, or rebuilds outright when there is nothing
  *   stored to lose.
  * @param onRemove remove-show handler.
  */
 @Composable
 private fun OverflowMenu(
+    onShare: () -> Unit,
+    onCopyFeed: () -> Unit,
     onOpenSettings: () -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
@@ -973,6 +1037,26 @@ private fun OverflowMenu(
         )
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.podcast_share_show)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Share, contentDescription = null)
+            },
+            onClick = {
+                expanded = false
+                onShare()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.podcast_copy_feed)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Link, contentDescription = null)
+            },
+            onClick = {
+                expanded = false
+                onCopyFeed()
+            },
+        )
         DropdownMenuItem(
             text = { Text(text = stringResource(R.string.podcast_show_settings)) },
             leadingIcon = {
@@ -1129,6 +1213,60 @@ private fun HeaderAction.label(): String = when (this) {
     is HeaderAction.Play -> stringResource(
         if (isReplay) R.string.podcast_play_newest_again else R.string.podcast_play_newest,
     )
+}
+
+/**
+ * The counts line under a show's title: how many episodes there are, and how many are here.
+ *
+ * The same two facts the library's row carries, in the same order and with the same separator, so
+ * that the page and the row do not describe one show in two vocabularies. Assembled from the
+ * episodes rather than from a stored count, because this screen already holds the list.
+ *
+ * @param source decides the noun; a playlist has videos, and that is what the user called them
+ *   when they added it.
+ * @param resources for the plurals.
+ * @return the line, or null for a show with no episodes — where the empty state is already saying
+ *   it more usefully than a "0 episodes" would.
+ */
+private fun List<Episode>.countsLine(source: PodcastSource, resources: Resources): String? {
+    if (isEmpty()) return null
+    val episodes = resources.getQuantityString(
+        if (source == PodcastSource.YOUTUBE) {
+            R.plurals.podcast_video_count
+        } else {
+            R.plurals.podcast_episode_count
+        },
+        size,
+        size,
+    )
+    val downloaded = count { it.downloadState == DownloadState.COMPLETED }
+    if (downloaded == 0) return episodes
+    return resources.getString(
+        R.string.podcast_counts_combined,
+        episodes,
+        resources.getQuantityString(R.plurals.podcast_downloaded_count, downloaded, downloaded),
+    )
+}
+
+/**
+ * Hands a show to the system share sheet.
+ *
+ * The feed URL and not a web page, because the feed URL is the one string that means this show to
+ * every podcast app there is — it is what this app's own add field takes, and what the moments
+ * export writes under each show heading for the same reason.
+ *
+ * @param podcast the show being shared.
+ * @param chooserTitle what the chooser is headed.
+ */
+internal fun Context.shareShow(podcast: Podcast, chooserTitle: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = SHARE_MIME_TYPE
+        putExtra(
+            Intent.EXTRA_TEXT,
+            showShareText(showTitle = podcast.title, feedUrl = podcast.feedUrl),
+        )
+    }
+    startActivity(Intent.createChooser(send, chooserTitle))
 }
 
 /**

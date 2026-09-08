@@ -11,9 +11,13 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 61 of the 73 items are done, 3 are decided against, none is half done, 9 are
-> not started — and every one of the nine is an unscheduled finding. Every item any phase scheduled
-> is built.** Eight items in the tail were an open choice rather than a task; all eight were
+> **Where it stands: every one of the 73 items is answered — 70 built, 3 decided against, none
+> half done and none left.** The last nine were the unscheduled tail, taken together on
+> 8 September 2026 and reported in `docs/reports/2026-09-08-unscheduled-tail.md`. What remains on
+> this branch is not an item: it is the device pass and the `verification-metadata.xml` review,
+> both of which need a person rather than a commit (§4.2).
+>
+> Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
 > to be re-derived. The 46th done item was PL-10, which was built with PL-9 and never marked; the
@@ -30,9 +34,9 @@ or more).*
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
 > | P3 — reach | ✅ complete | — |
-> | Unscheduled (in no phase) | started | 9 items, 3 decided against, 1 found already built |
+> | Unscheduled (in no phase) | ✅ complete | 3 decided against, 1 found already built |
 >
-> §4.1 lists the 9 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists them and §4.2 says the order they were taken in. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -68,8 +72,14 @@ or more).*
 > are on scrolls its list to the top, and the empty library stops using a layout glyph to mean "no
 > shows". That batch also found something about the *suite*: a 24 dp icon added to four app bars
 > changed no golden, because it is under the 1 % tolerance calibrated for antialiasing. See
-> `docs/reports/2026-09-08-nav-4-5-8-the-shell.md`. Nine unscheduled findings left, plus the device
-> pass and the `verification-metadata.xml` review.
+> `docs/reports/2026-09-08-nav-4-5-8-the-shell.md`. And then the last nine, in one pass over the
+> six screens they belong to: **LIB-4** (a context menu on a library tile, which turned out to
+> hinge on a bug the whole app had — a press held and released was reaching every list row's own
+> `clickable` as a tap), **SHOW-7**, **DL-3**, **ADD-4** and **ADD-5**, **SET-4** and **SET-6**,
+> and the two copy items, **COPY-2** and **COPY-4**, which settle *remove* against *delete* and
+> write down the rules the next screen should match. See
+> `docs/reports/2026-09-08-unscheduled-tail.md`. **Nothing on this list is left.** What remains is
+> the device pass and the `verification-metadata.xml` review.
 > P2's own items, in the order they landed: PL-5, PL-6, PL-8, SHOW-5, SHOW-6, MOM-1, then
 > LIB-1, LIB-2, LIB-3, DL-1, DL-2, SET-1, SET-3, ADD-2 and COPY-1. Three items from other phases
 > were finished by work done for these: DS-9 by LIB-1 (which needed the second sort control the row
@@ -187,7 +197,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | LIB-1 ✅ | **Manual order is the only order.** Offer *Recently updated*, *A–Z* and *Most unplayed* alongside *Manual*, persisted like the layout toggle. Drag stays available in Manual. **Done:** `LibrarySort` in `:core:model` with the ordering rule beside it (nulls last for a feed that dates nothing, every computed order broken on title so the list cannot reshuffle itself between emissions), stored like the layout, drawn with the design system's new `SortMenuChip`. Dragging withdraws for every order but *My order* — and for a narrowed list too, since a drag there would be read as positions in the whole library. | M | M |
 | LIB-2 ✅ | **No way to narrow a large library.** A filter field, or a *Has new episodes* chip, for libraries past a screenful. **Done:** both, and only past a screenful — eight shows. The field matches the author as well as the title, because half the shows in a library are remembered by who makes them. Not stored, deliberately: a library that opened showing four of its shows because of a chip tapped last week would look like data loss. | M | S |
 | LIB-3 ✅ | **Two meanings of one badge.** The library badge counts `isNew` (arrived since last seen); the show page's *Unplayed* filter means *never started*. Same colour, different facts. Decide the vocabulary once — *New* = arrived since you last looked, *Unplayed* = never started — and show both consistently. **Done:** the badge stays *new* and says so, the counts line under a row gained *N unplayed* beside the episode and download counts, and the DAO computes that number with `EpisodeFilter.UNPLAYED`'s own rule in SQL so the number the library sorts by and the list the show page's chip produces are the same episodes. The one shared colour now has one meaning written down — *there is something here you have not heard* — and the words carry the difference. | M | S |
-| LIB-4 | The grid has no way to remove a show (long press is reorder); only the list's swipe and the show page's overflow do. Acceptable, but say so in the Remove dialog copy, or add the show page's overflow to the tile via a context menu that opens if the press is released without moving. **Decided (§5.1, D-8): the context menu.** Two things make it the better half. A grid and a list showing the same library should be able to do the same things to it, and copy that explains where a capability *isn't* is a note excusing the design rather than fixing it. The press that moves still reorders; only a press released in place opens the menu, and the menu holds what the show page's overflow holds so there is one list of things that can be done to a show. Note that this does *not* claim `EpisodeRow.onLongClick` — that pair belongs to a row of episodes and the library grid is a grid of shows — but it does settle the interaction the pair was kept for, which is the evidence §4.2's note asked for. | L | S |
+| LIB-4 ✅ | The grid has no way to remove a show (long press is reorder); only the list's swipe and the show page's overflow do. Acceptable, but say so in the Remove dialog copy, or add the show page's overflow to the tile via a context menu that opens if the press is released without moving. **Decided (§5.1, D-8): the context menu.** Two things make it the better half. A grid and a list showing the same library should be able to do the same things to it, and copy that explains where a capability *isn't* is a note excusing the design rather than fixing it. The press that moves still reorders; only a press released in place opens the menu, and the menu holds what the show page's overflow holds so there is one list of things that can be done to a show. Note that this does *not* claim `EpisodeRow.onLongClick` — that pair belongs to a row of episodes and the library grid is a grid of shows — but it does settle the interaction the pair was kept for, which is the evidence §4.2's note asked for. | L | S |
 
 ### 3.4 Show page
 
@@ -199,7 +209,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | SHOW-4 ✅ | **"Play latest" ignores progress and the filter.** If an episode of the show is in progress the button should read *Continue · 12 min left*; if the newest is already played it should not replay it silently. | M | S |
 | SHOW-5 ✅ | **Newest-first is the only order, and the filter forgets itself.** Serialised shows want oldest-first; the filter chips reset to *All* on every visit. Add a sort toggle and persist both per show. Both are now `ShowSettings`, stored per show. The order toggle is labelled with the order that is *on*, so the row reads as a description of the list under it, and it is offered only for a show that is not arranged by hand — a YouTube playlist is dragged into shape, and reversing it would leave the drag computing positions against an order nobody can see. `EpisodeFilter` moved to `:core:model` to make this possible: the rule is a fact about episodes, the chip caption is a fact about the screen. | M | M |
 | SHOW-6 ✅ | **No per-show settings.** The overflow holds *Delete and reload* and *Delete* only. Auto-download on/off, default playback speed, new-episode notifications, and skip-intro seconds are all per-show decisions in practice. Add *Show settings* as a sheet. All four shipped, and all four are wired rather than stored: auto-download and speed have the app-wide value as a named third option ("App speed (1.2×)"), because an override is only a decision if the thing being overridden is visible. The speed is applied by `ShowSpeedApplier`, an application-scoped collector of what the player has loaded — the queue advancing on its own is the transition the setting exists to survive, and it happens with no screen open. Skipping the intro applies to an episode that has never been started and never to one in progress. Muting a show filters that show out of the notification rather than suppressing the run. | M | M |
-| SHOW-7 | **Header details.** *Show more* renders even when the description fits in four lines (use `onTextLayout` overflow to hide it); there is no website or feed link and no *Share show*; the counts line the library row has (episodes, downloaded) is missing from the page about the show. | L | S |
+| SHOW-7 ✅ | **Header details.** *Show more* renders even when the description fits in four lines (use `onTextLayout` overflow to hide it); there is no website or feed link and no *Share show*; the counts line the library row has (episodes, downloaded) is missing from the page about the show. | L | S |
 
 ### 3.5 Player
 
@@ -223,7 +233,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 |----|---------|--------|--------|
 | DL-1 ✅ | **One mixed list.** Failures, transfers in progress, episodes waiting for Wi-Fi and finished episodes share one order that is "whatever the download stack was doing". Section it (*Downloading*, *Waiting*, *Failed*, *Ready*) with the problems at the top; manual reorder applies to *Ready*. **Done:** *Failed*, *Downloading*, *Waiting*, *Ready*, in that order, grouped by `groupIntoSections` in `:core:model`; a single section draws no heading, since it would name the only thing on screen. The drag is offered in *Ready* alone and reports positions among those rows. | M | M |
 | DL-2 ✅ | A row *Waiting for Wi-Fi* should offer *Download now anyway* on the short swipe. **Done**, with one caveat the copy carries: Media3's network requirement is per *manager*, not per download, so anything else waiting starts too. The stored "Wi-Fi only" rule is untouched and is re-applied as soon as nothing is left downloading. | M | S |
-| DL-3 | The storage card could carry one more line — the keep-limit and delete-after-playing status, linking to Settings — so the answer to "why did that episode disappear" is on the screen it disappeared from. | L | S |
+| DL-3 ✅ | The storage card could carry one more line — the keep-limit and delete-after-playing status, linking to Settings — so the answer to "why did that episode disappear" is on the screen it disappeared from. | L | S |
 
 ### 3.7 Adding shows
 
@@ -232,8 +242,8 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | ADD-1 ✅ | **No share target or link handling.** The manifest has only `MAIN/LAUNCHER`. A podcast link in a browser or a chat has to be copied, the app opened, the add button tapped, and the link pasted. Handle `ACTION_SEND` (text/plain) and `ACTION_VIEW` for feed, Apple Podcasts and YouTube playlist URLs, landing on Search with the link card already filled. | H | S |
 | ADD-2 ✅ | **Subscribe is the only way to look.** Tapping a result subscribes immediately. Add a preview sheet (artwork, description, the latest few episodes, a *Subscribe* button) that also lets one episode be played without subscribing. **Done:** `PodcastRepository.preview` fetches and parses the feed and stores none of it, and `EpisodePlayer.playUnsubscribed` plays one episode of a show that has no rows — nothing queued, no position kept. The sheet names the show from the search result while the feed is still in flight, so it never opens blank. | M | M |
 | ADD-3 ✅ | **OPML import and export.** The JSON backup is private to this app; OPML is how a library moves in from, or out to, anything else. **Done:** two more rows beside the backup pair in Settings (D-24), and an import that is thirty lines because it is not an importer — a decoded OPML becomes a `BackupFile` carrying podcasts and nothing else, and the existing `LibraryRestorer` then fetches the feeds, carries on past the one that fails and names it afterwards, exactly as it does for a restore. An export writes shows only and deliberately does *not* record a backup: the "last backup" line warns about a database that is recreated rather than migrated, and OPML cannot answer that warning (D-25). A YouTube show exports as `type="rss"`, because its Atom feed is one, and imports back as YouTube because the URL is asked rather than the attribute (D-26). Most of the codec is about the file being somebody else's: external entities off — shared with `RssParser`, which had predicted needing to — `http(s)` feed URLs only, a cap of a thousand, and skipped rows reported rather than folded into the total (D-27). | M | M |
-| ADD-4 | **Clipboard hint.** When Search opens and the clipboard holds a URL, show a *Paste link* chip under the field. Reading on user focus is permitted; Android's own toast is the disclosure. | L | S |
-| ADD-5 | **Discovery when the field is empty:** recent searches and Apple's top charts by genre. Low priority for a personal build. **Decided (§5.1, D-11): recent searches yes, top charts no.** A recent-searches list is a handful of strings in DataStore and it answers the thing that actually happens here — the same show looked up twice because the first attempt was made on the wrong device. Top charts are a browsing surface for a store, fetched from an endpoint that would have to be kept working, on a screen whose whole job in this app is to find a show already decided on. The scoped item is an S; the unbuilt half is written down as declined so the next audit does not re-propose it. | L | S |
+| ADD-4 ✅ | **Clipboard hint.** When Search opens and the clipboard holds a URL, show a *Paste link* chip under the field. Reading on user focus is permitted; Android's own toast is the disclosure. | L | S |
+| ADD-5 ✅ | **Discovery when the field is empty:** recent searches and Apple's top charts by genre. Low priority for a personal build. **Decided (§5.1, D-11): recent searches yes, top charts no.** A recent-searches list is a handful of strings in DataStore and it answers the thing that actually happens here — the same show looked up twice because the first attempt was made on the wrong device. Top charts are a browsing surface for a store, fetched from an endpoint that would have to be kept working, on a screen whose whole job in this app is to find a show already decided on. The scoped item is an S; the unbuilt half is written down as declined so the next audit does not re-propose it. | L | S |
 
 ### 3.8 Moments
 
@@ -250,9 +260,9 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | SET-1 ✅ | **No Appearance section.** Theme (system/light/dark), an opt-in for dynamic colour (the no-dynamic-colour default is right and should stay), and a pure-black option for the Fold's OLED. **Done:** all three, stored beside the library layout in `UiPreferencesRepository` and applied above the navigation graph. The splash is held for the length of the read rather than flashing the wrong palette at anyone who chose one. Pure black takes `background` and `surface` and leaves the surface *containers* alone, or every card would dissolve into the page it sits on. | M | S |
 | SET-2 ✅ | **"Remove all downloads" has no confirmation.** It is the only destructive action in the app that fires on a single tap; every other one counts what is at stake first. | M | S |
 | SET-3 ✅ | **Notifications.** A row linking to the system channel settings, and a per-show toggle for new-episode notifications (SHOW-6). **Done:** the per-show half arrived with SHOW-6; the row now opens Android's own notification page for the app, which lists all four channels. A device with no such screen is handled by doing nothing — nothing was lost, and there is nothing to say about it. | M | S |
-| SET-4 | **About.** Version, font licences (`docs/FONT_LICENSES.md` exists), and whether crash reporting is on — an app with Firebase on its classpath should say so somewhere the user can read. | L | S |
+| SET-4 ✅ | **About.** Version, font licences (`docs/FONT_LICENSES.md` exists), and whether crash reporting is on — an app with Firebase on its classpath should say so somewhere the user can read. | L | S |
 | SET-5 ✖ | The notification permission is asked for on launch with no context. A one-line pre-prompt on first launch (*We'll tell you when a show publishes, and keep the player controls on your lock screen*) turns a blind system dialog into a choice. **Decided against (§5.1, D-12).** A pre-prompt earns its place by raising the grant rate across a population of strangers who have to guess what an app will do with the permission. This app has one user, who wrote it, has already granted it, and would meet the extra screen exactly once — on a reinstall, after wiping the data, knowing the answer. SET-3's row into the system notification page is the durable half of this concern and it is built. If the app is ever handed to someone else, this row is the first thing to reopen. | L | — |
-| SET-6 | Once PL-5 lands, the speed chips here become *default speed* and a list of per-show overrides; the skip chips stay. | L | S |
+| SET-6 ✅ | Once PL-5 lands, the speed chips here become *default speed* and a list of per-show overrides; the skip chips stay. | L | S |
 
 ### 3.10 System surfaces
 
@@ -296,9 +306,9 @@ gesture, live regions on loading and selection, heading semantics, contrast test
 | Id | Finding | Impact | Effort |
 |----|---------|--------|--------|
 | COPY-1 ✅ | **The formatters speak English from Kotlin** — *Today*, *3 days ago*, *1 h 23 min*, *12 min left*, *MB* — while every other word is a resource, and the preview data is Russian. Move relative dates to `DateUtils.getRelativeTimeSpanString` or plurals, and units to resources, so a non-English locale is not half translated. **Done with plurals** rather than `DateUtils`, so the wording stays the app's; the absolute dates are left to `DateTimeFormatter`, which knows every locale's month names already. Each of the four affected formatters takes the `Resources` it says its words with, read from `LocalResources` at the call site — which also fixed the two `ConstantLocale` findings that were the whole of `:core:common`'s lint baseline, so the file is gone. | M | M |
-| COPY-2 | **Terminology drift around deletion:** the library row says *Remove*, the show overflow says *Delete*, a download says *Remove download* here and *Removed … from this device* there. Settle on *Remove* for a show (it leaves the library) and *Delete* for a file (it leaves the device), and use each everywhere. | L | S |
+| COPY-2 ✅ | **Terminology drift around deletion:** the library row says *Remove*, the show overflow says *Delete*, a download says *Remove download* here and *Removed … from this device* there. Settle on *Remove* for a show (it leaves the library) and *Delete* for a file (it leaves the device), and use each everywhere. | L | S |
 | COPY-3 ✅ | *Play latest* → *Play newest* (latest reads as "most recent I played"), or *Continue* when there is progress (SHOW-4). | L | S |
-| COPY-4 | Write the copy rules down in `docs/` — sentence case, the `·` separator, numerals, how a destructive action is named — so the next screen matches without re-deriving them. | L | S |
+| COPY-4 ✅ | Write the copy rules down in `docs/` — sentence case, the `·` separator, numerals, how a destructive action is named — so the next screen matches without re-deriving them. | L | S |
 
 ### 3.13 Watch
 
@@ -349,26 +359,34 @@ NAV-2, SYS-3, DS-5, NAV-3, PL-11, SYS-2, DS-8, ADD-3 and MOM-2, in that order.
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
 
-**Unscheduled.** Real findings that no phase claimed — mostly small, mostly independent, and each
-worth doing on the day the screen it belongs to is open for another reason. Six have gone that way.
-W-3 and W-5 were both in files W-4 opened, and both were cheaper to do there than to remember;
+**Unscheduled — complete.** Real findings that no phase claimed — mostly small, mostly independent,
+and each worth doing on the day the screen it belongs to is open for another reason. Six went that
+way. W-3 and W-5 were both in files W-4 opened, and both were cheaper to do there than to remember;
 NAV-7 was pulled forward on its own schedule rather than an accident of proximity — it had to
 precede DS-5 or the goldens would have been recorded twice. **NAV-4, NAV-5 and NAV-8** were taken
 together on 8 September, once every scheduled item was done: all three are about the five top-level
 destinations, all three touch the same files, and doing them one at a time would have meant three
 passes over the same five screens.
 
+The remaining nine were taken the same day, screen by screen, and are reported in
+`docs/reports/2026-09-08-unscheduled-tail.md`. Two of them repaid the batching in a way none of the
+rows predicted. LIB-4's gesture exposed a fault in every list in the app — a press held long enough
+to pick a row up and then released was still reaching the row's own `clickable` as a tap, because
+the reorder gesture consumed on the main pass and a row's click sits *inside* it — and COPY-4 could
+not be written without COPY-2, since the rules had to be true of the app before they were worth
+writing down.
+
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
-| LIB-4 | The grid has no way to remove a show: give the tile a context menu, opened by a press released in place (D-8) | L | S |
-| SHOW-7 | Header details: *Show more* when it is not needed, no feed link, no *Share show* | L | S |
-| DL-3 | The storage card could say why an episode disappeared (keep-limit, delete-after-playing) | L | S |
-| ADD-4 | Clipboard hint when Search opens on a URL | L | S |
-| ADD-5 | Discovery when the field is empty: recent searches only; top charts declined (D-11) | L | S |
-| SET-4 | About: version, font licences, whether crash reporting is on | L | S |
-| SET-6 | Now that PL-5 and SHOW-6 have landed, the speed row here should read *default speed* and list the shows that override it | L | S |
-| COPY-2 | Terminology drift around deletion: *Remove* a show, *Delete* a file | L | S |
-| COPY-4 | Write the copy rules down in `docs/` | L | S |
+| LIB-4 ✅ | The grid has no way to remove a show: give the tile a context menu, opened by a press released in place (D-8). Built, and the menu holds *Remove* alone — the show page's other two entries stay there, for the reasons in D-23 | L | S |
+| SHOW-7 ✅ | Header details: *Show more* is drawn only when the description is actually clipped, the counts line the library row carries is on the page too, and the overflow gained *Share show* and *Copy feed link*. A website link is not built: the model has no such field (D-24) | L | S |
+| DL-3 ✅ | The storage card carries one more line — the keep-limit and delete-after-playing rules in force, and a way into Settings to change them | L | S |
+| ADD-4 ✅ | A *Paste link* chip when the clipboard holds something the app could add; nothing at all when it does not | L | S |
+| ADD-5 ✅ | Recent searches under an empty field, kept in DataStore and recorded only when a search led somewhere; top charts declined (D-11) | L | S |
+| SET-4 ✅ | About: version, whether crash reporting is on, and the bundled fonts' licences — which now travel in the APK rather than only in `docs/` | L | S |
+| SET-6 ✅ | The speed row reads *Default speed* and names the shows that override it | L | S |
+| COPY-2 ✅ | Settled: *Remove* leaves a collection, *Delete* leaves the device. One spelling for the download action, one for the show, and the downloads swipe now says *Cancel download* on a transfer that has no file to delete | L | S |
+| COPY-4 ✅ | `docs/COPY_RULES.md`, eleven rules, each one read off the app rather than invented | L | S |
 
 **Closed without code.** Three by decision on 8 September (§5.1), one by a row that was stale rather
 than open.
@@ -482,10 +500,16 @@ and both get more expensive the longer the branch runs.
    filter instead now — which is also the honest question, since what separates "you have saved
    nothing" from "nothing matches this" is whether a filter is on and not a second number kept in
    step with the first. See `docs/reports/2026-09-08-mom-2-moments-screen.md`.
-12. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
-   question already answered in §5.1, and each fine to take on the day its screen is open.
-   **NAV-7 has gone**, taken on 8 September in the hour before DS-5 for the reason this step gave:
-   changing every top-level app bar after the screenshots are recorded means recording them twice.
+12. **The unscheduled tail — done, 8 September.** All nine, in one pass, ordered by screen rather
+   than by id: LIB-4, SHOW-7, DL-3, then ADD-4 and ADD-5 together, then SET-4 and SET-6, and
+   COPY-2 before COPY-4 because a rules document has to be true of the app before it is worth
+   writing. The estimates were right about eight of the nine and wrong about LIB-4, and wrong in
+   the direction that matters: the tile menu is four lines, and the *gesture* under it was a bug
+   the whole app had. `detectDragGesturesAfterLongPress` consumes on the main pass, which reaches
+   the outer modifier *after* the row's own `clickable` — so every list here had been quietly
+   opening whatever the user picked up and put back down, and the library grid is only where it
+   became visible. The detector is hand-rolled now and consumes on the initial pass. See
+   `docs/reports/2026-09-08-unscheduled-tail.md`.
 
 **A note for whoever does DS-3's neighbour.** `EpisodeRow.onLongClick` and `longClickLabel` are the
 last limb of the multi-selection DS-3 removed: no screen passes either. They were left because a
@@ -622,6 +646,33 @@ DS-5 stays ahead of both, because a screenshot suite is what makes rearranging e
 second size reviewable rather than something to be spotted by eye — and NAV-7 (D-6) should land
 before DS-5 for the same reason in reverse: changing every top-level app bar after the screenshots
 are recorded means recording them twice.
+
+**D-23 — The library tile's menu holds one entry (LIB-4).** D-8 asked for "what the show page's
+overflow holds", and what it holds is *Show settings*, a rebuild and a removal. Only the removal
+came. The other two are not a copy-and-paste away: a rebuild has to clear the show's downloads
+before it destroys the rows that name them, which means reading the show's episode list — a thing
+the library does not observe and should not start observing for a menu — and the settings sheet is
+the show's page in miniature, built on a per-show settings flow and the app-wide defaults it defers
+to. Putting either in `:feature:library` is the second place to maintain that §7 keeps declining.
+What D-8 was actually complaining about is answered in full: the grid and the list can now do the
+same things to a show, because the list's swipe holds exactly one thing too.
+
+**D-24 — No website link on a show's page (SHOW-7).** The row asks for "a website or feed link".
+The feed link is there twice over — shared, and copyable — because the app already stores it and it
+is the string that means this show to every other podcast app. A *website* is not stored: adding one
+means a field on `Podcast`, a column, a mapper, a line in `RssParser` and a second one wherever the
+iTunes result is converted, across four modules, for a link a reader can reach from the show's own
+description in most feeds. Declined, and written down so the next audit does not re-propose it as a
+finding.
+
+**D-25 — A held press is not a tap, everywhere (LIB-4).** The fix LIB-4 needed could have been
+scoped to the library grid; it was not. Once an item has been held long enough to be picked up,
+releasing it is a cancelled rearrangement and not a tap on the item — that is true of the queue, of
+a show's episode list and of the downloads screen exactly as it is true of the library, and all four
+were opening whatever had been put back down. The consuming detector is in
+`reorderableLongPressDrag`, so all four changed together, and `ReorderableGestureTest` pins the
+three cases a pure state test cannot: a tap still taps, a held release does not, and a press that
+travelled still reorders.
 
 **D-17 — The titles go with the controls on a wide window, not with the artwork (PL-11).** The
 plan's row says "lay artwork and controls side by side" and leaves the words unplaced. Keeping the

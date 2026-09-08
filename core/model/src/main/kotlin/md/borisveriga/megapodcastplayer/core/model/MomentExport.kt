@@ -118,6 +118,24 @@ fun episodeShareText(showTitle: String, episodeTitle: String, audioUrl: String):
     }.trimEnd()
 
 /**
+ * One show, as a message.
+ *
+ * A name and the feed URL, and nothing else. The URL is the show's identity everywhere outside this
+ * app — it is what the add field takes, what a backup carries and what every other podcast app
+ * subscribes from — so a share that named a web page instead would be a link the recipient has to
+ * translate before they can follow the show.
+ *
+ * @param showTitle the show.
+ * @param feedUrl its feed.
+ * @return the text to share.
+ */
+fun showShareText(showTitle: String, feedUrl: String): String =
+    buildString {
+        appendLine(showTitle)
+        append(feedUrl)
+    }
+
+/**
  * Every moment as one Markdown document.
  *
  * Grouped show, then episode, then position — the order the moments were *heard* in rather than the

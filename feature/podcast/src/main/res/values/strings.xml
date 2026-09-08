@@ -11,7 +11,11 @@
 <resources>
 
     <string name="podcast_back">Back to the library</string>
-    <string name="podcast_remove">Delete</string>
+    <!--
+        COPY-2: a show leaves the *library*, so it is removed; the audio it takes with it is
+        deleted. Named rather than bare, because this entry sits in a menu of five unlike actions.
+    -->
+    <string name="podcast_remove">Remove show</string>
     <string name="podcast_more_actions">More actions</string>
     <!--
         The show header's one button, which reads as whatever there is to do next.
@@ -136,8 +140,9 @@
     <string name="podcast_action_download">Download</string>
     <string name="podcast_action_cancel_download">Cancel download</string>
     <!-- The download chip on the episode sheet, when there is a copy to delete. -->
+    <!-- One spelling for one action: it was "Delete download" in the sheet and "Remove
+         download" on the swipe, which is COPY-2's example of the drift. -->
     <string name="podcast_action_delete_download">Delete download</string>
-    <string name="podcast_action_remove_download">Remove download</string>
 
     <!--
         The button the same swipe reveals, a tap rather than a pull. "Play next" rather than "Add to
@@ -174,7 +179,7 @@
     <string name="podcast_message_episode_unavailable">That episode is no longer in your library</string>
     <string name="podcast_message_download_waiting_for_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>
-    <string name="podcast_message_download_removed">Removed \"%1$s\" from this device</string>
+    <string name="podcast_message_download_removed">Deleted \"%1$s\" from this device</string>
     <!-- %1$s is the episode's title. Says where it went, because the queue is another screen. -->
     <string name="podcast_message_queued_next">\"%1$s\" plays next</string>
     <!-- Snackbar after a mark; %1$s is the episode title. Both are offered back. -->
@@ -213,4 +218,32 @@
 
     <!-- What the system share sheet is titled when an episode is shared out of the app. -->
     <string name="episode_share_title">Share episode</string>
+
+    <!--
+        The counts line under a show's title. The same two facts, in the same order and with the
+        same separator, as the library row's own line: one show described one way.
+    -->
+    <plurals name="podcast_episode_count">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+    <!-- "Videos" for a YouTube playlist, which is what the user called them when they added it. -->
+    <plurals name="podcast_video_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+    <plurals name="podcast_downloaded_count">
+        <item quantity="one">%1$d downloaded</item>
+        <item quantity="other">%1$d downloaded</item>
+    </plurals>
+    <!-- Joins the two parts of that line (%1$s and %2$s), so a translator can re-punctuate it. -->
+    <string name="podcast_counts_combined">%1$s · %2$s</string>
+
+    <!-- Handing the show itself to somebody: the two menu entries that change nothing. -->
+    <string name="podcast_share_show">Share show</string>
+    <string name="podcast_copy_feed">Copy feed link</string>
+    <!-- What the system share sheet is titled when the show is shared out of the app. -->
+    <string name="podcast_share_show_title">Share show</string>
+    <!-- The clipboard entry's own name, which the system's copy confirmation displays. -->
+    <string name="podcast_feed_clip_label">Feed link</string>
 </resources>

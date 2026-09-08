@@ -4,6 +4,7 @@ import android.content.res.Resources
 import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -59,6 +62,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -324,6 +328,7 @@ fun LibraryScreen(
                             selectedPodcastId = selectedPodcastId,
                             onPodcastClick = onPodcastClick,
                             onMove = onMove,
+                            onRemoveRequest = { pendingRemovalId = it.podcast.id },
                         )
 
                         LibraryLayout.LIST -> ShowList(
@@ -490,13 +495,17 @@ private fun NewEpisodesChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
  * the space it exists to show. The list layout is picked up the same way.
  *
  * Dragging is offered only while the grid is showing the stored arrangement; see
- * [LibraryUiState.isReorderable].
+ * [LibraryUiState.isReorderable]. Removing is offered always, through a context menu the same press
+ * opens when it is released without travelling (LIB-4/D-8): a grid and a list showing the same
+ * library should be able to do the same things to it, and until this the list's swipe was the only
+ * way out of a subscription short of opening the show.
  *
  * @param podcasts the library.
  * @param isReorderable whether the drag gesture and its spoken equivalents are on offer.
  * @param selectedPodcastId the show a detail pane beside this grid is showing, or null.
  * @param onPodcastClick tile tap handler.
  * @param onMove reports a finished reorder as positions in [podcasts].
+ * @param onRemoveRequest asks for a show to be removed; the screen confirms before it happens.
  */
 @Composable
 private fun ShowGrid(
@@ -506,11 +515,17 @@ private fun ShowGrid(
     selectedPodcastId: String?,
     onPodcastClick: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onRemoveRequest: (PodcastWithCounts) -> Unit,
 ) {
     val resources = LocalResources.current
     val moveUp = stringResource(R.string.library_move_up)
     val moveDown = stringResource(R.string.library_move_down)
+    val removeLabel = stringResource(R.string.library_action_remove)
     val gridState = rememberLazyGridState()
+    // The show whose menu is open, as an id rather than an index: the grid re-lays itself out on
+    // every emission, and a menu anchored to position 4 would follow whichever show arrives there.
+    // Not saved across process death on purpose - a menu is a gesture in flight, not a place.
+    var menuForId by remember { mutableStateOf<String?>(null) }
 
     ScrollToTopEffect(signal = scrollToTopSignal, state = gridState)
 
@@ -533,43 +548,95 @@ private fun ShowGrid(
         ) { index, entry ->
             val isDragging = drag.draggingKey == entry.podcast.id
 
-            ShowTile(
-                title = entry.podcast.title,
-                artworkUrl = entry.podcast.artworkUrl,
-                author = entry.podcast.author,
-                source = entry.podcast.source,
-                badgeCount = entry.newEpisodeCount,
-                isDownloaded = entry.downloadedCount > 0,
-                stateDescription = entry.newEpisodeDescription(resources),
-                isSelected = entry.podcast.id == selectedPodcastId,
-                onClick = { onPodcastClick(entry.podcast.id) },
-                modifier = Modifier
-                    // On the tile/row itself, which merges its children: that merged node is
-                    // what a screen reader lands on, and a drag is invisible to one.
-                    .semantics {
-                        customActions = if (isReorderable) {
-                            drag.moveActions(index, moveUp, moveDown)
-                        } else {
-                            emptyList()
+            // The menu is anchored to the tile it belongs to, so it opens where the finger is
+            // rather than at a corner of the grid.
+            Box {
+                ShowTile(
+                    title = entry.podcast.title,
+                    artworkUrl = entry.podcast.artworkUrl,
+                    author = entry.podcast.author,
+                    source = entry.podcast.source,
+                    badgeCount = entry.newEpisodeCount,
+                    isDownloaded = entry.downloadedCount > 0,
+                    stateDescription = entry.newEpisodeDescription(resources),
+                    isSelected = entry.podcast.id == selectedPodcastId,
+                    onClick = { onPodcastClick(entry.podcast.id) },
+                    modifier = Modifier
+                        // On the tile itself, which merges its children: that merged node is what a
+                        // screen reader lands on, and neither a drag nor a press held in place is
+                        // visible to one. The removal is published as an action rather than as
+                        // "open the menu", because a menu is a way of reaching a thing and the
+                        // thing is what a screen reader should be handed.
+                        .semantics {
+                            val moves = if (isReorderable) {
+                                drag.moveActions(index, moveUp, moveDown)
+                            } else {
+                                emptyList()
+                            }
+                            customActions = moves + CustomAccessibilityAction(removeLabel) {
+                                onRemoveRequest(entry)
+                                true
+                            }
                         }
-                    }
-                    .graphicsLayer {
-                        // Only the dragged tile moves; the rest are re-laid-out by the grid as the
-                        // order changes, which is what makes the gap follow the finger.
-                        translationX = if (isDragging) drag.offset.x else 0f
-                        translationY = if (isDragging) drag.offset.y else 0f
-                        // Lifts it above its neighbours so it is not clipped by them mid-drag.
-                        shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
-                    }
-                    .then(
-                        if (isReorderable) {
-                            Modifier.reorderableLongPressDrag(drag, entry.podcast.id)
-                        } else {
-                            Modifier
-                        },
-                    ),
-            )
+                        .graphicsLayer {
+                            // Only the dragged tile moves; the rest are re-laid-out by the grid as
+                            // the order changes, which is what makes the gap follow the finger.
+                            translationX = if (isDragging) drag.offset.x else 0f
+                            translationY = if (isDragging) drag.offset.y else 0f
+                            // Lifts it above its neighbours so it is not clipped by them mid-drag.
+                            shadowElevation = if (isDragging) DRAG_ELEVATION else 0f
+                        }
+                        // The press is held whether or not this grid can be rearranged: where a
+                        // computed order or an active filter takes the drag away (see
+                        // [LibraryUiState.isReorderable]) the menu is the only thing a tile
+                        // offers, and losing it with the drag would make removing a show depend on
+                        // which order the library happens to be in.
+                        .reorderableLongPressDrag(
+                            state = drag,
+                            key = entry.podcast.id,
+                            enabled = isReorderable,
+                            onReleasedInPlace = { menuForId = entry.podcast.id },
+                        ),
+                )
+
+                ShowTileMenu(
+                    expanded = menuForId == entry.podcast.id,
+                    onDismiss = { menuForId = null },
+                    onRemove = {
+                        menuForId = null
+                        onRemoveRequest(entry)
+                    },
+                )
+            }
         }
+    }
+}
+
+/**
+ * What a tile offers when its press is held and released in place.
+ *
+ * One entry, and that is not an oversight. The menu exists to close the gap the grid had against
+ * the list, and the list's swipe holds exactly one thing: a show can be removed. The show's own
+ * page offers two more - its settings sheet and a rebuild - and both stay there, because both need
+ * what the library has not got. A rebuild has to clear the show's downloads before it throws away
+ * the rows that name them, which means reading the show's episode list; the settings sheet is the
+ * show's page in miniature. Copying either into a second module would be the second place to
+ * maintain that this plan keeps declining to build (D-23).
+ *
+ * @param expanded whether this tile's menu is the open one.
+ * @param onDismiss closes it, tapped away or backed out of.
+ * @param onRemove asks for the show to be removed; the screen still confirms.
+ */
+@Composable
+private fun ShowTileMenu(expanded: Boolean, onDismiss: () -> Unit, onRemove: () -> Unit) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.library_action_remove)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Delete, contentDescription = null)
+            },
+            onClick = onRemove,
+        )
     }
 }
 

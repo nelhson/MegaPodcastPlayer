@@ -94,6 +94,9 @@ fun SettingsSwitchRow(
  * @param label renders one option's caption; composable, because the captions come from resources.
  * @param onSelect invoked with the chosen value.
  * @param modifier layout modifier.
+ * @param description what the row needs to say beyond its name, or null for the many that need
+ *   nothing. It exists for the settings whose *chips are not the whole answer* — the app's playback
+ *   rate is a default, and a default is only a default if what departs from it is named (SET-6).
  */
 @Composable
 fun <T> SettingsChoiceRow(
@@ -103,6 +106,7 @@ fun <T> SettingsChoiceRow(
     label: @Composable (T) -> String,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    description: String? = null,
 ) {
     Column(modifier = modifier.padding(vertical = MegaPodcastPlayerTheme.spacing.sm)) {
         Text(
@@ -110,6 +114,14 @@ fun <T> SettingsChoiceRow(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(horizontal = MegaPodcastPlayerTheme.spacing.lg),
         )
+        if (description != null) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = MegaPodcastPlayerTheme.spacing.lg),
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()

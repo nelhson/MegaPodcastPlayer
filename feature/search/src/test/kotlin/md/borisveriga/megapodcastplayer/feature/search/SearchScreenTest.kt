@@ -1,10 +1,14 @@
 package md.borisveriga.megapodcastplayer.feature.search
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
@@ -13,6 +17,7 @@ import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +90,17 @@ class SearchScreenTest {
         totalEpisodeCount = 412,
     )
 
+    /**
+     * Puts text on the device clipboard, as another app would have left it.
+     *
+     * @param text what to copy.
+     */
+    private fun copyToClipboard(text: String) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSystemService(ClipboardManager::class.java)
+            .setPrimaryClip(ClipData.newPlainText("test", text))
+    }
+
     private fun setScreen(
         uiState: SearchUiState,
         onAddLink: () -> Unit = {},
@@ -93,12 +109,16 @@ class SearchScreenTest {
         onPlayPreviewEpisode: (Episode) -> Unit = {},
         onOpenPodcast: (String) -> Unit = {},
         onBack: () -> Unit = {},
+        onQueryChange: (String) -> Unit = {},
+        onClearRecentSearches: () -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
                 SearchScreen(
                     uiState = uiState,
-                    onQueryChange = {},
+                    onQueryChange = onQueryChange,
+                    onSearchCommitted = {},
+                    onClearRecentSearches = onClearRecentSearches,
                     onAddLink = onAddLink,
                     onOpenPreview = onOpenPreview,
                     onDismissPreview = {},
@@ -112,6 +132,75 @@ class SearchScreenTest {
                 )
             }
         }
+    }
+
+    /**
+     * ADD-5. The field opens on nothing, and what actually happens on this screen is the same show
+     * looked up twice because the first attempt was made on the other device.
+     */
+    @Test
+    fun `an empty field offers what has been searched for before`() {
+        var typed: String? = null
+        setScreen(
+            SearchUiState(recentSearches = listOf("podlodka", "acquired")),
+            onQueryChange = { typed = it },
+        )
+
+        composeRule.onNodeWithText("Recent searches").assertExists()
+        composeRule.onNodeWithText("acquired").performClick()
+
+        assertEquals("acquired", typed)
+    }
+
+    @Test
+    fun `the remembered terms can be forgotten`() {
+        var cleared = false
+        setScreen(
+            SearchUiState(recentSearches = listOf("podlodka")),
+            onClearRecentSearches = { cleared = true },
+        )
+
+        composeRule.onNodeWithText("Clear").performClick()
+
+        assertTrue(cleared)
+    }
+
+    /** They are an offer for an empty field; over a list of results they would be in the way. */
+    @Test
+    fun `the remembered terms go away once something is typed`() {
+        setScreen(
+            SearchUiState(
+                query = "acq",
+                results = listOf(result(id = 1L, title = "Acquired")),
+                recentSearches = listOf("podlodka"),
+            ),
+        )
+
+        composeRule.onNodeWithText("Recent searches").assertDoesNotExist()
+    }
+
+    /**
+     * ADD-4. A link is on the clipboard because it was copied in another app a moment ago and the
+     * user came here to paste it; offering the paste is shorter than the paste.
+     */
+    @Test
+    fun `a podcast link on the clipboard is offered as a chip`() {
+        copyToClipboard("https://example.com/feed.rss")
+        var typed: String? = null
+        setScreen(SearchUiState(), onQueryChange = { typed = it })
+
+        composeRule.onNodeWithText("Paste link").performClick()
+
+        assertEquals("https://example.com/feed.rss", typed)
+    }
+
+    /** Only for text the app could actually add, so the chip never appears over a shopping list. */
+    @Test
+    fun `anything else on the clipboard is left alone`() {
+        copyToClipboard("milk, bread, a new podcast app")
+        setScreen(SearchUiState())
+
+        composeRule.onNodeWithText("Paste link").assertDoesNotExist()
     }
 
     @Test

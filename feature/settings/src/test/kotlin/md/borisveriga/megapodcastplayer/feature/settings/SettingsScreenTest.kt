@@ -91,6 +91,77 @@ class SettingsScreenTest {
     }
 
     /**
+     * SET-6. The row used to be *the* speed; it is now the speed of every show that has not said
+     * otherwise, and the shows that have are named so that an unexpected rate has an explanation
+     * on the screen the rate is set on.
+     */
+    @Test
+    fun `the playback rate is named as a default, and its exceptions are listed`() {
+        setContent(
+            SettingsUiState(
+                speedOverrides = listOf(
+                    ShowSpeedOverride("Acquired", 2f),
+                    ShowSpeedOverride("Zeitgeist", 1.5f),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Default speed").assertExists()
+        composeRule
+            .onNodeWithText("Some shows play at their own speed: Acquired at 2x, Zeitgeist at 1.5x")
+            .assertExists()
+    }
+
+    /** A row saying "no shows override this" would explain a feature rather than report a fact. */
+    @Test
+    fun `nothing is said about overrides when there are none`() {
+        setContent(SettingsUiState())
+
+        composeRule.onNodeWithText("Some shows play at their own speed:", substring = true)
+            .assertDoesNotExist()
+    }
+
+    /** SET-4. An app with a crash reporter on its classpath should say so where it can be read. */
+    @Test
+    fun `about says whether anything is reported`() {
+        setContent(SettingsUiState(isCrashReporting = true))
+
+        scrollToText("Crash reporting")
+        composeRule
+            .onNodeWithText(
+                "On. Crashes and handled failures are sent to Firebase Crashlytics.",
+            )
+            .assertExists()
+    }
+
+    @Test
+    fun `about says when nothing is reported`() {
+        setContent(SettingsUiState(isCrashReporting = false))
+
+        scrollToText("Crash reporting")
+        composeRule
+            .onNodeWithText(
+                "Off. This build has no crash reporting configured, so nothing leaves the device.",
+            )
+            .assertExists()
+    }
+
+    /**
+     * The OFL requires the licence to travel with the fonts, and for a user that means the APK.
+     * Until this it lived only in `docs/`, which satisfied nobody who had not cloned the project.
+     */
+    @Test
+    fun `the bundled fonts' licences can be read in the app`() {
+        setContent(SettingsUiState())
+
+        scrollToText("Font licences")
+        composeRule.onNodeWithText("Font licences").performClick()
+
+        composeRule.onNodeWithText("SIL OPEN FONT LICENSE Version 1.1", substring = true)
+            .assertExists()
+    }
+
+    /**
      * The appearance section is the only one whose effect is visible while it is being chosen, and
      * the theme row is the reason the section exists at all.
      */

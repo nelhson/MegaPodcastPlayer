@@ -227,7 +227,7 @@ class PlayerSheetTest {
             ),
         )
 
-        composeRule.onNodeWithContentDescription("Downloaded, remove from device").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Downloaded, delete from device").assertIsDisplayed()
     }
 
     @Test

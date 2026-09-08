@@ -123,6 +123,21 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Observes the last few things the user searched for, most recent first.
+     *
+     * Kept for ADD-5: the search field opens on nothing, and the thing that actually happens here
+     * is the same show looked up twice, because the first attempt was made on the other device.
+     * Stored the same way [downloadOrder] is and for the same reason — DataStore's `stringSet` has
+     * no order, and the order is the whole point of a *recent* list.
+     */
+    val recentSearches: Flow<List<String>> = dataStore.data.map { preferences ->
+        preferences[Keys.RECENT_SEARCHES]
+            ?.split(ID_SEPARATOR)
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+    }
+
+    /**
      * Observes the episode the player was last given, or null if nothing has been played.
      *
      * This is what lets a cold start — or a system-initiated playback resumption from the
@@ -257,6 +272,35 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Records a search worth offering again, at the head of the list.
+     *
+     * Case-insensitively de-duplicated, so looking the same show up a third time moves its term to
+     * the front rather than filling the list with it. Newlines are folded to spaces because the
+     * separator is one — a single-line field cannot produce one today, and a lossy round trip is
+     * not a thing to leave waiting for the day it can.
+     *
+     * @param term what was searched for; blank is ignored rather than stored.
+     */
+    suspend fun addRecentSearch(term: String) {
+        val cleaned = term.replace(ID_SEPARATOR, " ").trim()
+        if (cleaned.isEmpty()) return
+        dataStore.edit { preferences ->
+            val existing = preferences[Keys.RECENT_SEARCHES]
+                ?.split(ID_SEPARATOR)
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+            val updated = (listOf(cleaned) + existing.filterNot { it.equals(cleaned, true) })
+                .take(MAX_RECENT_SEARCHES)
+            preferences[Keys.RECENT_SEARCHES] = updated.joinToString(ID_SEPARATOR)
+        }
+    }
+
+    /** Forgets every stored search term. */
+    suspend fun clearRecentSearches() {
+        dataStore.edit { it.remove(Keys.RECENT_SEARCHES) }
+    }
+
+    /**
      * Records which episode the player is on.
      *
      * @param episodeId the episode, or null once the player is stopped and the queue is empty.
@@ -338,6 +382,7 @@ class UserPreferencesDataSource @Inject constructor(
         val DOWNLOAD_ORDER = stringPreferencesKey("download_order")
         val LAST_BACKUP_AT_MS = longPreferencesKey("last_backup_at_ms")
         val SHOW_SETTINGS = stringPreferencesKey("show_settings")
+        val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
     }
 
     private companion object {
@@ -346,5 +391,13 @@ class UserPreferencesDataSource @Inject constructor(
 
         /** Separates the ids in the stored downloads order; see [setDownloadOrder]. */
         const val ID_SEPARATOR = "\n"
+
+        /**
+         * How many search terms are kept.
+         *
+         * Short on purpose: this is a memory aid, not a history. A list long enough to scroll would
+         * be a second thing to read on a screen whose job is to get out of the way.
+         */
+        const val MAX_RECENT_SEARCHES = 8
     }
 }

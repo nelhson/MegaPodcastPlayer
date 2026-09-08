@@ -1,6 +1,8 @@
 package md.borisveriga.megapodcastplayer.core.designsystem.reorder
 
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
@@ -13,10 +15,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import kotlin.coroutines.cancellation.CancellationException
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.rememberHaptics
 
 /**
@@ -331,28 +337,98 @@ private fun ReorderableItem.contains(point: Offset): Boolean =
  * without this the only sign that a press had been held long enough was the item starting to move,
  * which is a frame too late to be reassuring.
  *
+ * A press that is held and then released *without going anywhere* is a second gesture, and
+ * [onReleasedInPlace] is where it lands. It exists because a grid tile has room for exactly one
+ * press-and-hold, and the library needs that one press to mean two things: pick the show up, or ask
+ * what can be done to it (LIB-4/D-8). The two are told apart by distance rather than by time —
+ * total travel against the same `touchSlop` that separates a tap from a drag everywhere else — so
+ * the finger's inevitable drift during half a second of holding is not read as a rearrangement, and
+ * a hold that visibly moved the item is never answered with a menu.
+ *
+ * [enabled] and [onReleasedInPlace] are independent for the same reason they exist: the library
+ * grid loses its drag whenever a computed order or an active filter means positions on screen are
+ * not positions in the library, and a menu that went with it would make removing a show depend on
+ * which order the library happens to be in.
+ *
  * @param state the reorder state to drive.
  * @param key the dragged item's key.
+ * @param enabled false to keep the item still: the press is still recognised, so
+ *   [onReleasedInPlace] still fires, but nothing is picked up and nothing is committed.
+ * @param onReleasedInPlace invoked when the press was held and released without travelling; null
+ *   for a call site where holding means only "pick up", which is every list but the library's grid.
  */
 @Composable
-fun <T> Modifier.reorderableLongPressDrag(state: ReorderableState<T>, key: Any): Modifier {
+fun <T> Modifier.reorderableLongPressDrag(
+    state: ReorderableState<T>,
+    key: Any,
+    enabled: Boolean = true,
+    onReleasedInPlace: (() -> Unit)? = null,
+): Modifier {
     val haptics = rememberHaptics()
-    return pointerInput(key) {
-        detectDragGesturesAfterLongPress(
-            onDragStart = {
-                haptics.pickUp()
-                state.onDragStart(key)
-            },
-            onDragEnd = {
+    // Read late, so a recomposition with a new lambda does not leave a press in flight calling the
+    // one it replaced — the same reason `rememberReorderableState` does it for `onMove`.
+    val currentOnReleasedInPlace by rememberUpdatedState(onReleasedInPlace)
+    // Nothing to detect: no drag to start and no menu to open. Returning the bare modifier rather
+    // than an inert `pointerInput` keeps the press available to whatever is underneath.
+    if (!enabled && onReleasedInPlace == null) return this
+    return pointerInput(key, enabled) {
+        val slop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            // Returns null if the finger left, moved past slop, or another node claimed the
+            // pointer first — a tap, a flick and a horizontal swipe all end the gesture here,
+            // having consumed nothing, which is what leaves them working.
+            val held = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+
+            haptics.pickUp()
+            if (enabled) state.onDragStart(key)
+            // Accumulated path length, not displacement: a finger that wanders out and back has
+            // moved the item, whatever the two endpoints say.
+            var travel = 0f
+            var released = false
+
+            try {
+                while (!released) {
+                    // The initial pass, and this is the whole reason for hand-rolling the loop
+                    // that `detectDragGesturesAfterLongPress` would otherwise provide. Pointer
+                    // events reach the initial pass from the outside in and the main pass from the
+                    // inside out, and the item's own `clickable` sits *inside* this modifier — so
+                    // consuming on the main pass is a pass too late, and the release of a press
+                    // held for half a second arrives at the click as an ordinary tap. Every list
+                    // here has been quietly opening whatever the user had picked up and put back
+                    // down; the library's grid is where it finally mattered, because a menu that
+                    // opens behind the show it just navigated to is not a menu.
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == held.id } ?: break
+                    // Read before the consume, which is what zeroes it: `positionChange` reports
+                    // nothing once the change has been claimed.
+                    val amount = change.positionChange()
+                    change.consume()
+                    if (change.changedToUpIgnoreConsumed()) {
+                        released = true
+                    } else {
+                        travel += amount.getDistance()
+                        if (enabled) state.onDrag(amount)
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                // The composition went away mid-gesture. Without this the item stays lifted and
+                // the collection keeps drawing the order the finger left behind.
+                if (enabled) state.onDragCancel()
+                throw cancellation
+            }
+
+            if (released) {
                 haptics.drop()
-                state.onDragEnd()
-            },
-            onDragCancel = { state.onDragCancel() },
-            onDrag = { change, amount ->
-                change.consume()
-                state.onDrag(amount)
-            },
-        )
+                // Always ended, never skipped: within a slop's worth of travel nothing can have
+                // been reordered, so this is a no-op in the in-place case and the commit
+                // otherwise.
+                if (enabled) state.onDragEnd()
+                if (travel <= slop) currentOnReleasedInPlace?.invoke()
+            } else {
+                if (enabled) state.onDragCancel()
+            }
+        }
     }
 }
 
