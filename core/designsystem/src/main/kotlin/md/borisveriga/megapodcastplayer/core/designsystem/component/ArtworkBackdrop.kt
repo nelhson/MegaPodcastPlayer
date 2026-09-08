@@ -82,7 +82,7 @@ private val BLUR_RADIUS = 64.dp
 
 @ThemePreviews
 @Composable
-private fun ArtworkBackdropPreview() {
+internal fun ArtworkBackdropPreview() {
     MegaPodcastPlayerTheme {
         ArtworkBackdrop(url = null, modifier = Modifier.height(220.dp)) {
             PodcastArtwork(url = null, size = ArtworkSize.Header)

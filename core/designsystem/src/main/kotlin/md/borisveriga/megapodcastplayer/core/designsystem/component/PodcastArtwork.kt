@@ -153,7 +153,7 @@ private val BAR_DELAYS_MS = listOf(0, 130, 70)
 
 @ThemePreviews
 @Composable
-private fun PodcastArtworkPreview() {
+internal fun PodcastArtworkPreview() {
     MegaPodcastPlayerTheme {
         Row(
             modifier = Modifier
@@ -172,7 +172,7 @@ private fun PodcastArtworkPreview() {
 
 @Preview(name = "Hero artwork")
 @Composable
-private fun PodcastArtworkHeroPreview() {
+internal fun PodcastArtworkHeroPreview() {
     MegaPodcastPlayerTheme {
         PodcastArtwork(
             url = null,

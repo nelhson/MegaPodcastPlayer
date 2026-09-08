@@ -691,7 +691,7 @@ private const val DESCRIPTION_MAX_LINES = 6
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun SearchScreenPreview() {
+internal fun SearchScreenPreview() {
     MegaPodcastPlayerTheme {
         SearchScreen(
             uiState = SearchUiState(
@@ -735,7 +735,7 @@ private fun SearchScreenPreview() {
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun SearchScreenLinkPreview() {
+internal fun SearchScreenLinkPreview() {
     MegaPodcastPlayerTheme {
         SearchScreen(
             uiState = SearchUiState(

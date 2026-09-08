@@ -206,7 +206,7 @@ private const val SPIN_CYCLE_MS = 4200
 
 @ThemePreviews
 @Composable
-private fun LoadingStatePreview() {
+internal fun LoadingStatePreview() {
     MegaPodcastPlayerTheme {
         Box(modifier = Modifier.size(200.dp)) {
             LoadingState()
@@ -216,7 +216,7 @@ private fun LoadingStatePreview() {
 
 @ThemePreviews
 @Composable
-private fun EmptyStatePreview() {
+internal fun EmptyStatePreview() {
     MegaPodcastPlayerTheme {
         EmptyState(
             icon = Icons.Rounded.Podcasts,

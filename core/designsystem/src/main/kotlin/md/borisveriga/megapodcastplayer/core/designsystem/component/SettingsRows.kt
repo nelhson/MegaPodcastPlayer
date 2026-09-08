@@ -151,7 +151,7 @@ fun <T> SettingsChoiceRow(
 
 @ThemePreviews
 @Composable
-private fun SettingsSwitchRowPreview() {
+internal fun SettingsSwitchRowPreview() {
     MegaPodcastPlayerTheme {
         SettingsSwitchRow(
             title = "Download on Wi-Fi only",
@@ -164,7 +164,7 @@ private fun SettingsSwitchRowPreview() {
 
 @ThemePreviews
 @Composable
-private fun SettingsChoiceRowPreview() {
+internal fun SettingsChoiceRowPreview() {
     MegaPodcastPlayerTheme {
         SettingsChoiceRow(
             title = "Playback speed",

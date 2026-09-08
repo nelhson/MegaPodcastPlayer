@@ -336,7 +336,7 @@ private const val WAVE_TRAVEL_MS = 1100
 
 @ThemePreviews
 @Composable
-private fun WaveScrubberPreview() {
+internal fun WaveScrubberPreview() {
     MegaPodcastPlayerTheme {
         Column(modifier = Modifier.padding(16.dp)) {
             LabelledWaveScrubber(

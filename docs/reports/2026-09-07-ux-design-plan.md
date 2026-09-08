@@ -11,22 +11,26 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 49 of the 73 items are done, 3 are decided against, none is half done, 21 are
+> **Where it stands: 52 of the 73 items are done, 3 are decided against, none is half done, 18 are
 > not started.** Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
 > to be re-derived. The 46th done item was PL-10, which was built with PL-9 and never marked; the
-> three since are the watch's, W-4 with W-3 and W-5 swept up on the way past.
+> six since are the watch's — W-4, with W-3 and W-5 swept up on the way past — SYS-3, the
+> launcher's four shortcuts, and then NAV-7 and DS-5 together: one app bar for all five top-level
+> destinations, recorded the same day by a screenshot suite that renders every screen's own
+> preview. NAV-7 went first on purpose — changing every app bar after the goldens are recorded
+> means recording them twice.
 >
 > | Phase | State | Left |
 > |-------|-------|------|
 > | P0 — a day of polish | ✅ complete | — |
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
-> | P3 — reach | started | 8 of its 13 items |
-> | Unscheduled (in no phase) | not started | 13 items, 3 decided against, 1 found already built |
+> | P3 — reach | started | 6 of its 13 items |
+> | Unscheduled (in no phase) | started | 12 items, 3 decided against, 1 found already built |
 >
-> §4.1 lists the 21 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists the 18 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -127,7 +131,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | DS-2 ✅ | **`ArtworkBackdrop` is documented as sitting behind the expanded player and does not.** The sheet is a flat `surfaceContainerHigh`. Add the blurred backdrop with its scrim; keep the transport row on a solid strip at the bottom so contrast never depends on the cover. | M | S |
 | DS-3 ✅ | **Dead vocabulary.** `MegaPodcastPlayerPolygons.Heptagon` ("masks the artwork of the episode currently playing") is applied nowhere; `SelectionToolbar` and `EpisodeRow.isSelected` survive from a multi-select that no screen has any more. Either give each a job (the heptagon on the queue's now-playing artwork is a good one) or remove it, so the design system stays a description of the app. **All three removed, rather than employed.** The heptagon's suggested job was the queue's now-playing artwork, and by the time it could have taken it that row already said *this one is playing* three ways — a tint, an equaliser and a heading — against §7's rule of one mark per fact. The other two are half of a feature the app decided against; the comment left where the heptagon was says so, so the next reader does not re-derive it. `EpisodeRow.onLongClick` is the one limb of that amputation still standing, unused by any screen and left alone because it is a labelled accessibility action rather than a mark on the screen. | L | S |
 | DS-4 ✅ | **Token leakage in the player module.** The collapsed bar hard-codes 12/8 dp padding and the expanded body uses 20 dp horizontal padding against the tokenised 16 dp `screenHorizontal` every other screen uses. The player is the one screen whose edges visibly disagree with the rest. | L | S |
-| DS-5 | **Previews and screenshots.** `ThemePreviews` and `FontScalePreviews` exist in the design system, but every screen carries a single bare `@Preview` with no dark or large-font variant, and there is no screenshot test suite. Design regressions are invisible in CI; the palette-only-rendered-in-previews incident the theme's KDoc describes could recur. | M | M |
+| DS-5 ✅ | **Previews and screenshots.** `ThemePreviews` and `FontScalePreviews` exist in the design system, but every screen carries a single bare `@Preview` with no dark or large-font variant, and there is no screenshot test suite. Design regressions are invisible in CI; the palette-only-rendered-in-previews incident the theme's KDoc describes could recur. **Done, and the row's first half had quietly finished itself** — A11Y-1 and the phases since had already put `ThemePreviews` on every screen and `FontScalePreviews` on most, so what was actually missing was the suite. 114 goldens under `<module>/src/test/screenshots`, rendered by the Robolectric already on the classpath and compared by Roborazzi, in three renderings: light, dark, and light at 200 % text. **Each test renders the component's own `@Preview`** rather than building a state of its own, which is what makes the two halves of this row one thing: the preview is where the curated state lives, so a golden cannot drift from what a designer looks at, and adding a state to the suite is a preview plus one line. Animations are removed through the app's own reduce-motion switch, so a golden is a real still frame rather than one arbitrary tick of a loop. `docs/SCREENSHOT_TESTS.md` has the rest, including the two Gradle bugs the suite found by lying once about a re-record. | M | M |
 | DS-6 ✅ | **First frame.** The launch theme's `windowBackground` is `@android:color/background_light` in both modes, so dark-mode launches flash white; `core-splashscreen` is a declared dependency but `installSplashScreen()` is never called and no `Theme.….Starting` exists. Define a splash theme on the ink ground with the icon, install it, and give the window background a night qualifier. | H | S |
 | DS-7 ✅ | **Motion ignores the system's "remove animations" setting** — the now-playing bars, wavy hairline, morphing loader, scrubber wave and the watch waveform all loop unconditionally — and **the phone has no haptics at all**: no tick when a long press picks up a row, when a full swipe crosses its commit threshold, when the sheet snaps, or when a moment is saved. Both are cheap and both are the difference between "animated" and "physical". | M | S |
 | DS-8 | **RTL.** `supportsRtl` is true, but `SwipeActionsRow` only opens leftwards and anchors its buttons at `CenterEnd`, so a mirrored layout puts the buttons on the left and the gesture pulling away from them. Mirror the gesture with `LayoutDirection`, or declare `supportsRtl="false"` honestly. **Decided (§5.1, D-5): declare it false.** This is a sideloaded build for one person who reads left to right; `supportsRtl="true"` is currently a claim the swipe rows do not honour, and a manifest that tells the truth costs an attribute where mirroring the gesture costs a day and would never be run. The attribute carries a comment saying it is a scope decision rather than an oversight, so an app that ever wants a second reading direction knows the work is `SwipeActionsRow`'s and not the manifest's. Effort drops from M to S. | L | S |
@@ -143,7 +147,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | NAV-4 | **Re-tapping the current tab does nothing** (the guard returns early). Platform convention is scroll-to-top; with a long library it is the fastest way back. | L | S |
 | NAV-5 | **Settings is reachable only from the Library bar.** From Queue, Downloads or Moments it is a tab switch plus a tap. Put the gear on every top-level bar, or in a consistent overflow. **Decided (§5.1, D-7): the gear on every top-level bar.** One tap from anywhere, and an overflow would be a menu holding a single item on four of the five screens — a container invented to hide the one thing in it. | L | S |
 | NAV-6 ✅ | **Notification taps land short.** The new-episode notification opens the *show*; opening the episode (or Home with it highlighted) is what the tap means. The playback notification opens the app with the sheet collapsed; it should arrive expanded. The playback notification now carries `EXTRA_OPEN_PLAYER` and arrives with the sheet expanded; a new-episode notification that named exactly one episode opens that episode's sheet, and one naming several still opens the show. | M | S |
-| NAV-7 | **Four tabs, two app-bar styles.** Library, Queue and Downloads argue in their comments for a pinned small bar; Moments uses the large collapsing one. Pick one for all top-level destinations. **Decided (§5.1, D-6): the pinned small bar, everywhere.** There are five top-level destinations now that Listen exists, and a collapsing bar on one of five reads as an accident rather than as emphasis. The three screens that already argued for pinned argued from the same fact — a list you came to scroll should not spend a third of the screen saying where you are. Moments loses its large title; if a screen ever earns a collapsing bar it will be a detail screen, where the title is the content's name and not the tab's. | L | S |
+| NAV-7 ✅ | **Four tabs, two app-bar styles.** Library, Queue and Downloads argue in their comments for a pinned small bar; Moments uses the large collapsing one. Pick one for all top-level destinations. **Decided (§5.1, D-6): the pinned small bar, everywhere.** There are five top-level destinations now that Listen exists, and a collapsing bar on one of five reads as an accident rather than as emphasis. The three screens that already argued for pinned argued from the same fact — a list you came to scroll should not spend a third of the screen saying where you are. Moments loses its large title; if a screen ever earns a collapsing bar it will be a detail screen, where the title is the content's name and not the tab's. **Done**, and it was two screens rather than one: Listen had adopted the large bar as well by the time this was built. `MegaPodcastPlayerLargeTopAppBar` went with them — removed rather than kept for the detail screen that might one day earn it, on DS-3's rule that the design system describes the app, and Material's own `LargeTopAppBar` is one import away on the day a screen does. Taken immediately before DS-5, because goldens recorded over an app bar that is about to change are goldens recorded twice. | L | S |
 | NAV-8 | The Library empty state uses the `GridView` glyph (a *layout* icon) for "no podcasts yet"; use the `Podcasts` glyph the artwork placeholder already uses. | L | S |
 
 ### 3.3 Library
@@ -242,7 +246,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 - *Unchanged:* artwork, the system's progress bar and seek, the output switcher and the title
   marquee are all the platform's and already correct in the screenshots.
 | SYS-2 | **A home-screen widget** (Glance): now playing with transport, and a *Continue listening* row. | M | M |
-| SYS-3 | **Static app shortcuts:** Resume, Queue, Downloads, Add a show. | L | S |
+| SYS-3 ✅ | **Static app shortcuts:** Resume, Queue, Downloads, Add a show. **Done**, and the four divide two ways rather than one. Three name a place and are answered where the graph is, by the same `navigateToTopLevel` a tab tap uses, so arriving from the launcher and arriving by thumb leave the same back stack behind. *Resume* names no place at all: it is playback, answered before there is a composition, and built out of the two things that already happen when the app is opened by hand and the mini player's play button is pressed — the cold-start queue restore, then play. Resolving "the last episode" a second way here would have been a second answer to a question `resumableQueue()` already answers. Nothing to resume opens the app and nothing else: an empty sheet is a blank screen in reply to *carry on*. | L | S |
 | SYS-4 ✖ | Android Auto needs a media browser tree; noted as a possible later phase, not planned here. **Decided against (§5.1, D-10): out of scope, and now closed rather than left hovering.** It was the one item in the plan with no impact and no effort estimate, which is what an unmade decision looks like in a table. The work is not a screen but a second information architecture — a browsable tree, its own validation, and a driving-safety review — for a car this user does not listen in. PL-2's `ChapterAwarePlayer` already gives a car's *next* button the meaning it should have if one is ever plugged in, which is the part that would have been hard to add later. | — | — |
 
 ### 3.11 Accessibility and inclusive design
@@ -288,7 +292,7 @@ that holds up. Improvements are small:
 | **P0 — a day of polish** ✅ | First impressions and the brand on the player | SYS-1 lock-screen skip buttons (confirmed) · DS-6 splash and first frame · PL-7 mini player (height, glyphs, skip-back) · PL-1 adopt scrubber, play button, backdrop · SHOW-2 download state on rows · SET-2 confirm remove-all · A11Y-1 font-scale pass · DS-7 haptics and reduce-motion · DS-4 player tokens |
 | **P1 — the listening loop** ✅ | From "a list of shows" to "what do I listen to now" | NAV-1 Home (continue, new, up next) · SHOW-1 episode sheet with show notes · SHOW-3 mark played · PL-2 chapters · PL-4 sleep timer · ADD-1 share target and link handling · SHOW-4 continue button · PL-9 queue header and clear · NAV-6 notification landing. All landed. The phase set out to answer "what do I listen to now" and ends up having answered a second question with it — *where am I in this*: an episode is a list of named segments on the scrubber, in the sheet, and now under a thumb on a lock screen, rather than a bar with a number at each end. |
 | **P2 — control and personalisation** ✅ | Settings that follow the show, not the app | PL-5 speed sheet · SHOW-5 sort and persisted filter · SHOW-6 show settings · SET-1 appearance · SET-3 notifications · LIB-1/LIB-2 sort and filter · LIB-3 badge vocabulary · DL-1 sections · DL-2 download now · ADD-2 preview before subscribe · COPY-1 localised formatters · PL-6 time labels · PL-8 error copy · MOM-1. All landed. The phase's theme came out truer than the list reads: a show can now disagree with the app about speed, downloads and notifications; the library can be ordered and narrowed rather than only arranged; the downloads screen says which of four things each row is doing; and the app can be looked at in the palette, the language and the brightness the user chose rather than the ones the code was written in. |
-| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Five done: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; and NAV-2, answered in its row — Downloads stays a tab. Of the eight left, DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and the order the rest are taken in changed once: the Fold now goes before the widget (D-13). |
+| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Seven done: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded. Of the six left, DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and the order the rest are taken in changed once: the Fold now goes before the widget (D-13). |
 
 Rough sizing: P0 fits in one to two days; P1 is the bulk of the work at roughly two weeks, with
 NAV-1 and PL-2 the two large pieces; P2 and P3 are each a week or so of independent, schedulable
@@ -306,33 +310,31 @@ Where §5.1 settled
 how an item should be built, the row says which way it goes — the choice is not open any more, only
 the work. Four ids have left these tables — three decided against (PL-3, SYS-4, SET-5) and one,
 PL-10, found already built — and all four are listed under them, so a reader who remembers an id can
-see it was answered rather than lost. Three more left on 8 September by being built: W-4, and W-3
-and W-5 with it.
+see it was answered rather than lost. Four more left on 8 September by being built: W-4, with W-3
+and W-5 alongside it, and SYS-3.
 
-**P3 — reach.** Larger screens, other surfaces, migration. Eight left; W-1, W-2, W-4, DS-3 and
-NAV-2 are done.
+**P3 — reach.** Larger screens, other surfaces, migration. Six left; W-1, W-2, W-4, DS-3, NAV-2,
+SYS-3 and DS-5 are done.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
 | NAV-3 | Two-pane list/detail on the open Fold; `PodcastDetailRoute.showBackButton` already exists for it | M | L |
-| DS-5 | Theme and font-scale previews on every screen, and a screenshot suite | M | M |
 | DS-8 | RTL: declare `supportsRtl="false"`, with a comment saying it is scope and not oversight (D-5) | L | S |
 | PL-11 | The expanded player on the inner display: cap the hero, lay artwork and controls side by side | M | M |
 | SYS-2 | A Glance widget: now playing with transport, and a *Continue listening* row | M | M |
-| SYS-3 | Static app shortcuts: Resume, Queue, Downloads, Add a show | L | S |
 | ADD-3 | OPML import and export | M | M |
 | MOM-2 | Moments: filter by show, search notes, group by show, swipe to edit a note | L | M |
 
 **Unscheduled.** Real findings that no phase claimed — mostly small, mostly independent, and each
-worth doing on the day the screen it belongs to is open for another reason. Two have gone that
+worth doing on the day the screen it belongs to is open for another reason. Three have gone that
 way already: W-3 and W-5 were both in files W-4 opened, and both were cheaper to do there than to
-remember.
+remember; NAV-7 was pulled forward on its own schedule rather than an accident of proximity — it
+had to precede DS-5 or the goldens would have been recorded twice.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
 | NAV-4 | Re-tapping the current tab should scroll to top | L | S |
 | NAV-5 | Settings: put the gear on every top-level bar, not in an overflow (D-7) | L | S |
-| NAV-7 | One app-bar style for all five top-level destinations: the pinned small bar; Moments loses its large title (D-6) | L | S |
 | NAV-8 | The library empty state uses a layout glyph for "no podcasts yet" | L | S |
 | LIB-4 | The grid has no way to remove a show: give the tile a context menu, opened by a press released in place (D-8) | L | S |
 | SHOW-7 | Header details: *Show more* when it is not needed, no feed link, no *Share show* | L | S |
@@ -383,12 +385,25 @@ and both get more expensive the longer the branch runs.
    list on the other. **W-3** and **W-5** came with it, exactly as this step predicted they would —
    both were in files it opened. That is the end of the watch as far as this plan is concerned;
    everything below is the phone's or the build's.
-4. **SYS-3** — static app shortcuts. The smallest item in P3 and the only one that needs no design:
-   four `<shortcut>` entries and the intents already exist, `EXTRA_OPEN_PLAYER` among them. **This
-   is the next morning's work.**
-5. **DS-5** — previews and a screenshot suite. Worth doing *before* NAV-3 and PL-11 rather than
-   after: those two rearrange every screen at a second size, and a screenshot suite is what makes
-   that rearrangement reviewable instead of a thing to be spotted by eye.
+4. **SYS-3 — done, 8 September.** Four `<shortcut>` entries, and the estimate was right about the
+   size and wrong about the shape: the intents did *not* already exist. `EXTRA_OPEN_PLAYER` opens
+   the sheet but starts nothing, so *Resume* needed a way to say "carry on" that could not go stale
+   — `PlaybackConnection.play()`, which leaves a running player alone where reading the state and
+   then toggling would have paused it. It also turned the cold-start queue restore's read-then-set
+   guard into a lock: two callers arriving together used to load the queue twice, which was harmless
+   while both loaded it paused and stopped being harmless the moment one of them pressed play
+   afterwards. DS-5 followed it the same day, with NAV-7 in front of it — see step 5.
+5. **DS-5 — done, 8 September**, with **NAV-7** immediately before it as §5.1 said it should be.
+   114 goldens, three renderings of each state, every one of them recorded from the component's or
+   the screen's own `@Preview` — which is what collapsed this item's two halves into one and what
+   makes the next state cost a preview and a line. Two things were learnt that are not about
+   design. Robolectric renders text with a Skia built for the machine it runs on, so the comparison
+   carries a small deliberate tolerance and `docs/SCREENSHOT_TESTS.md` says what to do if CI still
+   disagrees. And the suite lied once: a re-record with unchanged inputs was answered from Gradle's
+   cache, reporting success having written no pixel, so recording is now never up to date and the
+   goldens are declared as task inputs. **This is what NAV-3 and PL-11 were waiting for**: those two
+   rearrange every screen at a second size, and there is now a picture of what every screen looked
+   like before they did.
 6. **NAV-3**, then **PL-11** — the open Fold. The two large pieces, and the ones this app has been
    waiting for since `PodcastDetailRoute.showBackButton` was written for a caller that never came.
    **Moved ahead of the widget on 8 September.** The earlier order took the cheaper surfaces first;
@@ -402,10 +417,10 @@ and both get more expensive the longer the branch runs.
 8. **ADD-3**, **MOM-2**, **DS-8** — independent, and each fine to take on the day its screen is open
    for another reason. **DS-8 is now an attribute and a comment** rather than a day of mirroring, so
    it can be swept up with anything that touches the manifest.
-9. **The small, decided ones** — **NAV-5**, **NAV-7**, **LIB-4**, **ADD-5** — each one an S with the
-   design question already answered in §5.1, and each fine to take on the day its screen is open.
-   NAV-7 is the one of the four to do before DS-5 rather than after, since changing every top-level
-   app bar after the screenshots are recorded means re-recording them.
+9. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
+   question already answered in §5.1, and each fine to take on the day its screen is open.
+   **NAV-7 has gone**, taken on 8 September in the hour before DS-5 for the reason this step gave:
+   changing every top-level app bar after the screenshots are recorded means recording them twice.
 
 **A note for whoever does DS-3's neighbour.** `EpisodeRow.onLongClick` and `longClickLabel` are the
 last limb of the multi-selection DS-3 removed: no screen passes either. They were left because a
@@ -484,8 +499,10 @@ even though the watch has no swipe rows: two halves of one app installed from on
 disagree about which directions they support, and neither has ever been read right to left.
 Effort M → S.
 
-**D-6 — One app-bar style (NAV-7).** The pinned small bar, on all five top-level destinations;
-Moments gives up its large collapsing title. Five destinations exist now that Listen is one, and one
+**D-6 — One app-bar style (NAV-7). Built 8 September.** The pinned small bar, on all five top-level
+destinations; Moments gives up its large collapsing title — and so, it turned out, does Listen,
+which had taken the large bar for itself since this was written. The component they shared is gone
+rather than parked. Five destinations exist now that Listen is one, and one
 bar behaving differently among five reads as an oversight rather than as emphasis. Library, Queue
 and Downloads already argued for pinned in their own comments, from the same fact: a screen you came
 to scroll should not spend a third of its height naming the tab you just tapped. A collapsing bar is
@@ -530,7 +547,8 @@ the answer. SET-3's row into the system notification page is the durable half of
 built. If the app is ever handed to someone else, this is the first row to reopen.
 
 **D-13 — The order of what is left (§4.2).** The sequence stands, with the Fold moved ahead of the
-widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. The earlier order
+widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. W-4, SYS-3 and
+DS-5 are done, NAV-7 with the last of them; **NAV-3 — the open Fold — is where this picks up.** The earlier order
 took the cheaper surface first; the correction is that the inner display is the one surface this app
 has never used, on the device in the pocket every day, while a home-screen widget is a surface its
 user may never look at. Between two pieces of similar size, the one that pays out daily goes first.
@@ -551,8 +569,11 @@ pass, not before — everything above is unverified on hardware until then.
 
 - **Previews:** every screen gets `ThemePreviews` and `FontScalePreviews`; a preview at 200 % is
   where most of A11Y-1 will be found without a device.
-- **Screenshot tests (DS-5):** Roborazzi over the design-system components and each screen state,
-  in light and dark and at 100 % and 200 %, so P0's visual work cannot regress silently.
+- **Screenshot tests (DS-5): built.** Roborazzi over the design-system components and each screen
+  state, in light, dark and 200 % text — three renderings rather than the four this line asked for,
+  because dark at 200 % is a second copy of a failure the third already shows. `testDebugUnitTest`
+  verifies them; `docs/SCREENSHOT_TESTS.md` says how to record and what not to do with the
+  tolerance.
 - **On-device pass, per phase:** Fold 7 closed and open, light and dark, TalkBack on, for each
   changed screen; Watch Ultra 2 for the tile, complication and scrub mode.
 - **A first-sixty-seconds self-test** as the acceptance bar for P1: from a cold launch, resume the

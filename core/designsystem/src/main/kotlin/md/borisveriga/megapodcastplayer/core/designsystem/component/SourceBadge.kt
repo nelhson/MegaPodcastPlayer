@@ -77,7 +77,7 @@ fun SourceBadge(
 
 @ThemePreviews
 @Composable
-private fun SourceBadgePreview() {
+internal fun SourceBadgePreview() {
     MegaPodcastPlayerTheme {
         SourceBadge(source = PodcastSource.YOUTUBE)
     }

@@ -420,7 +420,7 @@ private const val DRAG_ELEVATION = 8f
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun QueueScreenPreview() {
+internal fun QueueScreenPreview() {
     MegaPodcastPlayerTheme {
         QueueScreen(
             uiState = PlayerUiState(
@@ -441,7 +441,7 @@ private fun QueueScreenPreview() {
 
 @ThemePreviews
 @Composable
-private fun QueueScreenEmptyPreview() {
+internal fun QueueScreenEmptyPreview() {
     MegaPodcastPlayerTheme {
         QueueScreen(
             uiState = PlayerUiState(),

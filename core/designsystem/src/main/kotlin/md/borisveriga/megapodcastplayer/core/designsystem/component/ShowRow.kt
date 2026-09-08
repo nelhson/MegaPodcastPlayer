@@ -152,7 +152,7 @@ private val ROW_MIN_HEIGHT = 80.dp
 
 @ThemePreviews
 @Composable
-private fun ShowRowPreview() {
+internal fun ShowRowPreview() {
     MegaPodcastPlayerTheme {
         ShowRow(
             title = "Podlodka Podcast",
@@ -168,7 +168,7 @@ private fun ShowRowPreview() {
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun ShowRowYouTubePreview() {
+internal fun ShowRowYouTubePreview() {
     MegaPodcastPlayerTheme {
         ShowRow(
             title = "A very long playlist name that will not fit on one line at all",

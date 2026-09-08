@@ -29,7 +29,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeCard
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeShelf
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
-import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerLargeTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
@@ -104,7 +104,7 @@ fun ListenScreen(
     modifier: Modifier = Modifier,
     now: Instant = remember { Instant.now() },
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     openEpisodeId?.let { episodeId ->
         uiState.episodeById(episodeId)?.let { entry ->
@@ -125,7 +125,7 @@ fun ListenScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            MegaPodcastPlayerLargeTopAppBar(
+            MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.listen_title),
                 scrollBehavior = scrollBehavior,
             )
@@ -274,7 +274,7 @@ private const val PERCENT = 100
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun ListenScreenPreview() {
+internal fun ListenScreenPreview() {
     MegaPodcastPlayerTheme {
         ListenScreen(
             uiState = ListenUiState(
@@ -294,7 +294,7 @@ private fun ListenScreenPreview() {
 
 @Preview
 @Composable
-private fun ListenScreenEmptyPreview() {
+internal fun ListenScreenEmptyPreview() {
     MegaPodcastPlayerTheme {
         ListenScreen(
             uiState = ListenUiState(isLoading = false),

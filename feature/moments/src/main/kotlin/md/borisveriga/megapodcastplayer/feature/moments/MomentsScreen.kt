@@ -31,7 +31,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,7 +50,7 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
-import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerLargeTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
 import md.borisveriga.megapodcastplayer.core.designsystem.component.NoteDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
@@ -135,9 +134,7 @@ fun MomentsScreen(
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
-        rememberTopAppBarState(),
-    )
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     // LocalResources rather than LocalContext.current.resources, so a configuration change
     // invalidates the read. Resolved here because `LaunchedEffect` runs outside composition.
     val resources = LocalResources.current
@@ -158,7 +155,7 @@ fun MomentsScreen(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            MegaPodcastPlayerLargeTopAppBar(
+            MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.moments_title),
                 scrollBehavior = scrollBehavior,
                 actions = {
@@ -439,7 +436,7 @@ private fun previewMoment(id: Long, positionMs: Long, note: String?) = MomentWit
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun MomentsScreenPreview() {
+internal fun MomentsScreenPreview() {
     MegaPodcastPlayerTheme {
         MomentsScreen(
             uiState = MomentsUiState(
@@ -464,7 +461,7 @@ private fun MomentsScreenPreview() {
 
 @ThemePreviews
 @Composable
-private fun MomentsScreenEmptyPreview() {
+internal fun MomentsScreenEmptyPreview() {
     MegaPodcastPlayerTheme {
         MomentsScreen(
             uiState = MomentsUiState(isLoading = false),

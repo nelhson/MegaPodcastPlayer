@@ -152,7 +152,7 @@ fun ShowTile(
 
 @ThemePreviews
 @Composable
-private fun ShowTilePreview() {
+internal fun ShowTilePreview() {
     MegaPodcastPlayerTheme {
         ShowTile(
             title = "Podlodka Podcast",
@@ -169,7 +169,7 @@ private fun ShowTilePreview() {
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun ShowTileNoBadgePreview() {
+internal fun ShowTileNoBadgePreview() {
     MegaPodcastPlayerTheme {
         ShowTile(title = "Acquired", author = "Ben Gilbert and David Rosenthal", onClick = {})
     }

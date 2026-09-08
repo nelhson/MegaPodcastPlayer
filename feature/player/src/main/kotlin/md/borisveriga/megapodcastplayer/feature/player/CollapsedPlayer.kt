@@ -231,7 +231,7 @@ private fun previewEpisode(id: String, title: String) = Episode(
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun CollapsedPlayerPreview() {
+internal fun CollapsedPlayerPreview() {
     MegaPodcastPlayerTheme {
         CollapsedPlayer(
             playback = previewPlayback,

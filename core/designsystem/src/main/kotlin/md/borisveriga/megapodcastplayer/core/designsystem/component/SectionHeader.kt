@@ -65,7 +65,7 @@ fun SectionHeader(
 
 @ThemePreviews
 @Composable
-private fun SectionHeaderPreview() {
+internal fun SectionHeaderPreview() {
     MegaPodcastPlayerTheme {
         SectionHeader(text = "Today")
     }

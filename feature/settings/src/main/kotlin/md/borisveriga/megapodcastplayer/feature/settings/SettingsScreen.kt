@@ -620,7 +620,7 @@ private fun formatStorage(count: Int, bytes: Long): String = when (count) {
 @ThemePreviews
 @FontScalePreviews
 @Composable
-private fun SettingsScreenPreview() {
+internal fun SettingsScreenPreview() {
     MegaPodcastPlayerTheme {
         SettingsScreen(
             uiState = SettingsUiState(
