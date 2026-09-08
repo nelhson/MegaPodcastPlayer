@@ -75,6 +75,45 @@ class TopLevelNavigationTest {
         composeTestRule.waitForIdle()
     }
 
+    /**
+     * The return value is what NAV-4 hangs on. `navigateToTopLevel` cannot scroll a list — the list
+     * belongs to a screen and this only moves the back stack — so it reports the one case the
+     * caller has to answer itself, and the shell turns that into the re-tap count every top-level
+     * screen watches.
+     */
+    @Test
+    fun `re-tapping the tab you are on reports it, and moves nothing`() {
+        setUpGraph()
+
+        lateinit var moved: List<Boolean>
+        onNav {
+            moved = listOf(
+                navigateToTopLevel(TopLevelDestination.LIBRARY),
+                navigateToTopLevel(TopLevelDestination.DOWNLOADS),
+            )
+        }
+
+        // False for the tab already under the finger, true for the one that was navigated to.
+        assertEquals(listOf(false, true), moved)
+        assertEquals(listOf("Library", "Downloads"), backStack)
+    }
+
+    @Test
+    fun `coming back to a tab further down the stack is a move, not a re-tap`() {
+        // The distinction that matters: a show is open over the library, the user taps Library, and
+        // the show is dropped. Something happened, so the list must not also be scrolled to the top
+        // — the user asked to see the library they left, at the place they left it.
+        setUpGraph()
+
+        onNav { navigate(Route.PodcastDetail("show-1")) }
+
+        var moved = false
+        onNav { moved = navigateToTopLevel(TopLevelDestination.LIBRARY) }
+
+        assertEquals(true, moved)
+        assertEquals(listOf("Library"), backStack)
+    }
+
     @Test
     fun `tapping the tab a pushed screen came from goes back to it`() {
         setUpGraph()

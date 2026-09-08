@@ -207,13 +207,17 @@ internal fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
  * tab being left behind worth anything.
  *
  * @param destination the tab that was tapped.
+ * @return false when the user was already standing on this tab, so the caller can do what a
+ *   re-tap means instead — which is scroll the list to the top (NAV-4). Nothing here can do that:
+ *   the list belongs to the screen, and the screen is composed by the graph this only navigates.
  */
-internal fun NavController.navigateToTopLevel(destination: TopLevelDestination) {
-    // Already standing on it. Re-tapping a tab should not rebuild the screen under the finger.
-    if (currentDestination.isOn(destination)) return
+internal fun NavController.navigateToTopLevel(destination: TopLevelDestination): Boolean {
+    // Already standing on it. Re-tapping a tab must not rebuild the screen under the finger, and
+    // what it *should* do is the caller's to decide; see the return value.
+    if (currentDestination.isOn(destination)) return false
 
     // On the stack somewhere below us: come back to it, dropping whatever was pushed on top.
-    if (popBackStack(destination.route, inclusive = false)) return
+    if (popBackStack(destination.route, inclusive = false)) return true
 
     // Not on the stack at all: one entry per tab, and give the tab back the state it had.
     navigate(destination.route) {
@@ -221,4 +225,5 @@ internal fun NavController.navigateToTopLevel(destination: TopLevelDestination) 
         launchSingleTop = true
         restoreState = true
     }
+    return true
 }

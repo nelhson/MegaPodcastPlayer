@@ -54,6 +54,8 @@ import md.borisveriga.megapodcastplayer.navigation.rememberDetailPaneGraph
  *
  * @param onSearchClick opens the add-a-show screen; on the outer graph, over both panes.
  * @param onOpenSettings opens settings, likewise.
+ * @param scrollToTopSignal how many times the Library tab has been re-tapped; handed to the list
+ *   pane, which is the one that scrolls (NAV-4).
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the shell
  *   can expand the sheet.
  * @param modifier layout modifier.
@@ -67,6 +69,7 @@ fun LibraryListDetail(
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onEpisodePlaying: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     paneNavigator: ThreePaneScaffoldNavigator<Nothing> =
         rememberListDetailPaneScaffoldNavigator<Nothing>(),
@@ -132,6 +135,7 @@ fun LibraryListDetail(
                     },
                     onSearchClick = onSearchClick,
                     onOpenSettings = onOpenSettings,
+                    scrollToTopSignal = scrollToTopSignal,
                     // Only while the list is actually beside the show. On a folded phone the tap
                     // takes the user off the library entirely, so there is nothing standing open
                     // for a highlight to point at, and a row left washed under a full-screen push

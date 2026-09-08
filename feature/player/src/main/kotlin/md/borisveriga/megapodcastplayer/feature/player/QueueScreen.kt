@@ -50,6 +50,8 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
 import md.borisveriga.megapodcastplayer.core.designsystem.component.NowPlayingBars
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ScrollToTopEffect
+import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
@@ -70,12 +72,17 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  *
  * @param onBrowseLibrary opens the library, which is where episodes are queued from; the empty
  *   state's only action, because "nothing queued" with nowhere to go is a dead end.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
+ *   back at the top (NAV-4).
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt; shared with the player, because it is the same queue.
  */
 @Composable
 fun QueueRoute(
     onBrowseLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
@@ -90,6 +97,8 @@ fun QueueRoute(
         onUndo = viewModel::undoQueueChange,
         onMessageShown = viewModel::onQueueMessageShown,
         onBrowseLibrary = onBrowseLibrary,
+        onOpenSettings = onOpenSettings,
+        scrollToTopSignal = scrollToTopSignal,
         modifier = modifier,
     )
 }
@@ -113,6 +122,9 @@ fun QueueRoute(
  * @param onUndo reverses whichever of the two the snackbar is currently offering back.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param onBrowseLibrary opens the library from the empty state.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
+ *   back at the top (NAV-4).
  * @param modifier layout modifier.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,9 +138,14 @@ fun QueueScreen(
     onUndo: () -> Unit,
     onMessageShown: () -> Unit,
     onBrowseLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+
+    ScrollToTopEffect(signal = scrollToTopSignal, state = listState)
+
     val snackbarHostState = remember { SnackbarHostState() }
     // Resolved in composition rather than inside the effect: `LaunchedEffect` runs outside the
     // composition, where `stringResource` is not available. `LocalResources` rather than
@@ -172,6 +189,7 @@ fun QueueScreen(
                     ?.let { stringResource(R.string.queue_remaining, it) },
                 scrollBehavior = scrollBehavior,
                 actions = {
+                    SettingsAction(onClick = onOpenSettings)
                     if (uiState.upNext.isNotEmpty()) {
                         IconButton(onClick = onClear) {
                             Icon(
@@ -435,6 +453,8 @@ internal fun QueueScreenPreview() {
             onUndo = {},
             onMessageShown = {},
             onBrowseLibrary = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
         )
     }
 }
@@ -452,6 +472,8 @@ internal fun QueueScreenEmptyPreview() {
             onUndo = {},
             onMessageShown = {},
             onBrowseLibrary = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
         )
     }
 }

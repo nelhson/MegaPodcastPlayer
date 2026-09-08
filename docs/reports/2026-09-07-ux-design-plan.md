@@ -11,9 +11,9 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 58 of the 73 items are done, 3 are decided against, none is half done, 12 are
-> not started — and every one of the twelve is an unscheduled finding. Every item any phase
-> scheduled is built.** Eight items in the tail were an open choice rather than a task; all eight were
+> **Where it stands: 61 of the 73 items are done, 3 are decided against, none is half done, 9 are
+> not started — and every one of the nine is an unscheduled finding. Every item any phase scheduled
+> is built.** Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
 > to be re-derived. The 46th done item was PL-10, which was built with PL-9 and never marked; the
@@ -30,9 +30,9 @@ or more).*
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
 > | P3 — reach | ✅ complete | — |
-> | Unscheduled (in no phase) | started | 12 items, 3 decided against, 1 found already built |
+> | Unscheduled (in no phase) | started | 9 items, 3 decided against, 1 found already built |
 >
-> §4.1 lists the 12 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists the 9 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -63,8 +63,13 @@ or more).*
 > three taps — and the existing tests caught a trap in the state shape on the way, where `isEmpty`
 > asked a count a caller had to remember to set rather than asking the filter. See
 > `docs/reports/2026-09-08-mom-2-moments-screen.md`. **P3 is complete, and with it every item any
-> phase scheduled.** What is left is the unscheduled list, the device pass, and the
-> `verification-metadata.xml` review.
+> phase scheduled.** The unscheduled list has begun: **NAV-4, NAV-5 and NAV-8** together, since all
+> three are about the five top-level destinations — the gear is on every bar, re-tapping the tab you
+> are on scrolls its list to the top, and the empty library stops using a layout glyph to mean "no
+> shows". That batch also found something about the *suite*: a 24 dp icon added to four app bars
+> changed no golden, because it is under the 1 % tolerance calibrated for antialiasing. See
+> `docs/reports/2026-09-08-nav-4-5-8-the-shell.md`. Nine unscheduled findings left, plus the device
+> pass and the `verification-metadata.xml` review.
 > P2's own items, in the order they landed: PL-5, PL-6, PL-8, SHOW-5, SHOW-6, MOM-1, then
 > LIB-1, LIB-2, LIB-3, DL-1, DL-2, SET-1, SET-3, ADD-2 and COPY-1. Three items from other phases
 > were finished by work done for these: DS-9 by LIB-1 (which needed the second sort control the row
@@ -169,11 +174,11 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | NAV-1 ✅ | **There is no "now" surface.** The four tabs are Library, Queue, Downloads, Moments. Finding something to play is Library → show → scroll → tap, and the two things most sessions actually want — *continue what I was listening to* and *what arrived since yesterday* — have no home. The data is already there (`Episode.isInProgress`, `isNew`, the durable queue). Proposal: a **Home** tab (or shelves at the top of Library) with *Continue listening*, *New episodes* across all shows, and *Up next*. This is the single highest-leverage change in the plan. Shipped as a `Listen` tab and the start destination (decision D-2), in a new `:feature:listen` module, with `EpisodeShelf`/`EpisodeCard` added to the design system (part of DS-9). | H | L |
 | NAV-2 ✅ | **Downloads as a top-level tab** is a storage-management view promoted to a primary destination. Once Home exists, decide whether Downloads stays a tab, becomes a filter chip on Home, or lives under Settings › Storage with the card it already has. **Decided: it stays a tab**, and the bar keeps five. The objection was a taxonomic one — a storage view among four listening destinations — and the answer is that on this phone, with this library, what is downloaded *is* a listening destination: it is the list you read before a flight or a tunnel, and the one place a copy can be started, paused or thrown away. A screen that answers "what can I play with no signal" has earned a tab; the tidier arrangement would have cost a tap on the day the tap is hardest to make. No code change. | M | S |
 | NAV-3 ✅ | **The open Fold is a phone with a rail.** `NavigationSuiteScaffold` swaps the bar for a rail, but Library → show is still a full-screen push, and `PodcastDetailRoute` already has a `showBackButton` parameter written for a two-pane layout nobody calls. A `ListDetailPaneScaffold` for Library/Show (and later Queue/Player) is what the inner display is for. **Done:** the Library tab is a `NavigableListDetailPaneScaffold`, and `showBackButton` has its caller — the arrow is drawn only when the list pane is *not* on screen. The detail pane carries a graph of its own rather than a `contentKey`, so `PodcastDetailViewModel` still reads its id out of a `SavedStateHandle` filled by a navigation argument, exactly as it says it does, and `PodcastDetailRoute` is the same call in both places it is now made. The outer `Route.PodcastDetail` stays full-screen at every width for the shows reached from a notification, a search result or a link: the list a pane would put beside those is the library, and the library is not where the user came from. `ShowRow` and `ShowTile` gained `isSelected` — a wash and Compose's own `Selected` property, set only where a pane exists to select for. Queue and Player are *not* taken: a queue is one list with no detail beside it, and the player is a sheet rather than a destination. See `docs/reports/2026-09-08-nav-3-two-pane-library.md`, including the two bugs the writing found and D-14 to D-16. | M | L |
-| NAV-4 | **Re-tapping the current tab does nothing** (the guard returns early). Platform convention is scroll-to-top; with a long library it is the fastest way back. | L | S |
-| NAV-5 | **Settings is reachable only from the Library bar.** From Queue, Downloads or Moments it is a tab switch plus a tap. Put the gear on every top-level bar, or in a consistent overflow. **Decided (§5.1, D-7): the gear on every top-level bar.** One tap from anywhere, and an overflow would be a menu holding a single item on four of the five screens — a container invented to hide the one thing in it. | L | S |
+| NAV-4 ✅ | **Re-tapping the current tab does nothing** (the guard returns early). Platform convention is scroll-to-top; with a long library it is the fastest way back. **Done:** `navigateToTopLevel` now *reports* the re-tap rather than swallowing it — it cannot scroll a list, since the list belongs to a screen — and the shell turns that into a count every top-level screen watches through `ScrollToTopEffect` (D-32). The subtlety is the guard inside that effect: a `LaunchedEffect` runs on arrival, so without a remembered first value a tab *returned* to would be scrolled to the top, throwing away the position the navigation library had just restored (D-33). | L | S |
+| NAV-5 ✅ | **Settings is reachable only from the Library bar.** From Queue, Downloads or Moments it is a tab switch plus a tap. Put the gear on every top-level bar, or in a consistent overflow. **Decided (§5.1, D-7): the gear on every top-level bar.** One tap from anywhere, and an overflow would be a menu holding a single item on four of the five screens — a container invented to hide the one thing in it. **Done:** `SettingsAction` in the design system, on all five bars. | L | S |
 | NAV-6 ✅ | **Notification taps land short.** The new-episode notification opens the *show*; opening the episode (or Home with it highlighted) is what the tap means. The playback notification opens the app with the sheet collapsed; it should arrive expanded. The playback notification now carries `EXTRA_OPEN_PLAYER` and arrives with the sheet expanded; a new-episode notification that named exactly one episode opens that episode's sheet, and one naming several still opens the show. | M | S |
 | NAV-7 ✅ | **Four tabs, two app-bar styles.** Library, Queue and Downloads argue in their comments for a pinned small bar; Moments uses the large collapsing one. Pick one for all top-level destinations. **Decided (§5.1, D-6): the pinned small bar, everywhere.** There are five top-level destinations now that Listen exists, and a collapsing bar on one of five reads as an accident rather than as emphasis. The three screens that already argued for pinned argued from the same fact — a list you came to scroll should not spend a third of the screen saying where you are. Moments loses its large title; if a screen ever earns a collapsing bar it will be a detail screen, where the title is the content's name and not the tab's. **Done**, and it was two screens rather than one: Listen had adopted the large bar as well by the time this was built. `MegaPodcastPlayerLargeTopAppBar` went with them — removed rather than kept for the detail screen that might one day earn it, on DS-3's rule that the design system describes the app, and Material's own `LargeTopAppBar` is one import away on the day a screen does. Taken immediately before DS-5, because goldens recorded over an app bar that is about to change are goldens recorded twice. | L | S |
-| NAV-8 | The Library empty state uses the `GridView` glyph (a *layout* icon) for "no podcasts yet"; use the `Podcasts` glyph the artwork placeholder already uses. | L | S |
+| NAV-8 ✅ | The Library empty state uses the `GridView` glyph (a *layout* icon) for "no podcasts yet"; use the `Podcasts` glyph the artwork placeholder already uses. **Done**, and the reason it survived this long is worth keeping: the empty library had no `@Preview`, so DS-5's suite — which records every state that has one — had no picture of it. It has one now, and `library-empty` is three more goldens. | L | S |
 
 ### 3.3 Library
 
@@ -345,16 +350,16 @@ NAV-2, SYS-3, DS-5, NAV-3, PL-11, SYS-2, DS-8, ADD-3 and MOM-2, in that order.
 |----|------|--------|--------|
 
 **Unscheduled.** Real findings that no phase claimed — mostly small, mostly independent, and each
-worth doing on the day the screen it belongs to is open for another reason. Three have gone that
-way already: W-3 and W-5 were both in files W-4 opened, and both were cheaper to do there than to
-remember; NAV-7 was pulled forward on its own schedule rather than an accident of proximity — it
-had to precede DS-5 or the goldens would have been recorded twice.
+worth doing on the day the screen it belongs to is open for another reason. Six have gone that way.
+W-3 and W-5 were both in files W-4 opened, and both were cheaper to do there than to remember;
+NAV-7 was pulled forward on its own schedule rather than an accident of proximity — it had to
+precede DS-5 or the goldens would have been recorded twice. **NAV-4, NAV-5 and NAV-8** were taken
+together on 8 September, once every scheduled item was done: all three are about the five top-level
+destinations, all three touch the same files, and doing them one at a time would have meant three
+passes over the same five screens.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
-| NAV-4 | Re-tapping the current tab should scroll to top | L | S |
-| NAV-5 | Settings: put the gear on every top-level bar, not in an overflow (D-7) | L | S |
-| NAV-8 | The library empty state uses a layout glyph for "no podcasts yet" | L | S |
 | LIB-4 | The grid has no way to remove a show: give the tile a context menu, opened by a press released in place (D-8) | L | S |
 | SHOW-7 | Header details: *Show more* when it is not needed, no feed link, no *Share show* | L | S |
 | DL-3 | The storage card could say why an episode disappeared (keep-limit, delete-after-playing) | L | S |
@@ -723,6 +728,26 @@ filter; this does not. A moments list is opened to find one thing, and a narrowi
 until next time would greet the user with most of their moments missing and nothing on screen saying
 why. It lives in the view model rather than the composition, so it survives a rotation and a fold —
 the one kind of "next time" a narrowing should survive.
+
+**D-32 — The re-tap is a count the shell owns, not a callback each screen registers (NAV-4).**
+Only the shell knows a tap was a *re*-tap; only the screen owns a list. So `navigateToTopLevel`
+reports rather than acts — it cannot scroll a list, and giving it a registry of scroll callbacks
+would put five screens' business inside a function about the back stack. A count rather than a flag,
+because the same request can be made twice and a boolean already `true` the second time does
+nothing.
+
+**D-33 — `ScrollToTopEffect` remembers the signal it arrived with (NAV-4).** The whole subtlety of
+the item. A `LaunchedEffect` runs once on entering the composition, so the naïve version scrolls a
+tab to the top *on arrival* — discarding the scroll position the navigation library had just
+restored. What a screen reacts to is the signal changing **while it is up**, which is precisely a
+re-tap. Both halves are pinned by test, because only one of them is visible in the happy case.
+
+**D-34 — Whether a control exists is a behaviour assertion, not an image comparison (NAV-5).**
+Adding a 24 dp gear to four app bars changed no golden: it is about 0.16 % of a 411×891 image and
+the suite's changed-pixel tolerance is 1 %, calibrated so a Windows laptop and a Linux CI runner may
+disagree about glyph antialiasing. The tolerance is not tightened — that would trade a real property
+for a coincidence — and the conclusion is about what to ask of a golden instead. Existence is
+asserted in screen tests; the goldens are re-recorded so the images still show the screen.
 
 **Unchanged, and worth restating: the two things that come before any of it.** The device pass and
 the `gradle/verification-metadata.xml` diff, as §4.2 lists them. Neither is a decision. The first is

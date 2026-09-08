@@ -37,6 +37,8 @@
 
     <!-- The app bar's back arrow. Overridable, but this is the right answer nearly everywhere. -->
     <string name="designsystem_back">Back</string>
+    <!-- The gear, on every top-level bar; see SettingsAction. -->
+    <string name="designsystem_settings">Settings</string>
 
     <!-- Announced for the hairline that marks work the user did not ask for. -->
     <string name="designsystem_working">Working</string>

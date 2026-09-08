@@ -65,7 +65,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBar
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ScrollToTopEffect
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SectionHeader
+import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
@@ -90,6 +92,9 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
  *   caller can open the full player.
  * @param onBrowseLibrary invoked from the empty state, to send the user somewhere they can download
  *   something.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
+ *   at the top (NAV-4).
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
@@ -97,6 +102,8 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 fun DownloadsRoute(
     onEpisodePlaying: () -> Unit,
     onBrowseLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
@@ -112,6 +119,8 @@ fun DownloadsRoute(
         onMove = viewModel::move,
         onRefresh = viewModel::refresh,
         onBrowseLibrary = onBrowseLibrary,
+        onOpenSettings = onOpenSettings,
+        scrollToTopSignal = scrollToTopSignal,
         onMessageShown = viewModel::onMessageShown,
         modifier = modifier,
     )
@@ -133,6 +142,9 @@ fun DownloadsRoute(
  *   list is re-sorted by the download stack often enough that indices alone would go stale.
  * @param onRefresh pull-to-refresh handler.
  * @param onBrowseLibrary empty-state action handler.
+ * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
+ *   at the top (NAV-4).
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
  */
@@ -148,6 +160,8 @@ fun DownloadsScreen(
     onMove: (List<String>, Int, Int) -> Unit,
     onRefresh: () -> Unit,
     onBrowseLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
+    scrollToTopSignal: Int,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -192,6 +206,7 @@ fun DownloadsScreen(
             MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.downloads_title),
                 scrollBehavior = scrollBehavior,
+                actions = { SettingsAction(onClick = onOpenSettings) },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -222,6 +237,7 @@ fun DownloadsScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     DownloadList(
+                        scrollToTopSignal = scrollToTopSignal,
                         uiState = uiState,
                         now = now,
                         onEpisodeClick = onEpisodeClick,
@@ -261,6 +277,8 @@ fun DownloadsScreen(
  * card and the headings sit in the same list but outside the reorder — their keys are not dragged
  * keys, so the hit test never offers them as drop targets.
  *
+ * @param scrollToTopSignal how many times this tab has been re-tapped; the list obeys it here
+ *   rather than in [DownloadsScreen] because the list state is built here.
  * @param uiState what to render.
  * @param now reference time for relative date formatting.
  * @param onEpisodeClick tap handler for a finished episode.
@@ -273,6 +291,7 @@ fun DownloadsScreen(
  */
 @Composable
 private fun DownloadList(
+    scrollToTopSignal: Int,
     uiState: DownloadsUiState,
     now: Instant,
     onEpisodeClick: (String) -> Unit,
@@ -284,6 +303,9 @@ private fun DownloadList(
 ) {
     val resources = LocalResources.current
     val listState = rememberLazyListState()
+
+    ScrollToTopEffect(signal = scrollToTopSignal, state = listState)
+
     val ready = remember(uiState.sections) {
         uiState.sections.firstOrNull { it.isReorderable }?.downloads.orEmpty()
     }
@@ -790,6 +812,8 @@ internal fun DownloadsScreenPreview() {
             onMove = { _, _, _ -> },
             onRefresh = {},
             onBrowseLibrary = {},
+            onOpenSettings = {},
+            scrollToTopSignal = 0,
             onMessageShown = {},
         )
     }
