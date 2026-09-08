@@ -11,8 +11,9 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 57 of the 73 items are done, 3 are decided against, none is half done, 13 are
-> not started.** Eight items in the tail were an open choice rather than a task; all eight were
+> **Where it stands: 58 of the 73 items are done, 3 are decided against, none is half done, 12 are
+> not started — and every one of the twelve is an unscheduled finding. Every item any phase
+> scheduled is built.** Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
 > to be re-derived. The 46th done item was PL-10, which was built with PL-9 and never marked; the
@@ -28,10 +29,10 @@ or more).*
 > | P0 — a day of polish | ✅ complete | — |
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
-> | P3 — reach | started | 1 of its 13 items |
+> | P3 — reach | ✅ complete | — |
 > | Unscheduled (in no phase) | started | 12 items, 3 decided against, 1 found already built |
 >
-> §4.1 lists the 13 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists the 12 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -57,7 +58,13 @@ or more).*
 > true. Then **ADD-3**: OPML import and export, sitting beside the backup in Settings, where the
 > whole of the import turned out to be thirty lines — a decoded subscription list becomes a backup
 > that carries only shows, and from there it is the restorer's job. See
-> `docs/reports/2026-09-08-add-3-opml.md`. **MOM-2 is the last P3 item left.**
+> `docs/reports/2026-09-08-add-3-opml.md`. And last, **MOM-2**: the moments screen gains a search,
+> a show filter, a group-by-show toggle and a swipe that puts the note one gesture away instead of
+> three taps — and the existing tests caught a trap in the state shape on the way, where `isEmpty`
+> asked a count a caller had to remember to set rather than asking the filter. See
+> `docs/reports/2026-09-08-mom-2-moments-screen.md`. **P3 is complete, and with it every item any
+> phase scheduled.** What is left is the unscheduled list, the device pass, and the
+> `verification-metadata.xml` review.
 > P2's own items, in the order they landed: PL-5, PL-6, PL-8, SHOW-5, SHOW-6, MOM-1, then
 > LIB-1, LIB-2, LIB-3, DL-1, DL-2, SET-1, SET-3, ADD-2 and COPY-1. Three items from other phases
 > were finished by work done for these: DS-9 by LIB-1 (which needed the second sort control the row
@@ -228,7 +235,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | Id | Finding | Impact | Effort |
 |----|---------|--------|--------|
 | MOM-1 ✅ | The player shows only a *count* of this episode's moments. Tapping the count should list them, each tappable to jump. The count is now a control: it opens a sheet listing this episode's moments, earliest first, each one a tap that seeks there. Read-only — editing and deleting stay on the Moments screen. | M | S |
-| MOM-2 | The Moments screen: filter by show, search notes, a group-by-show toggle, and swipe-to-edit the note (it is currently three taps via the overflow). | L | M |
+| MOM-2 ✅ | The Moments screen: filter by show, search notes, a group-by-show toggle, and swipe-to-edit the note (it is currently three taps via the overflow). **Done**, all four, and they appear only above eight moments — a search field over three of them costs more room than the list it filters. The search matches the note and the episode and deliberately *not* the show, which has a chip of its own: one typed word should mean one thing (D-28). The swipe reveals *Edit note* and *Delete* and commits nothing on a full pull, unlike every other swipe row here — the thing on the other side would be destroying the only writing in this app that is the user's own (D-29). The overflow stays and carries everything the swipe does, because a gesture is not discoverable (D-30), and none of the narrowing is persisted, because a filter that survived would greet the user with most of their moments missing and no reason on screen (D-31). The five existing screen tests earned their keep: `isEmpty` first asked a count callers had to remember to set, and they failed the moment a state holding rows claimed to be empty. It asks the filter now. | L | M |
 | MOM-3 ✅ | The bookmark glyph in the player is `BookmarkAdd`; on the watch, the button is labelled *Moment*. Use one word — *Save moment* — in both places. | L | S |
 
 ### 3.9 Settings
@@ -310,7 +317,7 @@ that holds up. Improvements are small:
 | **P0 — a day of polish** ✅ | First impressions and the brand on the player | SYS-1 lock-screen skip buttons (confirmed) · DS-6 splash and first frame · PL-7 mini player (height, glyphs, skip-back) · PL-1 adopt scrubber, play button, backdrop · SHOW-2 download state on rows · SET-2 confirm remove-all · A11Y-1 font-scale pass · DS-7 haptics and reduce-motion · DS-4 player tokens |
 | **P1 — the listening loop** ✅ | From "a list of shows" to "what do I listen to now" | NAV-1 Home (continue, new, up next) · SHOW-1 episode sheet with show notes · SHOW-3 mark played · PL-2 chapters · PL-4 sleep timer · ADD-1 share target and link handling · SHOW-4 continue button · PL-9 queue header and clear · NAV-6 notification landing. All landed. The phase set out to answer "what do I listen to now" and ends up having answered a second question with it — *where am I in this*: an episode is a list of named segments on the scrubber, in the sheet, and now under a thumb on a lock screen, rather than a bar with a number at each end. |
 | **P2 — control and personalisation** ✅ | Settings that follow the show, not the app | PL-5 speed sheet · SHOW-5 sort and persisted filter · SHOW-6 show settings · SET-1 appearance · SET-3 notifications · LIB-1/LIB-2 sort and filter · LIB-3 badge vocabulary · DL-1 sections · DL-2 download now · ADD-2 preview before subscribe · COPY-1 localised formatters · PL-6 time labels · PL-8 error copy · MOM-1. All landed. The phase's theme came out truer than the list reads: a show can now disagree with the app about speed, downloads and notifications; the library can be ordered and narrowed rather than only arranged; the downloads screen says which of four things each row is doing; and the app can be looked at in the palette, the language and the brightness the user chose rather than the ones the code was written in. |
-| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Twelve done, ADD-3 the latest — OPML import and export, where the import is a restore of a backup the user never had. DS-8 before it, the smallest of the lot — both manifests stop claiming a reading direction the swipe rows do not deliver. SYS-2 immediately before it — a Glance widget with what is playing, a transport and the *Continue listening* shelf, and the first surface here this app does not itself draw. PL-11 before it — the expanded player sets its artwork beside its controls on a wide window, and caps that artwork by the shorter side of the room it has, which is what turns a phone on its side from a cover with no buttons under it into a player. NAV-3 immediately before it, the other half of the same pair: the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before those: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and was then taken alongside the widget because an attribute and a comment need no day of their own. The order of the rest changed once: the Fold went before the widget (D-13), and all of those have landed. One is left: **MOM-2**. |
+| **P3 — reach** ✅ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. All thirteen done, MOM-2 last — the moments screen gains a search, a show filter, a grouping and a swipe that puts a note one gesture away. ADD-3 before it — OPML import and export, where the import is a restore of a backup the user never had. DS-8 before it, the smallest of the lot — both manifests stop claiming a reading direction the swipe rows do not deliver. SYS-2 immediately before it — a Glance widget with what is playing, a transport and the *Continue listening* shelf, and the first surface here this app does not itself draw. PL-11 before it — the expanded player sets its artwork beside its controls on a wide window, and caps that artwork by the shorter side of the room it has, which is what turns a phone on its side from a cover with no buttons under it into a player. NAV-3 immediately before it, the other half of the same pair: the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before those: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and was then taken alongside the widget because an attribute and a comment need no day of their own. The order of the rest changed once: the Fold went before the widget (D-13), and all of those have landed. The phase is complete, and with it every item any phase scheduled; what remains in this plan is the unscheduled list. |
 
 Rough sizing: P0 fits in one to two days; P1 is the bulk of the work at roughly two weeks, with
 NAV-1 and PL-2 the two large pieces; P2 and P3 are each a week or so of independent, schedulable
@@ -331,12 +338,11 @@ PL-10, found already built — and all four are listed under them, so a reader w
 see it was answered rather than lost. Four more left on 8 September by being built: W-4, with W-3
 and W-5 alongside it, and SYS-3.
 
-**P3 — reach.** Larger screens, other surfaces, migration. One left; W-1, W-2, W-4, DS-3, NAV-2,
-SYS-3, DS-5, NAV-3, PL-11, SYS-2, DS-8 and ADD-3 are done.
+**P3 — reach.** Larger screens, other surfaces, migration. **Complete**: W-1, W-2, W-4, DS-3,
+NAV-2, SYS-3, DS-5, NAV-3, PL-11, SYS-2, DS-8, ADD-3 and MOM-2, in that order.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
-| MOM-2 | Moments: filter by show, search notes, group by show, swipe to edit a note | L | M |
 
 **Unscheduled.** Real findings that no phase claimed — mostly small, mostly independent, and each
 worth doing on the day the screen it belongs to is open for another reason. Three have gone that
@@ -464,8 +470,13 @@ and both get more expensive the longer the branch runs.
    URLs are accepted, and a thousand is as many subscriptions as one file may contribute. The
    entity hardening moved to `:core:model` and `RssParser` now shares it, which is what its own
    comment had asked for. See `docs/reports/2026-09-08-add-3-opml.md`.
-11. **MOM-2** — the last one, and fine to take on the day the moments screen is open for another
-   reason.
+11. **MOM-2 — done, 8 September**, and with it the last scheduled item in this plan. All four
+   halves of the row landed, and the interesting part was not any of them: it was that the five
+   *existing* screen tests failed the moment `MomentsUiState.isEmpty` started asking a count a
+   caller had to remember to set. A state holding rows was reporting itself empty. It asks the
+   filter instead now — which is also the honest question, since what separates "you have saved
+   nothing" from "nothing matches this" is whether a filter is on and not a second number kept in
+   step with the first. See `docs/reports/2026-09-08-mom-2-moments-screen.md`.
 12. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
    question already answered in §5.1, and each fine to take on the day its screen is open.
    **NAV-7 has gone**, taken on 8 September in the hour before DS-5 for the reason this step gave:
@@ -598,7 +609,7 @@ built. If the app is ever handed to someone else, this is the first row to reope
 **D-13 — The order of what is left (§4.2).** The sequence stands, with the Fold moved ahead of the
 widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. Every scheduled
 one of those is done — NAV-7 landed with DS-5 — and **the independents are where this picks up:
-MOM-2, whenever the moments screen is next open for another reason. DS-8 and ADD-3 have gone that way already.** The earlier order
+nothing: every scheduled item is built. DS-8, ADD-3 and MOM-2 were the last three.** The earlier order
 took the cheaper surface first; the correction is that the inner display is the one surface this app
 has never used, on the device in the pocket every day, while a home-screen widget is a surface its
 user may never look at. Between two pieces of similar size, the one that pays out daily goes first.
@@ -688,6 +699,30 @@ file's outlines include folders, and from a broken or hostile file, rows this ap
 Both are dropped and both are counted, and the count is in the confirmation dialog. A file whose
 extra rows were folders is ordinary; one whose rows were mostly refused is worth going back for, and
 a count of what arrived cannot tell those apart.
+
+**D-28 — The moments search matches the note and the episode, not the show (MOM-2).** The show has
+a chip of its own two controls away, and letting a typed word do both jobs would mean a search for
+"Radio" returning every moment in a show called *Radio-T* alongside the one note about radios: one
+question, two answers, mixed. The note is matched because it is the only thing here the user wrote;
+the episode title because it is all a moment *without* a note has. The exclusion is pinned by test,
+being exactly the sort of thing a later "improvement" would helpfully add back.
+
+**D-29 — The moments swipe reveals buttons and commits nothing (MOM-2).** Every other swipe row in
+this app has a full-swipe action. This one deliberately does not: what would sit on the other side
+of a committed pull is deleting the only piece of writing in the app that is the user's own — the
+thing moments are in the backup for, and the thing `MomentsRepository` carries a Markdown export
+for. Both buttons need a tap after the pull.
+
+**D-30 — The moments overflow stays, duplicating the swipe (MOM-2).** A gesture is not
+discoverable and a menu is, so someone who has never swiped a row here can still find every action.
+The duplication costs two entries. Sharing is the one action that stays menu-only: MOM-2 exists to
+put the note one gesture away, and a third swipe button would undo that.
+
+**D-31 — None of the moments narrowing is persisted (MOM-2).** The library persists its sort and
+filter; this does not. A moments list is opened to find one thing, and a narrowing that survived
+until next time would greet the user with most of their moments missing and nothing on screen saying
+why. It lives in the view model rather than the composition, so it survives a rotation and a fold —
+the one kind of "next time" a narrowing should survive.
 
 **Unchanged, and worth restating: the two things that come before any of it.** The device pass and
 the `gradle/verification-metadata.xml` diff, as §4.2 lists them. Neither is a decision. The first is
