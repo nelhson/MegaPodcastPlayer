@@ -38,9 +38,10 @@ class MainActivity : ComponentActivity() {
 /**
  * Root composable of the watch app.
  *
- * There is only one screen: the app is a remote control for the phone's player, and everything it
- * can do fits in one scrolling list. [AppScaffold] is still used, for the time text along the top
- * bezel that every Wear app is expected to show.
+ * There is still only one *screen*, with no navigation graph and no back stack: what the app can do
+ * fits in two pages side by side, which [WatchPlayerScreen] pages between itself. [AppScaffold] is
+ * what puts the time along the top bezel, as every Wear app is expected to, and it is also what the
+ * pager's own scaffold reports to.
  */
 @Composable
 private fun WearApp(viewModel: WatchPlayerViewModel = hiltViewModel()) {

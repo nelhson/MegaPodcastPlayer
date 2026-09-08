@@ -82,6 +82,21 @@ class NowPlayingTileLayoutTest {
     }
 
     /**
+     * Colour on this tile always means one thing: which show is this. The idle state is the one with
+     * no show to take a colour from, and white on black is what every other tile in the carousel
+     * looks like — so it borrows the app's citron, which is the only thing left that says whose tile
+     * this is.
+     */
+    @Test
+    fun `an idle tile wears the brand where a playing one wears the show`() {
+        assertTrue(render(NowPlayingSnapshot()).contains(colour(BRAND_ARGB)))
+
+        val rendered = render(playing)
+        assertFalse(rendered.contains(colour(BRAND_ARGB)))
+        assertTrue(rendered.contains(colour(ACCENT)))
+    }
+
+    /**
      * A tile only ever learns the phone is unreachable by failing to reach it, so the one tap that
      * failed has to be worth something.
      */
@@ -140,11 +155,14 @@ class NowPlayingTileLayoutTest {
         assertEquals(playing, playing.optimistically(WearCommand.SkipForward))
     }
 
-/**
+    /**
      * How the rendered layout spells one string property, so a substring match cannot hit a longer
      * value that merely starts the same way.
      */
     private fun propertyValue(value: String): String = "value=$value,"
+
+    /** The same for a colour, which the layout writes as a signed ARGB integer. */
+    private fun colour(argb: Int): String = "argb=$argb,"
 
     /** Builds the layout and reads it back as text, which is all a proto can be asserted on. */
     private fun render(
