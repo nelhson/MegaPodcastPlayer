@@ -10,6 +10,7 @@ import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
 import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenListPreview
 import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenPreview
+import md.borisveriga.megapodcastplayer.feature.library.LibraryScreenSelectedPreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,6 +50,9 @@ class LibraryScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun libraryList() = capture("library-list") { LibraryScreenListPreview() }
+
+    @Test
+    fun librarySelected() = capture("library-selected") { LibraryScreenSelectedPreview() }
 
     companion object {
         @JvmStatic

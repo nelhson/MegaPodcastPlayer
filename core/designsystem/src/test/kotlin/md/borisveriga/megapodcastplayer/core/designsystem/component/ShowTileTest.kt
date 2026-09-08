@@ -95,4 +95,27 @@ class ShowTileTest {
 
         assertEquals(1, clicks)
     }
+
+    /** As [ShowRowTest] pins for the list layout: the grid marks the open show the same way. */
+    @Test
+    fun `announces itself as selected when a pane beside the grid is showing it`() {
+        composeTestRule.setContent {
+            MegaPodcastPlayerTheme {
+                ShowTile(title = "Podlodka Podcast", isSelected = true, onClick = {})
+            }
+        }
+
+        composeTestRule.assertRowSelected("Podlodka Podcast", expected = true)
+    }
+
+    @Test
+    fun `says nothing about selection where there is no pane to select for`() {
+        composeTestRule.setContent {
+            MegaPodcastPlayerTheme {
+                ShowTile(title = "Podlodka Podcast", onClick = {})
+            }
+        }
+
+        composeTestRule.assertRowSelected("Podlodka Podcast", expected = false)
+    }
 }

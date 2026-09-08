@@ -8,6 +8,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS
 import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
+import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailScreenInPanePreview
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailScreenPreview
 import org.junit.Rule
 import org.junit.Test
@@ -45,6 +46,10 @@ class PodcastDetailScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun podcastDetail() = capture("podcast-detail") { PodcastDetailScreenPreview() }
+
+    @Test
+    fun podcastDetailInPane() =
+        capture("podcast-detail-in-pane") { PodcastDetailScreenInPanePreview() }
 
     companion object {
         @JvmStatic

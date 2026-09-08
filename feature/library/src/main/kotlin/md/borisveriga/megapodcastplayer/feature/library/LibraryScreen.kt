@@ -103,6 +103,10 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
  * @param onOpenSettings invoked when the user taps the top bar's settings action.
  * @param onMove invoked with positions in the library once a reorder gesture finishes.
  * @param modifier layout modifier.
+ * @param selectedPodcastId the show a detail pane beside this list is showing, or null when the
+ *   library is the whole screen. Passed in rather than remembered here: which show is open is a
+ *   fact about the layout the library is embedded in, and the library that fills a folded phone
+ *   has no answer to it.
  * @param viewModel injected by Hilt.
  */
 @Composable
@@ -111,6 +115,7 @@ fun LibraryRoute(
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    selectedPodcastId: String? = null,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -141,6 +146,7 @@ fun LibraryRoute(
         onClearFilter = viewModel::clearFilter,
         onRefresh = viewModel::refreshAll,
         onMessageShown = viewModel::onMessageShown,
+        selectedPodcastId = selectedPodcastId,
         modifier = modifier,
     )
 }
@@ -163,6 +169,7 @@ fun LibraryRoute(
  * @param onRefresh pull-to-refresh handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
+ * @param selectedPodcastId the show a detail pane beside this list is showing, or null.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -181,6 +188,7 @@ fun LibraryScreen(
     onRefresh: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
+    selectedPodcastId: String? = null,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Resolved in composition rather than inside the effect: `LaunchedEffect` runs outside the
@@ -301,6 +309,7 @@ fun LibraryScreen(
                         LibraryLayout.GRID -> ShowGrid(
                             podcasts = uiState.podcasts,
                             isReorderable = uiState.isReorderable,
+                            selectedPodcastId = selectedPodcastId,
                             onPodcastClick = onPodcastClick,
                             onMove = onMove,
                         )
@@ -308,6 +317,7 @@ fun LibraryScreen(
                         LibraryLayout.LIST -> ShowList(
                             podcasts = uiState.podcasts,
                             isReorderable = uiState.isReorderable,
+                            selectedPodcastId = selectedPodcastId,
                             onPodcastClick = onPodcastClick,
                             onMove = onMove,
                             onRemoveRequest = { pendingRemovalId = it.podcast.id },
@@ -471,6 +481,7 @@ private fun NewEpisodesChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
  *
  * @param podcasts the library.
  * @param isReorderable whether the drag gesture and its spoken equivalents are on offer.
+ * @param selectedPodcastId the show a detail pane beside this grid is showing, or null.
  * @param onPodcastClick tile tap handler.
  * @param onMove reports a finished reorder as positions in [podcasts].
  */
@@ -478,6 +489,7 @@ private fun NewEpisodesChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
 private fun ShowGrid(
     podcasts: List<PodcastWithCounts>,
     isReorderable: Boolean,
+    selectedPodcastId: String?,
     onPodcastClick: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
 ) {
@@ -512,6 +524,7 @@ private fun ShowGrid(
                 badgeCount = entry.newEpisodeCount,
                 isDownloaded = entry.downloadedCount > 0,
                 stateDescription = entry.newEpisodeDescription(resources),
+                isSelected = entry.podcast.id == selectedPodcastId,
                 onClick = { onPodcastClick(entry.podcast.id) },
                 modifier = Modifier
                     // On the tile/row itself, which merges its children: that merged node is
@@ -554,6 +567,7 @@ private fun ShowGrid(
  * @param podcasts the library.
  * @param isReorderable whether the drag gesture is on offer; the swipe is not affected by it,
  *   because removing a show means the same thing in every order.
+ * @param selectedPodcastId the show a detail pane beside this list is showing, or null.
  * @param onPodcastClick row tap handler.
  * @param onMove reports a finished reorder as positions in [podcasts].
  * @param onRemoveRequest asks for the show to be removed; the screen confirms before it happens.
@@ -562,6 +576,7 @@ private fun ShowGrid(
 private fun ShowList(
     podcasts: List<PodcastWithCounts>,
     isReorderable: Boolean,
+    selectedPodcastId: String?,
     onPodcastClick: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
     onRemoveRequest: (PodcastWithCounts) -> Unit,
@@ -588,6 +603,7 @@ private fun ShowList(
                 index = index,
                 drag = drag,
                 isReorderable = isReorderable,
+                isSelected = entry.podcast.id == selectedPodcastId,
                 onPodcastClick = { onPodcastClick(entry.podcast.id) },
                 onRemoveRequest = { onRemoveRequest(entry) },
             )
@@ -605,6 +621,7 @@ private fun ShowList(
  * @param index its position in the library, for the reorder actions.
  * @param drag the shared drag state, which owns the visual offset and the pending move.
  * @param isReorderable whether this row can be picked up.
+ * @param isSelected whether a detail pane beside this list is showing this show.
  * @param onPodcastClick opens the show.
  * @param onRemoveRequest asks for it to be removed.
  */
@@ -614,6 +631,7 @@ private fun ShowListRow(
     index: Int,
     drag: ReorderableState<PodcastWithCounts>,
     isReorderable: Boolean,
+    isSelected: Boolean,
     onPodcastClick: () -> Unit,
     onRemoveRequest: () -> Unit,
 ) {
@@ -666,6 +684,7 @@ private fun ShowListRow(
             isDownloaded = entry.downloadedCount > 0,
             source = entry.podcast.source,
             stateDescription = entry.newEpisodeDescription(resources),
+            isSelected = isSelected,
             onClick = onPodcastClick,
             trailing = {
                 // The same mark the grid puts on a cover. Without it the list would be the layout
@@ -978,6 +997,43 @@ internal fun LibraryScreenListPreview() {
             onClearFilter = {},
             onRefresh = {},
             onMessageShown = {},
+        )
+    }
+}
+
+/**
+ * The library as the list pane of a two-pane layout, with the open show marked.
+ *
+ * A list rather than a grid, and deliberately: the row is where the wash has the most to prove,
+ * because it runs the full width behind a title, an author, a counts line and a badge, and every
+ * one of them has to stay legible on it.
+ */
+@ThemePreviews
+@Composable
+internal fun LibraryScreenSelectedPreview() {
+    MegaPodcastPlayerTheme {
+        LibraryScreen(
+            uiState = LibraryUiState(
+                isLoading = false,
+                layout = LibraryLayout.LIST,
+                podcasts = listOf(
+                    previewEntry("1", "Podlodka Podcast", newEpisodeCount = 3),
+                    previewEntry("2", "Acquired", newEpisodeCount = 0),
+                ),
+            ),
+            onPodcastClick = {},
+            onSearchClick = {},
+            onOpenSettings = {},
+            onMove = { _, _ -> },
+            onRemove = {},
+            onLayoutChange = {},
+            onSortChange = {},
+            onQueryChange = {},
+            onOnlyWithNewEpisodesChange = {},
+            onClearFilter = {},
+            onRefresh = {},
+            onMessageShown = {},
+            selectedPodcastId = "1",
         )
     }
 }

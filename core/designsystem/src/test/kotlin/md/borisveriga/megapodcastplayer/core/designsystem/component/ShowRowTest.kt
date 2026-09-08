@@ -130,4 +130,36 @@ class ShowRowTest {
             },
         )
     }
+
+    /**
+     * The two-pane library's one addition to this row. Announced with Compose's `Selected` property
+     * rather than with words, so it reaches TalkBack in the vocabulary it already has for a list
+     * item whose detail is open beside it.
+     */
+    @Test
+    fun `announces itself as selected when a pane beside the list is showing it`() {
+        composeTestRule.setContent {
+            MegaPodcastPlayerTheme {
+                ShowRow(title = "Podlodka Podcast", isSelected = true, onClick = {})
+            }
+        }
+
+        composeTestRule.assertRowSelected("Podlodka Podcast", expected = true)
+    }
+
+    /**
+     * The case that matters more, because it is every other list in the app: search results, and
+     * the library on a folded phone. A row that says "not selected" is answering a question those
+     * screens never pose, so the property has to be absent rather than false.
+     */
+    @Test
+    fun `says nothing about selection where there is no pane to select for`() {
+        composeTestRule.setContent {
+            MegaPodcastPlayerTheme {
+                ShowRow(title = "Podlodka Podcast", onClick = {})
+            }
+        }
+
+        composeTestRule.assertRowSelected("Podlodka Podcast", expected = false)
+    }
 }

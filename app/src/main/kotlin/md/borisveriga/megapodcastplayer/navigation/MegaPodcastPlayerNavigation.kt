@@ -81,6 +81,18 @@ sealed interface Route {
     ) : Route
 
     /**
+     * The library's detail pane with nothing chosen yet.
+     *
+     * The one route here that is never reached from the navigation bar, a notification or a link:
+     * it is the start destination of the small graph that lives *inside* the library's detail pane
+     * on a screen wide enough to show two, and it exists because a pane has to be showing something
+     * before a show has been picked. On a folded phone there is no such pane and this is never
+     * composed at all.
+     */
+    @Serializable
+    data object NoShowSelected : Route
+
+    /**
      * Playback and download preferences.
      *
      * Not a [TopLevelDestination]. Settings is opened rarely and was spending a third of the

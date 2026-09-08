@@ -19,9 +19,11 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.SectionHeade
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsChoiceRowPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsSwitchRowPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowRowPreview
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowRowSelectedPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowRowYouTubePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowTileNoBadgePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowTilePreview
+import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowTileSelectedPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SortMenuChipPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SortToggleChipPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SourceBadgePreview
@@ -93,7 +95,13 @@ class ComponentScreenshotTest(private val variant: ScreenshotVariant) {
     fun showRowYouTube() = capture("show-row-youtube") { ShowRowYouTubePreview() }
 
     @Test
+    fun showRowSelected() = capture("show-row-selected") { ShowRowSelectedPreview() }
+
+    @Test
     fun showTile() = capture("show-tile") { ShowTilePreview() }
+
+    @Test
+    fun showTileSelected() = capture("show-tile-selected") { ShowTileSelectedPreview() }
 
     @Test
     fun showTileNoBadge() = capture("show-tile-no-badge") { ShowTileNoBadgePreview() }

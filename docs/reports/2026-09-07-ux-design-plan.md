@@ -11,7 +11,7 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 52 of the 73 items are done, 3 are decided against, none is half done, 18 are
+> **Where it stands: 53 of the 73 items are done, 3 are decided against, none is half done, 17 are
 > not started.** Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
@@ -27,10 +27,10 @@ or more).*
 > | P0 — a day of polish | ✅ complete | — |
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
-> | P3 — reach | started | 6 of its 13 items |
+> | P3 — reach | started | 5 of its 13 items |
 > | Unscheduled (in no phase) | started | 12 items, 3 decided against, 1 found already built |
 >
-> §4.1 lists the 18 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists the 17 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -39,7 +39,11 @@ or more).*
 > **8 September:** W-4 landed, and took W-3 and W-5 with it — the watch screen is two pages now, so
 > the transport no longer scrolls away under a list of episodes, and the two small watch items were
 > in the files it opened. The watch is finished as far as this plan goes; every remaining P3 item is
-> the phone's or the build's.
+> the phone's or the build's. SYS-3, then NAV-7 and DS-5 together, then **NAV-3** — the Library tab
+> is a list and a show side by side on the inner display, and `PodcastDetailRoute.showBackButton`,
+> written three phases ago for a caller that never came, has one. See
+> `docs/reports/2026-09-08-nav-3-two-pane-library.md`. PL-11, the other half of that Fold pair, is
+> next.
 > P2's own items, in the order they landed: PL-5, PL-6, PL-8, SHOW-5, SHOW-6, MOM-1, then
 > LIB-1, LIB-2, LIB-3, DL-1, DL-2, SET-1, SET-3, ADD-2 and COPY-1. Three items from other phases
 > were finished by work done for these: DS-9 by LIB-1 (which needed the second sort control the row
@@ -143,7 +147,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 |----|---------|--------|--------|
 | NAV-1 ✅ | **There is no "now" surface.** The four tabs are Library, Queue, Downloads, Moments. Finding something to play is Library → show → scroll → tap, and the two things most sessions actually want — *continue what I was listening to* and *what arrived since yesterday* — have no home. The data is already there (`Episode.isInProgress`, `isNew`, the durable queue). Proposal: a **Home** tab (or shelves at the top of Library) with *Continue listening*, *New episodes* across all shows, and *Up next*. This is the single highest-leverage change in the plan. Shipped as a `Listen` tab and the start destination (decision D-2), in a new `:feature:listen` module, with `EpisodeShelf`/`EpisodeCard` added to the design system (part of DS-9). | H | L |
 | NAV-2 ✅ | **Downloads as a top-level tab** is a storage-management view promoted to a primary destination. Once Home exists, decide whether Downloads stays a tab, becomes a filter chip on Home, or lives under Settings › Storage with the card it already has. **Decided: it stays a tab**, and the bar keeps five. The objection was a taxonomic one — a storage view among four listening destinations — and the answer is that on this phone, with this library, what is downloaded *is* a listening destination: it is the list you read before a flight or a tunnel, and the one place a copy can be started, paused or thrown away. A screen that answers "what can I play with no signal" has earned a tab; the tidier arrangement would have cost a tap on the day the tap is hardest to make. No code change. | M | S |
-| NAV-3 | **The open Fold is a phone with a rail.** `NavigationSuiteScaffold` swaps the bar for a rail, but Library → show is still a full-screen push, and `PodcastDetailRoute` already has a `showBackButton` parameter written for a two-pane layout nobody calls. A `ListDetailPaneScaffold` for Library/Show (and later Queue/Player) is what the inner display is for. | M | L |
+| NAV-3 ✅ | **The open Fold is a phone with a rail.** `NavigationSuiteScaffold` swaps the bar for a rail, but Library → show is still a full-screen push, and `PodcastDetailRoute` already has a `showBackButton` parameter written for a two-pane layout nobody calls. A `ListDetailPaneScaffold` for Library/Show (and later Queue/Player) is what the inner display is for. **Done:** the Library tab is a `NavigableListDetailPaneScaffold`, and `showBackButton` has its caller — the arrow is drawn only when the list pane is *not* on screen. The detail pane carries a graph of its own rather than a `contentKey`, so `PodcastDetailViewModel` still reads its id out of a `SavedStateHandle` filled by a navigation argument, exactly as it says it does, and `PodcastDetailRoute` is the same call in both places it is now made. The outer `Route.PodcastDetail` stays full-screen at every width for the shows reached from a notification, a search result or a link: the list a pane would put beside those is the library, and the library is not where the user came from. `ShowRow` and `ShowTile` gained `isSelected` — a wash and Compose's own `Selected` property, set only where a pane exists to select for. Queue and Player are *not* taken: a queue is one list with no detail beside it, and the player is a sheet rather than a destination. See `docs/reports/2026-09-08-nav-3-two-pane-library.md`, including the two bugs the writing found and D-14 to D-16. | M | L |
 | NAV-4 | **Re-tapping the current tab does nothing** (the guard returns early). Platform convention is scroll-to-top; with a long library it is the fastest way back. | L | S |
 | NAV-5 | **Settings is reachable only from the Library bar.** From Queue, Downloads or Moments it is a tab switch plus a tap. Put the gear on every top-level bar, or in a consistent overflow. **Decided (§5.1, D-7): the gear on every top-level bar.** One tap from anywhere, and an overflow would be a menu holding a single item on four of the five screens — a container invented to hide the one thing in it. | L | S |
 | NAV-6 ✅ | **Notification taps land short.** The new-episode notification opens the *show*; opening the episode (or Home with it highlighted) is what the tap means. The playback notification opens the app with the sheet collapsed; it should arrive expanded. The playback notification now carries `EXTRA_OPEN_PLAYER` and arrives with the sheet expanded; a new-episode notification that named exactly one episode opens that episode's sheet, and one naming several still opens the show. | M | S |
@@ -292,7 +296,7 @@ that holds up. Improvements are small:
 | **P0 — a day of polish** ✅ | First impressions and the brand on the player | SYS-1 lock-screen skip buttons (confirmed) · DS-6 splash and first frame · PL-7 mini player (height, glyphs, skip-back) · PL-1 adopt scrubber, play button, backdrop · SHOW-2 download state on rows · SET-2 confirm remove-all · A11Y-1 font-scale pass · DS-7 haptics and reduce-motion · DS-4 player tokens |
 | **P1 — the listening loop** ✅ | From "a list of shows" to "what do I listen to now" | NAV-1 Home (continue, new, up next) · SHOW-1 episode sheet with show notes · SHOW-3 mark played · PL-2 chapters · PL-4 sleep timer · ADD-1 share target and link handling · SHOW-4 continue button · PL-9 queue header and clear · NAV-6 notification landing. All landed. The phase set out to answer "what do I listen to now" and ends up having answered a second question with it — *where am I in this*: an episode is a list of named segments on the scrubber, in the sheet, and now under a thumb on a lock screen, rather than a bar with a number at each end. |
 | **P2 — control and personalisation** ✅ | Settings that follow the show, not the app | PL-5 speed sheet · SHOW-5 sort and persisted filter · SHOW-6 show settings · SET-1 appearance · SET-3 notifications · LIB-1/LIB-2 sort and filter · LIB-3 badge vocabulary · DL-1 sections · DL-2 download now · ADD-2 preview before subscribe · COPY-1 localised formatters · PL-6 time labels · PL-8 error copy · MOM-1. All landed. The phase's theme came out truer than the list reads: a show can now disagree with the app about speed, downloads and notifications; the library can be ordered and narrowed rather than only arranged; the downloads screen says which of four things each row is doing; and the app can be looked at in the palette, the language and the brightness the user chose rather than the ones the code was written in. |
-| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Seven done: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded. Of the six left, DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and the order the rest are taken in changed once: the Fold now goes before the widget (D-13). |
+| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Eight done, NAV-3 the latest — the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before it: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. Of the five left, DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and the order the rest are taken in changed once: the Fold now goes before the widget (D-13). PL-11, the second half of that Fold pair, is next. |
 
 Rough sizing: P0 fits in one to two days; P1 is the bulk of the work at roughly two weeks, with
 NAV-1 and PL-2 the two large pieces; P2 and P3 are each a week or so of independent, schedulable
@@ -313,12 +317,11 @@ PL-10, found already built — and all four are listed under them, so a reader w
 see it was answered rather than lost. Four more left on 8 September by being built: W-4, with W-3
 and W-5 alongside it, and SYS-3.
 
-**P3 — reach.** Larger screens, other surfaces, migration. Six left; W-1, W-2, W-4, DS-3, NAV-2,
-SYS-3 and DS-5 are done.
+**P3 — reach.** Larger screens, other surfaces, migration. Five left; W-1, W-2, W-4, DS-3, NAV-2,
+SYS-3, DS-5 and NAV-3 are done.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
-| NAV-3 | Two-pane list/detail on the open Fold; `PodcastDetailRoute.showBackButton` already exists for it | M | L |
 | DS-8 | RTL: declare `supportsRtl="false"`, with a comment saying it is scope and not oversight (D-5) | L | S |
 | PL-11 | The expanded player on the inner display: cap the hero, lay artwork and controls side by side | M | M |
 | SYS-2 | A Glance widget: now playing with transport, and a *Continue listening* row | M | M |
@@ -404,12 +407,15 @@ and both get more expensive the longer the branch runs.
    goldens are declared as task inputs. **This is what NAV-3 and PL-11 were waiting for**: those two
    rearrange every screen at a second size, and there is now a picture of what every screen looked
    like before they did.
-6. **NAV-3**, then **PL-11** — the open Fold. The two large pieces, and the ones this app has been
-   waiting for since `PodcastDetailRoute.showBackButton` was written for a caller that never came.
-   **Moved ahead of the widget on 8 September.** The earlier order took the cheaper surfaces first;
-   the correction is that the Fold is the device in the pocket every day, and the inner display is
-   the one surface this app has never used, while a home-screen widget is a surface its user may
-   never look at. Between two M-and-above pieces, the one that pays out daily goes first.
+6. **NAV-3 — done, 8 September.** `showBackButton` has its caller. The estimate was right about
+   the size and wrong about where the difficulty would be: the scaffold and the nested graph were
+   the easy half, and the two bugs worth the day were both a fact being claimed where it is not
+   true — a library row left washed on a folded phone after the show beside it had been backed out
+   of, and a tap on the highlighted row throwing away the screen it was pointing at, because
+   `launchSingleTop` cannot reuse an entry the `popUpTo` beside it has just removed. Both are in
+   `docs/reports/2026-09-08-nav-3-two-pane-library.md` with the three decisions the plan left open.
+   **PL-11** is the other half of this step and is untouched: the expanded player still draws its
+   hero at full width on the inner display.
 7. **SYS-2** — the Glance widget. *Continue listening* is now a real query rather than something to
    invent, because `:feature:listen` already asks it; the widget is that shelf and a transport row.
    It also gets easier for being later: DS-5's screenshots and the Fold work will have settled what
@@ -547,8 +553,9 @@ the answer. SET-3's row into the system notification page is the durable half of
 built. If the app is ever handed to someone else, this is the first row to reopen.
 
 **D-13 — The order of what is left (§4.2).** The sequence stands, with the Fold moved ahead of the
-widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. W-4, SYS-3 and
-DS-5 are done, NAV-7 with the last of them; **NAV-3 — the open Fold — is where this picks up.** The earlier order
+widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. W-4, SYS-3, DS-5
+and NAV-3 are done, NAV-7 with DS-5; **PL-11 — the wide player, the other half of the Fold — is
+where this picks up.** The earlier order
 took the cheaper surface first; the correction is that the inner display is the one surface this app
 has never used, on the device in the pocket every day, while a home-screen widget is a surface its
 user may never look at. Between two pieces of similar size, the one that pays out daily goes first.
