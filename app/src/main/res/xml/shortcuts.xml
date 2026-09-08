@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The four things worth doing without opening the app first: carry on listening, look at what is
+    queued, look at what is stored, add a show.
+
+    Static rather than dynamic. These four do not depend on what is in the library or on what played
+    last — *Resume* means "whatever I was listening to", which the app works out when the shortcut
+    is tapped — so there is nothing for the app to keep up to date at runtime, and a static list is
+    present the first time the launcher is long-pressed after an install rather than after the app
+    has been opened once.
+
+    Declared in the order they are most likely to be wanted; a launcher shows the first entries
+    nearest the icon and drops the tail when it has room for fewer than four.
+
+    Each intent is explicit — package and class — so it needs no `intent-filter` of its own and
+    cannot be reached by anything but the launcher. The action is what MainActivity reads; the four
+    strings below are the same ones `LaunchShortcut` declares, and `LaunchShortcutTest` parses this
+    file to check that they still agree. Change one and change the other.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="resume"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_resume"
+        android:shortcutShortLabel="@string/shortcut_resume_short_label"
+        android:shortcutLongLabel="@string/shortcut_resume_long_label">
+        <intent
+            android:action="md.borisveriga.megapodcastplayer.action.RESUME"
+            android:targetPackage="md.borisveriga.megapodcastplayer"
+            android:targetClass="md.borisveriga.megapodcastplayer.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="queue"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_queue"
+        android:shortcutShortLabel="@string/shortcut_queue_short_label"
+        android:shortcutLongLabel="@string/shortcut_queue_long_label">
+        <intent
+            android:action="md.borisveriga.megapodcastplayer.action.QUEUE"
+            android:targetPackage="md.borisveriga.megapodcastplayer"
+            android:targetClass="md.borisveriga.megapodcastplayer.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="downloads"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_downloads"
+        android:shortcutShortLabel="@string/shortcut_downloads_short_label"
+        android:shortcutLongLabel="@string/shortcut_downloads_long_label">
+        <intent
+            android:action="md.borisveriga.megapodcastplayer.action.DOWNLOADS"
+            android:targetPackage="md.borisveriga.megapodcastplayer"
+            android:targetClass="md.borisveriga.megapodcastplayer.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="add_show"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add_show"
+        android:shortcutShortLabel="@string/shortcut_add_show_short_label"
+        android:shortcutLongLabel="@string/shortcut_add_show_long_label">
+        <intent
+            android:action="md.borisveriga.megapodcastplayer.action.ADD_SHOW"
+            android:targetPackage="md.borisveriga.megapodcastplayer"
+            android:targetClass="md.borisveriga.megapodcastplayer.MainActivity" />
+    </shortcut>
+
+</shortcuts>

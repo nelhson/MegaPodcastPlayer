@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Launcher-shortcut icon, adaptive so every launcher masks it to the shape it uses for the rest of
+    the row. A plain vector would be drawn unmasked and square among circles.
+
+    The background is the launcher icon's own espresso wash, which makes the four shortcuts read as
+    this app's rather than as the system's — the launcher badges them with the app icon, and a
+    matching ground is what completes that.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_shortcut_downloads_glyph" />
+</adaptive-icon>

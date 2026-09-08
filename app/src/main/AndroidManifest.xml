@@ -62,6 +62,17 @@
             </intent-filter>
 
             <!--
+              Long-pressing the launcher icon: resume, queue, downloads, add a show.
+
+              Attached to this activity because the platform reads the list from whichever activity
+              carries the LAUNCHER filter, and every one of the four is a destination inside this
+              single-activity app. What each intent's action means is decided in `LaunchShortcut`.
+            -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
+            <!--
               Share sheet: a podcast link shared out of a browser, a chat or Apple Podcasts.
 
               This is the ordinary way a show is discovered, and until now it took five steps —

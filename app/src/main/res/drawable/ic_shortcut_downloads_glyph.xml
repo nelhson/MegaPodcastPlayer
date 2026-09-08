@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground layer of the *Downloads* launcher shortcut: an arrow into a tray.
+
+    Same adaptive-icon geometry and colour as ic_shortcut_resume_glyph.xml. The plain download
+    arrow rather than the tab's `DownloadDone` check: the tab is read next to its label, and this is
+    read at 36dp with three others, where "already downloaded" and "downloading" are a distinction
+    no glyph this small can carry.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Shaft and head, one outline; the tray below is separate so the gap between them survives. -->
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M73.6,45.6 h-11.2 V28.8 H45.6 v16.8 H34.4 l19.6,19.6 19.6,-19.6 Z" />
+    <path
+        android:fillColor="#FFB868"
+        android:pathData="M34.4,70.8 v5.6 h39.2 v-5.6 Z" />
+</vector>

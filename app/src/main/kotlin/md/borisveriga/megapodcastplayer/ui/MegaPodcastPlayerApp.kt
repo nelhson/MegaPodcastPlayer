@@ -30,9 +30,11 @@ import md.borisveriga.megapodcastplayer.feature.player.rememberPlayerSheetState
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailRoute
 import md.borisveriga.megapodcastplayer.feature.search.SearchRoute
 import md.borisveriga.megapodcastplayer.feature.settings.SettingsRoute
+import md.borisveriga.megapodcastplayer.navigation.LaunchShortcut
 import md.borisveriga.megapodcastplayer.navigation.Route
 import md.borisveriga.megapodcastplayer.navigation.TopLevelDestination
 import md.borisveriga.megapodcastplayer.navigation.isOn
+import md.borisveriga.megapodcastplayer.navigation.navigateToShortcut
 import md.borisveriga.megapodcastplayer.navigation.navigateToTopLevel
 import md.borisveriga.megapodcastplayer.navigation.popEnter
 import md.borisveriga.megapodcastplayer.navigation.popExit
@@ -58,6 +60,9 @@ import md.borisveriga.megapodcastplayer.navigation.pushExit
  * @param pendingOpenPlayer true when the intent that brought the app up was the media
  *   notification's own tap target. Consumed the same way.
  * @param onPendingOpenPlayerHandled called after the player has been expanded.
+ * @param pendingShortcut the launcher shortcut this launch came from, or null. Consumed the same
+ *   way; see [navigateToShortcut] for why one of the four navigates nowhere.
+ * @param onPendingShortcutHandled called after [pendingShortcut] has been acted on.
  * @param navController navigation controller; injected for tests.
  * @param playerSheetState how open the player is; hoisted here because the navigation bar and
  *   every "now playing" hand-off react to it.
@@ -72,6 +77,8 @@ fun MegaPodcastPlayerApp(
     onPendingSharedLinkHandled: () -> Unit = {},
     pendingOpenPlayer: Boolean = false,
     onPendingOpenPlayerHandled: () -> Unit = {},
+    pendingShortcut: LaunchShortcut? = null,
+    onPendingShortcutHandled: () -> Unit = {},
     navController: NavHostController = rememberNavController(),
     playerSheetState: PlayerSheetState = rememberPlayerSheetState(),
 ) {
@@ -106,6 +113,16 @@ fun MegaPodcastPlayerApp(
         if (!pendingOpenPlayer) return@LaunchedEffect
         playerSheetState.expand()
         onPendingOpenPlayerHandled()
+    }
+
+    // A launcher shortcut names a place in the app, so it is answered here where the graph is,
+    // exactly as the notification's show id is. Resume is the exception and moves nothing: it is
+    // playback, already started by the activity, and the sheet it opens arrives through
+    // `pendingOpenPlayer` above.
+    LaunchedEffect(pendingShortcut) {
+        val shortcut = pendingShortcut ?: return@LaunchedEffect
+        navController.navigateToShortcut(shortcut)
+        onPendingShortcutHandled()
     }
 
     val navigationSuiteState = rememberNavigationSuiteScaffoldState()

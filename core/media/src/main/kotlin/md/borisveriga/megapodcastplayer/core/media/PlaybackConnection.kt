@@ -242,6 +242,26 @@ class PlaybackConnection @Inject constructor(
         }
     }
 
+    /**
+     * Starts playback, and leaves a player that is already running alone.
+     *
+     * [togglePlayPause] is what a play/pause button presses. This is what an outside request to
+     * *resume* asks for — the launcher's Resume shortcut — where reading the state and then
+     * toggling has a hole in it: playback that starts between the two turns the resume into a
+     * pause. Asking the player itself, on the player's own thread, is the only reading that cannot
+     * go stale.
+     */
+    suspend fun play() = onController { player ->
+        if (player.isPlaying) return@onController
+        // A player that reached the end of the queue needs re-preparing before it will play.
+        if (player.playbackState == Player.STATE_IDLE ||
+            player.playbackState == Player.STATE_ENDED
+        ) {
+            player.prepare()
+        }
+        player.play()
+    }
+
     /** Pauses playback, if anything is playing. */
     suspend fun pause() = onController(Player::pause)
 
