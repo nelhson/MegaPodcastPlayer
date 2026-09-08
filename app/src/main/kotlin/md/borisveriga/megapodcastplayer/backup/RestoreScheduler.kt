@@ -74,8 +74,12 @@ class RestoreScheduler @Inject constructor(
  */
 internal fun WorkInfo.asRestoreRun(): RestoreRun? = when (state) {
     WorkInfo.State.RUNNING -> RestoreRun.Running(progress.asRestoreProgress())
-    WorkInfo.State.SUCCEEDED -> RestoreRun.Finished(outputData.asRestoreSummary())
+
+    WorkInfo.State.SUCCEEDED ->
+        RestoreRun.Finished(id = id.toString(), summary = outputData.asRestoreSummary())
+
     WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> RestoreRun.Failed
+
     WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> RestoreRun.Running(RestoreProgress(0, 0, ""))
 }
 

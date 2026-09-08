@@ -22,9 +22,13 @@ sealed interface RestoreRun {
     /**
      * The run finished, whether or not every feed came back.
      *
+     * @property id identifies this run and no other. It exists because a finished run is retained
+     *   and replayed to every new observer: without a name for the run, "the user has already been
+     *   shown this summary" could only be remembered for as long as the screen itself lived, and
+     *   the screen is recreated on every visit to settings.
      * @property summary what it managed to do.
      */
-    data class Finished(val summary: RestoreSummary) : RestoreRun
+    data class Finished(val id: String, val summary: RestoreSummary) : RestoreRun
 
     /** The run died — a corrupted handover, or a process WorkManager could not bring back. */
     data object Failed : RestoreRun

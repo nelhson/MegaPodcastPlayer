@@ -132,6 +132,7 @@ fun SettingsRoute(
         onImportOpml = { opmlImportLauncher.launch(OPML_PICKER_TYPES) },
         onConfirmRestore = viewModel::confirmRestore,
         onCancelRestore = viewModel::cancelRestore,
+        onRestoreResultShown = viewModel::acknowledgeRestoreResult,
         onMessageShown = viewModel::onMessageShown,
         modifier = modifier,
     )
@@ -165,6 +166,8 @@ fun SettingsRoute(
  * @param onImportOpml called when the user asks to read one.
  * @param onConfirmRestore called with whether to re-queue the downloads the backup records.
  * @param onCancelRestore called when the user backs out of a picked backup.
+ * @param onRestoreResultShown called when the user dismisses the finished restore's report, which
+ *   is what stops it being shown again.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
  */
@@ -192,17 +195,13 @@ fun SettingsScreen(
     onImportOpml: () -> Unit,
     onConfirmRestore: (Boolean) -> Unit,
     onCancelRestore: () -> Unit,
+    onRestoreResultShown: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Saveable so that opening the Fold 7 mid-read does not close the licence text.
     var fontLicencesOpen by rememberSaveable { mutableStateOf(false) }
-    // WorkManager replays the last run's result for as long as the work is retained, so the dialog
-    // needs a dismissal of its own; without it, reopening settings would show a week-old summary.
-    var showRestoreResult by remember(uiState.backup.restore) {
-        mutableStateOf(uiState.backup.restore is RestoreRun.Finished)
-    }
     // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
     // available. `LocalResources` rather than `LocalContext.current.resources`, so a configuration
     // change invalidates the read.
@@ -497,13 +496,14 @@ fun SettingsScreen(
             )
         }
 
+        // A finished run is retained and replayed for as long as the work lives, so dismissing
+        // this dialog is recorded outside the screen: a summary read once is not a week of
+        // announcing the same restore on every visit to settings.
         (uiState.backup.restore as? RestoreRun.Finished)?.let { finished ->
-            if (showRestoreResult) {
-                RestoreResultDialog(
-                    summary = finished.summary,
-                    onDismiss = { showRestoreResult = false },
-                )
-            }
+            RestoreResultDialog(
+                summary = finished.summary,
+                onDismiss = onRestoreResultShown,
+            )
         }
     }
 }
@@ -830,6 +830,7 @@ internal fun SettingsScreenPreview() {
             onImportOpml = {},
             onConfirmRestore = {},
             onCancelRestore = {},
+            onRestoreResultShown = {},
             onMessageShown = {},
         )
     }

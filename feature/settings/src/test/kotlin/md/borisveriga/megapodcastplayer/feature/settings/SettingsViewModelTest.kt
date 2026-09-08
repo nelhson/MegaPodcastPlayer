@@ -22,6 +22,8 @@ import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.RestoreProgress
+import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
@@ -74,6 +76,7 @@ class SettingsViewModelTest {
 
     private val lastBackupAt = MutableStateFlow<Long?>(null)
     private val restoreRun = MutableStateFlow<RestoreRun?>(null)
+    private val acknowledgedRestoreId = MutableStateFlow<String?>(null)
 
     private lateinit var playbackRepository: PlaybackRepository
     private lateinit var downloadRepository: DownloadRepository
@@ -138,6 +141,11 @@ class SettingsViewModelTest {
         libraryRestorer = mockk(relaxed = true)
         every { backupRepository.observeLastBackupAt() } returns lastBackupAt
         every { libraryRestorer.observe() } returns restoreRun
+        every { backupRepository.observeAcknowledgedRestoreId() } returns acknowledgedRestoreId
+        // Stored rather than merely recorded, so a test can assert what the screen sees next.
+        coEvery { backupRepository.acknowledgeRestore(any()) } answers {
+            acknowledgedRestoreId.value = firstArg()
+        }
         coEvery { backupRepository.export() } returns backupFile
         coEvery { backupFileStore.write(any(), any()) } returns Result.success(Unit)
         uiPreferences = mockk(relaxed = true)
@@ -651,12 +659,64 @@ class SettingsViewModelTest {
         viewModel.uiState.test {
             assertFalse(awaitItem().backup.isBusy)
 
-            restoreRun.value = RestoreRun.Running(
-                md.borisveriga.megapodcastplayer.core.data.repository.RestoreProgress(1, 3, "First"),
-            )
+            restoreRun.value = RestoreRun.Running(RestoreProgress(1, 3, "First"))
 
             assertTrue(expectMostRecentItem().backup.isBusy)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * The result of a finished restore is retained and replayed by WorkManager for days, so
+     * without an acknowledgement the summary dialog greeted the user on every visit to settings.
+     */
+    @Test
+    fun `a finished restore is reported once, then not again`() = runTest {
+        viewModel.uiState.test {
+            assertNull(awaitItem().backup.restore)
+
+            restoreRun.value = RestoreRun.Finished("run-1", RestoreSummary(showsRestored = 2))
+
+            assertEquals(
+                RestoreRun.Finished("run-1", RestoreSummary(showsRestored = 2)),
+                expectMostRecentItem().backup.restore,
+            )
+
+            viewModel.acknowledgeRestoreResult()
+
+            assertNull(expectMostRecentItem().backup.restore)
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify { backupRepository.acknowledgeRestore("run-1") }
+    }
+
+    @Test
+    fun `acknowledging one restore does not silence the next`() = runTest {
+        acknowledgedRestoreId.value = "run-1"
+        viewModel.uiState.test {
+            awaitItem()
+
+            restoreRun.value = RestoreRun.Finished("run-2", RestoreSummary(showsRestored = 1))
+
+            assertEquals(
+                RestoreRun.Finished("run-2", RestoreSummary(showsRestored = 1)),
+                expectMostRecentItem().backup.restore,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** Nothing to acknowledge is not a write: an unfinished run keeps its right to be reported. */
+    @Test
+    fun `a running restore cannot be acknowledged`() = runTest {
+        restoreRun.value = RestoreRun.Running(RestoreProgress(1, 3, "First"))
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.acknowledgeRestoreResult()
+
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify(exactly = 0) { backupRepository.acknowledgeRestore(any()) }
     }
 }

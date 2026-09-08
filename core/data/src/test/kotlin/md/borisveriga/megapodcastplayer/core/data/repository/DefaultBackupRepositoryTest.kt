@@ -10,6 +10,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
@@ -30,6 +31,7 @@ import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -408,5 +410,22 @@ class DefaultBackupRepositoryTest {
         }.exceptionOrNull()
 
         assertTrue("expected the cancellation to propagate", thrown is CancellationException)
+    }
+
+    /**
+     * The summary of a finished restore is replayed to every new observer for as long as the work
+     * that produced it is retained, so which run has already been reported has to be stored.
+     */
+    @Test
+    fun `an acknowledged restore is remembered by id`() = runTest {
+        assertNull(repository.observeAcknowledgedRestoreId().first())
+
+        repository.acknowledgeRestore("run-1")
+
+        assertEquals("run-1", repository.observeAcknowledgedRestoreId().first())
+
+        repository.acknowledgeRestore("run-2")
+
+        assertEquals("run-2", repository.observeAcknowledgedRestoreId().first())
     }
 }
