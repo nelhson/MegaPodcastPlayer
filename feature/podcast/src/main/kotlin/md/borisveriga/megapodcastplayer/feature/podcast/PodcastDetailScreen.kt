@@ -1233,45 +1233,53 @@ private const val FILTER_EMPTY_KEY = "filter-empty"
 /** How much of a show's description is shown before it has been asked for in full. */
 private const val COLLAPSED_LINES = 4
 
+/**
+ * The state both previews below render.
+ *
+ * Shared rather than written twice, because the two differ in exactly one argument and a second
+ * copy of a show, an episode and a position would be a second thing to keep true.
+ */
+private fun previewUiState() = PodcastDetailUiState(
+    isLoading = false,
+    podcast = Podcast(
+        id = "1",
+        itunesId = 1209828744L,
+        title = "Podlodka Podcast",
+        author = "Егор Толстой",
+        feedUrl = "https://example.com/feed.rss",
+        artworkUrl = null,
+        description = "Еженедельное шоу о разработке и людях в IT.",
+        addedAt = Instant.EPOCH,
+        lastRefreshAt = null,
+        etag = null,
+        lastModified = null,
+        autoRefresh = true,
+    ),
+    episodes = listOf(
+        Episode(
+            id = "e1",
+            podcastId = "1",
+            guid = "g1",
+            title = "Podlodka #400 – Мультиплатформа",
+            description = "",
+            audioUrl = "https://example.com/1.mp3",
+            artworkUrl = null,
+            durationMs = 5_025_000L,
+            publishedAt = Instant.parse("2026-08-24T06:00:00Z"),
+            sizeBytes = null,
+            positionMs = 1_200_000L,
+            isNew = true,
+        ),
+    ),
+)
+
 @ThemePreviews
 @FontScalePreviews
 @Composable
 internal fun PodcastDetailScreenPreview() {
     MegaPodcastPlayerTheme {
         PodcastDetailScreen(
-            uiState = PodcastDetailUiState(
-                isLoading = false,
-                podcast = Podcast(
-                    id = "1",
-                    itunesId = 1209828744L,
-                    title = "Podlodka Podcast",
-                    author = "Егор Толстой",
-                    feedUrl = "https://example.com/feed.rss",
-                    artworkUrl = null,
-                    description = "Еженедельное шоу о разработке и людях в IT.",
-                    addedAt = Instant.EPOCH,
-                    lastRefreshAt = null,
-                    etag = null,
-                    lastModified = null,
-                    autoRefresh = true,
-                ),
-                episodes = listOf(
-                    Episode(
-                        id = "e1",
-                        podcastId = "1",
-                        guid = "g1",
-                        title = "Podlodka #400 – Мультиплатформа",
-                        description = "",
-                        audioUrl = "https://example.com/1.mp3",
-                        artworkUrl = null,
-                        durationMs = 5_025_000L,
-                        publishedAt = Instant.parse("2026-08-24T06:00:00Z"),
-                        sizeBytes = null,
-                        positionMs = 1_200_000L,
-                        isNew = true,
-                    ),
-                ),
-            ),
+            uiState = previewUiState(),
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
@@ -1290,6 +1298,41 @@ internal fun PodcastDetailScreenPreview() {
             onRebuild = {},
             onRemove = {},
             onMessageShown = {},
+        )
+    }
+}
+
+/**
+ * The same show as the detail pane of the two-pane library, where the arrow is gone.
+ *
+ * The one visible difference NAV-3 makes to this screen, and worth a golden of its own: the arrow
+ * would point back to a list that is already on screen beside it.
+ */
+@ThemePreviews
+@Composable
+internal fun PodcastDetailScreenInPanePreview() {
+    MegaPodcastPlayerTheme {
+        PodcastDetailScreen(
+            uiState = previewUiState(),
+            onBack = {},
+            onEpisodeClick = {},
+            onEpisodeDownloadToggle = {},
+            onEpisodePlay = {},
+            onEpisodePlayFrom = { _, _ -> },
+            onEpisodeAddToQueue = {},
+            onEpisodeSheetDismiss = {},
+            onEpisodePlayNext = {},
+            onEpisodeSetPlayed = { _, _ -> },
+            onUndoPlayedChange = {},
+            onEpisodeMove = { _, _, _ -> },
+            onFilterChange = {},
+            onSortChange = {},
+            onShowSettingsChange = {},
+            onRefresh = {},
+            onRebuild = {},
+            onRemove = {},
+            onMessageShown = {},
+            showBackButton = false,
         )
     }
 }

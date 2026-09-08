@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.core.designsystem.component
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,18 +14,22 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import md.borisveriga.megapodcastplayer.core.designsystem.R
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 
@@ -47,6 +52,10 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastSource
  *   nothing else here says it.
  * @param stateDescription what TalkBack announces beyond the tile's text, e.g. "3 new episodes";
  *   the badge itself is decorative, because a bare number read out means nothing.
+ * @param isSelected whether this tile is the one a detail pane beside the grid is showing; see
+ *   [ShowRow] for why it is only ever true where such a pane exists. The wash goes behind the whole
+ *   tile rather than round the cover, because the cover is arbitrary artwork and a ring drawn on it
+ *   would be lost on roughly half a library.
  * @param onClick invoked when the tile is pressed.
  */
 @Composable
@@ -59,11 +68,26 @@ fun ShowTile(
     badgeCount: Int = 0,
     isDownloaded: Boolean = false,
     stateDescription: String? = null,
+    isSelected: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
+    val selectionBackground by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            Color.Transparent
+        },
+        animationSpec = Motion.fade(),
+        label = "showTileSelection",
+    )
+
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // A shaped fill rather than a clip plus a fill: the wash reads as a card under the
+            // tile rather than as a rectangle butted against its neighbours, and nothing the tile
+            // draws — the badge and the downloaded mark sit in its corners — is trimmed to it.
+            .background(selectionBackground, MegaPodcastPlayerTheme.shapes.artworkLarge)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(role = Role.Button, onClick = onClick)
@@ -73,6 +97,8 @@ fun ShowTile(
             )
             .semantics(mergeDescendants = true) {
                 if (stateDescription != null) this.stateDescription = stateDescription
+                // Only when true; see [ShowRow].
+                if (isSelected) selected = true
             }
             .padding(MegaPodcastPlayerTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
@@ -161,6 +187,24 @@ internal fun ShowTilePreview() {
             badgeCount = 3,
             isDownloaded = true,
             stateDescription = "3 new episodes",
+            onClick = {},
+        )
+    }
+}
+
+/** The tile as the list pane of a two-pane layout draws the show the detail pane is showing. */
+@ThemePreviews
+@Composable
+internal fun ShowTileSelectedPreview() {
+    MegaPodcastPlayerTheme {
+        ShowTile(
+            title = "Podlodka Podcast",
+            author = "Egor Tolstoy",
+            source = PodcastSource.RSS,
+            badgeCount = 3,
+            isDownloaded = true,
+            stateDescription = "3 new episodes",
+            isSelected = true,
             onClick = {},
         )
     }

@@ -99,6 +99,16 @@ class ColorContrastTest {
             Triple("inverseOnSurface/inverseSurface", scheme.inverseOnSurface, scheme.inverseSurface),
             // The surface containers all carry body text at some point, so onSurface has to hold
             // against the darkest and lightest of them, not just against `surface`.
+            // The wash under the library row whose show is open in the pane beside it. The row
+            // keeps its ordinary content colours rather than switching to onSecondaryContainer —
+            // selection moves, and text that changed colour as the highlight passed would read as
+            // two different rows — so both of them have to survive the container.
+            Triple("onSurface/secondaryContainer", scheme.onSurface, scheme.secondaryContainer),
+            Triple(
+                "onSurfaceVariant/secondaryContainer",
+                scheme.onSurfaceVariant,
+                scheme.secondaryContainer,
+            ),
             Triple("onSurface/surfaceContainerLowest", scheme.onSurface, scheme.surfaceContainerLowest),
             Triple("onSurface/surfaceContainerHighest", scheme.onSurface, scheme.surfaceContainerHighest),
             Triple("onSurfaceVariant/surfaceContainerHighest", scheme.onSurfaceVariant, scheme.surfaceContainerHighest),

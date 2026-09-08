@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.library
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -106,6 +107,7 @@ class LibraryScreenTest {
         podcasts: List<PodcastWithCounts> =
             listOf(entry("a", "Podlodka Podcast", newEpisodeCount = 3)),
         libraryCount: Int = podcasts.size,
+        selectedPodcastId: String? = null,
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -130,6 +132,7 @@ class LibraryScreenTest {
                     onClearFilter = onClearFilter,
                     onRefresh = {},
                     onMessageShown = {},
+                    selectedPodcastId = selectedPodcastId,
                 )
             }
         }
@@ -534,6 +537,56 @@ class LibraryScreenTest {
             .assertHasNoCustomAccessibilityAction("Remove")
         assertEquals(null, removed)
     }
+
+    /**
+     * The two-pane library's one addition to this screen, and the reason it is one row and not two:
+     * a wash on more than one row would be claiming the pane is showing more than one show.
+     */
+    @Test
+    fun `only the show the detail pane is showing is marked selected`() {
+        setScreen(
+            layout = LibraryLayout.LIST,
+            podcasts = listOf(
+                entry("a", "Podlodka Podcast"),
+                entry("b", "Acquired"),
+            ),
+            selectedPodcastId = "b",
+        )
+
+        composeRule.onNodeWithText("Acquired").assertSelected(expected = true)
+        composeRule.onNodeWithText("Podlodka Podcast").assertSelected(expected = false)
+    }
+
+    /** The grid answers it the same way; the library is one list drawn two ways. */
+    @Test
+    fun `the grid marks the open show too`() {
+        setScreen(
+            layout = LibraryLayout.GRID,
+            podcasts = listOf(
+                entry("a", "Podlodka Podcast"),
+                entry("b", "Acquired"),
+            ),
+            selectedPodcastId = "b",
+        )
+
+        composeRule.onNodeWithText("Acquired").assertSelected(expected = true)
+        composeRule.onNodeWithText("Podlodka Podcast").assertSelected(expected = false)
+    }
+
+    /**
+     * The folded phone, where a tap leaves the library entirely. Nothing is standing open beside
+     * the list, so nothing is selected — and the rows must not say otherwise, in pixels or to
+     * TalkBack.
+     */
+    @Test
+    fun `with no pane beside it the library marks nothing`() {
+        setScreen(
+            layout = LibraryLayout.LIST,
+            podcasts = listOf(entry("a", "Podlodka Podcast")),
+        )
+
+        composeRule.onNodeWithText("Podlodka Podcast").assertSelected(expected = false)
+    }
 }
 
 /** How many steps a driven swipe is broken into, so it reads as a drag rather than a fling. */
@@ -595,4 +648,15 @@ private fun SemanticsNodeInteraction.assertHasCustomAccessibilityAction(label: S
  */
 private fun SemanticsNodeInteraction.assertStateDescription(expected: String) {
     assertEquals(expected, fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+}
+
+/**
+ * Asserts whether a row or tile tells accessibility services it is selected.
+ *
+ * Absent rather than false when nothing is selected: a library with no detail pane beside it is not
+ * answering a question about selection at all.
+ */
+private fun SemanticsNodeInteraction.assertSelected(expected: Boolean) {
+    val selected = fetchSemanticsNode().config.getOrNull(SemanticsProperties.Selected)
+    assertEquals(if (expected) true else null, selected)
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.rememberNavigationSuiteScaffoldState
 import androidx.compose.runtime.Composable
@@ -20,7 +21,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.feature.downloads.DownloadsRoute
-import md.borisveriga.megapodcastplayer.feature.library.LibraryRoute
 import md.borisveriga.megapodcastplayer.feature.listen.ListenRoute
 import md.borisveriga.megapodcastplayer.feature.moments.MomentsRoute
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetScaffold
@@ -67,6 +67,9 @@ import md.borisveriga.megapodcastplayer.navigation.pushExit
  * @param playerSheetState how open the player is; hoisted here because the navigation bar and
  *   every "now playing" hand-off react to it.
  */
+// LibraryListDetail's pane navigator is an adaptive type, and it is a parameter of that composable
+// so tests can drive it; naming it here is the whole of the opt-in.
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun MegaPodcastPlayerApp(
     modifier: Modifier = Modifier,
@@ -181,13 +184,16 @@ fun MegaPodcastPlayerApp(
                 }
 
                 composable<Route.Library> {
-                    LibraryRoute(
-                        onPodcastClick = { id -> navController.navigate(Route.PodcastDetail(id)) },
+                    // Not LibraryRoute directly: the tab is a list *and* a show, laid out as one
+                    // pane or two depending on how much of the Fold is open. See LibraryListDetail
+                    // for why the show it opens lives on a graph of its own.
+                    LibraryListDetail(
                         // A plain push now that search is not a tab: it opens on top of the library
                         // and backing out returns there. The two entries differ only in whether the
                         // screen may read the clipboard on arrival.
                         onSearchClick = { navController.navigate(Route.Search()) },
                         onOpenSettings = { navController.navigate(Route.Settings) },
+                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
                     )
                 }
 
@@ -222,6 +228,12 @@ fun MegaPodcastPlayerApp(
                 }
 
                 composable<Route.PodcastDetail> { entry ->
+                    // The show reached from somewhere that is not the library: a notification, a
+                    // search result, a shared link. Full screen at every width, because the library
+                    // is not the list it was picked from and putting it beside one would be an
+                    // answer to a question the user did not ask. The library tab has its own copy
+                    // of this screen in its detail pane; see LibraryListDetail.
+                    //
                     // Read purely to fail fast if the route argument is ever dropped; the view model
                     // reads the same value from its SavedStateHandle.
                     entry.toRoute<Route.PodcastDetail>()
