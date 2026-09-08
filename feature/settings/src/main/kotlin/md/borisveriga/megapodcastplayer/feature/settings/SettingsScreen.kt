@@ -92,6 +92,18 @@ fun SettingsRoute(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(viewModel::prepareRestore) }
 
+    val opmlExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(OPML_MIME_TYPE),
+    ) { uri -> uri?.let(viewModel::exportOpmlTo) }
+
+    // Looser still than the backup picker, and for a stronger version of the same reason: an OPML
+    // file arrives from another app, and other apps disagree about whether `.opml` is
+    // `text/x-opml`, `text/xml`, `application/xml` or nothing at all. A filter that hides the file
+    // the user came here to import would be the one failure they cannot work around.
+    val opmlImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(viewModel::prepareOpmlImport) }
+
     // Resolved here rather than in the stateless screen, which has no activity to start one from
     // under `createComposeRule`.
     val context = LocalContext.current
@@ -114,6 +126,8 @@ fun SettingsRoute(
         onRemoveAllDownloads = viewModel::removeAllDownloads,
         onExportBackup = { exportLauncher.launch(viewModel.suggestedBackupFileName()) },
         onRestoreBackup = { restoreLauncher.launch(BACKUP_PICKER_TYPES) },
+        onExportOpml = { opmlExportLauncher.launch(viewModel.suggestedOpmlFileName()) },
+        onImportOpml = { opmlImportLauncher.launch(OPML_PICKER_TYPES) },
         onConfirmRestore = viewModel::confirmRestore,
         onCancelRestore = viewModel::cancelRestore,
         onMessageShown = viewModel::onMessageShown,
@@ -145,6 +159,8 @@ fun SettingsRoute(
  * @param onRemoveAllDownloads remove-all handler.
  * @param onExportBackup called when the user asks to write a backup.
  * @param onRestoreBackup called when the user asks to read one.
+ * @param onExportOpml called when the user asks to write a subscription list.
+ * @param onImportOpml called when the user asks to read one.
  * @param onConfirmRestore called with whether to re-queue the downloads the backup records.
  * @param onCancelRestore called when the user backs out of a picked backup.
  * @param onMessageShown called once a snackbar message has been displayed.
@@ -170,6 +186,8 @@ fun SettingsScreen(
     onRemoveAllDownloads: () -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
+    onExportOpml: () -> Unit,
+    onImportOpml: () -> Unit,
     onConfirmRestore: (Boolean) -> Unit,
     onCancelRestore: () -> Unit,
     onMessageShown: () -> Unit,
@@ -214,6 +232,18 @@ fun SettingsScreen(
 
                 SettingsMessage.BackupTooNew ->
                     resources.getString(R.string.settings_message_backup_too_new)
+
+                SettingsMessage.OpmlExported ->
+                    resources.getString(R.string.settings_opml_exported)
+
+                SettingsMessage.OpmlExportFailed ->
+                    resources.getString(R.string.settings_opml_export_failed)
+
+                SettingsMessage.OpmlNotRecognised ->
+                    resources.getString(R.string.settings_opml_not_recognised)
+
+                SettingsMessage.OpmlEmpty ->
+                    resources.getString(R.string.settings_opml_empty)
             },
         )
         onMessageShown()
@@ -376,6 +406,8 @@ fun SettingsScreen(
                     state = uiState.backup,
                     onExport = onExportBackup,
                     onRestore = onRestoreBackup,
+                    onExportOpml = onExportOpml,
+                    onImportOpml = onImportOpml,
                 )
             }
 
@@ -645,6 +677,8 @@ internal fun SettingsScreenPreview() {
             onRemoveAllDownloads = {},
             onExportBackup = {},
             onRestoreBackup = {},
+            onExportOpml = {},
+            onImportOpml = {},
             onConfirmRestore = {},
             onCancelRestore = {},
             onMessageShown = {},
@@ -657,3 +691,16 @@ private const val BACKUP_MIME_TYPE = "application/json"
 
 /** The types the restore picker offers, deliberately wide; see the launcher's comment. */
 private val BACKUP_PICKER_TYPES = arrayOf("application/json", "text/plain", "*/*")
+
+/**
+ * What an exported subscription list is created as.
+ *
+ * `text/x-opml` is the type the format's own spec names, and enough document providers have never
+ * heard of it that the file would land without an extension — so the suggested name carries
+ * `.opml` and this stays the honest label rather than a lie that happens to be recognised.
+ */
+private const val OPML_MIME_TYPE = "text/x-opml"
+
+/** The types the import picker offers; wider still, for the reason its launcher gives. */
+private val OPML_PICKER_TYPES =
+    arrayOf("text/x-opml", "text/xml", "application/xml", "text/plain", "*/*")

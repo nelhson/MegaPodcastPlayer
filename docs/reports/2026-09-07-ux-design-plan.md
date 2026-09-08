@@ -11,7 +11,7 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 56 of the 73 items are done, 3 are decided against, none is half done, 14 are
+> **Where it stands: 57 of the 73 items are done, 3 are decided against, none is half done, 13 are
 > not started.** Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
@@ -28,10 +28,10 @@ or more).*
 > | P0 — a day of polish | ✅ complete | — |
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
-> | P3 — reach | started | 2 of its 13 items |
+> | P3 — reach | started | 1 of its 13 items |
 > | Unscheduled (in no phase) | started | 12 items, 3 decided against, 1 found already built |
 >
-> §4.1 lists the 14 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists the 13 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -54,7 +54,10 @@ or more).*
 > process and nothing in `:core:designsystem` can travel there but the palette. See
 > `docs/reports/2026-09-08-sys-2-widget.md`. **DS-8** went with it, since it was an attribute and a
 > comment: both manifests now say `supportsRtl="false"`, which is the first time that line has been
-> true. Two P3 items are left, both independent: ADD-3 and MOM-2.
+> true. Then **ADD-3**: OPML import and export, sitting beside the backup in Settings, where the
+> whole of the import turned out to be thirty lines — a decoded subscription list becomes a backup
+> that carries only shows, and from there it is the restorer's job. See
+> `docs/reports/2026-09-08-add-3-opml.md`. **MOM-2 is the last P3 item left.**
 > P2's own items, in the order they landed: PL-5, PL-6, PL-8, SHOW-5, SHOW-6, MOM-1, then
 > LIB-1, LIB-2, LIB-3, DL-1, DL-2, SET-1, SET-3, ADD-2 and COPY-1. Three items from other phases
 > were finished by work done for these: DS-9 by LIB-1 (which needed the second sort control the row
@@ -216,7 +219,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 |----|---------|--------|--------|
 | ADD-1 ✅ | **No share target or link handling.** The manifest has only `MAIN/LAUNCHER`. A podcast link in a browser or a chat has to be copied, the app opened, the add button tapped, and the link pasted. Handle `ACTION_SEND` (text/plain) and `ACTION_VIEW` for feed, Apple Podcasts and YouTube playlist URLs, landing on Search with the link card already filled. | H | S |
 | ADD-2 ✅ | **Subscribe is the only way to look.** Tapping a result subscribes immediately. Add a preview sheet (artwork, description, the latest few episodes, a *Subscribe* button) that also lets one episode be played without subscribing. **Done:** `PodcastRepository.preview` fetches and parses the feed and stores none of it, and `EpisodePlayer.playUnsubscribed` plays one episode of a show that has no rows — nothing queued, no position kept. The sheet names the show from the search result while the feed is still in flight, so it never opens blank. | M | M |
-| ADD-3 | **OPML import and export.** The JSON backup is private to this app; OPML is how a library moves in from, or out to, anything else. | M | M |
+| ADD-3 ✅ | **OPML import and export.** The JSON backup is private to this app; OPML is how a library moves in from, or out to, anything else. **Done:** two more rows beside the backup pair in Settings (D-24), and an import that is thirty lines because it is not an importer — a decoded OPML becomes a `BackupFile` carrying podcasts and nothing else, and the existing `LibraryRestorer` then fetches the feeds, carries on past the one that fails and names it afterwards, exactly as it does for a restore. An export writes shows only and deliberately does *not* record a backup: the "last backup" line warns about a database that is recreated rather than migrated, and OPML cannot answer that warning (D-25). A YouTube show exports as `type="rss"`, because its Atom feed is one, and imports back as YouTube because the URL is asked rather than the attribute (D-26). Most of the codec is about the file being somebody else's: external entities off — shared with `RssParser`, which had predicted needing to — `http(s)` feed URLs only, a cap of a thousand, and skipped rows reported rather than folded into the total (D-27). | M | M |
 | ADD-4 | **Clipboard hint.** When Search opens and the clipboard holds a URL, show a *Paste link* chip under the field. Reading on user focus is permitted; Android's own toast is the disclosure. | L | S |
 | ADD-5 | **Discovery when the field is empty:** recent searches and Apple's top charts by genre. Low priority for a personal build. **Decided (§5.1, D-11): recent searches yes, top charts no.** A recent-searches list is a handful of strings in DataStore and it answers the thing that actually happens here — the same show looked up twice because the first attempt was made on the wrong device. Top charts are a browsing surface for a store, fetched from an endpoint that would have to be kept working, on a screen whose whole job in this app is to find a show already decided on. The scoped item is an S; the unbuilt half is written down as declined so the next audit does not re-propose it. | L | S |
 
@@ -307,7 +310,7 @@ that holds up. Improvements are small:
 | **P0 — a day of polish** ✅ | First impressions and the brand on the player | SYS-1 lock-screen skip buttons (confirmed) · DS-6 splash and first frame · PL-7 mini player (height, glyphs, skip-back) · PL-1 adopt scrubber, play button, backdrop · SHOW-2 download state on rows · SET-2 confirm remove-all · A11Y-1 font-scale pass · DS-7 haptics and reduce-motion · DS-4 player tokens |
 | **P1 — the listening loop** ✅ | From "a list of shows" to "what do I listen to now" | NAV-1 Home (continue, new, up next) · SHOW-1 episode sheet with show notes · SHOW-3 mark played · PL-2 chapters · PL-4 sleep timer · ADD-1 share target and link handling · SHOW-4 continue button · PL-9 queue header and clear · NAV-6 notification landing. All landed. The phase set out to answer "what do I listen to now" and ends up having answered a second question with it — *where am I in this*: an episode is a list of named segments on the scrubber, in the sheet, and now under a thumb on a lock screen, rather than a bar with a number at each end. |
 | **P2 — control and personalisation** ✅ | Settings that follow the show, not the app | PL-5 speed sheet · SHOW-5 sort and persisted filter · SHOW-6 show settings · SET-1 appearance · SET-3 notifications · LIB-1/LIB-2 sort and filter · LIB-3 badge vocabulary · DL-1 sections · DL-2 download now · ADD-2 preview before subscribe · COPY-1 localised formatters · PL-6 time labels · PL-8 error copy · MOM-1. All landed. The phase's theme came out truer than the list reads: a show can now disagree with the app about speed, downloads and notifications; the library can be ordered and narrowed rather than only arranged; the downloads screen says which of four things each row is doing; and the app can be looked at in the palette, the language and the brightness the user chose rather than the ones the code was written in. |
-| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Eleven done, DS-8 the latest and the smallest — both manifests stop claiming a reading direction the swipe rows do not deliver. SYS-2 immediately before it — a Glance widget with what is playing, a transport and the *Continue listening* shelf, and the first surface here this app does not itself draw. PL-11 before it — the expanded player sets its artwork beside its controls on a wide window, and caps that artwork by the shorter side of the room it has, which is what turns a phone on its side from a cover with no buttons under it into a player. NAV-3 immediately before it, the other half of the same pair: the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before those: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and was then taken alongside the widget because an attribute and a comment need no day of their own. The order of the rest changed once: the Fold went before the widget (D-13), and all of those have landed. Two are left — **ADD-3** and **MOM-2** — both independent, and each fine to take on the day its screen is open. |
+| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Twelve done, ADD-3 the latest — OPML import and export, where the import is a restore of a backup the user never had. DS-8 before it, the smallest of the lot — both manifests stop claiming a reading direction the swipe rows do not deliver. SYS-2 immediately before it — a Glance widget with what is playing, a transport and the *Continue listening* shelf, and the first surface here this app does not itself draw. PL-11 before it — the expanded player sets its artwork beside its controls on a wide window, and caps that artwork by the shorter side of the room it has, which is what turns a phone on its side from a cover with no buttons under it into a player. NAV-3 immediately before it, the other half of the same pair: the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before those: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and was then taken alongside the widget because an attribute and a comment need no day of their own. The order of the rest changed once: the Fold went before the widget (D-13), and all of those have landed. One is left: **MOM-2**. |
 
 Rough sizing: P0 fits in one to two days; P1 is the bulk of the work at roughly two weeks, with
 NAV-1 and PL-2 the two large pieces; P2 and P3 are each a week or so of independent, schedulable
@@ -328,12 +331,11 @@ PL-10, found already built — and all four are listed under them, so a reader w
 see it was answered rather than lost. Four more left on 8 September by being built: W-4, with W-3
 and W-5 alongside it, and SYS-3.
 
-**P3 — reach.** Larger screens, other surfaces, migration. Two left; W-1, W-2, W-4, DS-3, NAV-2,
-SYS-3, DS-5, NAV-3, PL-11, SYS-2 and DS-8 are done.
+**P3 — reach.** Larger screens, other surfaces, migration. One left; W-1, W-2, W-4, DS-3, NAV-2,
+SYS-3, DS-5, NAV-3, PL-11, SYS-2, DS-8 and ADD-3 are done.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
-| ADD-3 | OPML import and export | M | M |
 | MOM-2 | Moments: filter by show, search notes, group by show, swipe to edit a note | L | M |
 
 **Unscheduled.** Real findings that no phase claimed — mostly small, mostly independent, and each
@@ -453,9 +455,18 @@ and both get more expensive the longer the branch runs.
    — not because an attribute needs a test, but because `true` is the platform default that a
    template, a merge or an IDE refactoring restores in silence, and when it comes back nothing
    fails: the swipe rows just stop working in a direction nobody here reads.
-10. **ADD-3** and **MOM-2** — independent, and each fine to take on the day its screen is open for
-   another reason.
-11. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
+10. **ADD-3 — done, 8 September.** OPML, and the estimate was wrong in the useful direction: the
+   import is thirty lines, because it is not an importer. A decoded subscription list becomes a
+   backup carrying only shows, and the restorer — which already fetches feeds one at a time,
+   carries on past the one that fails, names it afterwards and survives a process death — does the
+   rest. Most of the *codec* is about the file being somebody else's: an OPML document arrives from
+   another program through a document provider, so external entities are off, only `http(s)` feed
+   URLs are accepted, and a thousand is as many subscriptions as one file may contribute. The
+   entity hardening moved to `:core:model` and `RssParser` now shares it, which is what its own
+   comment had asked for. See `docs/reports/2026-09-08-add-3-opml.md`.
+11. **MOM-2** — the last one, and fine to take on the day the moments screen is open for another
+   reason.
+12. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
    question already answered in §5.1, and each fine to take on the day its screen is open.
    **NAV-7 has gone**, taken on 8 September in the hour before DS-5 for the reason this step gave:
    changing every top-level app bar after the screenshots are recorded means recording them twice.
@@ -587,7 +598,7 @@ built. If the app is ever handed to someone else, this is the first row to reope
 **D-13 — The order of what is left (§4.2).** The sequence stands, with the Fold moved ahead of the
 widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. Every scheduled
 one of those is done — NAV-7 landed with DS-5 — and **the independents are where this picks up:
-ADD-3, MOM-2 and DS-8, in whatever order their screens are next opened.** The earlier order
+MOM-2, whenever the moments screen is next open for another reason. DS-8 and ADD-3 have gone that way already.** The earlier order
 took the cheaper surface first; the correction is that the inner display is the one surface this app
 has never used, on the device in the pocket every day, while a home-screen widget is a surface its
 user may never look at. Between two pieces of similar size, the one that pays out daily goes first.
@@ -654,6 +665,29 @@ that size cannot be read, so ten drawables would buy nothing. The glyph is a bar
 every setting — the spoken label says *"by your skip interval"* rather than a number it would then
 have to keep in step with a preference, and the button uses the user's own interval as every other
 skip in the app does.
+
+**D-24 — OPML lives in Settings, beside the backup, not on the add-a-show screen (ADD-3).** The
+row sits in §3.4 with ADD-1 and ADD-2, which are both about Search, so the import half could have
+gone there. Import and export are one pair and belong within reach of each other; the question a
+user brings to Settings is "how do I get my library in and out", and the one they bring to Search is
+"what is this show called". Search adds a show, which an import is not.
+
+**D-25 — An OPML export is not a backup and does not touch the “last backup” line (ADD-3).** That
+line warns about a database recreated rather than migrated, and OPML cannot answer it: no positions,
+no queue, no downloads, no moments. Letting an export record one would be the app saying the user is
+safe at the moment they are not. A test asserts the `recordExported` that does not happen.
+
+**D-26 — A YouTube show exports as `type="rss"` and comes back as YouTube (ADD-3).** Not a
+contradiction: a playlist's Atom feed genuinely is an XML document at an `http` URL, and writing
+`rss` is what lets an app that has never heard of this one subscribe to it. On the way in the *URL*
+is asked rather than the attribute — `youTubePlaylistIdOrNull` is the exact inverse of the feed URL
+this app mints — so a library that leaves as OPML comes home as what it was.
+
+**D-27 — Skipped rows are named before the import, not folded into the total (ADD-3).** An OPML
+file's outlines include folders, and from a broken or hostile file, rows this app will not fetch.
+Both are dropped and both are counted, and the count is in the confirmation dialog. A file whose
+extra rows were folders is ordinary; one whose rows were mostly refused is worth going back for, and
+a count of what arrived cannot tell those apart.
 
 **Unchanged, and worth restating: the two things that come before any of it.** The device pass and
 the `gradle/verification-metadata.xml` diff, as §4.2 lists them. Neither is a decision. The first is

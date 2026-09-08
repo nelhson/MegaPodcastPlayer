@@ -4,11 +4,11 @@ import java.io.InputStream
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
-import javax.xml.parsers.SAXParserFactory
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import md.borisveriga.megapodcastplayer.core.model.chapters.MAX_CHAPTERS
 import md.borisveriga.megapodcastplayer.core.model.format.parseTimecodeMs
 import md.borisveriga.megapodcastplayer.core.model.isPlayableMediaUrl
+import md.borisveriga.megapodcastplayer.core.model.xml.untrustedXmlParserFactory
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.SAXException
@@ -44,16 +44,10 @@ class RssParser @Inject constructor() {
     fun parse(input: InputStream): FeedChannel {
         val handler = FeedHandler()
         try {
-            val factory = SAXParserFactory.newInstance().apply {
-                isNamespaceAware = true
-                // Feeds are untrusted input from arbitrary hosts: never resolve external entities.
-                // These are set defensively because the SAX implementation differs between the JVM
-                // (Xerces, which knows them) and Android (which does not) — an unrecognised feature
-                // must not take the whole feed down.
-                disableIfSupported("http://xml.org/sax/features/external-general-entities")
-                disableIfSupported("http://xml.org/sax/features/external-parameter-entities")
-            }
-            factory.newSAXParser().parse(InputSource(input), handler)
+            // Feeds are untrusted input from arbitrary hosts: never resolve external entities.
+            // The hardening is shared with the OPML codec, which reads a file the user picked out
+            // of another app and needs exactly the same treatment.
+            untrustedXmlParserFactory().newSAXParser().parse(InputSource(input), handler)
         } catch (e: SAXException) {
             throw RssParseException("Not a readable RSS feed: ${e.message}", e)
         } catch (e: javax.xml.parsers.ParserConfigurationException) {
@@ -64,26 +58,6 @@ class RssParser @Inject constructor() {
             throw RssParseException("Document contains no <channel> element")
         }
         return handler.toChannel()
-    }
-}
-
-/**
- * Turns a SAX security feature off, ignoring implementations that have never heard of it.
- *
- * [RssParser] reads untrusted XML from arbitrary hosts, so external entity resolution has to go.
- * Kept as a standalone extension rather than folded into its one call site: it was shared with the
- * YouTube Atom parser until that parser was retired, and any second XML source added here will need
- * exactly the same treatment.
- *
- * @param feature the SAX feature URI.
- */
-internal fun SAXParserFactory.disableIfSupported(feature: String) {
-    try {
-        setFeature(feature, false)
-    } catch (_: org.xml.sax.SAXNotRecognizedException) {
-        // Android's parser does not expose this knob; it does not resolve external entities anyway.
-    } catch (_: org.xml.sax.SAXNotSupportedException) {
-        // Recognised but not configurable on this implementation.
     }
 }
 

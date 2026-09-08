@@ -3,20 +3,46 @@ package md.borisveriga.megapodcastplayer.feature.settings
 import md.borisveriga.megapodcastplayer.core.data.backup.RestoreRun
 
 /**
- * A backup the user has picked and that has already decoded cleanly, waiting to be confirmed.
+ * Which kind of file a pending restore came out of.
+ *
+ * The two run through exactly the same machinery — see [PendingRestore] — and differ only in what
+ * the confirmation dialog can honestly promise.
+ */
+enum class RestoreSource {
+
+    /** This app's own JSON backup: shows, positions, the queue, downloads and moments. */
+    BACKUP,
+
+    /** An OPML subscription list from another app: shows, and nothing else. */
+    OPML,
+}
+
+/**
+ * A file the user has picked and that has already decoded cleanly, waiting to be confirmed.
  *
  * The document is held as text rather than as the picked `Uri` because the picker grants no
  * persistable access: by the time the restore actually runs, the permission may be gone. Decoding
  * before the confirmation dialog is what lets a foreign or truncated file be refused while the user
  * is still looking at the picker, rather than minutes into a run.
  *
- * @property json the validated document.
+ * **An OPML import is a restore of a backup that carries only subscriptions.** The file the user
+ * picked is turned into a `BackupFile` with podcasts and nothing else, encoded, and handed to the
+ * same restorer — so an import fetches feeds, reports failures by name and survives the process
+ * being killed for exactly the same reasons a restore does, without a second implementation of any
+ * of it. [json] is therefore always this app's own JSON, whatever the user picked.
+ *
+ * @property json the validated document, always JSON.
  * @property showCount how many shows it carries, so the dialog can be specific about the size of
  *   what is about to happen.
+ * @property source what the user actually picked, which decides what the dialog may offer.
+ * @property skipped how many rows an OPML file named that could not be used — folders and
+ *   anything whose feed URL this app will not fetch. Zero for a backup, which has no such rows.
  */
 data class PendingRestore(
     val json: String,
     val showCount: Int,
+    val source: RestoreSource = RestoreSource.BACKUP,
+    val skipped: Int = 0,
 )
 
 /**

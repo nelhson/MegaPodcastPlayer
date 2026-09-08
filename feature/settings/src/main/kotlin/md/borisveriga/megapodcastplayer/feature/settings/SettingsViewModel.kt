@@ -26,6 +26,8 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupDecodeResult
+import md.borisveriga.megapodcastplayer.core.model.backup.OpmlCodec
+import md.borisveriga.megapodcastplayer.core.model.backup.OpmlDecodeResult
 
 /**
  * State rendered by the settings screen.
@@ -84,6 +86,23 @@ sealed interface SettingsMessage {
      * worse than declining to try.
      */
     data object BackupTooNew : SettingsMessage
+
+    /** The subscription list was written to the document the user chose. */
+    data object OpmlExported : SettingsMessage
+
+    /** The subscription list could not be written. */
+    data object OpmlExportFailed : SettingsMessage
+
+    /** The picked file is not OPML: another app's export in some other format, or a feed. */
+    data object OpmlNotRecognised : SettingsMessage
+
+    /**
+     * Readable OPML with nothing in it to subscribe to.
+     *
+     * Its own message rather than a zero-show restore, because "the file is empty" and "the file is
+     * wrong" are different things to be told, and only one of them is worth going back for.
+     */
+    data object OpmlEmpty : SettingsMessage
 }
 
 /**
@@ -364,6 +383,89 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * Names the exported subscription list.
+     *
+     * The same date-stamped shape the backup uses, and a different word, because a folder holding
+     * both should say which is which without being opened.
+     *
+     * @return a name carrying today's date.
+     */
+    fun suggestedOpmlFileName(): String =
+        OPML_FILE_NAME_PREFIX +
+            FILE_NAME_DATE.format(clock.instant().atZone(ZoneId.systemDefault())) +
+            OPML_FILE_NAME_SUFFIX
+
+    /**
+     * Writes the subscription list to the document the user created.
+     *
+     * Deliberately *not* recorded as a backup. The backup row's "last backup" line is a warning
+     * about a database that is recreated rather than migrated, and an OPML file cannot answer it:
+     * it holds no positions, no queue and no moments. Letting an export of it reset that line would
+     * be the app telling the user they are safe when they are not.
+     *
+     * @param uri the document the picker returned.
+     */
+    fun exportOpmlTo(uri: Uri) {
+        if (transientState.value.isExporting) return
+        transientState.value = transientState.value.copy(isExporting = true)
+        viewModelScope.launch {
+            val file = backupRepository.export()
+            val document = OpmlCodec.encode(
+                podcasts = file.podcasts,
+                title = OPML_DOCUMENT_TITLE,
+                exportedAtMs = file.exportedAtMs,
+            )
+            val written = backupFileStore.write(uri, document)
+            transientState.value = transientState.value.copy(
+                isExporting = false,
+                message = if (written.isSuccess) {
+                    SettingsMessage.OpmlExported
+                } else {
+                    SettingsMessage.OpmlExportFailed
+                },
+            )
+        }
+    }
+
+    /**
+     * Reads a subscription list the user picked, and asks them to confirm subscribing to it.
+     *
+     * The file is turned into a `BackupFile` carrying podcasts and nothing else, and from there it
+     * is a restore — the same worker, the same progress, the same by-name report of the feeds that
+     * could not be fetched. Writing a second importer would mean a second answer to every question
+     * the restorer has already answered, starting with what happens when the process is killed
+     * nine shows in.
+     *
+     * @param uri the document the picker returned.
+     */
+    fun prepareOpmlImport(uri: Uri) {
+        if (transientState.value.pendingRestore != null) return
+        viewModelScope.launch {
+            val text = backupFileStore.read(uri).getOrElse {
+                transientState.value =
+                    transientState.value.copy(message = SettingsMessage.BackupReadFailed)
+                return@launch
+            }
+            transientState.value = when (val decoded = OpmlCodec.decode(text)) {
+                is OpmlDecodeResult.Decoded -> transientState.value.copy(
+                    pendingRestore = PendingRestore(
+                        json = BackupCodec.encode(decoded.asBackupFile(clock.millis())),
+                        showCount = decoded.feeds.size,
+                        source = RestoreSource.OPML,
+                        skipped = decoded.skipped,
+                    ),
+                )
+
+                OpmlDecodeResult.NoFeeds ->
+                    transientState.value.copy(message = SettingsMessage.OpmlEmpty)
+
+                OpmlDecodeResult.NotOpml ->
+                    transientState.value.copy(message = SettingsMessage.OpmlNotRecognised)
+            }
+        }
+    }
+
+    /**
      * Starts the restore the user has confirmed.
      *
      * @param reDownload whether to re-queue the downloads the backup records. Off unless asked for:
@@ -372,7 +474,11 @@ class SettingsViewModel @Inject constructor(
     fun confirmRestore(reDownload: Boolean) {
         val pending = transientState.value.pendingRestore ?: return
         transientState.value = transientState.value.copy(pendingRestore = null)
-        libraryRestorer.start(pending.json, reDownload)
+        // An OPML file records no downloads, so there is nothing for the flag to re-queue and the
+        // dialog does not offer it. Forced here as well as hidden there, because a caller that
+        // passed true would otherwise silently mean "download nothing".
+        val reDownloadIfAny = reDownload && pending.source == RestoreSource.BACKUP
+        libraryRestorer.start(pending.json, reDownloadIfAny)
     }
 
     /** Drops a picked document the user decided against. */
@@ -428,6 +534,15 @@ class SettingsViewModel @Inject constructor(
 
         /** Prefix of the suggested file name. */
         private const val FILE_NAME_PREFIX = "megapodcastplayer-backup-"
+
+        /** Prefix of the suggested subscription-list name; a different word, same date stamp. */
+        private const val OPML_FILE_NAME_PREFIX = "megapodcastplayer-subscriptions-"
+
+        /** Extension of the suggested subscription-list name. */
+        private const val OPML_FILE_NAME_SUFFIX = ".opml"
+
+        /** What the exported document calls itself, which is what an importing app shows. */
+        private const val OPML_DOCUMENT_TITLE = "MegaPodcastPlayer subscriptions"
 
         /** Suffix of the suggested file name. */
         private const val FILE_NAME_SUFFIX = ".json"
