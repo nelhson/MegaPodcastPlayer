@@ -11,26 +11,27 @@ or more).*
 > an unmarked id has not been started. §4's roadmap carries the same marks per
 > phase. Nothing here is merged until it has been tried on the Fold 7 and the Watch Ultra 2.
 >
-> **Where it stands: 53 of the 73 items are done, 3 are decided against, none is half done, 17 are
+> **Where it stands: 54 of the 73 items are done, 3 are decided against, none is half done, 16 are
 > not started.** Eight items in the tail were an open choice rather than a task; all eight were
 > decided on 8 September 2026 (§5.1) — three of them closed without code, and the other five stay
 > on the list as work with the choice already made. Each row restates its own answer, so nothing has
 > to be re-derived. The 46th done item was PL-10, which was built with PL-9 and never marked; the
-> six since are the watch's — W-4, with W-3 and W-5 swept up on the way past — SYS-3, the
-> launcher's four shortcuts, and then NAV-7 and DS-5 together: one app bar for all five top-level
+> eight since are the watch's — W-4, with W-3 and W-5 swept up on the way past — SYS-3, the
+> launcher's four shortcuts, then NAV-7 and DS-5 together: one app bar for all five top-level
 > destinations, recorded the same day by a screenshot suite that renders every screen's own
 > preview. NAV-7 went first on purpose — changing every app bar after the goldens are recorded
-> means recording them twice.
+> means recording them twice — and then the Fold pair, NAV-3 and PL-11, which are what the
+> goldens were recorded in time for.
 >
 > | Phase | State | Left |
 > |-------|-------|------|
 > | P0 — a day of polish | ✅ complete | — |
 > | P1 — the listening loop | ✅ complete | — |
 > | P2 — control and personalisation | ✅ complete | — |
-> | P3 — reach | started | 5 of its 13 items |
+> | P3 — reach | started | 4 of its 13 items |
 > | Unscheduled (in no phase) | started | 12 items, 3 decided against, 1 found already built |
 >
-> §4.1 lists the 17 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
+> §4.1 lists the 16 by name and §4.2 says which to take first. The one half-finished item is finished: PL-2's chapters now reach
 > the notification, the lock screen and everything else that presses *next* through a media
 > session. P3 has begun with the three smallest things in it — W-1, W-2 and DS-3 — and with
 > NAV-2, which was a question rather than a task and is answered below. Three unscheduled items are
@@ -42,8 +43,12 @@ or more).*
 > the phone's or the build's. SYS-3, then NAV-7 and DS-5 together, then **NAV-3** — the Library tab
 > is a list and a show side by side on the inner display, and `PodcastDetailRoute.showBackButton`,
 > written three phases ago for a caller that never came, has one. See
-> `docs/reports/2026-09-08-nav-3-two-pane-library.md`. PL-11, the other half of that Fold pair, is
-> next.
+> `docs/reports/2026-09-08-nav-3-two-pane-library.md`. And then **PL-11**, the other half of that
+> pair: past the expanded width breakpoint the player sets its artwork beside its controls instead
+> of above them, and in both shapes the hero is capped by the shorter side of the room it is given
+> rather than by the width alone — which turns out to matter most on a plain phone laid on its
+> side, a window this plan had not thought about. See
+> `docs/reports/2026-09-08-pl-11-wide-player.md`. The Fold is done; SYS-2, the widget, is next.
 > P2's own items, in the order they landed: PL-5, PL-6, PL-8, SHOW-5, SHOW-6, MOM-1, then
 > LIB-1, LIB-2, LIB-3, DL-1, DL-2, SET-1, SET-3, ADD-2 and COPY-1. Three items from other phases
 > were finished by work done for these: DS-9 by LIB-1 (which needed the second sort control the row
@@ -189,7 +194,7 @@ font sizes, a skip glyph that says 30 whatever the setting) undercut the polish 
 | PL-8 ✅ | **Playback errors are raw.** *Playback problem: <exception message>*. Map the common cases (no connection, file gone, unsupported format, YouTube extraction failed) to sentences that say what to do. A `PlaybackError` enum in `:core:media`, classified from Media3's error *codes* rather than its messages, with YouTube checked first because its URLs expire and fail through the same codes as a dead link. The unknown case keeps the player's own words. | M | S |
 | PL-9 ✅ | **Queue screen context.** By design it lists only *up next*, so nothing on it says what is playing. A slim *Now playing* header (artwork, title, position) anchors the list; add total remaining time in the bar's subtitle, *Clear queue*, and an *Add episodes* action on the empty state that leads somewhere. | M | S |
 | PL-10 ✅ | The *Up next* link vanishes when the queue is empty, so the player never mentions the queue exists. Show *Up next · nothing queued* with a way to add. **This landed with PL-9 and was never marked here.** `UpNextLink` is drawn at a count of zero, reads *Up next · nothing queued* in the muted colour and still opens the queue — the comment above its call site gives the reason, that the user who most needs telling a queue exists is the one who has put nothing in it. The *way to add* is at the other end: the queue's own `EmptyState` carries a *Browse your shows* action, on the stated rule that an empty state with nothing to press is a dead end. No work left; the row was stale, not open. | L | S |
-| PL-11 | **The expanded player on the inner display.** Hero artwork is 72 % of width, which on the open Fold is a very large square with the controls pushed to the bottom edge. Cap the hero by the smaller of width and height, and at the expanded width class lay artwork and controls side by side. | M | M |
+| PL-11 ✅ | **The expanded player on the inner display.** Hero artwork is 72 % of width, which on the open Fold is a very large square with the controls pushed to the bottom edge. Cap the hero by the smaller of width and height, and at the expanded width class lay artwork and controls side by side. **Done:** both, and the cap is the half that earned its keep somewhere the row did not look. Past the expanded breakpoint the artwork takes the leading half of the window and everything with a word or a button in it takes the trailing one, on a solid panel rather than the stacked shape's fading strip — an edge that runs the full height of a window is a screen divided in two, not a card floating on one (D-18). The titles go with the controls rather than under the artwork, which keeps the artwork's position arithmetic the sheet can do a frame ahead of the finger (D-17). And the hero is capped by *both* sides of the room it is given: a phone laid on its side is over the breakpoint too, and 72 % of half of 891 dp is a 320 dp square in a 411 dp window. Only the width chooses the shape, though — a medium-width landscape phone stays stacked and is saved by the cap alone (D-19). The stacked layout is untouched, and its three goldens are byte-identical to DS-5's. | M | M |
 
 ### 3.6 Downloads
 
@@ -296,7 +301,7 @@ that holds up. Improvements are small:
 | **P0 — a day of polish** ✅ | First impressions and the brand on the player | SYS-1 lock-screen skip buttons (confirmed) · DS-6 splash and first frame · PL-7 mini player (height, glyphs, skip-back) · PL-1 adopt scrubber, play button, backdrop · SHOW-2 download state on rows · SET-2 confirm remove-all · A11Y-1 font-scale pass · DS-7 haptics and reduce-motion · DS-4 player tokens |
 | **P1 — the listening loop** ✅ | From "a list of shows" to "what do I listen to now" | NAV-1 Home (continue, new, up next) · SHOW-1 episode sheet with show notes · SHOW-3 mark played · PL-2 chapters · PL-4 sleep timer · ADD-1 share target and link handling · SHOW-4 continue button · PL-9 queue header and clear · NAV-6 notification landing. All landed. The phase set out to answer "what do I listen to now" and ends up having answered a second question with it — *where am I in this*: an episode is a list of named segments on the scrubber, in the sheet, and now under a thumb on a lock screen, rather than a bar with a number at each end. |
 | **P2 — control and personalisation** ✅ | Settings that follow the show, not the app | PL-5 speed sheet · SHOW-5 sort and persisted filter · SHOW-6 show settings · SET-1 appearance · SET-3 notifications · LIB-1/LIB-2 sort and filter · LIB-3 badge vocabulary · DL-1 sections · DL-2 download now · ADD-2 preview before subscribe · COPY-1 localised formatters · PL-6 time labels · PL-8 error copy · MOM-1. All landed. The phase's theme came out truer than the list reads: a show can now disagree with the app about speed, downloads and notifications; the library can be ordered and narrowed rather than only arranged; the downloads screen says which of four things each row is doing; and the app can be looked at in the palette, the language and the brightness the user chose rather than the ones the code was written in. |
-| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Eight done, NAV-3 the latest — the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before it: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. Of the five left, DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and the order the rest are taken in changed once: the Fold now goes before the widget (D-13). PL-11, the second half of that Fold pair, is next. |
+| **P3 — reach** ◑ | Larger screens, other surfaces, migration | NAV-3 two-pane on the Fold · PL-11 wide player · SYS-2 widget · SYS-3 shortcuts · ADD-3 OPML · MOM-2 · W-1/W-2/W-4 · DS-5 screenshot tests · DS-8 RTL · DS-3 dead vocabulary · NAV-2 Downloads tab decision. Nine done, PL-11 the latest — the expanded player sets its artwork beside its controls on a wide window, and caps that artwork by the shorter side of the room it has, which is what turns a phone on its side from a cover with no buttons under it into a player. NAV-3 immediately before it, the other half of the same pair: the Library tab is two panes on the inner display, and the parameter written for it three phases ago finally has a caller. Seven before those: W-1 and W-2, which make the watch answer the hand; W-4, which gives the transport a page nothing can push it off; DS-3, which stops the design system describing an app that no longer exists; NAV-2, answered in its row — Downloads stays a tab; SYS-3, the launcher's four shortcuts; and DS-5, the screenshot suite, with NAV-7 taken from the unscheduled list immediately before it so the app bars were settled before any golden was recorded — which paid for itself inside NAV-3, where a clip on the library tile trimmed two marks out of its corners and the *unselected* goldens caught it. Of the four left, DS-8 shrank from M to S on 8 September when it was decided rather than designed (D-5), and the order the rest are taken in changed once: the Fold went before the widget (D-13), and both halves of it have now landed. SYS-2, the widget, is next. |
 
 Rough sizing: P0 fits in one to two days; P1 is the bulk of the work at roughly two weeks, with
 NAV-1 and PL-2 the two large pieces; P2 and P3 are each a week or so of independent, schedulable
@@ -317,13 +322,12 @@ PL-10, found already built — and all four are listed under them, so a reader w
 see it was answered rather than lost. Four more left on 8 September by being built: W-4, with W-3
 and W-5 alongside it, and SYS-3.
 
-**P3 — reach.** Larger screens, other surfaces, migration. Five left; W-1, W-2, W-4, DS-3, NAV-2,
-SYS-3, DS-5 and NAV-3 are done.
+**P3 — reach.** Larger screens, other surfaces, migration. Four left; W-1, W-2, W-4, DS-3, NAV-2,
+SYS-3, DS-5, NAV-3 and PL-11 are done.
 
 | Id | Item | Impact | Effort |
 |----|------|--------|--------|
 | DS-8 | RTL: declare `supportsRtl="false"`, with a comment saying it is scope and not oversight (D-5) | L | S |
-| PL-11 | The expanded player on the inner display: cap the hero, lay artwork and controls side by side | M | M |
 | SYS-2 | A Glance widget: now playing with transport, and a *Continue listening* row | M | M |
 | ADD-3 | OPML import and export | M | M |
 | MOM-2 | Moments: filter by show, search notes, group by show, swipe to edit a note | L | M |
@@ -414,16 +418,29 @@ and both get more expensive the longer the branch runs.
    of, and a tap on the highlighted row throwing away the screen it was pointing at, because
    `launchSingleTop` cannot reuse an entry the `popUpTo` beside it has just removed. Both are in
    `docs/reports/2026-09-08-nav-3-two-pane-library.md` with the three decisions the plan left open.
-   **PL-11** is the other half of this step and is untouched: the expanded player still draws its
-   hero at full width on the inner display.
-7. **SYS-2** — the Glance widget. *Continue listening* is now a real query rather than something to
+   **PL-11**, the other half of this step, followed it the same day and is below.
+7. **PL-11 — done, 8 September.** The wide player, and the end of D-13's Fold pair. The estimate
+   was right about the size and wrong about which half was the point: the side-by-side layout is a
+   `Row`, two slots and a weight, and the cap on the artwork — the clause the row almost throws
+   away — is the part that fixes a screen nobody had looked at. A phone laid on its side is past
+   the expanded breakpoint too, and the old rule asked it for a 320 dp square in a 411 dp window.
+   Two things are written down as decisions rather than left implicit: the titles travel with the
+   controls, not with the artwork, because that keeps the artwork's position arithmetic rather than
+   a measurement (D-17); and only the *width* chooses the shape, with height left to size the
+   artwork, so there is one rule about which layout is in force and not two (D-19). The suite also
+   gained its first golden at a second window size, which is what DS-5 was taken early to make
+   possible — and `docs/SCREENSHOT_TESTS.md` now says when a second size is allowed, because a
+   suite recorded at every size is a suite nobody re-records. See
+   `docs/reports/2026-09-08-pl-11-wide-player.md`.
+8. **SYS-2** — the Glance widget. *Continue listening* is now a real query rather than something to
    invent, because `:feature:listen` already asks it; the widget is that shelf and a transport row.
-   It also gets easier for being later: DS-5's screenshots and the Fold work will have settled what
-   a *Continue listening* row looks like at a second size before the widget has to draw one.
-8. **ADD-3**, **MOM-2**, **DS-8** — independent, and each fine to take on the day its screen is open
+   It also got easier for being later: DS-5's screenshots and the Fold work have settled what a
+   *Continue listening* row looks like at a second size before the widget has to draw one, and
+   PL-11 left behind the way to record a golden at that size.
+9. **ADD-3**, **MOM-2**, **DS-8** — independent, and each fine to take on the day its screen is open
    for another reason. **DS-8 is now an attribute and a comment** rather than a day of mirroring, so
    it can be swept up with anything that touches the manifest.
-9. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
+10. **The small, decided ones** — **NAV-5**, **LIB-4**, **ADD-5** — each one an S with the design
    question already answered in §5.1, and each fine to take on the day its screen is open.
    **NAV-7 has gone**, taken on 8 September in the hour before DS-5 for the reason this step gave:
    changing every top-level app bar after the screenshots are recorded means recording them twice.
@@ -553,9 +570,9 @@ the answer. SET-3's row into the system notification page is the durable half of
 built. If the app is ever handed to someone else, this is the first row to reopen.
 
 **D-13 — The order of what is left (§4.2).** The sequence stands, with the Fold moved ahead of the
-widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. W-4, SYS-3, DS-5
-and NAV-3 are done, NAV-7 with DS-5; **PL-11 — the wide player, the other half of the Fold — is
-where this picks up.** The earlier order
+widget: W-4, SYS-3, DS-5, then NAV-3 and PL-11, then SYS-2, then the independents. W-4, SYS-3, DS-5,
+NAV-3 and PL-11 are done, NAV-7 with DS-5; **SYS-2, the widget, is where this picks up.** The
+earlier order
 took the cheaper surface first; the correction is that the inner display is the one surface this app
 has never used, on the device in the pocket every day, while a home-screen widget is a surface its
 user may never look at. Between two pieces of similar size, the one that pays out daily goes first.
@@ -563,6 +580,35 @@ DS-5 stays ahead of both, because a screenshot suite is what makes rearranging e
 second size reviewable rather than something to be spotted by eye — and NAV-7 (D-6) should land
 before DS-5 for the same reason in reverse: changing every top-level app bar after the screenshots
 are recorded means recording them twice.
+
+**D-17 — The titles go with the controls on a wide window, not with the artwork (PL-11).** The
+plan's row says "lay artwork and controls side by side" and leaves the words unplaced. Keeping the
+title under the artwork, as the stacked shape has it, would have cost a measurement: the artwork is
+the sheet's one travelling copy, positioned by arithmetic rather than by the layout, and centring
+*artwork plus an unknown number of title lines* in a half is not something arithmetic can do a frame
+ahead of a finger. At the top of the control panel it needs no measurement, gives the panel a
+heading over its body, and leaves the artwork's position as `(paneHeight - heroSize) / 2` and
+nothing else. It also keeps the title the same distance from the scrubber in both shapes, so the
+block a reader's eye takes in has been moved rather than taken apart.
+
+**D-18 — The wide control panel is solid, and its seam is hard (PL-11).** The stacked shape's
+control strip fades in from transparent because a strip stops in the middle of a page, where a hard
+horizontal line reads as a floating card. That reason does not carry: an edge running the full
+height of a window is not a card, it is a screen divided in two, which is what this is. So the panel
+is `surfaceContainerHigh` at full height with no gradient, and the blurred cover shows on the
+artwork's half alone. Both spellings answer the same problem — cover art is arbitrary third-party
+imagery and a timecode's contrast against it cannot be reasoned about — and differ only in where
+they stop. The one thing this cannot settle from a laptop is whether the seam is *beautiful*: the
+goldens have no cover to blur, so the device pass is where it is seen for the first time.
+
+**D-19 — Width chooses the shape; height only sizes the artwork (PL-11).** The tempting rule is
+"side by side when the window is too short to stack", which would also catch a 731 dp landscape
+phone the breakpoint does not. Not taken. The row says the expanded width class, the breakpoint is
+the number every other adaptive surface in this app turns at, and a second rule about shape is a
+second thing to explain whenever a window falls the wrong side of it. The medium-width landscape
+phone is saved by the other half of the item instead: at 411 dp of height the hero caps to 160 dp,
+the stacked column keeps its layout and scrolls. That is a worse screen than two panes would be, and
+it is a screen rather than a bug.
 
 **Unchanged, and worth restating: the two things that come before any of it.** The device pass and
 the `gradle/verification-metadata.xml` diff, as §4.2 lists them. Neither is a decision. The first is

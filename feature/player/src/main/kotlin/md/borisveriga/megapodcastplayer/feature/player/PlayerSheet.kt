@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
+import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.content.res.Resources
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
@@ -44,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -330,7 +332,6 @@ fun PlayerSheet(
         // and Surface scopes below shadow the receiver they come from.
         val sheetWidth = maxWidth
         val sheetHeight = maxHeight
-        val heroSize = sheetWidth * HERO_ARTWORK_WIDTH_FRACTION
         // Scaled by the fraction rather than switched at the ends. Collapsed, the sheet sits inside
         // the navigation suite's content area and needs no inset of its own; expanded, it has taken
         // the whole screen and has to clear the status bar and the gesture bar itself. Anything in
@@ -339,6 +340,18 @@ fun PlayerSheet(
         val navigationBarBottom = WindowInsets.navigationBars
             .asPaddingValues()
             .calculateBottomPadding()
+
+        // Which shape the expanded player is in, and where the artwork lands in it.
+        //
+        // Measured here rather than asked of `currentWindowAdaptiveInfo()`: the sheet is given the
+        // whole window and has just measured it, and a second opinion about the same window is one
+        // more thing that can disagree with the layout actually on screen. The width it is held
+        // against is the Material 3 expanded breakpoint all the same.
+        val layout = expandedPlayerLayout(
+            windowWidth = sheetWidth,
+            contentHeight = sheetHeight - statusBarTop - navigationBarBottom,
+        )
+
         val travelPx = with(density) { (sheetHeight - collapsedHeight).toPx() }
         val flingPx = with(density) { FlingThreshold.toPx() }
         val dismissPx = with(density) { DismissThreshold.toPx() }
@@ -474,7 +487,8 @@ fun PlayerSheet(
                     if (progress > 0f) {
                         ExpandedPlayer(
                             uiState = uiState,
-                            heroArtworkSize = heroSize,
+                            heroArtworkSize = layout.heroSize,
+                            sideBySide = layout.sideBySide,
                             onPlayPause = onPlayPause,
                             onSeek = onSeek,
                             onSkipForward = onSkipForward,
@@ -510,8 +524,9 @@ fun PlayerSheet(
                     TravellingArtwork(
                         artworkUrl = uiState.artworkUrl,
                         progress = progress,
-                        heroSize = heroSize,
-                        sheetWidth = sheetWidth,
+                        heroSize = layout.heroSize,
+                        heroLeft = layout.heroLeft,
+                        heroTop = layout.heroTop,
                     )
                 }
             }
@@ -555,14 +570,16 @@ private fun PlaybackError.toText(resources: Resources, detail: String?): String 
  * The one piece of artwork, wherever the sheet currently has it.
  *
  * Its start and end geometry are computed rather than measured, because both layouts are fixed and
- * a measured position would always be a frame behind the finger. The two constants it depends on —
- * where [CollapsedPlayer] leaves its hole, and where [ExpandedPlayer] leaves its — live next to
- * those composables, so the gap and the artwork cannot drift apart silently.
+ * a measured position would always be a frame behind the finger. The collapsed end is a pair of
+ * constants that live next to [CollapsedPlayer], so the bar's hole and the artwork cannot drift
+ * apart silently; the expanded end is handed in, because it is one answer in two shapes and the
+ * sheet is the thing that knows which shape it is in.
  *
  * @param artworkUrl what to draw: the current chapter's image when it has one, else the episode's.
  * @param progress how open the sheet is.
  * @param heroSize the artwork's size when fully expanded.
- * @param sheetWidth the sheet's width, which centres the expanded artwork.
+ * @param heroLeft where its leading edge lands when fully expanded.
+ * @param heroTop where its top edge lands when fully expanded.
  * @param modifier layout modifier.
  */
 @Composable
@@ -570,12 +587,13 @@ private fun TravellingArtwork(
     artworkUrl: String?,
     progress: Float,
     heroSize: Dp,
-    sheetWidth: Dp,
+    heroLeft: Dp,
+    heroTop: Dp,
     modifier: Modifier = Modifier,
 ) {
     val artworkSize = lerp(ArtworkSize.Mini.dimension, heroSize, progress)
-    val x = lerp(collapsedHorizontalPadding, (sheetWidth - heroSize) / 2, progress)
-    val y = lerp(CollapsedArtworkTop, expandedHeaderHeight + expandedArtworkTopGap, progress)
+    val x = lerp(collapsedHorizontalPadding, heroLeft, progress)
+    val y = lerp(CollapsedArtworkTop, heroTop, progress)
     val radius = lerp(
         MegaPodcastPlayerTheme.shapes.artworkRadius,
         MegaPodcastPlayerTheme.shapes.artworkLargeRadius,
@@ -685,6 +703,33 @@ private const val COLLAPSED_FADE_END = 0.35f
 @FontScalePreviews
 @Composable
 internal fun ExpandedPlayerPreview() {
+    OpenPlayerSheet()
+}
+
+/**
+ * The same player, on a window wide enough to set the artwork beside the controls.
+ *
+ * Its own preview rather than a size added to [ExpandedPlayerPreview], because the two are two
+ * layouts and the point of a preview is to see one of them. The width and height here are the
+ * Fold 7 opened out, near enough; what decides the golden's window is the qualifier on the
+ * screenshot test, and all this has to be is comfortably past the breakpoint.
+ */
+@Preview(name = "Unfolded", showBackground = true, widthDp = 882, heightDp = 830)
+@Preview(
+    name = "Unfolded, dark",
+    showBackground = true,
+    widthDp = 882,
+    heightDp = 830,
+    uiMode = UI_MODE_NIGHT_YES,
+)
+@Composable
+internal fun ExpandedPlayerWidePreview() {
+    OpenPlayerSheet()
+}
+
+/** The sheet, open, on the sample episode; the body both expanded previews render. */
+@Composable
+private fun OpenPlayerSheet() {
     MegaPodcastPlayerTheme {
         PlayerSheet(
             uiState = PlayerUiState(

@@ -44,6 +44,18 @@ const val SCREENSHOT_DIRECTORY: String = "src/test/screenshots"
  */
 const val SCREENSHOT_QUALIFIERS: String = "w411dp-h891dp-mdpi"
 
+/**
+ * The second device, for the goldens of a layout that only exists on a wide window.
+ *
+ * The Fold 7 opened out, near enough, and the only size in the suite other than
+ * [SCREENSHOT_QUALIFIERS]. One window is the default and stays the default — a suite recorded at
+ * every size is a suite nobody re-records — so this belongs on the handful of tests whose subject
+ * *is* the second size, and on no others.
+ *
+ * Applied with `@Config(qualifiers = SCREENSHOT_QUALIFIERS_WIDE)` on the test method.
+ */
+const val SCREENSHOT_QUALIFIERS_WIDE: String = "w882dp-h830dp-mdpi"
+
 /** Tag on the wrapper whose bounds decide how much of the window ends up in the image. */
 private const val CAPTURE_TAG = "megapodcastplayer:capture"
 

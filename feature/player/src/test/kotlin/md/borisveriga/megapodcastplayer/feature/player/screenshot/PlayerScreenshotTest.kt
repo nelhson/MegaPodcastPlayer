@@ -6,10 +6,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS
+import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS_WIDE
 import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
 import md.borisveriga.megapodcastplayer.feature.player.CollapsedPlayerPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerPreview
+import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerWidePreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenEmptyPreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
 import org.junit.Rule
@@ -51,6 +53,18 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun expandedPlayer() = capture("expanded-player") { ExpandedPlayerPreview() }
+
+    /**
+     * The one golden recorded on a second device.
+     *
+     * The suite records at one window size by design, and this is the exception the design was
+     * waiting for: PL-11's whole content is a screen rearranged at a second size, and a change to
+     * it is invisible in an image of the first. The qualifier is the Fold 7 opened out, which is
+     * the window the item was written for.
+     */
+    @Test
+    @Config(qualifiers = SCREENSHOT_QUALIFIERS_WIDE)
+    fun expandedPlayerWide() = capture("expanded-player-wide") { ExpandedPlayerWidePreview() }
 
     @Test
     fun queue() = capture("queue") { QueueScreenPreview() }
