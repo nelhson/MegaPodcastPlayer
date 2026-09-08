@@ -77,6 +77,21 @@ interface BackupRepository {
     suspend fun recordExported(exportedAtMs: Long)
 
     /**
+     * Observes the id of the restore run whose result has already been reported to the user.
+     *
+     * A finished run is retained and replayed by whatever ran it, so without this the settings
+     * screen would announce the same restore every time it is opened.
+     */
+    fun observeAcknowledgedRestoreId(): Flow<String?>
+
+    /**
+     * Records that a finished restore's result has been shown.
+     *
+     * @param runId the run, as `RestoreRun.Finished` identifies it.
+     */
+    suspend fun acknowledgeRestore(runId: String)
+
+    /**
      * Reads the current library into a document.
      *
      * @return the document, ready to be encoded and written.

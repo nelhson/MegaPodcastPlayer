@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.backup.LibraryRestorer
+import md.borisveriga.megapodcastplayer.core.data.backup.RestoreRun
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
@@ -174,13 +175,18 @@ class SettingsViewModel @Inject constructor(
     private val backupState: kotlinx.coroutines.flow.Flow<BackupUiState> = combine(
         backupRepository.observeLastBackupAt(),
         libraryRestorer.observe(),
+        backupRepository.observeAcknowledgedRestoreId(),
         transientState,
-    ) { lastBackupAt, restore, transient ->
+    ) { lastBackupAt, restore, acknowledgedRestoreId, transient ->
         BackupUiState(
             lastBackupAtMs = lastBackupAt,
             isExporting = transient.isExporting,
             pendingRestore = transient.pendingRestore,
-            restore = restore,
+            // A finished run is retained and replayed for days, so the one the user has already
+            // been told about is dropped here rather than reported again on the next visit.
+            restore = restore.takeUnless {
+                it is RestoreRun.Finished && it.id == acknowledgedRestoreId
+            },
         )
     }
 
@@ -532,6 +538,17 @@ class SettingsViewModel @Inject constructor(
         // passed true would otherwise silently mean "download nothing".
         val reDownloadIfAny = reDownload && pending.source == RestoreSource.BACKUP
         libraryRestorer.start(pending.json, reDownloadIfAny)
+    }
+
+    /**
+     * Records that the finished restore's result has been read, so it is not announced again.
+     *
+     * Written to storage rather than kept here: this view model dies with the settings screen, and
+     * the run it describes outlives both.
+     */
+    fun acknowledgeRestoreResult() {
+        val finished = uiState.value.backup.restore as? RestoreRun.Finished ?: return
+        viewModelScope.launch { backupRepository.acknowledgeRestore(finished.id) }
     }
 
     /** Drops a picked document the user decided against. */

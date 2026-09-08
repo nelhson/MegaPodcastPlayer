@@ -46,6 +46,7 @@ class SettingsScreenTest {
         onImportOpml: () -> Unit = {},
         onConfirmRestore: (Boolean) -> Unit = {},
         onCancelRestore: () -> Unit = {},
+        onRestoreResultShown: () -> Unit = {},
         onThemeChange: (ThemeChoice) -> Unit = {},
         onPureBlackChange: (Boolean) -> Unit = {},
         onOpenNotificationSettings: () -> Unit = {},
@@ -74,6 +75,7 @@ class SettingsScreenTest {
                     onImportOpml = onImportOpml,
                     onConfirmRestore = onConfirmRestore,
                     onCancelRestore = onCancelRestore,
+                    onRestoreResultShown = onRestoreResultShown,
                     onMessageShown = {},
                 )
             }
@@ -386,7 +388,8 @@ class SettingsScreenTest {
             SettingsUiState(
                 backup = BackupUiState(
                     restore = RestoreRun.Finished(
-                        RestoreSummary(
+                        id = "run-1",
+                        summary = RestoreSummary(
                             showsRestored = 2,
                             episodesRestored = 9,
                             failedTitles = listOf("Dead Feed"),
@@ -397,5 +400,27 @@ class SettingsScreenTest {
         )
 
         composeRule.onNodeWithText("Dead Feed", substring = true).assertIsDisplayed()
+    }
+
+    /**
+     * Dismissing the report has to be told to somebody who outlives this screen: the run behind it
+     * is retained and replayed for days, and a summary the screen forgot about is a dialog that
+     * greets the user on every visit to settings.
+     */
+    @Test
+    fun `dismissing the restore report reports it as shown`() {
+        var shown = false
+        setContent(
+            SettingsUiState(
+                backup = BackupUiState(
+                    restore = RestoreRun.Finished("run-1", RestoreSummary(showsRestored = 2)),
+                ),
+            ),
+            onRestoreResultShown = { shown = true },
+        )
+
+        composeRule.onNodeWithText("Done").performClick()
+
+        assertTrue(shown)
     }
 }

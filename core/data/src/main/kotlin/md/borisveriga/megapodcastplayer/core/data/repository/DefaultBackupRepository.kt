@@ -69,6 +69,12 @@ class DefaultBackupRepository @Inject constructor(
         preferences.setLastBackupAt(exportedAtMs)
     }
 
+    override fun observeAcknowledgedRestoreId(): Flow<String?> = preferences.acknowledgedRestoreId
+
+    override suspend fun acknowledgeRestore(runId: String) {
+        preferences.setAcknowledgedRestoreId(runId)
+    }
+
     override suspend fun export(): BackupFile = withContext(ioDispatcher) {
         val podcasts = podcastDao.getAll().sortedBy { it.sortOrder }
         BackupFile(

@@ -157,6 +157,16 @@ class UserPreferencesDataSource @Inject constructor(
         dataStore.data.map { preferences -> preferences[Keys.LAST_BACKUP_AT_MS] }
 
     /**
+     * Observes the id of the restore run whose result the user has already been shown.
+     *
+     * WorkManager keeps a finished run's output for as long as it retains the work, and replays it
+     * to every new observer, so "has this been reported yet" is a question only the app can answer.
+     * Stored rather than held in memory because the screen that asks is recreated on every visit.
+     */
+    val acknowledgedRestoreId: Flow<String?> =
+        dataStore.data.map { preferences -> preferences[Keys.ACKNOWLEDGED_RESTORE_ID] }
+
+    /**
      * Sets the playback rate.
      *
      * @param speed the requested rate; clamped to [PlaybackSettings.SPEED_RANGE].
@@ -325,6 +335,18 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Records that a finished restore's result has been shown to the user.
+     *
+     * Only the latest run is kept: an older id can never be asked about again, because WorkManager
+     * replays one run per unique work name and a new one replaces it.
+     *
+     * @param runId the run that has been reported.
+     */
+    suspend fun setAcknowledgedRestoreId(runId: String) {
+        dataStore.edit { it[Keys.ACKNOWLEDGED_RESTORE_ID] = runId }
+    }
+
+    /**
      * Observes what the user has decided about individual shows, keyed by podcast id.
      *
      * A show that has never been touched is absent rather than present with defaults, so the map
@@ -381,6 +403,7 @@ class UserPreferencesDataSource @Inject constructor(
         val PURE_BLACK = booleanPreferencesKey("pure_black")
         val DOWNLOAD_ORDER = stringPreferencesKey("download_order")
         val LAST_BACKUP_AT_MS = longPreferencesKey("last_backup_at_ms")
+        val ACKNOWLEDGED_RESTORE_ID = stringPreferencesKey("acknowledged_restore_id")
         val SHOW_SETTINGS = stringPreferencesKey("show_settings")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
     }
