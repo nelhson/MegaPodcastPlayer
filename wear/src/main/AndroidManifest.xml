@@ -22,6 +22,11 @@
       No backup. What the watch keeps of its own is episode audio the phone sent it and how far
       through each one the wearer got — tens of megabytes that would be pointless to back up and are
       replaceable in one tap, and positions that are reported back to the phone anyway.
+
+      No right-to-left either, in step with the phone (DS-8, D-5). Nothing here would break if it
+      were mirrored — there are no swipe rows on the watch — but two halves of one app, installed
+      from one build, should not disagree about which reading directions they support. The reasoning
+      is in app/src/main/AndroidManifest.xml.
     -->
     <application
         android:name=".WearApplication"
@@ -29,7 +34,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:supportsRtl="true"
+        android:supportsRtl="false"
         android:theme="@style/Theme.MegaPodcastPlayer.Wear">
 
         <!--
