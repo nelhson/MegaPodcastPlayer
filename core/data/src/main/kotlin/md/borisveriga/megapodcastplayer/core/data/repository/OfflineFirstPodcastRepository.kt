@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.Dispatcher
 import md.borisveriga.megapodcastplayer.core.common.di.MegaPodcastPlayerDispatcher
+import md.borisveriga.megapodcastplayer.core.common.result.isConnectivityFailure
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.mapper.asEpisodeEntity
 import md.borisveriga.megapodcastplayer.core.data.mapper.asEpisodeWithShow
@@ -53,9 +54,10 @@ import md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher
  * @property autoDownloadScheduler told about newly discovered episodes, so the download stack
  *   can act on them without this class knowing anything about downloads.
  * @property clock injected so refresh timestamps are deterministic in tests.
- * @property crashReporter told about a feed that failed to refresh. [refreshAll] deliberately
- *   survives one bad feed and reports the run as a whole, so without this a show that has quietly
- *   stopped updating leaves no trace anywhere except a `Log.w` nobody is reading.
+ * @property crashReporter told about a feed that failed to refresh for any reason other than the
+ *   network being unavailable. [refreshAll] deliberately survives one bad feed and reports the run
+ *   as a whole, so without this a show that has quietly stopped updating leaves no trace anywhere
+ *   except a `Log.w` nobody is reading.
  * @property ioDispatcher dispatcher for the database and network work.
  */
 // `flatMapLatest` picks the episode ordering from the show's source; still experimental, and
@@ -336,11 +338,17 @@ class OfflineFirstPodcastRepository @Inject constructor(
                     }
                     .onFailure { error ->
                         Log.w(TAG, "Refresh failed for ${podcast.feedUrl}", error)
-                        // The feed URL is a key rather than part of the message so that every
-                        // refresh failure groups into one issue, with the offending shows listed
-                        // inside it, instead of one issue per show.
-                        crashReporter.setKey(KEY_FEED_URL, podcast.feedUrl)
-                        crashReporter.recordNonFatal(NON_FATAL_REFRESH_FAILED, error)
+                        // No network is the device's state, not the show's: a backgrounded run the
+                        // system has cut off fails every feed at once, and reporting each one
+                        // buried the failures worth reading. The show is still counted as failed
+                        // below, so the library's refresh message still names it.
+                        if (!error.isConnectivityFailure) {
+                            // The feed URL is a key rather than part of the message so that every
+                            // refresh failure groups into one issue, with the offending shows
+                            // listed inside it, instead of one issue per show.
+                            crashReporter.setKey(KEY_FEED_URL, podcast.feedUrl)
+                            crashReporter.recordNonFatal(NON_FATAL_REFRESH_FAILED, error)
+                        }
                         failed += podcast.title
                     }
             }

@@ -40,12 +40,20 @@ Wired so far:
 
 - `OfflineFirstPodcastRepository.refreshAll` — a feed that failed to refresh, with the feed URL as a
   custom key rather than in the message, so every such failure groups into one issue.
+- `ChapterResolver` — a publisher's chapters document that could not be fetched or read.
 - `EpisodeAudioSender` — a channel the watch would not accept, and a transfer that stopped short.
   Kept apart because the causes differ: out of range versus a gap in the download cache.
 
 The rule for adding one: report a failure a person would want to know about **after** the fact and
 that the code has already decided not to show anyone. Not expected outcomes, not user mistakes, and
 nothing on a hot path — every call crosses into a native library and writes to disk.
+
+**Having no network is an expected outcome.** A request that fails because the device is offline —
+or because Android has cut a backgrounded app off from the network, which fails DNS with
+`EAI_NODATA` even with a connection up — is the device's state, not a bug. Network call sites check
+`isConnectivityFailure` (`:core:common`) and skip the report; the failure is still logged, and a
+feed that failed is still named in the library's refresh message. Until that check existed, one
+backgrounded refresh filed a non-fatal per show, and those were the only issues in the dashboard.
 
 ## Reporting is on in debug builds
 

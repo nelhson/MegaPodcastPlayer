@@ -7,6 +7,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException
+import java.net.UnknownHostException
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -332,7 +333,8 @@ class OfflineFirstPodcastRepositoryTest {
             FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
         repository.addFromInput("1209828744")
 
-        val failure = IOException("host unreachable")
+        // A server that answered, and answered wrongly: the kind of failure worth reading.
+        val failure = IOException("Feed request failed with HTTP 500 for $podlodkaFeedUrl")
         coEvery { feeds.fetch(podlodkaFeedUrl, any(), any()) } throws failure
 
         repository.refreshAll(onlyAutoRefreshable = true)
@@ -343,6 +345,27 @@ class OfflineFirstPodcastRepositoryTest {
         verify { crashReporter.setKey("feedUrl", podlodkaFeedUrl) }
         verify { crashReporter.recordNonFatal("Podcast refresh failed", failure) }
     }
+
+    @Test
+    fun `a feed that fails because the device is offline is not reported, but still fails`() =
+        runTest {
+            coEvery { itunes.lookup(any()) } returns appleResult
+            coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+                FeedFetchResult.Fetched(channel(feedItem("a")), etag = null, lastModified = null)
+            repository.addFromInput("1209828744")
+
+            // The reported case: a backgrounded refresh the system had cut off from the network.
+            coEvery { feeds.fetch(podlodkaFeedUrl, any(), any()) } throws UnknownHostException(
+                "Unable to resolve host \"feeds.soundcloud.com\": No address associated with hostname",
+            )
+
+            val summary = repository.refreshAll(onlyAutoRefreshable = true)
+
+            // One of these per show, per offline run, was every issue in the dashboard.
+            verify(exactly = 0) { crashReporter.recordNonFatal(any(), any()) }
+            // Not reporting it is not the same as hiding it: the library still names the show.
+            assertEquals(listOf("Podlodka Podcast"), summary.failedTitles)
+        }
 
     @Test
     fun `a refresh that succeeds reports nothing`() = runTest {
