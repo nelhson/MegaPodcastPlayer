@@ -10,11 +10,8 @@ import org.junit.Test
 /**
  * Tests for [asBackupFile], the one function that makes an OPML import a restore.
  *
- * Two claims are worth pinning. The first is that the synthetic backup carries *only*
- * subscriptions: an import that quietly produced an empty queue entry or a download row would be an
- * import that wipes something, and the confirmation dialog promises it does not.
- *
- * The second is the round trip through this app. A YouTube show is exported as `type="rss"`,
+ * What is worth pinning is the round trip through this app. A YouTube show is exported as
+ * `type="rss"`,
  * because its Atom feed genuinely is an XML document at an `http` URL and a foreign app should be
  * able to read it — so on the way back in the *URL* is asked rather than the attribute, and a
  * library that leaves here as OPML comes home as what it was rather than as twenty RSS shows that
@@ -26,19 +23,17 @@ class OpmlImportTest {
         OpmlDecodeResult.Decoded(feeds = feeds.toList(), skipped = 0)
 
     @Test
-    fun `an import carries subscriptions and nothing else`() {
+    fun `an import carries every subscription the document named`() {
         val file = decoded(
             OpmlFeed("https://a.example/feed", "A"),
             OpmlFeed("https://b.example/feed", "B"),
         ).asBackupFile(importedAtMs = 1_700_000_000_000L)
 
         assertEquals(listOf("A", "B"), file.podcasts.map { it.title })
-        // The four things an OPML file has no place for. A restore replaces the queue wholesale,
-        // so an import that carried an empty one would empty the user's.
-        assertTrue(file.episodes.isEmpty())
-        assertTrue(file.queue.isEmpty())
-        assertTrue(file.downloads.isEmpty())
-        assertTrue(file.moments.isEmpty())
+        assertEquals(
+            listOf("https://a.example/feed", "https://b.example/feed"),
+            file.podcasts.map { it.feedUrl },
+        )
     }
 
     @Test
@@ -74,13 +69,11 @@ class OpmlImportTest {
     }
 
     @Test
-    fun `every imported show is dated by the import`() {
-        // OPML does not record when a show was added, and the alternative to today is the epoch —
-        // which would sort every imported show to the bottom of "recently added" forever.
+    fun `the handover is dated by the import`() {
         val importedAt = 1_700_000_000_000L
+
         val file = decoded(OpmlFeed("https://a.example/feed", "A")).asBackupFile(importedAt)
 
-        assertEquals(importedAt, file.podcasts.single().addedAtMs)
         assertEquals(importedAt, file.exportedAtMs)
     }
 

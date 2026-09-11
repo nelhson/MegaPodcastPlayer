@@ -126,17 +126,4 @@ interface PodcastDao {
     suspend fun reorder(ids: List<String>) {
         ids.forEachIndexed { index, id -> setSortOrder(id, index) }
     }
-
-    /**
-     * Re-applies the show metadata a backup recorded but a fresh add cannot know.
-     *
-     * A targeted `UPDATE` rather than a read-modify-write of the whole row: a restore re-fetches
-     * every feed, so a refresh may well be writing the title, artwork and etag of this same show
-     * while this runs, and a whole-row write would quietly undo it.
-     *
-     * `added_at` is restored because it is the one column that records something about the *user*
-     * rather than the feed — how long they have had the show.
-     */
-    @Query("UPDATE podcasts SET itunes_id = :itunesId, added_at = :addedAt WHERE id = :id")
-    suspend fun restoreMetadata(id: String, itunesId: Long?, addedAt: Long)
 }

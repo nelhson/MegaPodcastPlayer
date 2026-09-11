@@ -29,7 +29,6 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
-import md.borisveriga.megapodcastplayer.core.model.backup.BackupDecodeResult
 import md.borisveriga.megapodcastplayer.core.model.backup.OpmlCodec
 import md.borisveriga.megapodcastplayer.core.model.backup.OpmlDecodeResult
 
@@ -44,7 +43,7 @@ import md.borisveriga.megapodcastplayer.core.model.backup.OpmlDecodeResult
  * @property downloadedBytes how much storage those downloads occupy.
  * @property isRemovingDownloads true while "remove all downloads" is in flight, so the row can be
  *   disabled rather than let a second tap race the first.
- * @property backup everything the backup section renders.
+ * @property backup everything the subscriptions section renders.
  * @property speedOverrides the shows that play at a rate of their own, alphabetically. What turns
  *   the playback row from "the speed" into "the *default* speed": a default that never names its
  *   exceptions is indistinguishable from a setting that is being quietly ignored (SET-6).
@@ -90,42 +89,25 @@ sealed interface SettingsMessage {
      */
     data class DownloadsRemoved(val freedBytes: Long) : SettingsMessage
 
-    /** The library was written to the document the user chose. */
-    data object BackupExported : SettingsMessage
+    /** The subscription list was written to the document the user chose. */
+    data object SubscriptionsExported : SettingsMessage
 
     /** The document could not be written — a revoked grant, or a provider that went away. */
-    data object BackupExportFailed : SettingsMessage
+    data object SubscriptionsExportFailed : SettingsMessage
 
-    /** The document could not be read back. */
-    data object BackupReadFailed : SettingsMessage
-
-    /** The picked file is not one of ours: the wrong document, or a truncated one. */
-    data object BackupNotRecognised : SettingsMessage
-
-    /**
-     * The picked file was written by a build that knows fields this one does not.
-     *
-     * Refused rather than partially restored: silently recreating three quarters of a library is
-     * worse than declining to try.
-     */
-    data object BackupTooNew : SettingsMessage
-
-    /** The subscription list was written to the document the user chose. */
-    data object OpmlExported : SettingsMessage
-
-    /** The subscription list could not be written. */
-    data object OpmlExportFailed : SettingsMessage
+    /** The picked document could not be read at all. */
+    data object SubscriptionsReadFailed : SettingsMessage
 
     /** The picked file is not OPML: another app's export in some other format, or a feed. */
-    data object OpmlNotRecognised : SettingsMessage
+    data object SubscriptionsNotRecognised : SettingsMessage
 
     /**
      * Readable OPML with nothing in it to subscribe to.
      *
-     * Its own message rather than a zero-show restore, because "the file is empty" and "the file is
+     * Its own message rather than a zero-show import, because "the file is empty" and "the file is
      * wrong" are different things to be told, and only one of them is worth going back for.
      */
-    data object OpmlEmpty : SettingsMessage
+    data object SubscriptionsEmpty : SettingsMessage
 }
 
 /**
@@ -138,9 +120,9 @@ sealed interface SettingsMessage {
  *
  * @property playbackRepository playback speed, skip intervals and auto-play.
  * @property downloadRepository the download rules and the downloads themselves.
- * @property backupRepository reads the library into a document and puts one back.
+ * @property backupRepository reads the library's subscriptions into a document and puts them back.
  * @property backupFileStore reads and writes the document the user picked.
- * @property libraryRestorer runs a restore somewhere that outlives this screen.
+ * @property libraryRestorer runs an import somewhere that outlives this screen.
  * @property uiPreferences the appearance choices; the same repository the library's layout and
  *   order live in, for the same reason — none of it changes what the app does.
  * @property podcastRepository the library, read only for the titles of the shows that override the
@@ -166,7 +148,7 @@ class SettingsViewModel @Inject constructor(
     private val transientState = MutableStateFlow(TransientState())
 
     /**
-     * The backup section's own state, combined before the rest.
+     * The subscriptions section's own state, combined before the rest.
      *
      * Folded into one flow rather than added as two more arms of the main [combine]: the section is
      * a self-contained concern, and the alternative is a five-argument lambda whose parameters have
@@ -373,98 +355,25 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * The file name to suggest when the picker asks where to put the export.
+     * Names the exported subscription list.
      *
-     * @return a name carrying today's date, so a folder of backups sorts chronologically.
+     * @return a name carrying today's date, so a folder of exports sorts chronologically.
      */
-    fun suggestedBackupFileName(): String =
+    fun suggestedFileName(): String =
         FILE_NAME_PREFIX +
             FILE_NAME_DATE.format(clock.instant().atZone(ZoneId.systemDefault())) +
             FILE_NAME_SUFFIX
 
     /**
-     * Writes the library to the document the user created.
+     * Writes the subscription list to the document the user created.
+     *
+     * Recorded as the export the section's "last exported" line reports. There is one export now,
+     * so there is one date, and it answers the question that line exists for: the database is
+     * recreated rather than migrated, and this file is what puts the shows back.
      *
      * @param uri the document the picker returned.
      */
     fun exportTo(uri: Uri) {
-        if (transientState.value.isExporting) return
-        transientState.value = transientState.value.copy(isExporting = true)
-        viewModelScope.launch {
-            val file = backupRepository.export()
-            val written = backupFileStore.write(uri, BackupCodec.encode(file))
-            if (written.isSuccess) {
-                backupRepository.recordExported(file.exportedAtMs)
-            }
-            transientState.value = transientState.value.copy(
-                isExporting = false,
-                message = if (written.isSuccess) {
-                    SettingsMessage.BackupExported
-                } else {
-                    SettingsMessage.BackupExportFailed
-                },
-            )
-        }
-    }
-
-    /**
-     * Reads and validates a document the user picked, then asks them to confirm.
-     *
-     * Validation happens here rather than in the worker so that a foreign or truncated file is
-     * refused while the user is still in the flow that produced it, and so that nothing is enqueued
-     * that is going to fail anyway.
-     *
-     * @param uri the document the picker returned.
-     */
-    fun prepareRestore(uri: Uri) {
-        if (transientState.value.pendingRestore != null) return
-        viewModelScope.launch {
-            val text = backupFileStore.read(uri).getOrElse {
-                transientState.value =
-                    transientState.value.copy(message = SettingsMessage.BackupReadFailed)
-                return@launch
-            }
-            transientState.value = when (val decoded = BackupCodec.decode(text)) {
-                is BackupDecodeResult.Decoded -> transientState.value.copy(
-                    pendingRestore = PendingRestore(
-                        json = text,
-                        showCount = decoded.file.podcasts.size,
-                    ),
-                )
-
-                is BackupDecodeResult.TooNew ->
-                    transientState.value.copy(message = SettingsMessage.BackupTooNew)
-
-                is BackupDecodeResult.Malformed ->
-                    transientState.value.copy(message = SettingsMessage.BackupNotRecognised)
-            }
-        }
-    }
-
-    /**
-     * Names the exported subscription list.
-     *
-     * The same date-stamped shape the backup uses, and a different word, because a folder holding
-     * both should say which is which without being opened.
-     *
-     * @return a name carrying today's date.
-     */
-    fun suggestedOpmlFileName(): String =
-        OPML_FILE_NAME_PREFIX +
-            FILE_NAME_DATE.format(clock.instant().atZone(ZoneId.systemDefault())) +
-            OPML_FILE_NAME_SUFFIX
-
-    /**
-     * Writes the subscription list to the document the user created.
-     *
-     * Deliberately *not* recorded as a backup. The backup row's "last backup" line is a warning
-     * about a database that is recreated rather than migrated, and an OPML file cannot answer it:
-     * it holds no positions, no queue and no moments. Letting an export of it reset that line would
-     * be the app telling the user they are safe when they are not.
-     *
-     * @param uri the document the picker returned.
-     */
-    fun exportOpmlTo(uri: Uri) {
         if (transientState.value.isExporting) return
         transientState.value = transientState.value.copy(isExporting = true)
         viewModelScope.launch {
@@ -475,12 +384,15 @@ class SettingsViewModel @Inject constructor(
                 exportedAtMs = file.exportedAtMs,
             )
             val written = backupFileStore.write(uri, document)
+            if (written.isSuccess) {
+                backupRepository.recordExported(file.exportedAtMs)
+            }
             transientState.value = transientState.value.copy(
                 isExporting = false,
                 message = if (written.isSuccess) {
-                    SettingsMessage.OpmlExported
+                    SettingsMessage.SubscriptionsExported
                 } else {
-                    SettingsMessage.OpmlExportFailed
+                    SettingsMessage.SubscriptionsExportFailed
                 },
             )
         }
@@ -489,20 +401,23 @@ class SettingsViewModel @Inject constructor(
     /**
      * Reads a subscription list the user picked, and asks them to confirm subscribing to it.
      *
-     * The file is turned into a `BackupFile` carrying podcasts and nothing else, and from there it
-     * is a restore — the same worker, the same progress, the same by-name report of the feeds that
-     * could not be fetched. Writing a second importer would mean a second answer to every question
-     * the restorer has already answered, starting with what happens when the process is killed
-     * nine shows in.
+     * Validation happens here rather than in the worker so that a foreign or truncated file is
+     * refused while the user is still in the flow that produced it, and so that nothing is enqueued
+     * that is going to fail anyway.
+     *
+     * The file is turned into a `BackupFile` of subscriptions and handed to the restorer — the same
+     * worker, the same progress, the same by-name report of the feeds that could not be fetched.
+     * Writing a second importer would mean a second answer to every question the restorer has
+     * already answered, starting with what happens when the process is killed nine shows in.
      *
      * @param uri the document the picker returned.
      */
-    fun prepareOpmlImport(uri: Uri) {
+    fun prepareImport(uri: Uri) {
         if (transientState.value.pendingRestore != null) return
         viewModelScope.launch {
             val text = backupFileStore.read(uri).getOrElse {
                 transientState.value =
-                    transientState.value.copy(message = SettingsMessage.BackupReadFailed)
+                    transientState.value.copy(message = SettingsMessage.SubscriptionsReadFailed)
                 return@launch
             }
             transientState.value = when (val decoded = OpmlCodec.decode(text)) {
@@ -510,38 +425,28 @@ class SettingsViewModel @Inject constructor(
                     pendingRestore = PendingRestore(
                         json = BackupCodec.encode(decoded.asBackupFile(clock.millis())),
                         showCount = decoded.feeds.size,
-                        source = RestoreSource.OPML,
                         skipped = decoded.skipped,
                     ),
                 )
 
                 OpmlDecodeResult.NoFeeds ->
-                    transientState.value.copy(message = SettingsMessage.OpmlEmpty)
+                    transientState.value.copy(message = SettingsMessage.SubscriptionsEmpty)
 
                 OpmlDecodeResult.NotOpml ->
-                    transientState.value.copy(message = SettingsMessage.OpmlNotRecognised)
+                    transientState.value.copy(message = SettingsMessage.SubscriptionsNotRecognised)
             }
         }
     }
 
-    /**
-     * Starts the restore the user has confirmed.
-     *
-     * @param reDownload whether to re-queue the downloads the backup records. Off unless asked for:
-     *   the audio is not in the file, so this is a fresh download of everything.
-     */
-    fun confirmRestore(reDownload: Boolean) {
+    /** Starts the import the user has confirmed. */
+    fun confirmRestore() {
         val pending = transientState.value.pendingRestore ?: return
         transientState.value = transientState.value.copy(pendingRestore = null)
-        // An OPML file records no downloads, so there is nothing for the flag to re-queue and the
-        // dialog does not offer it. Forced here as well as hidden there, because a caller that
-        // passed true would otherwise silently mean "download nothing".
-        val reDownloadIfAny = reDownload && pending.source == RestoreSource.BACKUP
-        libraryRestorer.start(pending.json, reDownloadIfAny)
+        libraryRestorer.start(pending.json)
     }
 
     /**
-     * Records that the finished restore's result has been read, so it is not announced again.
+     * Records that the finished import's result has been read, so it is not announced again.
      *
      * Written to storage rather than kept here: this view model dies with the settings screen, and
      * the run it describes outlives both.
@@ -601,24 +506,18 @@ class SettingsViewModel @Inject constructor(
         /**
          * Names the exported document after the day it was written.
          *
-         * ISO order so a folder of backups sorts chronologically, and no separators beyond the
+         * ISO order so a folder of exports sorts chronologically, and no separators beyond the
          * hyphen so that every document provider accepts it verbatim.
          */
         private val FILE_NAME_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
         /** Prefix of the suggested file name. */
-        private const val FILE_NAME_PREFIX = "megapodcastplayer-backup-"
+        private const val FILE_NAME_PREFIX = "megapodcastplayer-subscriptions-"
 
-        /** Prefix of the suggested subscription-list name; a different word, same date stamp. */
-        private const val OPML_FILE_NAME_PREFIX = "megapodcastplayer-subscriptions-"
-
-        /** Extension of the suggested subscription-list name. */
-        private const val OPML_FILE_NAME_SUFFIX = ".opml"
+        /** Extension of the suggested file name. */
+        private const val FILE_NAME_SUFFIX = ".opml"
 
         /** What the exported document calls itself, which is what an importing app shows. */
         private const val OPML_DOCUMENT_TITLE = "MegaPodcastPlayer subscriptions"
-
-        /** Suffix of the suggested file name. */
-        private const val FILE_NAME_SUFFIX = ".json"
     }
 }

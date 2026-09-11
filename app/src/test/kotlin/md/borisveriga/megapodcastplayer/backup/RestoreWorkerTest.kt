@@ -10,12 +10,10 @@ import androidx.work.workDataOf
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import io.mockk.slot
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
-import md.borisveriga.megapodcastplayer.core.data.repository.RestoreOptions
 import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
@@ -23,7 +21,6 @@ import md.borisveriga.megapodcastplayer.core.model.backup.BackupFile
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupPodcast
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -60,14 +57,11 @@ class RestoreWorkerTest {
         crashReporter = mockk(relaxed = true)
     }
 
-    private fun buildWorker(path: String?, reDownload: Boolean = false): RestoreWorker {
+    private fun buildWorker(path: String?): RestoreWorker {
         val input = if (path == null) {
-            workDataOf(RestoreWorker.KEY_RE_DOWNLOAD to reDownload)
+            workDataOf()
         } else {
-            workDataOf(
-                RestoreWorker.KEY_FILE_PATH to path,
-                RestoreWorker.KEY_RE_DOWNLOAD to reDownload,
-            )
+            workDataOf(RestoreWorker.KEY_FILE_PATH to path)
         }
         return TestListenableWorkerBuilder<RestoreWorker>(
             ApplicationProvider.getApplicationContext<Context>(),
@@ -90,17 +84,14 @@ class RestoreWorkerTest {
             .build()
     }
 
-    /** Writes a handover file holding [text], defaulting to a valid encoded backup. */
+    /** Writes a handover file holding [text], defaulting to a valid encoded document. */
     private fun handover(text: String = BackupCodec.encode(backup)): File =
         temporaryFolder.newFile("pending-restore.json").apply { writeText(text) }
 
     @Test
     fun `restores the handed-over document and reports the summary`() = runTest {
-        coEvery { backupRepository.restore(any(), any(), any()) } returns RestoreSummary(
+        coEvery { backupRepository.restore(any(), any()) } returns RestoreSummary(
             showsRestored = 3,
-            episodesRestored = 12,
-            episodesMissing = 1,
-            queueRestored = 4,
             failedTitles = listOf("Dead Feed"),
         )
 
@@ -108,9 +99,6 @@ class RestoreWorkerTest {
 
         val output = (result as ListenableWorker.Result.Success).outputData
         assertEquals(3, output.getInt(RestoreWorker.KEY_SHOWS_RESTORED, 0))
-        assertEquals(12, output.getInt(RestoreWorker.KEY_EPISODES_RESTORED, 0))
-        assertEquals(1, output.getInt(RestoreWorker.KEY_EPISODES_MISSING, 0))
-        assertEquals(4, output.getInt(RestoreWorker.KEY_QUEUE_RESTORED, 0))
         assertEquals(
             listOf("Dead Feed"),
             output.getStringArray(RestoreWorker.KEY_FAILED_TITLES)?.toList(),
@@ -118,18 +106,8 @@ class RestoreWorkerTest {
     }
 
     @Test
-    fun `passes the re-download choice through`() = runTest {
-        val options = slot<RestoreOptions>()
-        coEvery { backupRepository.restore(any(), capture(options), any()) } returns RestoreSummary()
-
-        buildWorker(handover().absolutePath, reDownload = true).doWork()
-
-        assertTrue(options.captured.reDownload)
-    }
-
-    @Test
     fun `deletes the handover file once it is done with it`() = runTest {
-        coEvery { backupRepository.restore(any(), any(), any()) } returns RestoreSummary()
+        coEvery { backupRepository.restore(any(), any()) } returns RestoreSummary()
         val file = handover()
 
         buildWorker(file.absolutePath).doWork()
@@ -144,7 +122,7 @@ class RestoreWorkerTest {
         val result = buildWorker(missing.absolutePath).doWork()
 
         assertEquals(ListenableWorker.Result.failure(), result)
-        coVerify(exactly = 0) { backupRepository.restore(any(), any(), any()) }
+        coVerify(exactly = 0) { backupRepository.restore(any(), any()) }
     }
 
     @Test
@@ -155,10 +133,10 @@ class RestoreWorkerTest {
     }
 
     @Test
-    fun `fails when the handover file is not a backup`() = runTest {
-        val result = buildWorker(handover("not a backup").absolutePath).doWork()
+    fun `fails when the handover file is not one of ours`() = runTest {
+        val result = buildWorker(handover("not a handover").absolutePath).doWork()
 
         assertEquals(ListenableWorker.Result.failure(), result)
-        coVerify(exactly = 0) { backupRepository.restore(any(), any(), any()) }
+        coVerify(exactly = 0) { backupRepository.restore(any(), any()) }
     }
 }

@@ -31,17 +31,12 @@ class RestoreScheduler @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) : LibraryRestorer {
 
-    override fun start(validatedJson: String, reDownload: Boolean) {
+    override fun start(validatedJson: String) {
         val handover = File(context.cacheDir, RestoreWorker.HANDOVER_FILE_NAME)
         handover.writeText(validatedJson)
 
         val request = OneTimeWorkRequestBuilder<RestoreWorker>()
-            .setInputData(
-                workDataOf(
-                    RestoreWorker.KEY_FILE_PATH to handover.absolutePath,
-                    RestoreWorker.KEY_RE_DOWNLOAD to reDownload,
-                ),
-            )
+            .setInputData(workDataOf(RestoreWorker.KEY_FILE_PATH to handover.absolutePath))
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(
@@ -93,9 +88,5 @@ private fun Data.asRestoreProgress(): RestoreProgress = RestoreProgress(
 /** Reads the scalars a finished [RestoreWorker] reports. */
 private fun Data.asRestoreSummary(): RestoreSummary = RestoreSummary(
     showsRestored = getInt(RestoreWorker.KEY_SHOWS_RESTORED, 0),
-    episodesRestored = getInt(RestoreWorker.KEY_EPISODES_RESTORED, 0),
-    episodesMissing = getInt(RestoreWorker.KEY_EPISODES_MISSING, 0),
-    queueRestored = getInt(RestoreWorker.KEY_QUEUE_RESTORED, 0),
-    downloadsQueued = getInt(RestoreWorker.KEY_DOWNLOADS_QUEUED, 0),
     failedTitles = getStringArray(RestoreWorker.KEY_FAILED_TITLES)?.toList().orEmpty(),
 )

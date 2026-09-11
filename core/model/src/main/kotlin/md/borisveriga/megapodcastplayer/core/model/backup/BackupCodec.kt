@@ -4,44 +4,39 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 /**
- * Reads and writes [BackupFile] documents.
+ * Reads and writes [BackupFile] handovers.
  *
- * ## Why this codec is lenient when the rest of the app is strict
+ * Nobody picks one of these out of a document provider — [OpmlCodec] handles the file the user
+ * actually chooses. This encodes the subscriptions that import produced so they can be left in the
+ * cache for a worker to pick up, and decodes them at the other end.
  *
- * Everything else that serialises here — the Wear protocol above all — decodes strictly, because
- * both ends ship from one build and an unknown field is therefore corruption rather than a newer
- * peer. A backup file has no second end that ships from one build. It is written by one install and
- * read by another, possibly months later, possibly by a newer app, and specifically after the wipe
- * it exists to survive. That is the one case the project's no-compatibility rule excludes, so this
- * codec — and only this codec — tolerates unknown keys and carries a version.
- *
- * Tolerance is not the same as guessing, though: a document from a *newer* writer is refused
- * outright rather than decoded with [Json.ignoreUnknownKeys] quietly dropping whatever that writer
- * considered essential. Silently restoring three quarters of a library is worse than declining.
+ * Both ends therefore ship from one build, which is why this decodes as strictly as everything else
+ * here: an unknown key in a handover is a corrupted file or a leftover from an install that is no
+ * longer running, and either way there is nothing to salvage. It used to be lenient because the
+ * document was a user's backup that had to survive a version change; there is no such document now.
  */
 object BackupCodec {
 
     private val json = Json {
-        // A newer writer's extra field must cost the user a warning, never their library.
-        ignoreUnknownKeys = true
-        // The file is meant to be opened and read; an omitted empty list is a puzzle, not a saving.
+        // The handover is written to disk and read back by another process, so it is worth being
+        // able to open when a restore goes wrong.
         encodeDefaults = true
         prettyPrint = true
     }
 
     /**
-     * Serialises [file] to the text written to the user's chosen document.
+     * Serialises [file] to the text left in the cache for the restorer.
      *
-     * @param file the document to write.
+     * @param file the subscriptions to hand over.
      * @return pretty-printed JSON.
      */
     fun encode(file: BackupFile): String = json.encodeToString(BackupFile.serializer(), file)
 
     /**
-     * Parses [text] that the user picked from their filesystem.
+     * Parses a handover written by [encode].
      *
-     * Never throws: the input is an arbitrary file chosen through a document picker, so every
-     * failure mode is an expected outcome with a message rather than an error to report.
+     * Never throws: the file has been on disk since before the process that reads it existed, so a
+     * truncated or stale one is an expected outcome with an answer rather than an error to report.
      *
      * @param text the document's full contents.
      * @return what the document turned out to be.
@@ -55,34 +50,22 @@ object BackupCodec {
             // kotlinx.serialization raises this for structurally valid JSON of the wrong shape.
             return BackupDecodeResult.Malformed(e.message.orEmpty())
         }
-        return if (file.version > CURRENT_BACKUP_VERSION) {
-            BackupDecodeResult.TooNew(file.version)
-        } else {
-            BackupDecodeResult.Decoded(file)
-        }
+        return BackupDecodeResult.Decoded(file)
     }
 }
 
-/** What [BackupCodec.decode] made of a file the user picked. */
+/** What [BackupCodec.decode] made of a handover. */
 sealed interface BackupDecodeResult {
 
     /**
-     * The document is a backup this build can restore.
+     * The document is a list of subscriptions to restore.
      *
-     * @property file the decoded document. A version older than the current one has already had
-     *   its missing fields filled from their defaults.
+     * @property file the decoded document.
      */
     data class Decoded(val file: BackupFile) : BackupDecodeResult
 
     /**
-     * The document is a backup, but from a build that knows fields this one does not.
-     *
-     * @property version the version the document declares.
-     */
-    data class TooNew(val version: Int) : BackupDecodeResult
-
-    /**
-     * The document is not a backup at all — the wrong file, or a truncated one.
+     * The document is not one of ours — truncated, or written by an install long gone.
      *
      * @property reason the parser's own description, for a log rather than for the user.
      */

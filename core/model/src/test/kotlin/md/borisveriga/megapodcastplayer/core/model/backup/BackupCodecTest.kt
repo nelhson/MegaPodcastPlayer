@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Tests for [BackupCodec], covering the round trip and every way a picked file can disappoint.
+ * Tests for [BackupCodec], covering the round trip and every way a handover can disappoint.
  */
 class BackupCodecTest {
 
@@ -17,74 +17,51 @@ class BackupCodecTest {
                 feedUrl = "https://feeds.simplecast.com/podlodka",
                 source = PodcastSource.RSS,
                 title = "Podlodka Podcast",
-                author = "Podlodka",
-                itunesId = 1_209_828_744L,
                 sortOrder = 0,
-                autoRefresh = true,
-                addedAtMs = 1_750_000_000_000L,
             ),
-        ),
-        episodes = listOf(
-            BackupEpisodeState("https://feeds.simplecast.com/podlodka", "guid-1", 743_000L, false),
-        ),
-        queue = listOf(BackupQueueEntry("https://feeds.simplecast.com/podlodka", "guid-1", 0)),
-        downloads = listOf(BackupDownload("https://feeds.simplecast.com/podlodka", "guid-1")),
-        moments = listOf(
-            BackupMoment("https://feeds.simplecast.com/podlodka", "guid-1", 743_000L, "the KMP bit", 1L),
+            BackupPodcast(
+                feedUrl = "https://www.youtube.com/feeds/videos.xml?playlist_id=PL1",
+                source = PodcastSource.YOUTUBE,
+                title = "A playlist",
+                sortOrder = 1,
+            ),
         ),
     )
 
     @Test
-    fun `round-trips a fully populated document`() {
+    fun `round-trips a populated document`() {
         val decoded = BackupCodec.decode(BackupCodec.encode(populated))
 
         assertEquals(BackupDecodeResult.Decoded(populated), decoded)
     }
 
     @Test
-    fun `writes the version into the document`() {
-        val text = BackupCodec.encode(populated)
-
-        assertTrue(text, text.contains("\"version\": 1"))
-    }
-
-    @Test
-    fun `writes empty lists rather than omitting them`() {
+    fun `writes an empty list rather than omitting it`() {
         val text = BackupCodec.encode(BackupFile(exportedAtMs = 0L))
 
-        assertTrue(text, text.contains("\"moments\""))
+        assertTrue(text, text.contains("\"podcasts\""))
     }
 
     @Test
-    fun `decodes a document carrying a key this build does not know`() {
+    fun `refuses a document carrying a key this build does not know`() {
+        // Both ends of a handover ship from one build, so an unknown key is a stale or corrupted
+        // file rather than a newer peer — and half a library is worse than none.
         val text = """
             {
-              "version": 1,
               "exportedAtMs": 5,
-              "somethingFromTheFuture": { "nested": true },
+              "somethingFromAnInstallLongGone": { "nested": true },
               "podcasts": []
             }
         """.trimIndent()
 
-        val decoded = BackupCodec.decode(text)
-
-        assertEquals(BackupDecodeResult.Decoded(BackupFile(exportedAtMs = 5L)), decoded)
+        assertTrue(BackupCodec.decode(text) is BackupDecodeResult.Malformed)
     }
 
     @Test
-    fun `fills a missing moments list from its default`() {
-        val text = """{ "version": 1, "exportedAtMs": 5 }"""
+    fun `fills a missing podcast list from its default`() {
+        val decoded = BackupCodec.decode("""{ "exportedAtMs": 5 }""") as BackupDecodeResult.Decoded
 
-        val decoded = BackupCodec.decode(text) as BackupDecodeResult.Decoded
-
-        assertEquals(emptyList<BackupMoment>(), decoded.file.moments)
-    }
-
-    @Test
-    fun `refuses a document from a newer writer`() {
-        val text = """{ "version": 99, "exportedAtMs": 5 }"""
-
-        assertEquals(BackupDecodeResult.TooNew(99), BackupCodec.decode(text))
+        assertEquals(emptyList<BackupPodcast>(), decoded.file.podcasts)
     }
 
     @Test
@@ -101,6 +78,6 @@ class BackupCodecTest {
 
     @Test
     fun `reports text that is not json at all as malformed`() {
-        assertTrue(BackupCodec.decode("not a backup") is BackupDecodeResult.Malformed)
+        assertTrue(BackupCodec.decode("not a handover") is BackupDecodeResult.Malformed)
     }
 }

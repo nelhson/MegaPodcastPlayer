@@ -7,7 +7,6 @@ import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeWithShowEntity
-import md.borisveriga.megapodcastplayer.core.database.model.QueueBackupRow
 import md.borisveriga.megapodcastplayer.core.database.model.QueueEntryEntity
 
 /** Reads and writes the durable "up next" queue. */
@@ -82,21 +81,4 @@ interface QueueDao {
             episodeIds.mapIndexed { index, id -> QueueEntryEntity(episodeId = id, position = index) },
         )
     }
-
-    /**
-     * The queue as the strings a backup stores, in play order.
-     *
-     * A queue is a hand-built ordering and nothing else in the app can reconstruct it, which is why
-     * it is one of the few things a backup carries beyond subscriptions.
-     */
-    @Query(
-        """
-        SELECT p.feed_url AS feed_url, e.guid AS guid, q.position AS position
-        FROM queue q
-        INNER JOIN episodes e ON e.id = q.episode_id
-        INNER JOIN podcasts p ON p.id = e.podcast_id
-        ORDER BY q.position ASC
-        """,
-    )
-    suspend fun getBackupEntries(): List<QueueBackupRow>
 }

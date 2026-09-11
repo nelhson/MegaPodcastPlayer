@@ -15,7 +15,6 @@ import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -40,11 +39,9 @@ class SettingsScreenTest {
 
     private fun setContent(
         uiState: SettingsUiState,
-        onExportBackup: () -> Unit = {},
-        onRestoreBackup: () -> Unit = {},
-        onExportOpml: () -> Unit = {},
-        onImportOpml: () -> Unit = {},
-        onConfirmRestore: (Boolean) -> Unit = {},
+        onExportSubscriptions: () -> Unit = {},
+        onImportSubscriptions: () -> Unit = {},
+        onConfirmRestore: () -> Unit = {},
         onCancelRestore: () -> Unit = {},
         onRestoreResultShown: () -> Unit = {},
         onThemeChange: (ThemeChoice) -> Unit = {},
@@ -69,10 +66,8 @@ class SettingsScreenTest {
                     onPureBlackChange = onPureBlackChange,
                     onOpenNotificationSettings = onOpenNotificationSettings,
                     onRemoveAllDownloads = {},
-                    onExportBackup = onExportBackup,
-                    onRestoreBackup = onRestoreBackup,
-                    onExportOpml = onExportOpml,
-                    onImportOpml = onImportOpml,
+                    onExportSubscriptions = onExportSubscriptions,
+                    onImportSubscriptions = onImportSubscriptions,
                     onConfirmRestore = onConfirmRestore,
                     onCancelRestore = onCancelRestore,
                     onRestoreResultShown = onRestoreResultShown,
@@ -83,7 +78,8 @@ class SettingsScreenTest {
     }
 
     /**
-     * Brings a row of the backup section into view; it sits below two full cards of settings.
+     * Brings a row of the subscriptions section into view; it sits below two full cards of
+     * settings.
      *
      * `performScrollTo` walks up to the scrolling ancestor on its own. Swiping instead would have
      * to pick one of five scrollable nodes, four of which are the horizontal choice rows.
@@ -213,40 +209,48 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun `warns that no backup has ever been taken`() {
+    fun `warns that the subscriptions have never been exported`() {
         setContent(SettingsUiState())
 
-        scrollToText("No backup yet")
+        scrollToText("Not exported yet")
 
-        composeRule.onNodeWithText("No backup yet").assertIsDisplayed()
+        composeRule.onNodeWithText("Not exported yet").assertIsDisplayed()
     }
 
     @Test
-    fun `shows when the last backup was taken`() {
+    fun `shows when the list was last exported`() {
         setContent(
             SettingsUiState(
                 backup = BackupUiState(lastBackupAtMs = 1_789_084_800_000L),
             ),
         )
 
-        scrollToText("Export library")
+        scrollToText("Export subscriptions")
 
-        composeRule.onNodeWithText("Last backup: ", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Last exported: ", substring = true).assertIsDisplayed()
     }
 
     @Test
-    fun `tapping export asks the caller to launch the picker`() {
-        var launched = false
-        setContent(SettingsUiState(), onExportBackup = { launched = true })
+    fun `tapping either row asks the caller to launch its picker`() {
+        var exported = false
+        var imported = false
+        setContent(
+            SettingsUiState(),
+            onExportSubscriptions = { exported = true },
+            onImportSubscriptions = { imported = true },
+        )
 
-        scrollToText("Export library")
-        composeRule.onNodeWithText("Export library").performClick()
+        scrollToText("Export subscriptions")
+        composeRule.onNodeWithText("Export subscriptions").performClick()
+        scrollToText("Import subscriptions")
+        composeRule.onNodeWithText("Import subscriptions").performClick()
 
-        assertTrue(launched)
+        assertTrue(exported)
+        assertTrue(imported)
     }
 
     @Test
-    fun `a running restore reports the show it is on and takes no taps`() {
+    fun `a running import reports the show it is on and takes no taps`() {
         var launched = false
         setContent(
             uiState = SettingsUiState(
@@ -254,98 +258,39 @@ class SettingsScreenTest {
                     restore = RestoreRun.Running(RestoreProgress(1, 3, "Podlodka Podcast")),
                 ),
             ),
-            onExportBackup = { launched = true },
+            onExportSubscriptions = { launched = true },
         )
 
-        scrollToText("Restoring 2 of 3 — Podlodka Podcast")
-        composeRule.onNodeWithText("Restoring 2 of 3 — Podlodka Podcast").assertIsDisplayed()
-        composeRule.onNodeWithText("Export library").performClick()
+        scrollToText("Adding 2 of 3 — Podlodka Podcast")
+        composeRule.onNodeWithText("Adding 2 of 3 — Podlodka Podcast").assertIsDisplayed()
+        composeRule.onNodeWithText("Export subscriptions").performClick()
 
-        // Both rows are disabled while a restore runs; a second write would interleave two runs.
-        assertFalse("the export row should not act during a restore", launched)
-    }
-
-    @Test
-    fun `the confirmation says the queue will be replaced and defaults re-download off`() {
-        var confirmedWith: Boolean? = null
-        setContent(
-            uiState = SettingsUiState(
-                backup = BackupUiState(pendingRestore = PendingRestore(json = "{}", showCount = 2)),
-            ),
-            onConfirmRestore = { confirmedWith = it },
-        )
-
-        composeRule.onNodeWithText("play queue will be replaced", substring = true)
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("Restore", substring = false).performClick()
-
-        assertEquals(false, confirmedWith)
-    }
-
-    @Test
-    fun `the section offers the subscription list beside the backup`() {
-        setContent(SettingsUiState())
-
-        scrollToText("Import subscriptions (OPML)")
-
-        // Four rows, and the two descriptions are what tell them apart: one file carries positions
-        // and moments, the other carries shows. Without them the difference is the extension.
-        composeRule.onNodeWithText("Export subscriptions (OPML)").assertIsDisplayed()
-        composeRule.onNodeWithText("Import subscriptions (OPML)").assertIsDisplayed()
-        composeRule.onNodeWithText("Shows only", substring = true).assertIsDisplayed()
-    }
-
-    @Test
-    fun `tapping either subscription row asks the caller to launch its picker`() {
-        var exported = false
-        var imported = false
-        setContent(
-            SettingsUiState(),
-            onExportOpml = { exported = true },
-            onImportOpml = { imported = true },
-        )
-
-        scrollToText("Export subscriptions (OPML)")
-        composeRule.onNodeWithText("Export subscriptions (OPML)").performClick()
-        scrollToText("Import subscriptions (OPML)")
-        composeRule.onNodeWithText("Import subscriptions (OPML)").performClick()
-
-        assertTrue(exported)
-        assertTrue(imported)
+        // Both rows are disabled while an import runs; a second write would interleave two runs.
+        assertFalse("the export row should not act during an import", launched)
     }
 
     /**
-     * The dialog says different things about the two files it can be shown for. An OPML import has
-     * no downloads to re-queue, so the switch is not drawn — a control that cannot do anything is
-     * worse than a missing one — and the body says what will *not* arrive before any feed is
-     * fetched, which is the thing a user would otherwise be surprised by afterwards.
+     * The confirmation says what an import will *not* do while there is still nothing to undo: it
+     * carries links, so a show already in the library keeps its position and its downloads.
      */
     @Test
-    fun `confirming an OPML import offers no re-download switch and says what is missing`() {
-        var confirmedWith: Boolean? = null
+    fun `the confirmation says a show already in the library is left alone`() {
+        var confirmed = false
         setContent(
             uiState = SettingsUiState(
-                backup = BackupUiState(
-                    pendingRestore = PendingRestore(
-                        json = "{}",
-                        showCount = 3,
-                        source = RestoreSource.OPML,
-                    ),
-                ),
+                backup = BackupUiState(pendingRestore = PendingRestore(json = "{}", showCount = 3)),
             ),
-            onConfirmRestore = { confirmedWith = it },
+            onConfirmRestore = { confirmed = true },
         )
 
-        composeRule.onNodeWithText("Positions, downloads and moments", substring = true)
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("Download the episodes I had offline").assertDoesNotExist()
+        composeRule.onNodeWithText("left as it is", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("Add", substring = false).performClick()
 
-        assertEquals(false, confirmedWith)
+        assertTrue(confirmed)
     }
 
     @Test
-    fun `an OPML file whose rows were not all usable says how many were skipped`() {
+    fun `a file whose rows were not all usable says how many were skipped`() {
         // Reported rather than folded into the total: a file whose extra rows were folders is
         // ordinary, and one whose rows were mostly refused is worth going back to.
         setContent(
@@ -354,7 +299,6 @@ class SettingsScreenTest {
                     pendingRestore = PendingRestore(
                         json = "{}",
                         showCount = 3,
-                        source = RestoreSource.OPML,
                         skipped = 2,
                     ),
                 ),
@@ -367,23 +311,23 @@ class SettingsScreenTest {
     @Test
     fun `backing out of the confirmation starts nothing`() {
         var cancelled = false
-        var confirmedWith: Boolean? = null
+        var confirmed = false
         setContent(
             uiState = SettingsUiState(
                 backup = BackupUiState(pendingRestore = PendingRestore(json = "{}", showCount = 1)),
             ),
-            onConfirmRestore = { confirmedWith = it },
+            onConfirmRestore = { confirmed = true },
             onCancelRestore = { cancelled = true },
         )
 
         composeRule.onNodeWithText("Cancel").performClick()
 
         assertTrue(cancelled)
-        assertNull(confirmedWith)
+        assertFalse("nothing may be fetched when the user backs out", confirmed)
     }
 
     @Test
-    fun `a finished restore names the feeds it could not fetch`() {
+    fun `a finished import names the feeds it could not fetch`() {
         setContent(
             SettingsUiState(
                 backup = BackupUiState(
@@ -391,7 +335,6 @@ class SettingsScreenTest {
                         id = "run-1",
                         summary = RestoreSummary(
                             showsRestored = 2,
-                            episodesRestored = 9,
                             failedTitles = listOf("Dead Feed"),
                         ),
                     ),
@@ -399,6 +342,7 @@ class SettingsScreenTest {
             ),
         )
 
+        composeRule.onNodeWithText("2 shows added.").assertIsDisplayed()
         composeRule.onNodeWithText("Dead Feed", substring = true).assertIsDisplayed()
     }
 
@@ -408,7 +352,7 @@ class SettingsScreenTest {
      * greets the user on every visit to settings.
      */
     @Test
-    fun `dismissing the restore report reports it as shown`() {
+    fun `dismissing the import report reports it as shown`() {
         var shown = false
         setContent(
             SettingsUiState(

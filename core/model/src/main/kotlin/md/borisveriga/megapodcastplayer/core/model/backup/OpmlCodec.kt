@@ -51,14 +51,13 @@ sealed interface OpmlDecodeResult {
 /**
  * Reads and writes OPML subscription lists.
  *
- * OPML is how a library moves between podcast apps, and it is the *only* format anything else here
- * can read. `BackupCodec`'s JSON is richer and completely private to this app: it carries
- * positions, played flags, the queue, downloads and moments, none of which OPML has a place for.
- * The two are not alternatives. The backup is how this app survives a wiped database; OPML is how
- * twenty subscriptions arrive from another app, or leave for one.
+ * OPML is how a library moves between podcast apps, and it is the only file this app writes or
+ * reads. A show is a link; an export is that list of links, and so is an import. Positions, played
+ * flags, the queue, downloads and moments have no place in the format and are no longer exported
+ * anywhere else either — they are earned again by listening, or, in a moment's case, kept by the
+ * moments screen's own Markdown export.
  *
- * So an export deliberately loses almost everything — and the row in the plan says so. What it
- * keeps is what another app can act on: a feed URL and a name.
+ * What an export keeps is what another app can act on: a feed URL and a name.
  *
  * **The file is untrusted input.** It was written by another program and picked out of a document
  * provider, so: external entities are off (see
