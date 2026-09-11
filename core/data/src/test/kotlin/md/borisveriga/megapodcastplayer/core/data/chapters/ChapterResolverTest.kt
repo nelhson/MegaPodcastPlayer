@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import java.io.IOException
+import java.net.UnknownHostException
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
@@ -105,13 +106,26 @@ class ChapterResolverTest {
 
     @Test
     fun `a fetch that fails leaves the episode without chapters rather than failing`() = runTest {
-        coEvery { chaptersApi.getChapters(any()) } throws IOException("offline")
+        // A document that arrived and could not be read: the publisher's problem, worth knowing.
+        coEvery { chaptersApi.getChapters(any()) } throws
+            IllegalArgumentException("Unexpected JSON token")
 
         val resolved = resolver.chaptersFor(episode(chaptersUrl = "https://x/c.json"))
 
         assertEquals(EpisodeChapters(), resolved)
         // Invisible to the user, and it should be — but it still goes somewhere.
         coVerify { crashReporter.recordNonFatal(any(), any()) }
+    }
+
+    @Test
+    fun `a fetch that fails for want of a network is not reported`() = runTest {
+        coEvery { chaptersApi.getChapters(any()) } throws UnknownHostException("x")
+
+        val resolved = resolver.chaptersFor(episode(chaptersUrl = "https://x/c.json"))
+
+        assertEquals(EpisodeChapters(), resolved)
+        // Nothing is wrong with the document; the next open simply tries again.
+        coVerify(exactly = 0) { crashReporter.recordNonFatal(any(), any()) }
     }
 
     @Test

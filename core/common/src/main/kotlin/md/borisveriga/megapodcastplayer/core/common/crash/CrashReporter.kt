@@ -12,9 +12,9 @@ package md.borisveriga.megapodcastplayer.core.common.crash
  * ## What belongs here
  *
  * A failure that a person would want to know about after the fact, and that the code has already
- * decided not to show anyone. Not: expected outcomes (a search with no results), not user mistakes
- * (a URL that is not a feed), and not anything on a hot path — every call crosses into a native
- * library and writes to disk.
+ * decided not to show anyone. Not: expected outcomes (a search with no results, or a request made
+ * with no network — see `isConnectivityFailure`), not user mistakes (a URL that is not a feed), and
+ * not anything on a hot path — every call crosses into a native library and writes to disk.
  *
  * ## Why an interface rather than calling Firebase
  *

@@ -4,6 +4,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.format.toPlainText
+import md.borisveriga.megapodcastplayer.core.common.result.isConnectivityFailure
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -60,7 +61,8 @@ data class EpisodeChapters(
  *
  * @property chaptersApi fetches the publisher's document.
  * @property episodeDao caches what was fetched.
- * @property crashReporter receives a fetch that failed, which nothing else would ever surface.
+ * @property crashReporter receives a fetch that failed for a reason other than having no network,
+ *   which nothing else would ever surface.
  */
 @Singleton
 class ChapterResolver @Inject constructor(
@@ -119,8 +121,11 @@ class ChapterResolver @Inject constructor(
         }.getOrElse { error ->
             // Nothing surfaces this to the user, and nothing should: an optional list that could
             // not be fetched is an absence, not a failure to report. But an absence nobody is shown
-            // still goes somewhere.
-            crashReporter.recordNonFatal(CHAPTER_FETCH_FAILED, error)
+            // still goes somewhere — unless the network was simply not there, which is no fault of
+            // the publisher's document and would be tried again on the next open anyway.
+            if (!error.isConnectivityFailure) {
+                crashReporter.recordNonFatal(CHAPTER_FETCH_FAILED, error)
+            }
             emptyList()
         }
 
