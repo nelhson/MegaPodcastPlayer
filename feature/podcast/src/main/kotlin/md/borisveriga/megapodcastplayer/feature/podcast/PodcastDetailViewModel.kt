@@ -39,8 +39,8 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
  * @property podcast the show; null while loading or after it has been removed.
  * @property episodes its episodes, newest first.
  * @property isLoading true until the first database emission arrives.
- * @property isRefreshing true while a pull-to-refresh is re-fetching this show's feed; ends in a
- *   snackbar either way.
+ * @property isRefreshing true while a hand-asked refresh is re-fetching this show's feed; ends in
+ *   a snackbar either way. The empty state's button is what asks for one — the pull rebuilds.
  * @property isAutoRefreshing true while the refresh that runs on entering the screen is in flight.
  *   Separate from [isRefreshing] because it renders as a thin progress line and says nothing when
  *   it finishes.
@@ -764,10 +764,9 @@ class PodcastDetailViewModel @Inject constructor(
         /**
          * Whether a feed operation of any kind is already running.
          *
-         * One guard for all three, so the automatic refresh cannot start on top of a
-         * pull-to-refresh and swallow the answer it was about to give, nor the reverse — and so
-         * that neither refresh can land its episodes in a list a rebuild is halfway through
-         * replacing.
+         * One guard for all three, so the automatic refresh cannot start on top of a hand-asked
+         * one and swallow the answer it was about to give, nor the reverse — and so that neither
+         * refresh can land its episodes in a list a rebuild is halfway through replacing.
          */
         val isBusy: Boolean get() = isRefreshing || isAutoRefreshing || isRebuilding
     }

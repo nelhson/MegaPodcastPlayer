@@ -4,11 +4,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
@@ -264,18 +267,27 @@ class PodcastDetailScreenTest {
     }
 
     @Test
-    fun `marking an episode played reports it`() {
+    fun `marking an episode played is the sheet's, not the row's`() {
         var marked: Pair<String, Boolean>? = null
         setScreen(
             listOf(episode("a")),
+            openEpisodeId = "a",
             onEpisodeSetPlayed = { id, played -> marked = id to played },
         )
 
-        // The revealed tier, beside Play next; the swipe is the only way to reach it visually, so
-        // the spoken action is what a test can press.
-        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Mark played")
+        composeRule.onNodeWithText("Mark played").performClick()
 
         assertEquals("a" to true, marked)
+    }
+
+    @Test
+    fun `the row's swipe no longer offers the mark`() {
+        setScreen(listOf(episode("a")))
+
+        // The swipe is invisible to a test as it is to a screen reader, so the row's spoken
+        // actions are what says which of them it still carries: queueing, and the offline copy.
+        composeRule.onNodeWithText("Episode a")
+            .assertHasNoCustomAccessibilityAction("Mark played")
     }
 
     @Test
@@ -324,10 +336,11 @@ class PodcastDetailScreenTest {
         var marked: Pair<String, Boolean>? = null
         setScreen(
             listOf(episode("a", isPlayed = true)),
+            openEpisodeId = "a",
             onEpisodeSetPlayed = { id, played -> marked = id to played },
         )
 
-        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Mark unplayed")
+        composeRule.onNodeWithText("Mark unplayed").performClick()
 
         assertEquals("a" to false, marked)
     }
@@ -362,16 +375,18 @@ class PodcastDetailScreenTest {
     }
 
     @Test
-    fun `rebuilding the list is behind the overflow and asks before it deletes`() {
+    fun `the pull rebuilds the list and asks before it deletes`() {
         var rebuilds = 0
-        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
+        setScreen(listOf(episode("a", positionMs = 600_000L)), onRebuild = { rebuilds++ })
 
-        composeRule.onNodeWithText("Delete and reload all episodes").assertDoesNotExist()
-
+        // It left the menu: a gesture is what a reader reaches for when a show's page looks wrong.
         composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+        composeRule.onNodeWithText("Delete and reload all episodes").assertDoesNotExist()
+        composeRule.onNodeWithText("Remove show").performClick()
 
-        // The menu item opens the question; it must not be the answer.
+        composeRule.pullDown()
+
+        // The pull opens the question; it must not be the answer.
         assertEquals(0, rebuilds)
         composeRule.onNodeWithText("Delete 1 episode and reload?").assertExists()
 
@@ -383,10 +398,9 @@ class PodcastDetailScreenTest {
     @Test
     fun `cancelling the confirmation deletes nothing`() {
         var rebuilds = 0
-        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
+        setScreen(listOf(episode("a", positionMs = 600_000L)), onRebuild = { rebuilds++ })
 
-        composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+        composeRule.pullDown()
         composeRule.onNodeWithText("Cancel").performClick()
 
         assertEquals(0, rebuilds)
@@ -406,8 +420,7 @@ class PodcastDetailScreenTest {
             ),
         )
 
-        composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+        composeRule.pullDown()
 
         composeRule.onNodeWithText("Delete 4 episodes and reload?").assertExists()
         composeRule
@@ -418,14 +431,15 @@ class PodcastDetailScreenTest {
     @Test
     fun `a show with nothing to lose is not asked to confirm`() {
         var rebuilds = 0
-        setScreen(episodes = emptyList(), onRebuild = { rebuilds++ })
+        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
 
-        composeRule.onNodeWithContentDescription("More actions").performClick()
-        composeRule.onNodeWithText("Delete and reload all episodes").performClick()
+        composeRule.pullDown()
 
         // Nothing stored means nothing the confirmation could protect, and a dialog that only ever
-        // says "delete these zero episodes?" teaches people to dismiss the one that matters.
+        // says "these episodes will be fetched again" teaches people to dismiss the one that
+        // matters.
         assertEquals(1, rebuilds)
+        composeRule.onNodeWithText("Delete 1 episode and reload?").assertDoesNotExist()
     }
 
     @Test
@@ -646,6 +660,24 @@ class PodcastDetailScreenTest {
             .assertHasNoCustomAccessibilityAction("Move down")
     }
 }
+
+/**
+ * Pulls the list down far enough to pass the refresh threshold.
+ *
+ * On the root rather than on a row: the gesture is the whole list's, and a single row is not tall
+ * enough on its own to carry a swipe past the distance the indicator asks for. It starts at the
+ * middle so that the finger lands on the list rather than on the top bar, which is outside the
+ * box that reads the pull.
+ */
+private fun ComposeContentTestRule.pullDown() {
+    onRoot().performTouchInput {
+        swipeDown(startY = centerY, endY = bottom - 1f, durationMillis = PULL_MS)
+    }
+    waitForIdle()
+}
+
+/** Long enough that the pull reads as a drag rather than a fling that outruns the threshold. */
+private const val PULL_MS = 500L
 
 /** Comfortably past the 500ms system long-press timeout the drag gesture waits out. */
 private const val LONG_PRESS_MS = 1_000L

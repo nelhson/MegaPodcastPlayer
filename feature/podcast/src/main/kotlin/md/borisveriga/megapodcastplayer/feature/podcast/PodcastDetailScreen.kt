@@ -23,13 +23,11 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
-import androidx.compose.material.icons.rounded.RemoveDone
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
@@ -201,9 +199,12 @@ fun PodcastDetailRoute(
  * @param onFilterChange remembers which episodes this show lists.
  * @param onSortChange remembers which end of this show the list starts at.
  * @param onShowSettingsChange applies a change made in the show settings sheet.
- * @param onRefresh pull-to-refresh handler; also the empty state's action.
- * @param onRebuild deletes the episode list and imports the feed again from scratch; the screen
- *   confirms first, so this is only ever called once the user has said yes.
+ * @param onRefresh the empty state's action. A show with no episodes is the one place a plain
+ *   re-fetch is still what is wanted: there is nothing stored for a rebuild to throw away, and no
+ *   list for a pull to act on either.
+ * @param onRebuild deletes the episode list and imports the feed again from scratch — what the
+ *   pull does now. The screen confirms first whenever the show has anything to lose, so this is
+ *   only ever called on an empty hand or once the user has said yes.
  * @param onRemove remove-show handler.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -323,6 +324,14 @@ fun PodcastDetailScreen(
         )
     }
 
+    // The gesture's whole decision, in one place because the pull and the dialog have to agree on
+    // it. A confirmation that protects nothing is only a tax — a show whose episodes are all
+    // untouched and undownloaded loses nothing a second fetch will not bring back — so the question
+    // is asked exactly when there is an answer worth having.
+    val requestRebuild = {
+        if (uiState.episodes.none { it.isAtStakeInARebuild }) onRebuild() else confirmingRebuild = true
+    }
+
     if (confirmingRebuild) {
         RebuildDialog(
             episodeCount = uiState.episodes.size,
@@ -365,11 +374,6 @@ fun PodcastDetailScreen(
                                 )
                             },
                             onOpenSettings = { showSettingsOpen = true },
-                            // A confirmation that protects nothing is only a tax, so a show with
-                            // no episodes stored rebuilds on the tap. Everywhere else it asks.
-                            onRebuild = {
-                                if (uiState.episodes.isEmpty()) onRebuild() else confirmingRebuild = true
-                            },
                             onRemove = onRemove,
                         )
                     }
@@ -388,6 +392,9 @@ fun PodcastDetailScreen(
             // the list the user is already reading. A rebuild borrows the same line rather than
             // blocking the screen — it leaves the old list readable until the moment it is
             // replaced — but says something different, because the two are not the same promise.
+            // It keeps the line even though the pull that starts it spins an indicator of its own:
+            // that one leaves with the finger, and a rebuild still running after a rotation has no
+            // gesture behind it at all.
             when {
                 uiState.isRebuilding -> WavyProgressLine(
                     contentDescription = stringResource(R.string.podcast_rebuilding),
@@ -420,9 +427,14 @@ fun PodcastDetailScreen(
                     onAction = onRefresh,
                 )
 
+                // The pull rebuilds. It used to re-fetch, which on a feed that has gone wrong —
+                // the reason anyone pulls a show's page twice — changes nothing at all, and the one
+                // thing that would fix it was three taps into a menu. The gesture now means "fetch
+                // this show again from scratch", with the dialog above standing between it and
+                // anything the user would miss.
                 else -> PullToRefreshBox(
-                    isRefreshing = uiState.isRefreshing,
-                    onRefresh = onRefresh,
+                    isRefreshing = uiState.isRebuilding,
+                    onRefresh = requestRebuild,
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     // Only a YouTube playlist is arranged by hand. An RSS show is a chronology,
@@ -488,9 +500,6 @@ fun PodcastDetailScreen(
                                 onPlay = { onEpisodePlay(episode.id) },
                                 onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
                                 onPlayNext = { onEpisodePlayNext(episode.id) },
-                                onSetPlayed = { played ->
-                                    onEpisodeSetPlayed(episode.id, played)
-                                },
                             )
                         }
                     }
@@ -532,7 +541,6 @@ fun PodcastDetailScreen(
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
  * @param onPlayNext queues it to play after whatever is playing now.
- * @param onSetPlayed marks the episode played, or puts it back to unplayed.
  */
 @Composable
 private fun EpisodeListRow(
@@ -549,7 +557,6 @@ private fun EpisodeListRow(
     onPlay: () -> Unit,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
-    onSetPlayed: (Boolean) -> Unit,
 ) {
     val isDragging = drag.draggingKey == episode.id
     val isNowPlaying = nowPlaying.episodeId == episode.id
@@ -561,24 +568,14 @@ private fun EpisodeListRow(
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         onClick = onPlayNext,
     )
-    // One button with two faces rather than two buttons, because an episode is only ever one of the
-    // two: the label says which way the tap goes, and the row's own dimming says which way it went.
-    val markPlayed = SwipeAction(
-        icon = if (episode.isPlayed) Icons.Rounded.RemoveDone else Icons.Rounded.DoneAll,
-        label = stringResource(
-            if (episode.isPlayed) R.string.podcast_action_mark_unplayed else R.string.podcast_action_mark_played,
-        ),
-        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        onClick = { onSetPlayed(!episode.isPlayed) },
-    )
 
     SwipeActionsRow(
-        // Revealed rather than committed: neither of these fires on release. Queueing changes what
-        // happens after the thing the user is listening to, and marking played takes an episode out
-        // of a filtered list under the finger — both are worth a deliberate tap, and the pull that
-        // would fire one of them is already spoken for by the download.
-        actions = listOf(playNext, markPlayed),
+        // Revealed rather than committed: it does not fire on release. Queueing changes what
+        // happens after the thing the user is listening to — worth a deliberate tap, and the pull
+        // that would fire it is already spoken for by the download. Marking played is not here at
+        // all: it lives in the episode sheet, where the row that is about to leave a filtered list
+        // is not the one under the finger.
+        actions = listOf(playNext),
         fullSwipeAction = download,
         modifier = Modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the order
@@ -595,7 +592,7 @@ private fun EpisodeListRow(
                 .semantics {
                     customActions = (
                         if (isReorderable) drag.moveActions(index, moveUp, moveDown) else emptyList()
-                        ) + listOf(playNext, markPlayed, download).asAccessibilityActions()
+                        ) + listOf(playNext, download).asAccessibilityActions()
                 }
                 // Inside the swipe box rather than around it, so the row's two drags are settled
                 // by the pointer that started them: this one consumes movement only once the
@@ -996,9 +993,9 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  * Removing a show sat in the top bar, one mis-tap from the back arrow, for something that deletes
  * every episode and every download it has. It belongs behind a menu.
  *
- * Rebuilding the list belongs here for the same reason removal does, and is ordered above removal:
- * it destroys less than removing the show, which keeps the menu reading from harmless to
- * irreversible.
+ * Rebuilding the list used to sit above it. It is a gesture now — the pull on the list itself —
+ * because it is what a reader wants when a show's page looks wrong, and wanting it from three taps
+ * inside a menu is what made a pull that only re-fetched feel broken.
  *
  * A per-show background-refresh toggle used to head the menu. It was the odd one out — a setting
  * among actions, whose label had to state the current value and whose content description had to
@@ -1016,8 +1013,6 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  *   opened in a browser is a page of XML, and what it is actually for is being pasted into another
  *   podcast app.
  * @param onOpenSettings opens the per-show settings sheet.
- * @param onRebuild opens the rebuild confirmation, or rebuilds outright when there is nothing
- *   stored to lose.
  * @param onRemove remove-show handler.
  */
 @Composable
@@ -1025,7 +1020,6 @@ private fun OverflowMenu(
     onShare: () -> Unit,
     onCopyFeed: () -> Unit,
     onOpenSettings: () -> Unit,
-    onRebuild: () -> Unit,
     onRemove: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -1065,16 +1059,6 @@ private fun OverflowMenu(
             onClick = {
                 expanded = false
                 onOpenSettings()
-            },
-        )
-        DropdownMenuItem(
-            text = { Text(text = stringResource(R.string.podcast_rebuild)) },
-            leadingIcon = {
-                Icon(imageVector = Icons.Rounded.RestartAlt, contentDescription = null)
-            },
-            onClick = {
-                expanded = false
-                onRebuild()
             },
         )
         DropdownMenuItem(
