@@ -30,13 +30,6 @@
     <string name="podcast_continue_with_remaining">Continue · %1$s</string>
 
     <!--
-        The overflow's rebuild, for a list a refresh cannot repair — a refresh only ever merges into
-        the list it already has. The label leads with the deletion rather than the reload, because
-        that is the half the user cannot undo.
-    -->
-    <string name="podcast_rebuild">Delete and reload all episodes</string>
-
-    <!--
         The confirmation, which no second tap can undo. Unlike removing a show, a rebuild leaves a
         list much like the one before it, so a mis-tap could otherwise go unnoticed for weeks.
     -->
