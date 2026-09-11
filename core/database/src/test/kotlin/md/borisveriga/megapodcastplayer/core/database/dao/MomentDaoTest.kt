@@ -147,17 +147,6 @@ class MomentDaoTest {
     }
 
     @Test
-    fun `a restore writes over the moment already at that spot rather than doubling it`() = runTest {
-        momentDao.insert(moment(positionMs = 743_000L, note = "stale"))
-
-        momentDao.restoreAll(listOf(moment(positionMs = 743_000L, note = "from the backup")))
-
-        val rows = momentDao.getAllWithEpisode()
-        assertEquals(1, rows.size)
-        assertEquals("from the backup", rows.single().moment.note)
-    }
-
-    @Test
     fun `a note can be replaced without moving the moment`() = runTest {
         val id = momentDao.insert(moment(positionMs = 743_000L, note = "first"))
 
@@ -175,18 +164,5 @@ class MomentDaoTest {
         podcastDao.deleteById(podcast.id)
 
         assertEquals(emptyList<Long>(), momentDao.getAllWithEpisode().map { it.moment.id })
-    }
-
-    @Test
-    fun `the backup projection resolves a moment back to its feed and guid`() = runTest {
-        momentDao.insert(moment(positionMs = 743_000L, note = "kept", createdAt = 5_000L))
-
-        val row = momentDao.getBackupRows().single()
-
-        assertEquals(feedUrl, row.feedUrl)
-        assertEquals("guid-1", row.guid)
-        assertEquals(743_000L, row.positionMs)
-        assertEquals("kept", row.note)
-        assertEquals(5_000L, row.createdAt)
     }
 }

@@ -84,27 +84,16 @@ fun SettingsRoute(
     // Created here rather than in SettingsScreen so the stateless screen stays testable under
     // createComposeRule, which has no activity result registry to register against.
     val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE),
+        ActivityResultContracts.CreateDocument(OPML_MIME_TYPE),
     ) { uri -> uri?.let(viewModel::exportTo) }
 
-    // Deliberately loose: plenty of document providers label a .json file as something else, or as
-    // nothing at all, and a filter that hides the user's own backup is worse than one that lets
-    // them pick the wrong file — which decoding rejects a moment later anyway.
-    val restoreLauncher = rememberLauncherForActivityResult(
+    // Deliberately loose: an OPML file arrives from another app, and other apps disagree about
+    // whether `.opml` is `text/x-opml`, `text/xml`, `application/xml` or nothing at all. A filter
+    // that hides the file the user came here to import would be the one failure they cannot work
+    // around, and a wrong file is refused by decoding a moment later anyway.
+    val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let(viewModel::prepareRestore) }
-
-    val opmlExportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(OPML_MIME_TYPE),
-    ) { uri -> uri?.let(viewModel::exportOpmlTo) }
-
-    // Looser still than the backup picker, and for a stronger version of the same reason: an OPML
-    // file arrives from another app, and other apps disagree about whether `.opml` is
-    // `text/x-opml`, `text/xml`, `application/xml` or nothing at all. A filter that hides the file
-    // the user came here to import would be the one failure they cannot work around.
-    val opmlImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let(viewModel::prepareOpmlImport) }
+    ) { uri -> uri?.let(viewModel::prepareImport) }
 
     // Resolved here rather than in the stateless screen, which has no activity to start one from
     // under `createComposeRule`.
@@ -126,10 +115,8 @@ fun SettingsRoute(
         onKeepLimitChange = viewModel::setKeepLimit,
         onDeleteAfterPlayingChange = viewModel::setDeleteAfterPlaying,
         onRemoveAllDownloads = viewModel::removeAllDownloads,
-        onExportBackup = { exportLauncher.launch(viewModel.suggestedBackupFileName()) },
-        onRestoreBackup = { restoreLauncher.launch(BACKUP_PICKER_TYPES) },
-        onExportOpml = { opmlExportLauncher.launch(viewModel.suggestedOpmlFileName()) },
-        onImportOpml = { opmlImportLauncher.launch(OPML_PICKER_TYPES) },
+        onExportSubscriptions = { exportLauncher.launch(viewModel.suggestedFileName()) },
+        onImportSubscriptions = { importLauncher.launch(OPML_PICKER_TYPES) },
         onConfirmRestore = viewModel::confirmRestore,
         onCancelRestore = viewModel::cancelRestore,
         onRestoreResultShown = viewModel::acknowledgeRestoreResult,
@@ -160,13 +147,11 @@ fun SettingsRoute(
  * @param onKeepLimitChange keep-limit handler.
  * @param onDeleteAfterPlayingChange delete-after-playing toggle handler.
  * @param onRemoveAllDownloads remove-all handler.
- * @param onExportBackup called when the user asks to write a backup.
- * @param onRestoreBackup called when the user asks to read one.
- * @param onExportOpml called when the user asks to write a subscription list.
- * @param onImportOpml called when the user asks to read one.
- * @param onConfirmRestore called with whether to re-queue the downloads the backup records.
- * @param onCancelRestore called when the user backs out of a picked backup.
- * @param onRestoreResultShown called when the user dismisses the finished restore's report, which
+ * @param onExportSubscriptions called when the user asks to write the subscription list.
+ * @param onImportSubscriptions called when the user asks to read one.
+ * @param onConfirmRestore called when the user accepts a picked subscription list.
+ * @param onCancelRestore called when the user backs out of one.
+ * @param onRestoreResultShown called when the user dismisses the finished import's report, which
  *   is what stops it being shown again.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
@@ -189,11 +174,9 @@ fun SettingsScreen(
     onKeepLimitChange: (Int) -> Unit,
     onDeleteAfterPlayingChange: (Boolean) -> Unit,
     onRemoveAllDownloads: () -> Unit,
-    onExportBackup: () -> Unit,
-    onRestoreBackup: () -> Unit,
-    onExportOpml: () -> Unit,
-    onImportOpml: () -> Unit,
-    onConfirmRestore: (Boolean) -> Unit,
+    onExportSubscriptions: () -> Unit,
+    onImportSubscriptions: () -> Unit,
+    onConfirmRestore: () -> Unit,
     onCancelRestore: () -> Unit,
     onRestoreResultShown: () -> Unit,
     onMessageShown: () -> Unit,
@@ -221,32 +204,20 @@ fun SettingsScreen(
                     formatBytes(resources, message.freedBytes),
                 )
 
-                SettingsMessage.BackupExported ->
-                    resources.getString(R.string.settings_message_backup_exported)
+                SettingsMessage.SubscriptionsExported ->
+                    resources.getString(R.string.settings_subscriptions_exported)
 
-                SettingsMessage.BackupExportFailed ->
-                    resources.getString(R.string.settings_message_backup_export_failed)
+                SettingsMessage.SubscriptionsExportFailed ->
+                    resources.getString(R.string.settings_subscriptions_export_failed)
 
-                SettingsMessage.BackupReadFailed ->
-                    resources.getString(R.string.settings_message_backup_read_failed)
+                SettingsMessage.SubscriptionsReadFailed ->
+                    resources.getString(R.string.settings_subscriptions_read_failed)
 
-                SettingsMessage.BackupNotRecognised ->
-                    resources.getString(R.string.settings_message_backup_not_recognised)
+                SettingsMessage.SubscriptionsNotRecognised ->
+                    resources.getString(R.string.settings_subscriptions_not_recognised)
 
-                SettingsMessage.BackupTooNew ->
-                    resources.getString(R.string.settings_message_backup_too_new)
-
-                SettingsMessage.OpmlExported ->
-                    resources.getString(R.string.settings_opml_exported)
-
-                SettingsMessage.OpmlExportFailed ->
-                    resources.getString(R.string.settings_opml_export_failed)
-
-                SettingsMessage.OpmlNotRecognised ->
-                    resources.getString(R.string.settings_opml_not_recognised)
-
-                SettingsMessage.OpmlEmpty ->
-                    resources.getString(R.string.settings_opml_empty)
+                SettingsMessage.SubscriptionsEmpty ->
+                    resources.getString(R.string.settings_subscriptions_empty)
             },
         )
         onMessageShown()
@@ -416,14 +387,12 @@ fun SettingsScreen(
                 )
             }
 
-            SectionHeader(text = stringResource(R.string.settings_section_backup))
+            SectionHeader(text = stringResource(R.string.settings_section_subscriptions))
             SettingsCard {
                 BackupRows(
                     state = uiState.backup,
-                    onExport = onExportBackup,
-                    onRestore = onRestoreBackup,
-                    onExportOpml = onExportOpml,
-                    onImportOpml = onImportOpml,
+                    onExport = onExportSubscriptions,
+                    onImport = onImportSubscriptions,
                 )
             }
 
@@ -498,7 +467,7 @@ fun SettingsScreen(
 
         // A finished run is retained and replayed for as long as the work lives, so dismissing
         // this dialog is recorded outside the screen: a summary read once is not a week of
-        // announcing the same restore on every visit to settings.
+        // announcing the same import on every visit to settings.
         (uiState.backup.restore as? RestoreRun.Finished)?.let { finished ->
             RestoreResultDialog(
                 summary = finished.summary,
@@ -774,7 +743,7 @@ private fun RemoveAllDownloadsDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.settings_backup_cancel))
+                Text(text = stringResource(R.string.settings_cancel))
             }
         },
     )
@@ -824,10 +793,8 @@ internal fun SettingsScreenPreview() {
             onPureBlackChange = {},
             onOpenNotificationSettings = {},
             onRemoveAllDownloads = {},
-            onExportBackup = {},
-            onRestoreBackup = {},
-            onExportOpml = {},
-            onImportOpml = {},
+            onExportSubscriptions = {},
+            onImportSubscriptions = {},
             onConfirmRestore = {},
             onCancelRestore = {},
             onRestoreResultShown = {},
@@ -835,12 +802,6 @@ internal fun SettingsScreenPreview() {
         )
     }
 }
-
-/** The MIME type the export document is created with; a picker requires a non-empty one. */
-private const val BACKUP_MIME_TYPE = "application/json"
-
-/** The types the restore picker offers, deliberately wide; see the launcher's comment. */
-private val BACKUP_PICKER_TYPES = arrayOf("application/json", "text/plain", "*/*")
 
 /**
  * What an exported subscription list is created as.

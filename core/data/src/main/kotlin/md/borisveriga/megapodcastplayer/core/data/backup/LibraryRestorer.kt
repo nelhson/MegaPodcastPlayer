@@ -52,9 +52,8 @@ interface LibraryRestorer {
      * @param validatedJson a document the caller has already decoded successfully. Passing text
      *   rather than a picked `Uri` is deliberate: a document picker's grant does not survive to
      *   whenever the work actually runs.
-     * @param reDownload whether to re-queue the downloads the backup records.
      */
-    fun start(validatedJson: String, reDownload: Boolean)
+    fun start(validatedJson: String)
 
     /** Observes the current or most recent run; emits null when none has run this install. */
     fun observe(): Flow<RestoreRun?>

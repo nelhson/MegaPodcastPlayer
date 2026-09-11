@@ -12,15 +12,14 @@ import java.io.File
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
-import md.borisveriga.megapodcastplayer.core.data.repository.RestoreOptions
 import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupDecodeResult
 
 /**
- * Rebuilds the library from a backup the user picked.
+ * Subscribes to every show in the list the user picked.
  *
- * A worker rather than a coroutine in a ViewModel because a restore is one network round trip per
+ * A worker rather than a coroutine in a ViewModel because an import is one network round trip per
  * show: thirty shows is minutes of work that has to survive a rotation, a fold, and the app being
  * put in the background.
  *
@@ -57,9 +56,6 @@ class RestoreWorker @AssistedInject constructor(
 
         val summary = backupRepository.restore(
             file = decoded.file,
-            options = RestoreOptions(
-                reDownload = inputData.getBoolean(KEY_RE_DOWNLOAD, false),
-            ),
             onProgress = { progress ->
                 setProgressAsync(
                     workDataOf(
@@ -82,13 +78,10 @@ class RestoreWorker @AssistedInject constructor(
         /** Input: absolute path of the validated JSON the route left in the cache. */
         const val KEY_FILE_PATH = "file_path"
 
-        /** Input: whether to re-queue the downloads the backup records. */
-        const val KEY_RE_DOWNLOAD = "re_download"
-
         /** Progress: shows finished so far. */
         const val KEY_COMPLETED = "completed"
 
-        /** Progress: shows in the backup. */
+        /** Progress: shows in the document. */
         const val KEY_TOTAL = "total"
 
         /** Progress: the show being fetched right now. */
@@ -96,18 +89,6 @@ class RestoreWorker @AssistedInject constructor(
 
         /** Output: shows restored. */
         const val KEY_SHOWS_RESTORED = "shows_restored"
-
-        /** Output: episodes whose listening state was re-applied. */
-        const val KEY_EPISODES_RESTORED = "episodes_restored"
-
-        /** Output: episodes the backup knew about that the publisher has since pruned. */
-        const val KEY_EPISODES_MISSING = "episodes_missing"
-
-        /** Output: queue entries written. */
-        const val KEY_QUEUE_RESTORED = "queue_restored"
-
-        /** Output: downloads re-queued. */
-        const val KEY_DOWNLOADS_QUEUED = "downloads_queued"
 
         /** Output: titles of shows whose feed could not be fetched. */
         const val KEY_FAILED_TITLES = "failed_titles"
@@ -124,9 +105,5 @@ class RestoreWorker @AssistedInject constructor(
  */
 private fun RestoreSummary.asOutputData(): Data = workDataOf(
     RestoreWorker.KEY_SHOWS_RESTORED to showsRestored,
-    RestoreWorker.KEY_EPISODES_RESTORED to episodesRestored,
-    RestoreWorker.KEY_EPISODES_MISSING to episodesMissing,
-    RestoreWorker.KEY_QUEUE_RESTORED to queueRestored,
-    RestoreWorker.KEY_DOWNLOADS_QUEUED to downloadsQueued,
     RestoreWorker.KEY_FAILED_TITLES to failedTitles.toTypedArray(),
 )

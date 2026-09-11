@@ -104,75 +104,69 @@
     <string name="settings_storage_summary">%1$s · %2$s</string>
 
 
-    <!-- Backup -->
-    <string name="settings_section_backup">Backup</string>
-    <string name="settings_backup_export">Export library</string>
-    <string name="settings_backup_never">No backup yet</string>
-    <string name="settings_backup_last">Last backup: %1$s</string>
-    <string name="settings_backup_restore">Restore from a file</string>
-    <string name="settings_backup_restore_description">Re-adds your shows and puts your positions back</string>
-    <string name="settings_backup_restoring">Restoring…</string>
-    <string name="settings_backup_restoring_progress">Restoring %1$d of %2$d — %3$s</string>
-    <string name="settings_backup_restore_failed">Restore did not finish</string>
-    <string name="settings_backup_restore_confirm_title">Restore this backup?</string>
-    <plurals name="settings_backup_restore_confirm_body">
-        <item quantity="one">This backup holds %1$d show. Your play queue will be replaced by the one in the file; everything else is merged.</item>
-        <item quantity="other">This backup holds %1$d shows. Your play queue will be replaced by the one in the file; everything else is merged.</item>
-    </plurals>
-    <string name="settings_backup_re_download">Download the episodes I had offline</string>
-    <string name="settings_backup_restore_confirm_action">Restore</string>
-    <string name="settings_backup_cancel">Cancel</string>
-    <string name="settings_backup_done">Done</string>
-    <string name="settings_backup_restore_done_title">Restore finished</string>
-    <plurals name="settings_backup_restore_done_shows">
-        <item quantity="one">%1$d show restored.</item>
-        <item quantity="other">%1$d shows restored.</item>
-    </plurals>
-    <plurals name="settings_backup_restore_done_episodes">
-        <item quantity="one">%1$d episode is back where you left it.</item>
-        <item quantity="other">%1$d episodes are back where you left them.</item>
-    </plurals>
-    <plurals name="settings_backup_restore_done_missing">
-        <item quantity="one">%1$d episode is no longer in its feed.</item>
-        <item quantity="other">%1$d episodes are no longer in their feeds.</item>
-    </plurals>
-    <plurals name="settings_backup_restore_done_moments">
-        <item quantity="one">%1$d moment restored.</item>
-        <item quantity="other">%1$d moments restored.</item>
-    </plurals>
-    <string name="settings_backup_restore_done_failed">Could not fetch: %1$s</string>
-
     <!--
-      OPML: the subscription list, which is how a library moves in from or out to another app.
-
-      The two descriptions are the whole point of having four rows instead of two — they say what
-      each file carries, so the difference between the backup and the subscription list is on the
-      screen rather than in the extension. "Shows only" is stated twice, in the row and again in the
-      dialog, because it is the thing a user will be surprised by afterwards if it is stated once.
+      Subscriptions: the one file this app writes and the one it reads, and the whole of what it
+      carries is a list of links. A show is a feed URL — a podcast's RSS or a YouTube playlist's —
+      and everything else the app knows about it is what fetching that URL produced. The export
+      used to carry the produce too, in a second file of its own, and the two rows that offered
+      them differed in a parenthesis. There is one pair now, and the format is named where it is
+      acted on — the picker offers a ".opml" file — rather than in a label that would then say it
+      twice.
     -->
-    <string name="settings_opml_export">Export subscriptions (OPML)</string>
-    <string name="settings_opml_export_description">Shows only, in the format other podcast apps read</string>
-    <string name="settings_opml_import">Import subscriptions (OPML)</string>
-    <string name="settings_opml_import_description">Adds shows exported from another podcast app</string>
-    <string name="settings_opml_import_confirm_title">Add these shows?</string>
-    <plurals name="settings_opml_import_confirm_body">
-        <item quantity="one">%1$d show will be added. Positions, downloads and moments are not in an OPML file.</item>
-        <item quantity="other">%1$d shows will be added. Positions, downloads and moments are not in an OPML file.</item>
+    <string name="settings_section_subscriptions">Subscriptions</string>
+    <string name="settings_subscriptions_export">Export subscriptions</string>
+    <!--
+      The export row's second line answers "what happens when the database is wiped", which is a
+      real question here: it is recreated rather than migrated, so a build that changes the schema
+      costs the user every show they have added. A date is the only useful answer, and "not
+      exported yet" has to be visible before the release that acts on it rather than after.
+    -->
+    <string name="settings_subscriptions_never">Not exported yet</string>
+    <string name="settings_subscriptions_last">Last exported: %1$s</string>
+    <string name="settings_subscriptions_import">Import subscriptions</string>
+    <string name="settings_subscriptions_import_description">Adds shows from a list exported here or by another app</string>
+    <!-- Present tense with an ellipsis, per rule 7: this one is actually running. -->
+    <string name="settings_subscriptions_importing">Adding shows…</string>
+    <string name="settings_subscriptions_importing_progress">Adding %1$d of %2$d — %3$s</string>
+    <string name="settings_subscriptions_import_failed">Import did not finish</string>
+    <string name="settings_subscriptions_import_confirm_title">Add these shows?</string>
+    <!--
+      Says what an import will *not* do, because that is the half the user would otherwise be
+      surprised by afterwards: a list of links restores links. A show already in the library is
+      left alone, positions and all, which is worth stating in the same breath.
+    -->
+    <plurals name="settings_subscriptions_import_confirm_body">
+        <item quantity="one">%1$d show will be added. A show you already have is left as it is — a list carries links, not positions or downloads.</item>
+        <item quantity="other">%1$d shows will be added. A show you already have is left as it is — a list carries links, not positions or downloads.</item>
     </plurals>
-    <plurals name="settings_opml_import_skipped">
+    <!--
+      Said rather than folded into the total: a file whose extra rows were folders is ordinary, one
+      whose rows were mostly refused is worth looking at again, and a count of what arrived cannot
+      tell the two apart.
+    -->
+    <plurals name="settings_subscriptions_import_skipped">
         <item quantity="one">%1$d entry was skipped: a folder, or a feed this app will not fetch.</item>
         <item quantity="other">%1$d entries were skipped: folders, or feeds this app will not fetch.</item>
     </plurals>
-    <string name="settings_opml_import_confirm_action">Add</string>
-    <string name="settings_opml_exported">Subscriptions exported</string>
-    <string name="settings_opml_export_failed">Could not write the subscription list</string>
-    <string name="settings_opml_not_recognised">That file is not an OPML subscription list</string>
-    <string name="settings_opml_empty">That subscription list has no shows in it</string>
-    <string name="settings_message_backup_exported">Backup saved</string>
-    <string name="settings_message_backup_export_failed">Could not write the backup file</string>
-    <string name="settings_message_backup_read_failed">Could not read that file</string>
-    <string name="settings_message_backup_not_recognised">That file is not a MegaPodcastPlayer backup</string>
-    <string name="settings_message_backup_too_new">That backup was made by a newer version of the app</string>
+    <string name="settings_subscriptions_import_confirm_action">Add</string>
+    <!-- Both dialogs on this screen dismiss with the same two words; rule 3 fixes "Cancel". -->
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_done">Done</string>
+    <string name="settings_subscriptions_import_done_title">Import finished</string>
+    <plurals name="settings_subscriptions_import_done_shows">
+        <item quantity="one">%1$d show added.</item>
+        <item quantity="other">%1$d shows added.</item>
+    </plurals>
+    <!--
+      Named rather than counted: "2 shows could not be fetched" is not actionable, and the point of
+      keeping the file is that the user can go and add the one that is missing.
+    -->
+    <string name="settings_subscriptions_import_done_failed">Could not fetch: %1$s</string>
+    <string name="settings_subscriptions_exported">Subscriptions exported</string>
+    <string name="settings_subscriptions_export_failed">Could not write the subscription list</string>
+    <string name="settings_subscriptions_read_failed">Could not read that file</string>
+    <string name="settings_subscriptions_not_recognised">That file is not an OPML subscription list</string>
+    <string name="settings_subscriptions_empty">That subscription list has no shows in it</string>
 
     <!--
         SET-4. What an app should be able to say about itself: which build this is, whether its

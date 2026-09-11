@@ -37,7 +37,6 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
-import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupFile
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupPodcast
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
@@ -390,21 +389,33 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `the suggested file name carries the injected clock's date`() {
+    fun `the suggested file name says what it is and carries the injected clock's date`() {
         assertEquals(
-            "megapodcastplayer-backup-2026-09-07.json",
-            viewModel.suggestedBackupFileName(),
+            "megapodcastplayer-subscriptions-2026-09-07.opml",
+            viewModel.suggestedFileName(),
         )
     }
 
     @Test
-    fun `a successful export writes the document and records when it happened`() = runTest {
+    fun `an export writes OPML and records when it happened`() = runTest {
+        // The recording is what the section's "last exported" line reads, and that line is the
+        // warning about a database recreated rather than migrated: this file is what puts the
+        // shows back, so it is the file whose date is worth showing.
         viewModel.uiState.test {
             awaitItem()
-            viewModel.exportTo(Uri.parse("content://documents/backup.json"))
+            viewModel.exportTo(Uri.parse("content://documents/subs.opml"))
 
-            coVerify { backupFileStore.write(any(), BackupCodec.encode(backupFile)) }
+            coVerify {
+                backupFileStore.write(
+                    any(),
+                    match<String> { it.contains("<opml") && it.contains("https://feeds.example.com/a") },
+                )
+            }
             coVerify { backupRepository.recordExported(exportedAt.toEpochMilli()) }
+            assertEquals(
+                SettingsMessage.SubscriptionsExported,
+                expectMostRecentItem().message,
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -416,10 +427,10 @@ class SettingsViewModelTest {
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.exportTo(Uri.parse("content://documents/backup.json"))
+            viewModel.exportTo(Uri.parse("content://documents/subs.opml"))
 
             assertEquals(
-                SettingsMessage.BackupExportFailed,
+                SettingsMessage.SubscriptionsExportFailed,
                 expectMostRecentItem().message,
             )
             coVerify(exactly = 0) { backupRepository.recordExported(any()) }
@@ -428,49 +439,52 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `a picked backup is decoded and held for confirmation`() = runTest {
-        coEvery { backupFileStore.read(any()) } returns
-            Result.success(BackupCodec.encode(backupFile))
+    fun `a picked subscription list is decoded and held for confirmation`() = runTest {
+        coEvery { backupFileStore.read(any()) } returns Result.success(opmlDocument)
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.prepareRestore(Uri.parse("content://documents/backup.json"))
+            viewModel.prepareImport(Uri.parse("content://documents/subs.opml"))
 
             val pending = expectMostRecentItem().backup.pendingRestore
             assertEquals(2, pending?.showCount)
-            // Nothing is started until the user confirms.
-            verify(exactly = 0) { libraryRestorer.start(any(), any()) }
+            // The folder in the document, reported rather than silently dropped.
+            assertEquals(1, pending?.skipped)
+            // Nothing is fetched until the user confirms.
+            verify(exactly = 0) { libraryRestorer.start(any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `a file that is not a backup is refused before anything is enqueued`() = runTest {
+    fun `a file that is not OPML is refused before anything is enqueued`() = runTest {
         coEvery { backupFileStore.read(any()) } returns Result.success("shopping list")
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.prepareRestore(Uri.parse("content://documents/notes.txt"))
+            viewModel.prepareImport(Uri.parse("content://documents/notes.txt"))
 
             val state = expectMostRecentItem()
-            assertEquals(SettingsMessage.BackupNotRecognised, state.message)
+            assertEquals(SettingsMessage.SubscriptionsNotRecognised, state.message)
             assertNull(state.backup.pendingRestore)
-            verify(exactly = 0) { libraryRestorer.start(any(), any()) }
+            verify(exactly = 0) { libraryRestorer.start(any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `a backup from a newer build is refused rather than partly restored`() = runTest {
+    fun `a subscription list with no shows in it says so rather than importing nothing`() = runTest {
+        // "The file is empty" and "the file is wrong" are different things to be told, and only one
+        // of them is worth going back to the other app for.
         coEvery { backupFileStore.read(any()) } returns
-            Result.success("""{ "version": 99, "exportedAtMs": 1 }""")
+            Result.success("""<opml version="2.0"><body /></opml>""")
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.prepareRestore(Uri.parse("content://documents/backup.json"))
+            viewModel.prepareImport(Uri.parse("content://documents/empty.opml"))
 
             val state = expectMostRecentItem()
-            assertEquals(SettingsMessage.BackupTooNew, state.message)
+            assertEquals(SettingsMessage.SubscriptionsEmpty, state.message)
             assertNull(state.backup.pendingRestore)
             cancelAndIgnoreRemainingEvents()
         }
@@ -483,167 +497,50 @@ class SettingsViewModelTest {
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.prepareRestore(Uri.parse("content://documents/backup.json"))
+            viewModel.prepareImport(Uri.parse("content://documents/subs.opml"))
 
-            assertEquals(SettingsMessage.BackupReadFailed, expectMostRecentItem().message)
+            assertEquals(
+                SettingsMessage.SubscriptionsReadFailed,
+                expectMostRecentItem().message,
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `confirming starts the restore with the chosen re-download setting`() = runTest {
-        val encoded = BackupCodec.encode(backupFile)
-        coEvery { backupFileStore.read(any()) } returns Result.success(encoded)
-
-        viewModel.uiState.test {
-            awaitItem()
-            viewModel.prepareRestore(Uri.parse("content://documents/backup.json"))
-            expectMostRecentItem()
-            viewModel.confirmRestore(reDownload = true)
-
-            verify { libraryRestorer.start(encoded, true) }
-            assertNull(expectMostRecentItem().backup.pendingRestore)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `the suggested subscription-list name says what it is and carries the same date`() {
-        // A folder holding both files should say which is which without either being opened.
-        assertEquals(
-            "megapodcastplayer-subscriptions-2026-09-07.opml",
-            viewModel.suggestedOpmlFileName(),
-        )
-    }
-
-    @Test
-    fun `exporting subscriptions writes OPML and does not count as a backup`() = runTest {
-        // The second half is the point. The backup row's "last backup" line is a warning about a
-        // database that is recreated rather than migrated, and an OPML file cannot answer it — so
-        // letting this reset the line would be the app telling the user they are safe when the
-        // positions, the queue and the moments are still nowhere.
-        viewModel.uiState.test {
-            awaitItem()
-            viewModel.exportOpmlTo(Uri.parse("content://documents/subs.opml"))
-
-            coVerify {
-                backupFileStore.write(
-                    any(),
-                    match<String> { it.contains("<opml") && it.contains("https://feeds.example.com/a") },
-                )
-            }
-            coVerify(exactly = 0) { backupRepository.recordExported(any()) }
-            assertEquals(SettingsMessage.OpmlExported, expectMostRecentItem().message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `a failed subscription export is reported as its own failure`() = runTest {
-        coEvery { backupFileStore.write(any(), any()) } returns
-            Result.failure(java.io.IOException("no stream"))
-
-        viewModel.uiState.test {
-            awaitItem()
-            viewModel.exportOpmlTo(Uri.parse("content://documents/subs.opml"))
-
-            assertEquals(SettingsMessage.OpmlExportFailed, expectMostRecentItem().message)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `a picked OPML file is held for confirmation, marked as what it is`() = runTest {
+    fun `confirming hands the decoded subscriptions to the restorer`() = runTest {
         coEvery { backupFileStore.read(any()) } returns Result.success(opmlDocument)
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.prepareOpmlImport(Uri.parse("content://documents/subs.opml"))
-
+            viewModel.prepareImport(Uri.parse("content://documents/subs.opml"))
             val pending = expectMostRecentItem().backup.pendingRestore
-            assertEquals(2, pending?.showCount)
-            // The mark is what stops the dialog offering a re-download switch for a file that
-            // records no downloads.
-            assertEquals(RestoreSource.OPML, pending?.source)
-            // The folder in the document, reported rather than silently dropped.
-            assertEquals(1, pending?.skipped)
-            verify(exactly = 0) { libraryRestorer.start(any(), any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
+            viewModel.confirmRestore()
 
-    @Test
-    fun `confirming an OPML import never re-downloads, whatever it is passed`() = runTest {
-        // Belt and braces with the dialog, which does not draw the switch at all: a caller passing
-        // true would otherwise be asking to re-queue downloads a subscription list does not record.
-        coEvery { backupFileStore.read(any()) } returns Result.success(opmlDocument)
-
-        viewModel.uiState.test {
-            awaitItem()
-            viewModel.prepareOpmlImport(Uri.parse("content://documents/subs.opml"))
-            expectMostRecentItem()
-            viewModel.confirmRestore(reDownload = true)
-
-            verify { libraryRestorer.start(any(), false) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `a file that is not OPML is refused before anything is enqueued`() = runTest {
-        // The one that happens in practice: the JSON backup picked into the wrong row.
-        coEvery { backupFileStore.read(any()) } returns
-            Result.success(BackupCodec.encode(backupFile))
-
-        viewModel.uiState.test {
-            awaitItem()
-            viewModel.prepareOpmlImport(Uri.parse("content://documents/backup.json"))
-
-            val state = expectMostRecentItem()
-            assertEquals(SettingsMessage.OpmlNotRecognised, state.message)
-            assertNull(state.backup.pendingRestore)
-            verify(exactly = 0) { libraryRestorer.start(any(), any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `an OPML file with no shows in it says so rather than importing nothing`() = runTest {
-        // "The file is empty" and "the file is wrong" are different things to be told, and only one
-        // of them is worth going back to the other app for.
-        coEvery { backupFileStore.read(any()) } returns
-            Result.success("""<opml version="2.0"><body /></opml>""")
-
-        viewModel.uiState.test {
-            awaitItem()
-            viewModel.prepareOpmlImport(Uri.parse("content://documents/empty.opml"))
-
-            val state = expectMostRecentItem()
-            assertEquals(SettingsMessage.OpmlEmpty, state.message)
-            assertNull(state.backup.pendingRestore)
+            verify { libraryRestorer.start(pending!!.json) }
+            assertNull(expectMostRecentItem().backup.pendingRestore)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
     fun `cancelling drops the picked document without starting anything`() = runTest {
-        coEvery { backupFileStore.read(any()) } returns
-            Result.success(BackupCodec.encode(backupFile))
+        coEvery { backupFileStore.read(any()) } returns Result.success(opmlDocument)
 
         viewModel.uiState.test {
             awaitItem()
-            viewModel.prepareRestore(Uri.parse("content://documents/backup.json"))
+            viewModel.prepareImport(Uri.parse("content://documents/subs.opml"))
             expectMostRecentItem()
             viewModel.cancelRestore()
 
             assertNull(expectMostRecentItem().backup.pendingRestore)
-            verify(exactly = 0) { libraryRestorer.start(any(), any()) }
+            verify(exactly = 0) { libraryRestorer.start(any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `the section reports whether a backup has ever been taken`() = runTest {
+    fun `the section reports whether the subscriptions have ever been exported`() = runTest {
         viewModel.uiState.test {
             assertNull(awaitItem().backup.lastBackupAtMs)
 
@@ -655,7 +552,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `a running restore makes the section busy`() = runTest {
+    fun `a running import makes the section busy`() = runTest {
         viewModel.uiState.test {
             assertFalse(awaitItem().backup.isBusy)
 

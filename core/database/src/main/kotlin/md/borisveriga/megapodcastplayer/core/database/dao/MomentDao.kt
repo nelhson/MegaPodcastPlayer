@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
-import md.borisveriga.megapodcastplayer.core.database.model.MomentBackupRow
 import md.borisveriga.megapodcastplayer.core.database.model.MomentEntity
 import md.borisveriga.megapodcastplayer.core.database.model.MomentWithEpisodeEntity
 
@@ -83,22 +82,6 @@ interface MomentDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(moment: MomentEntity): Long
 
-    /**
-     * Writes the moments a backup carries, replacing any already at the same spot.
-     *
-     * `REPLACE` rather than `@Upsert`, and the difference matters here. Room implements an upsert
-     * as "insert, and on a constraint violation update *by primary key*" — but the constraint these
-     * rows violate is the unique index on `(episode_id, position_ms)`, not the primary key, and the
-     * rows arrive with `id = 0` because a backup does not store local row ids. The update would
-     * match nothing and the moment would be dropped in silence. `REPLACE` deletes the colliding row
-     * and writes the backup's, which is what a restore means; nothing references a moment, so
-     * losing the old row id costs nothing.
-     *
-     * @param moments the moments to write, with ids left at zero.
-     */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun restoreAll(moments: List<MomentEntity>)
-
     /** Replaces a moment's note, leaving its position and creation time alone. */
     @Query("UPDATE moments SET note = :note WHERE id = :id")
     suspend fun updateNote(id: Long, note: String?)
@@ -106,24 +89,6 @@ interface MomentDao {
     /** Removes one moment. */
     @Query("DELETE FROM moments WHERE id = :id")
     suspend fun deleteById(id: Long)
-
-    /**
-     * Every moment as the strings a backup stores.
-     *
-     * Resolved back to `(feed_url, guid)` for the same reason the other backup queries are: those
-     * are the two strings an episode id is derived from, so a restore can rebuild the id exactly.
-     */
-    @Query(
-        """
-        SELECT p.feed_url AS feed_url, e.guid AS guid, m.position_ms AS position_ms,
-               m.note AS note, m.created_at AS created_at
-        FROM moments m
-        INNER JOIN episodes e ON e.id = m.episode_id
-        INNER JOIN podcasts p ON p.id = e.podcast_id
-        ORDER BY m.created_at ASC
-        """,
-    )
-    suspend fun getBackupRows(): List<MomentBackupRow>
 }
 
 /**

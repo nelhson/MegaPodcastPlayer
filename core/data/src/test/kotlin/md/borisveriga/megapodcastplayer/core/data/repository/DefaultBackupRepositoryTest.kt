@@ -16,16 +16,11 @@ import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
-import md.borisveriga.megapodcastplayer.core.database.model.MomentEntity
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
-import md.borisveriga.megapodcastplayer.core.model.backup.BackupDownload
-import md.borisveriga.megapodcastplayer.core.model.backup.BackupEpisodeState
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupFile
-import md.borisveriga.megapodcastplayer.core.model.backup.BackupMoment
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupPodcast
-import md.borisveriga.megapodcastplayer.core.model.backup.BackupQueueEntry
 import md.borisveriga.megapodcastplayer.core.model.episodeIdOf
 import md.borisveriga.megapodcastplayer.core.model.podcastIdOf
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
@@ -42,11 +37,14 @@ import org.robolectric.annotation.Config
 /**
  * Tests for [DefaultBackupRepository] against a real in-memory database.
  *
- * The database is real because the behaviour under test is largely expressed in SQL and in the
- * arithmetic that turns a `(feedUrl, guid)` pair back into a row id — a fake DAO would only test
- * the fake. [PodcastRepository] is mocked, but its `addFromInput` is wired to actually insert the
- * show, because a restore's whole shape depends on state being applied *after* the add has
- * populated the episodes.
+ * The database is real because a fake DAO would only test the fake, and what is under test is the
+ * arithmetic that turns a feed URL back into the row id a re-added show lands on.
+ * [PodcastRepository] is mocked, but its `addFromInput` is wired to actually insert the show: a
+ * restore is a sequence of adds, and the order it applies afterwards depends on them having
+ * happened.
+ *
+ * What is *not* under test any more is listening state, the queue, downloads and moments. Those
+ * used to be in the document; a show is a link now, and the tests below say so by their absence.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -55,7 +53,6 @@ class DefaultBackupRepositoryTest {
 
     private lateinit var database: MegaPodcastPlayerDatabase
     private lateinit var podcastRepository: PodcastRepository
-    private lateinit var downloadRepository: DownloadRepository
     private lateinit var preferences: UserPreferencesDataSource
     private lateinit var crashReporter: CrashReporter
     private lateinit var repository: DefaultBackupRepository
@@ -72,16 +69,11 @@ class DefaultBackupRepositoryTest {
             MegaPodcastPlayerDatabase::class.java,
         ).allowMainThreadQueries().build()
         podcastRepository = mockk(relaxed = true)
-        downloadRepository = mockk(relaxed = true)
         preferences = UserPreferencesDataSource(InMemoryPreferencesDataStore())
         crashReporter = mockk(relaxed = true)
         repository = DefaultBackupRepository(
             podcastDao = database.podcastDao(),
-            episodeDao = database.episodeDao(),
-            queueDao = database.queueDao(),
-            momentDao = database.momentDao(),
             podcastRepository = podcastRepository,
-            downloadRepository = downloadRepository,
             preferences = preferences,
             clock = Clock.fixed(exportedAt, ZoneOffset.UTC),
             crashReporter = crashReporter,
@@ -153,7 +145,15 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
-    fun `export carries only episodes the user has touched`() = runTest {
+    fun `export says which shows are YouTube playlists`() = runTest {
+        database.podcastDao()
+            .upsert(podcastEntity(feedA, "A playlist", source = PodcastSource.YOUTUBE))
+
+        assertEquals(PodcastSource.YOUTUBE, repository.export().podcasts.single().source)
+    }
+
+    @Test
+    fun `export carries links, not what listening to them produced`() = runTest {
         database.podcastDao().upsert(podcastEntity(feedA, "First"))
         database.episodeDao()
             .upsertFromFeed(listOf(episodeEntity(feedA, "g1"), episodeEntity(feedA, "g2")))
@@ -161,140 +161,9 @@ class DefaultBackupRepositoryTest {
 
         val file = repository.export()
 
-        assertEquals(listOf("g1"), file.episodes.map { it.guid })
-        assertEquals(5_000L, file.episodes.single().positionMs)
-    }
-
-    @Test
-    fun `export carries the moments the user wrote`() = runTest {
-        database.podcastDao().upsert(podcastEntity(feedA, "First"))
-        database.episodeDao().upsertFromFeed(listOf(episodeEntity(feedA, "g1")))
-        database.momentDao().insert(
-            MomentEntity(
-                episodeId = episodeIdOf(podcastIdOf(feedA), "g1"),
-                positionMs = 743_000L,
-                note = "the good bit",
-                createdAt = 5_000L,
-            ),
-        )
-
-        val file = repository.export()
-
-        val moment = file.moments.single()
-        assertEquals(feedA, moment.feedUrl)
-        assertEquals("g1", moment.guid)
-        assertEquals(743_000L, moment.positionMs)
-        assertEquals("the good bit", moment.note)
-        assertEquals(5_000L, moment.createdAtMs)
-    }
-
-    @Test
-    fun `restore writes moments back and counts them`() = runTest {
-        wireAddToInsert("g1")
-
-        val summary = repository.restore(
-            BackupFile(
-                exportedAtMs = 0L,
-                podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-                moments = listOf(BackupMoment(feedA, "g1", 743_000L, "the good bit", 5_000L)),
-            ),
-        )
-
-        val stored = database.momentDao().getAllWithEpisode().single().moment
-        assertEquals(743_000L, stored.positionMs)
-        assertEquals("the good bit", stored.note)
-        assertEquals(1, summary.momentsRestored)
-    }
-
-    @Test
-    fun `restoring the same backup twice leaves one moment, not two`() = runTest {
-        wireAddToInsert("g1")
-        val file = BackupFile(
-            exportedAtMs = 0L,
-            podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-            moments = listOf(BackupMoment(feedA, "g1", 743_000L, "the good bit", 5_000L)),
-        )
-
-        repository.restore(file)
-        repository.restore(file)
-
-        assertEquals(1, database.momentDao().getAllWithEpisode().size)
-    }
-
-    @Test
-    fun `a moment whose episode the publisher has pruned is dropped rather than throwing`() =
-        runTest {
-            wireAddToInsert("g1")
-
-            val summary = repository.restore(
-                BackupFile(
-                    exportedAtMs = 0L,
-                    podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-                    moments = listOf(BackupMoment(feedA, "gone", 1L, null, 0L)),
-                ),
-            )
-
-            assertEquals(0, summary.momentsRestored)
-            assertTrue(database.momentDao().getAllWithEpisode().isEmpty())
-        }
-
-    @Test
-    fun `restore applies listening state by guid`() = runTest {
-        wireAddToInsert("g1")
-
-        val summary = repository.restore(
-            BackupFile(
-                exportedAtMs = 0L,
-                podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-                episodes = listOf(BackupEpisodeState(feedA, "g1", 743_000L, isPlayed = true)),
-            ),
-        )
-
-        val stored = database.episodeDao().getById(episodeIdOf(podcastIdOf(feedA), "g1"))
-        assertEquals(743_000L, stored?.positionMs)
-        assertEquals(true, stored?.isPlayed)
-        assertEquals(1, summary.episodesRestored)
-        assertEquals(0, summary.episodesMissing)
-    }
-
-    @Test
-    fun `restore counts state for a guid the publisher has pruned`() = runTest {
-        wireAddToInsert("g1")
-
-        val summary = repository.restore(
-            BackupFile(
-                exportedAtMs = 0L,
-                podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-                episodes = listOf(BackupEpisodeState(feedA, "gone", 1L, isPlayed = false)),
-            ),
-        )
-
-        assertEquals(0, summary.episodesRestored)
-        assertEquals(1, summary.episodesMissing)
-        assertTrue(summary.failedTitles.isEmpty())
-    }
-
-    @Test
-    fun `restore replaces the queue and drops entries whose episode is missing`() = runTest {
-        wireAddToInsert("g1", "g2")
-
-        val summary = repository.restore(
-            BackupFile(
-                exportedAtMs = 0L,
-                podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-                queue = listOf(
-                    BackupQueueEntry(feedA, "g2", 0),
-                    BackupQueueEntry(feedA, "gone", 1),
-                    BackupQueueEntry(feedA, "g1", 2),
-                ),
-            ),
-        )
-
-        assertEquals(2, summary.queueRestored)
-        assertEquals(
-            listOf("g2", "g1"),
-            database.queueDao().getBackupEntries().map { it.guid },
-        )
+        // One entry for the show, and nothing about the two episodes under it: both come back by
+        // fetching the feed again, and a stored copy could only disagree with it.
+        assertEquals(listOf(feedA), file.podcasts.map { it.feedUrl })
     }
 
     @Test
@@ -356,23 +225,24 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
-    fun `restore re-queues downloads only when asked`() = runTest {
-        wireAddToInsert("g1")
-        val file = BackupFile(
-            exportedAtMs = 0L,
-            podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
-            downloads = listOf(BackupDownload(feedA, "g1")),
+    fun `restore leaves an episode of a show already present exactly as it was`() = runTest {
+        database.podcastDao().upsert(podcastEntity(feedA, "First"))
+        database.episodeDao().upsertFromFeed(listOf(episodeEntity(feedA, "g1")))
+        val episodeId = episodeIdOf(podcastIdOf(feedA), "g1")
+        database.episodeDao().updatePosition(episodeId, 743_000L)
+        coEvery { podcastRepository.addFromInput(feedA) } returns
+            AddPodcastResult.AlreadyInLibrary(mockk(relaxed = true))
+
+        repository.restore(
+            BackupFile(
+                exportedAtMs = 0L,
+                podcasts = listOf(BackupPodcast(feedA, PodcastSource.RSS, "First")),
+            ),
         )
 
-        val withoutOption = repository.restore(file)
-
-        assertEquals(0, withoutOption.downloadsQueued)
-        coVerify(exactly = 0) { downloadRepository.download(any()) }
-
-        coEvery { downloadRepository.download(any()) } returns true
-        val withOption = repository.restore(file, RestoreOptions(reDownload = true))
-
-        assertEquals(1, withOption.downloadsQueued)
+        // Importing a list that already names a show the user is halfway through must not be the
+        // thing that loses their place in it.
+        assertEquals(743_000L, database.episodeDao().getById(episodeId)?.positionMs)
     }
 
     @Test

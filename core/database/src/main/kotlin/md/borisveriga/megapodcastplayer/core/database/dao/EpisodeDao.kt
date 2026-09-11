@@ -6,8 +6,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
-import md.borisveriga.megapodcastplayer.core.database.model.DownloadBackupRow
-import md.borisveriga.megapodcastplayer.core.database.model.EpisodeBackupRow
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeWithShowEntity
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -458,57 +456,6 @@ interface EpisodeDao {
         percent: Float,
     )
 
-    /**
-     * Every episode the user has actually touched, as the strings a backup stores.
-     *
-     * Restricted to rows with a position or a played flag because everything else is implied by its
-     * absence: a library holds thousands of untouched episodes whose state a restore recreates for
-     * free by re-fetching the feed.
-     */
-    @Query(
-        """
-        SELECT p.feed_url AS feed_url, e.guid AS guid,
-               e.position_ms AS position_ms, e.is_played AS is_played
-        FROM episodes e
-        INNER JOIN podcasts p ON p.id = e.podcast_id
-        WHERE e.position_ms > 0 OR e.is_played = 1
-        """,
-    )
-    suspend fun getBackupState(): List<EpisodeBackupRow>
-
-    /** Every downloaded episode, as the strings a backup stores. */
-    @Query(
-        """
-        SELECT p.feed_url AS feed_url, e.guid AS guid
-        FROM episodes e
-        INNER JOIN podcasts p ON p.id = e.podcast_id
-        WHERE e.download_state = 'COMPLETED'
-        """,
-    )
-    suspend fun getBackupDownloads(): List<DownloadBackupRow>
-
-    /**
-     * Narrows [ids] to those that exist.
-     *
-     * A restore derives ids arithmetically from a backup, so some of them name episodes the
-     * publisher has since pruned. `queue.episode_id` is a cascading foreign key, which means an
-     * entry for a missing episode is a constraint violation rather than a harmless orphan — this is
-     * how the queue is filtered before it is written.
-     *
-     * Callers must chunk: Room expands `IN (:ids)` into one host variable per element, against
-     * SQLite's limit of 999.
-     */
-    @Query("SELECT id FROM episodes WHERE id IN (:ids)")
-    suspend fun getExistingIds(ids: List<String>): List<String>
-
-    /**
-     * Re-applies listening state a backup recorded.
-     *
-     * @return the number of rows updated: zero means the guid no longer appears in the feed, which
-     *   a restore counts rather than treats as a failure.
-     */
-    @Query("UPDATE episodes SET position_ms = :positionMs, is_played = :isPlayed WHERE id = :id")
-    suspend fun applyRestoredState(id: String, positionMs: Long, isPlayed: Boolean): Int
 }
 
 /** `@Insert(IGNORE)` reports a skipped row as `-1`. */

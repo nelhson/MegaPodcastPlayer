@@ -64,10 +64,11 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
   unknown field is corruption, not a newer peer) and Room's destructive fallback is on, which wipes
   and recreates on any schema change.
 - **A moment is the only thing here the user wrote.** A show can be re-fetched and a position
-  re-earned; a note typed at 12:23 of an episode cannot. That is why moments are in the backup, why
-  `MomentsRepository` carries its own Markdown export, and why every line that export writes carries
-  a link — a `youtube://` sentinel becomes a timestamped watch URL, an enclosure gains a media
-  fragment, and each show heading names the feed URL that re-adds it. The document has to be worth
+  re-earned; a note typed at 12:23 of an episode cannot. The settings export carries subscriptions
+  and nothing else — a show is a link — so `MomentsRepository`'s own Markdown export is the only
+  thing standing between a moment and a wiped database. That is why it exists, and why every line
+  it writes carries a link — a `youtube://` sentinel becomes a timestamped watch URL, an enclosure
+  gains a media fragment, and each show heading names the feed URL that re-adds it. The document has to be worth
   something on a machine that has never had this app installed.
 - **A failure nobody is shown still goes somewhere.** The many `suspendRunCatching` sites that
   carry on from a failure are right to, but the failure is then invisible; inject `CrashReporter`
