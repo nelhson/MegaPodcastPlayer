@@ -9,10 +9,18 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
+import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 
 /** Tag for the one thing this file logs: a playback failure, with its cause. */
 private const val TAG = "PlaybackPersistence"
+
+// One message per write, fixed, so each kind of failure groups into one report; see CrashReporter.
+private const val NON_FATAL_LAST_PLAYED = "Last played episode write failed"
+private const val NON_FATAL_COMPLETION = "Episode completion write failed"
+private const val NON_FATAL_POSITION = "Playback position write failed"
+private const val NON_FATAL_QUEUE = "Queue mirror write failed"
 
 /**
  * Mirrors what the player does into durable storage.
@@ -24,23 +32,26 @@ private const val TAG = "PlaybackPersistence"
  *
  * Every callback arrives on the player's thread, and every write is launched into [scope] rather
  * than performed inline, because the recorder touches the database and the callback must return
- * promptly.
+ * promptly. A write that fails is reported rather than thrown; see [record].
  *
  * @property player the player being observed; callbacks that need more than their arguments (the
  *   queue, the current position) read it directly.
  * @property scope where the writes run; the service cancels it when the player is released.
  * @property progressRecorder receives positions, completions and the queue.
  * @property userPreferences receives the id of the episode most recently loaded.
+ * @property crashReporter where a failed write goes, since nothing on screen is waiting for one.
  */
 internal class PlaybackPersistenceListener(
     private val player: Player,
     private val scope: CoroutineScope,
     private val progressRecorder: PlaybackProgressRecorder,
     private val userPreferences: UserPreferencesDataSource,
+    private val crashReporter: CrashReporter,
 ) : Player.Listener {
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        scope.launch { userPreferences.setLastPlayedEpisodeId(mediaItem?.episodeId) }
+        val episodeId = mediaItem?.episodeId
+        record(NON_FATAL_LAST_PLAYED) { userPreferences.setLastPlayedEpisodeId(episodeId) }
     }
 
     // [Player.PositionInfo.mediaItem] is still marked unstable, and it is the only way to learn
@@ -58,7 +69,7 @@ internal class PlaybackPersistenceListener(
         // finished". A seek, or a user tapping "next", must not mark anything played.
         if (reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION) return
         val finishedId = oldPosition.mediaItem?.episodeId ?: return
-        scope.launch { progressRecorder.recordCompleted(finishedId) }
+        record(NON_FATAL_COMPLETION) { progressRecorder.recordCompleted(finishedId) }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -66,7 +77,7 @@ internal class PlaybackPersistenceListener(
         // automatic transition instead.
         if (playbackState != Player.STATE_ENDED) return
         val episodeId = player.currentMediaItem?.episodeId ?: return
-        scope.launch { progressRecorder.recordCompleted(episodeId) }
+        record(NON_FATAL_COMPLETION) { progressRecorder.recordCompleted(episodeId) }
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -74,19 +85,37 @@ internal class PlaybackPersistenceListener(
         // waiting up to five seconds for the service's ticker.
         if (isPlaying) return
         val reading = player.positionReading() ?: return
-        scope.launch { reading.recordInto(progressRecorder) }
+        record(NON_FATAL_POSITION) { reading.recordInto(progressRecorder) }
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         if (reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) return
         val episodeIds = (0 until player.mediaItemCount)
             .mapNotNull { index -> player.getMediaItemAt(index).episodeId }
-        scope.launch { progressRecorder.recordQueue(episodeIds) }
+        record(NON_FATAL_QUEUE) { progressRecorder.recordQueue(episodeIds) }
     }
 
     override fun onPlayerError(error: PlaybackException) {
         // The controller surfaces this to the user; log it where the cause is readable.
         Log.w(TAG, "Playback failed for ${player.currentMediaItem?.episodeId}", error)
+    }
+
+    /**
+     * Launches one write into [scope], reporting a failure instead of rethrowing it.
+     *
+     * [scope] is the service's: the main thread, with no exception handler. A write that threw
+     * there took the whole process down mid-playback — which is what a queue naming an episode the
+     * database does not hold used to do. Every write here mirrors state the player still has, and
+     * the next callback writes it again, so one that fails costs a report, not the app.
+     *
+     * @param operation the fixed message the failure is reported under.
+     * @param write the database or preferences write.
+     */
+    private fun record(operation: String, write: suspend () -> Unit) {
+        scope.launch {
+            suspendRunCatching { write() }
+                .onFailure { failure -> crashReporter.recordNonFatal(operation, failure) }
+        }
     }
 }
 

@@ -23,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
@@ -97,6 +98,10 @@ class PlaybackService : MediaSessionService() {
     @Inject
     lateinit var chapterSource: PlaybackChapterSource
 
+    /** Where a failed progress write goes, since nothing on screen is waiting for one. */
+    @Inject
+    lateinit var crashReporter: CrashReporter
+
     /**
      * Outlives the service, and is therefore the only scope that can carry the final position
      * write in [onDestroy] — [serviceScope] is cancelled there by definition.
@@ -156,6 +161,7 @@ class PlaybackService : MediaSessionService() {
                 scope = serviceScope,
                 progressRecorder = progressRecorder,
                 userPreferences = userPreferences,
+                crashReporter = crashReporter,
             ),
         )
 

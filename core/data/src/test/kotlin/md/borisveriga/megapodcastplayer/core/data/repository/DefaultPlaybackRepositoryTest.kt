@@ -175,6 +175,17 @@ class DefaultPlaybackRepositoryTest {
         }
 
     @Test
+    fun `recording a queue that holds an unstored episode keeps the stored ones in order`() =
+        runTest {
+            // What the player's live queue holds once a search preview has been played beside a
+            // queue: an episode built from a feed, with no row for a queue entry to point at. This
+            // write used to fail the queue's foreign key and take the app down with it.
+            repository.recordQueue(listOf("b", "search-preview", "a"))
+
+            assertEquals(listOf("b", "a"), repository.observeQueue().first().map { it.episode.id })
+        }
+
+    @Test
     fun `reordering the queue stores the order the user dropped it in`() = runTest {
         repository.enqueue("a")
         repository.enqueue("b")
