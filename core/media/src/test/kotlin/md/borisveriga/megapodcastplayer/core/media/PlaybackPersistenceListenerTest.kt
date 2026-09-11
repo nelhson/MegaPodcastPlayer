@@ -7,9 +7,12 @@ import androidx.media3.common.Timeline
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -35,13 +38,17 @@ class PlaybackPersistenceListenerTest {
     private val player: Player = mockk(relaxed = true)
     private val recorder = RecordingProgressRecorder()
     private val userPreferences: UserPreferencesDataSource = mockk(relaxed = true)
+    private val crashReporter: CrashReporter = mockk(relaxed = true)
 
     /** Unconfined, so a launched write has completed by the time the callback returns. */
+    private val scope = CoroutineScope(UnconfinedTestDispatcher())
+
     private val listener = PlaybackPersistenceListener(
         player = player,
-        scope = CoroutineScope(UnconfinedTestDispatcher()),
+        scope = scope,
         progressRecorder = recorder,
         userPreferences = userPreferences,
+        crashReporter = crashReporter,
     )
 
     @Test
@@ -144,6 +151,32 @@ class PlaybackPersistenceListenerTest {
         listener.onTimelineChanged(Timeline.EMPTY, Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE)
 
         assertTrue(recorder.queues.isEmpty())
+    }
+
+    @Test
+    fun `a write that fails is reported rather than thrown`() {
+        // The service's scope has no exception handler, so a write that escaped used to crash the
+        // app. A failed child cancels a scope like this one, which is what isActive checks.
+        val failure = IllegalStateException("FOREIGN KEY constraint failed")
+        val failingListener = PlaybackPersistenceListener(
+            player = player,
+            scope = scope,
+            progressRecorder = object : PlaybackProgressRecorder by recorder {
+                override suspend fun recordQueue(episodeIds: List<String>): Unit = throw failure
+            },
+            userPreferences = userPreferences,
+            crashReporter = crashReporter,
+        )
+        every { player.mediaItemCount } returns 1
+        every { player.getMediaItemAt(0) } returns mediaItem("search-preview")
+
+        failingListener.onTimelineChanged(
+            Timeline.EMPTY,
+            Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED,
+        )
+
+        verify(exactly = 1) { crashReporter.recordNonFatal(any(), failure) }
+        assertTrue(scope.isActive)
     }
 
     @Test
