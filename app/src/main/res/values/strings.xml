@@ -8,14 +8,6 @@
 
     <string name="app_name">MegaPodcastPlayer</string>
 
-    <!--
-      The library detail pane before a show has been picked, seen only on a screen wide enough to
-      show the library and a show at once. Owned by the shell rather than by :feature:library,
-      because it is the two-pane layout speaking and not the library.
-    -->
-    <string name="library_pane_empty_title">Pick a show</string>
-    <string name="library_pane_empty_description">Its episodes open here, beside the library.</string>
-
     <!-- Navigation bar / rail destinations. -->
     <string name="destination_listen">Listen</string>
     <string name="destination_library">Library</string>

@@ -163,7 +163,13 @@ fun EpisodeCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(end = MegaPodcastPlayerTheme.spacing.sm),
+                // Weighted, and not filling: a weighted child is measured after the unweighted
+                // ones, so the button takes its full size first and the text gets what is left,
+                // ellipsised. Without this a line like "6 days ago · 1 h 30 min left" took the
+                // whole card and squeezed the button to a sliver.
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .padding(end = MegaPodcastPlayerTheme.spacing.sm),
             )
             PlayPauseButton(
                 playing = isNowPlaying && isPlaying,

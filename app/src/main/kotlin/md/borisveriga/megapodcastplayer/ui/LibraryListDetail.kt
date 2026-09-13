@@ -1,7 +1,5 @@
 package md.borisveriga.megapodcastplayer.ui
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
@@ -13,15 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
-import md.borisveriga.megapodcastplayer.R
-import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.feature.library.LibraryRoute
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailRoute
 import md.borisveriga.megapodcastplayer.navigation.Route
@@ -93,7 +88,10 @@ fun LibraryListDetail(
     // detail pane is not composed until it is shown, so the row tapped in the list reaches a
     // controller whose `NavHost` has never run; see `rememberDetailPaneGraph` for what that cost.
     val detailGraph = detailNavController.rememberDetailPaneGraph {
-        composable<Route.NoShowSelected> { NoShowSelectedPane() }
+        // Deliberately blank. This destination is only ever seen on a screen wide enough for two
+        // panes, beside a library that is already the invitation to pick something; a placeholder
+        // saying so was a label for a fact the layout makes obvious.
+        composable<Route.NoShowSelected> {}
 
         composable<Route.PodcastDetail> {
             PodcastDetailRoute(
@@ -152,20 +150,5 @@ fun LibraryListDetail(
                 NavHost(navController = detailNavController, graph = detailGraph)
             }
         },
-    )
-}
-
-/**
- * The detail pane before a show has been picked.
- *
- * Only ever seen on a screen wide enough for two panes: a folded phone shows the list alone until a
- * tap replaces it with a show, and never has a second pane to leave empty.
- */
-@Composable
-private fun NoShowSelectedPane() {
-    EmptyState(
-        icon = Icons.Rounded.Podcasts,
-        title = stringResource(R.string.library_pane_empty_title),
-        description = stringResource(R.string.library_pane_empty_description),
     )
 }
