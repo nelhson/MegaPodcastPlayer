@@ -49,18 +49,21 @@ internal data class ScrubState(
 )
 
 /**
- * What the watch screen draws.
+ * What the watch screen draws, apart from the clock.
  *
- * [positionMs] and [progress] are not simply copied out of [snapshot]: while the phone is playing,
- * it publishes only when something changes, so the watch advances the clock itself between
- * publishes; while the user is scrubbing it shows where they have dragged to instead. See
- * [watchPlayerUiState].
+ * Deliberately does not carry the playback position. That lives in [PlaybackPosition], and the
+ * split is the whole reason the screen swipes smoothly: this object is collected above the pager,
+ * so anything that changes it recomposes both pages, and the position changes once a second — or
+ * twice, while the watch's own player is polled. Everything here changes when the wearer does
+ * something or the phone says something; the position is the one thing that changes by itself.
+ * See [watchPlayerFrame].
  *
  * @property link whether the phone can be reached at all.
  * @property snapshot what is playing — the phone's own report, or the watch's local playback wearing
- *   the same shape; see [WatchPlaybackState.asSnapshot].
- * @property positionMs playback position extrapolated to now, or the scrub preview while scrubbing.
- * @property progress fraction played, in `0f..1f`, matching [positionMs].
+ *   the same shape; see [WatchPlaybackState.asSnapshot]. Its `positionMs` is always zero here. The
+ *   live position is [PlaybackPosition]; the snapshot's was the reading it was extrapolated from,
+ *   and keeping it would change this object every time the watch's own player was polled, which
+ *   would put the clock back into the pager by the side door.
  * @property lastCommandFailed set when a command could not be delivered, so the screen can say the
  *   tap did nothing instead of silently ignoring it.
  * @property isScrubbing true while the user is dragging the progress bar, which is what makes the
@@ -79,8 +82,6 @@ internal data class ScrubState(
 data class WatchPlayerUiState(
     val link: PhoneLink = PhoneLink.CHECKING,
     val snapshot: NowPlayingSnapshot = NowPlayingSnapshot(),
-    val positionMs: Long = 0L,
-    val progress: Float = 0f,
     val lastCommandFailed: Boolean = false,
     val isScrubbing: Boolean = false,
     val source: PlaybackSource = PlaybackSource.PHONE,
@@ -176,6 +177,39 @@ data class ArrivingEpisode(
 )
 
 /**
+ * Where playback has reached, as the bar shows it.
+ *
+ * The one thing on the screen that changes by itself: once a second while the phone plays, twice
+ * a second while the watch does. It is kept apart from [WatchPlayerUiState] so that the bar — the
+ * only thing that draws it — is the only thing that recomposes when it moves.
+ *
+ * Not simply copied out of the snapshot: while the phone is playing it publishes only when
+ * something changes, so the watch advances the clock itself between publishes; while the user is
+ * scrubbing it shows where they have dragged to instead. See [watchPlayerFrame].
+ *
+ * @property positionMs playback position extrapolated to now, or the scrub preview while scrubbing.
+ * @property progress fraction played, in `0f..1f`, matching [positionMs].
+ */
+data class PlaybackPosition(
+    val positionMs: Long = 0L,
+    val progress: Float = 0f,
+)
+
+/**
+ * Everything the screen draws, computed together and then handed out in two parts.
+ *
+ * One function builds both because they share their inputs and their intermediate values; the
+ * view model then exposes them as two flows, so that a change to one does not wake the other.
+ *
+ * @property uiState what the pages draw.
+ * @property position what the bar draws.
+ */
+internal data class WatchPlayerFrame(
+    val uiState: WatchPlayerUiState = WatchPlayerUiState(),
+    val position: PlaybackPosition = PlaybackPosition(),
+)
+
+/**
  * Builds the screen state from what the phone last said, what the watch itself is playing, and how
  * long ago the phone said it.
  *
@@ -195,9 +229,12 @@ data class ArrivingEpisode(
  * @param stored the episodes on the watch.
  * @param offered what the phone has published as available to copy.
  * @param transfers copies currently arriving.
+ * @param momentSaved whether the mark-a-moment confirmation is up.
+ * @param showsScrubHint whether the first-scrub explanation is up.
+ * @return the state for the pages and the position for the bar, built from one reading of the
+ *   inputs so the two never disagree about which episode the position belongs to.
  */
-@Suppress("LongParameterList")
-internal fun watchPlayerUiState(
+internal fun watchPlayerFrame(
     link: PhoneLink,
     received: ReceivedSnapshot?,
     nowElapsedMs: Long,
@@ -207,7 +244,9 @@ internal fun watchPlayerUiState(
     stored: List<StoredEpisode> = emptyList(),
     offered: List<OfflineEpisode> = emptyList(),
     transfers: Map<String, TransferProgress> = emptyMap(),
-): WatchPlayerUiState {
+    momentSaved: Boolean = false,
+    showsScrubHint: Boolean = false,
+): WatchPlayerFrame {
     val phoneSnapshot = received?.snapshot ?: NowPlayingSnapshot()
     val sinceArrivalMs = if (received == null) 0L else nowElapsedMs - received.receivedAtElapsedMs
 
@@ -223,12 +262,14 @@ internal fun watchPlayerUiState(
     // Local playback reports a live position from the player itself, so there is nothing to
     // extrapolate; the phone's is a reading taken some time ago.
     val playing = local?.positionMs ?: phoneSnapshot.positionAfter(sinceArrivalMs)
+    val positionMs = shown ?: playing
 
-    return WatchPlayerUiState(
+    val uiState = WatchPlayerUiState(
         link = link,
-        snapshot = snapshot,
-        positionMs = shown ?: playing,
-        progress = snapshot.progressAt(shown ?: playing),
+        // The reading the position was extrapolated from has done its job by now, and leaving it
+        // in would make this object change with every poll of the watch's player; see the
+        // property's documentation.
+        snapshot = snapshot.copy(positionMs = 0L),
         lastCommandFailed = lastCommandFailed,
         // Only an uncommitted scrub is "scrubbing": once the seek is away the user has let go, and
         // the held position is just covering the round trip.
@@ -237,6 +278,16 @@ internal fun watchPlayerUiState(
         stored = stored,
         offered = offered,
         transfers = transfers,
+        momentSaved = momentSaved,
+        showsScrubHint = showsScrubHint,
+    )
+
+    return WatchPlayerFrame(
+        uiState = uiState,
+        position = PlaybackPosition(
+            positionMs = positionMs,
+            progress = snapshot.progressAt(positionMs),
+        ),
     )
 }
 

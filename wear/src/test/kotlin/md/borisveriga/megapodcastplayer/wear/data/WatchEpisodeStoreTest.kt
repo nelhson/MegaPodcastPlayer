@@ -386,6 +386,6 @@ class WatchEpisodeStoreTest {
          * Larger than [WatchEpisodeStore]'s progress step so that a transfer of it reports more than
          * its opening zero, which is the case the reporting loop is written for.
          */
-        val AUDIO = ByteArray(40_960) { (it % 251).toByte() }
+        val AUDIO = ByteArray(320 * 1024) { (it % 251).toByte() }
     }
 }

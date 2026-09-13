@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +62,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
@@ -72,6 +75,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -96,8 +100,11 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
 import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineEpisode
 import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
@@ -113,9 +120,15 @@ import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
 @Composable
 fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Handed down as a lambda rather than read here: the read happens wherever the lambda is
+    // called, and it is called in exactly one place — the time label — so the clock ticking
+    // recomposes that label and not the pager this function hosts. The lambda captures nothing
+    // but the state object, so it is the same lambda from one recomposition to the next.
+    val position by viewModel.position.collectAsStateWithLifecycle()
 
     WatchPlayerScreen(
         uiState = uiState,
+        position = { position },
         onTogglePlayPause = viewModel::togglePlayPause,
         onSkipForward = viewModel::skipForward,
         onSkipBack = viewModel::skipBack,
@@ -166,6 +179,9 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onPlayOnPhone invoked with the episode id when a row describing the phone is tapped,
  *   whether it is queued there or merely downloaded there.
  * @param onRetry invoked when the user retries a failed connection.
+ * @param position where playback has reached, read only by the bar and only when it draws. A
+ *   lambda rather than a value so that the clock, which moves this once a second, is not a reason
+ *   for the pager to recompose; see [WatchPlayerUiState] for why that matters.
  * @param onBeginScrub invoked when the user takes hold of the progress bar.
  * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
  * @param onCommitScrub invoked when they settle, which is what actually seeks.
@@ -187,6 +203,7 @@ fun WatchPlayerScreen(
     onCycleSpeed: () -> Unit,
     onPlayOnPhone: (String) -> Unit,
     onRetry: () -> Unit,
+    position: () -> PlaybackPosition = { PlaybackPosition() },
     onMarkMoment: () -> Unit = {},
     onBeginScrub: () -> Unit = {},
     onScrubBy: (Long) -> Unit = {},
@@ -230,6 +247,12 @@ fun WatchPlayerScreen(
     HorizontalPagerScaffold(pagerState = pagerState) {
         HorizontalPager(
             state = pagerState,
+            // Both pages kept, not just the one on screen. The default composes the page being
+            // swiped to on the first frame of the drag and throws it away once the pager settles,
+            // which on a wrist is a visible stumble at the start of every swipe — and it is also
+            // why the episodes list used to forget where it was scrolled to each time the wearer
+            // left it. There are two pages; keeping the other one costs a few hundred nodes.
+            beyondViewportPageCount = 1,
             // Scrubbing is a horizontal drag on a bar inside a horizontally paged screen. The bar
             // wins the gesture by being the inner one, but a drag that begins a few pixels off it
             // would turn the page instead of moving the playhead — so while the bar is held there
@@ -240,6 +263,7 @@ fun WatchPlayerScreen(
                 if (page == PAGE_NOW_PLAYING) {
                     NowPlayingPage(
                         uiState = uiState,
+                        position = position,
                         onTogglePlayPause = onTogglePlayPause,
                         onSkipForward = onSkipForward,
                         onSkipBack = onSkipBack,
@@ -272,6 +296,7 @@ fun WatchPlayerScreen(
  * fit a round screen and the alternative to scrolling is clipping.
  *
  * @param uiState what to draw.
+ * @param position where playback has reached; see [WatchPlayerScreen].
  * @param onTogglePlayPause invoked by the centre transport button.
  * @param onSkipForward invoked by the skip-ahead button.
  * @param onSkipBack invoked by the skip-back button.
@@ -287,6 +312,7 @@ fun WatchPlayerScreen(
 @Composable
 private fun NowPlayingPage(
     uiState: WatchPlayerUiState,
+    position: () -> PlaybackPosition,
     onTogglePlayPause: () -> Unit,
     onSkipForward: () -> Unit,
     onSkipBack: () -> Unit,
@@ -316,6 +342,7 @@ private fun NowPlayingPage(
             item {
                 ProgressRow(
                     uiState = uiState,
+                    position = position,
                     onBeginScrub = onBeginScrub,
                     onScrubBy = onScrubBy,
                     onCommitScrub = onCommitScrub,
@@ -372,7 +399,15 @@ private fun EpisodesPage(
     onRemoveAllFromWatch: () -> Unit,
 ) {
     val listState = rememberScalingLazyListState()
+    // Both are worked out from the lists rather than stored, so each read builds a fresh list;
+    // once is enough per composition.
+    val copyable = uiState.copyable
+    val arriving = uiState.arriving
 
+    // Every row is keyed, and keyed with the name of its list: an episode can be in the phone's
+    // queue and among the phone's downloads at once, and the column needs one key per row, not
+    // one per episode. With keys, a list that changes — a copy arriving, a row removed — moves
+    // the rows around it rather than rebuilding them.
     ScreenScaffold(
         scrollState = listState,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 24.dp),
@@ -391,18 +426,18 @@ private fun EpisodesPage(
             // The phone's queue, which only means anything while the phone is the one playing.
             if (uiState.source == PlaybackSource.PHONE && uiState.snapshot.upNext.isNotEmpty()) {
                 item { ListHeader { Text(text = stringResource(R.string.watch_phone_queue)) } }
-                items(uiState.snapshot.upNext) { episode ->
+                items(uiState.snapshot.upNext, key = { "queue:${it.id}" }) { episode ->
                     QueueRow(episode = episode, onClick = { onPlayOnPhone(episode.id) })
                 }
             }
 
             // What the phone holds offline and has not sent here. Directly below the queue because
             // the two answer the same question — what is on the phone — and a wrist scrolls once.
-            if (uiState.copyable.isNotEmpty()) {
+            if (copyable.isNotEmpty()) {
                 item {
                     ListHeader { Text(text = stringResource(R.string.watch_downloaded_on_phone)) }
                 }
-                items(uiState.copyable) { episode ->
+                items(copyable, key = { "phone:${it.id}" }) { episode ->
                     CopyableRow(
                         episode = episode,
                         onPlay = { onPlayOnPhone(episode.id) },
@@ -411,18 +446,18 @@ private fun EpisodesPage(
                 }
             }
 
-            if (uiState.stored.isNotEmpty() || uiState.arriving.isNotEmpty()) {
+            if (uiState.stored.isNotEmpty() || arriving.isNotEmpty()) {
                 item {
                     ListHeader { Text(text = stringResource(R.string.watch_on_this_watch)) }
                 }
-                items(uiState.stored) { episode ->
+                items(uiState.stored, key = { "watch:${it.id}" }) { episode ->
                     StoredRow(
                         episode = episode,
                         onPlay = { onPlayOnWatch(episode) },
                         onRemove = { onRemoveFromWatch(episode.id) },
                     )
                 }
-                items(uiState.arriving) { arriving ->
+                items(arriving, key = { "arriving:${it.episode.id}" }) { arriving ->
                     ArrivingRow(
                         arriving = arriving,
                         onCancel = { onCancelCopyToWatch(arriving.episode.id) },
@@ -573,6 +608,10 @@ private fun Waveform(accent: Color, moving: Boolean, modifier: Modifier = Modifi
         modifier = modifier
             .fillMaxWidth()
             .height(WAVEFORM_HEIGHT)
+            // A layer of its own, so that redrawing the bars every animation frame redraws the
+            // bars and not the page they sit on — which, mid-swipe, is already being redrawn by
+            // the pager for reasons of its own.
+            .graphicsLayer()
             // Decorative: whether the phone is playing is already spoken by the transport button,
             // and a waveform TalkBack stopped on would only be one more thing to swipe past.
             .clearAndSetSemantics { },
@@ -632,7 +671,13 @@ private fun ShowDot(accent: Color, modifier: Modifier = Modifier) {
  * and rotary input has only one focus owner. Tapping first makes the choice unambiguous: while
  * scrubbing, the bezel moves the position; otherwise it scrolls the list, as everywhere else.
  *
- * @param uiState what to draw, including the scrub preview position.
+ * The position is read here through a lambda and never as a value, and only inside things that
+ * run outside composition — the indicator's own progress lambda, the thumb's offset, the
+ * snapshot flow below — or inside [PositionLabel], which is the one composable built to be
+ * recomposed once a second. The row itself, with its gesture modifiers, is not.
+ *
+ * @param uiState what to draw.
+ * @param position where playback has reached, or the scrub preview while scrubbing.
  * @param onBeginScrub takes hold of the bar.
  * @param onScrubBy moves it by a signed offset in milliseconds.
  * @param onCommitScrub seeks to where it was left.
@@ -640,6 +685,7 @@ private fun ShowDot(accent: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun ProgressRow(
     uiState: WatchPlayerUiState,
+    position: () -> PlaybackPosition,
     onBeginScrub: () -> Unit,
     onScrubBy: (Long) -> Unit,
     onCommitScrub: () -> Unit,
@@ -656,27 +702,26 @@ private fun ProgressRow(
         0f
     }
 
-    // Rotary events go to whatever holds focus, so the bar has to claim it on entering scrub mode
-    // and give it back on leaving, or the list would keep consuming the bezel.
     LaunchedEffect(uiState.isScrubbing) {
-        if (uiState.isScrubbing) focusRequester.requestFocus()
-    }
+        if (!uiState.isScrubbing) return@LaunchedEffect
 
-    // Committing on a pause rather than on release: rotary has no "release", and a bezel turn
-    // arrives as a burst of events. Re-keyed on the position, so each movement restarts the wait.
-    if (uiState.isScrubbing) {
-        // Where the bar stood when it was grabbed. Until that changes the user has only tapped into
-        // scrub mode without moving anything, and committing then would seek to where playback
-        // already is and drop them straight back out of the mode they just deliberately entered.
-        // Remembered inside this branch, so leaving scrub mode forgets it.
-        val grabbedAtMs = remember { uiState.positionMs }
+        // Rotary events go to whatever holds focus, so the bar has to claim it on entering scrub
+        // mode and give it back on leaving, or the list would keep consuming the bezel.
+        focusRequester.requestFocus()
 
-        LaunchedEffect(uiState.positionMs) {
-            if (uiState.positionMs != grabbedAtMs) {
+        // Committing on a pause rather than on release: rotary has no "release", and a bezel turn
+        // arrives as a burst of events, so each movement restarts the wait. The first value is
+        // where the bar stood when it was grabbed, and is dropped: until the position changes the
+        // user has only tapped into scrub mode without moving anything, and committing then would
+        // seek to where playback already is and drop them straight back out of the mode they just
+        // deliberately entered. Watched as a snapshot flow rather than read in composition, so
+        // that the position moving does not recompose the row.
+        snapshotFlow { position().positionMs }
+            .drop(1)
+            .collectLatest {
                 delay(SCRUB_COMMIT_DELAY_MS)
                 onCommitScrub()
             }
-        }
     }
 
     val scrubLabel = stringResource(
@@ -718,13 +763,13 @@ private fun ProgressRow(
             contentAlignment = Alignment.CenterStart,
         ) {
             LinearProgressIndicator(
-                progress = { uiState.progress },
+                progress = { position().progress },
                 modifier = Modifier.fillMaxWidth().height(
                     if (uiState.isScrubbing) SCRUB_BAR_HEIGHT else PROGRESS_BAR_HEIGHT,
                 ),
             )
             if (uiState.isScrubbing) {
-                ScrubThumb(progress = uiState.progress, trackWidthPx = barWidthPx)
+                ScrubThumb(progress = { position().progress }, trackWidthPx = barWidthPx)
             }
         }
         if (uiState.showsScrubHint) {
@@ -741,15 +786,7 @@ private fun ProgressRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
-                text = formatPlaybackTime(uiState.positionMs),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (uiState.isScrubbing) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            PositionLabel(position = position, isScrubbing = uiState.isScrubbing)
             Text(
                 // Nothing is shown rather than "0:00" while the phone has not read the duration:
                 // a zero-length episode is a claim, an empty label is just an absence.
@@ -762,28 +799,54 @@ private fun ProgressRow(
 }
 
 /**
+ * The elapsed time, and the one composable on the screen that reads the clock in composition.
+ *
+ * Kept to a single `Text` on purpose: the position changes once a second, and whatever reads it
+ * is recomposed once a second. Reading it here rather than in [ProgressRow] means the row's
+ * gesture modifiers, focus handling and bar are built once and left alone while the seconds go
+ * by.
+ *
+ * @param position where playback has reached.
+ * @param isScrubbing true while the label is showing the scrub preview, which colours it as the
+ *   thing being adjusted.
+ */
+@Composable
+private fun PositionLabel(position: () -> PlaybackPosition, isScrubbing: Boolean) {
+    Text(
+        text = formatPlaybackTime(position().positionMs),
+        style = MaterialTheme.typography.labelSmall,
+        color = if (isScrubbing) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    )
+}
+
+/**
  * The grip on the bar, drawn only while the bar is being held.
  *
  * The whole of what makes scrub mode visible. Before this, the only difference between reading the
  * position and moving it was that the bar got taller, which nobody reads as *this is now a
  * control*; a thumb is the shape every slider ever made has used to say so.
  *
- * Placed by padding it away from the start of the track rather than by weighting two spacers, so
+ * Placed by offsetting it from the start of the track rather than by weighting two spacers, so
  * that a progress of zero and a progress of one both leave it inside the bar rather than half off
- * the end of it.
+ * the end of it. The offset is worked out in the layout pass, from a lambda: the thumb follows a
+ * bezel turn by being placed again, not by being composed again.
  *
  * @param progress how far along the track it sits, from zero to one.
  * @param trackWidthPx the measured width of the bar; zero before the first layout pass, which puts
  *   the thumb at the start for one frame rather than not drawing it at all.
  */
 @Composable
-private fun ScrubThumb(progress: Float, trackWidthPx: Int) {
-    val trackWidth = with(LocalDensity.current) { trackWidthPx.toDp() }
-    val travel = (trackWidth - SCRUB_THUMB_SIZE).coerceAtLeast(0.dp)
+private fun ScrubThumb(progress: () -> Float, trackWidthPx: Int) {
+    val thumbPx = with(LocalDensity.current) { SCRUB_THUMB_SIZE.roundToPx() }
+    val travelPx = (trackWidthPx - thumbPx).coerceAtLeast(0)
 
     Box(
         modifier = Modifier
-            .padding(start = travel * progress.coerceIn(0f, 1f))
+            .offset { IntOffset(x = (travelPx * progress().coerceIn(0f, 1f)).roundToInt(), y = 0) }
             .size(SCRUB_THUMB_SIZE)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primary),

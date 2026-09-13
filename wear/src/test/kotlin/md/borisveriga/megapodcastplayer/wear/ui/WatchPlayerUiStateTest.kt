@@ -10,6 +10,7 @@ import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
 import md.borisveriga.megapodcastplayer.wear.playback.WatchPlaybackState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,44 +33,92 @@ class WatchPlayerUiStateTest {
     fun `the position advances between publishes`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
 
-        val uiState = watchPlayerUiState(PhoneLink.CONNECTED, received, nowElapsedMs = 11_000L)
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 11_000L)
 
-        assertEquals(40_000L, uiState.positionMs)
+        assertEquals(40_000L, frame.position.positionMs)
     }
 
     @Test
     fun `progress follows the advancing position`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
 
-        val uiState = watchPlayerUiState(PhoneLink.CONNECTED, received, nowElapsedMs = 121_000L)
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 121_000L)
 
-        assertEquals(0.5f, uiState.progress, 0.001f)
+        assertEquals(0.5f, frame.position.progress, 0.001f)
     }
 
     @Test
     fun `a paused phone does not drift`() {
         val received = ReceivedSnapshot(playing.copy(isPlaying = false), receivedAtElapsedMs = 0L)
 
-        val uiState = watchPlayerUiState(PhoneLink.CONNECTED, received, nowElapsedMs = 600_000L)
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 600_000L)
 
-        assertEquals(30_000L, uiState.positionMs)
+        assertEquals(30_000L, frame.position.positionMs)
+    }
+
+    // ---- The clock, and what it is allowed to change --------------------------------------------
+
+    /**
+     * The reason the state is in two parts. The clock ticks once a second, and whatever it changes
+     * is recomposed once a second; the pages must not be on that list.
+     */
+    @Test
+    fun `a ticking clock moves the position and nothing else`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+
+        val earlier = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 11_000L)
+        val later = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 12_000L)
+
+        assertNotEquals(earlier.position, later.position)
+        assertEquals(earlier.uiState, later.uiState)
+    }
+
+    /**
+     * The watch's own player is polled twice a second, and each poll carries a new position. That
+     * reading has to end up in the bar and nowhere else, for the same reason as the clock above.
+     */
+    @Test
+    fun `the watch's own player being polled moves the position and nothing else`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
+
+        val earlier = watchPlayerFrame(PhoneLink.CONNECTED, received, 0L, local = localPlayback)
+        val later = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            received,
+            nowElapsedMs = 0L,
+            local = localPlayback.copy(positionMs = 60_500L),
+        )
+
+        assertEquals(60_500L, later.position.positionMs)
+        assertEquals(earlier.uiState, later.uiState)
+    }
+
+    /** The bar reads the position from one place, so the snapshot does not carry a second copy. */
+    @Test
+    fun `the snapshot's own position is not carried into the screen state`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 0L)
+
+        assertEquals(0L, frame.uiState.snapshot.positionMs)
+        assertEquals(30_000L, frame.position.positionMs)
     }
 
     @Test
     fun `nothing received yet reads as idle rather than crashing`() {
-        val uiState = watchPlayerUiState(PhoneLink.CONNECTED, received = null, nowElapsedMs = 5_000L)
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received = null, nowElapsedMs = 5_000L)
 
-        assertTrue(uiState.snapshot.isIdle)
-        assertEquals(0L, uiState.positionMs)
-        assertFalse(uiState.showsControls)
-        assertTrue(uiState.showsEmptyQueue)
+        assertTrue(frame.uiState.snapshot.isIdle)
+        assertEquals(0L, frame.position.positionMs)
+        assertFalse(frame.uiState.showsControls)
+        assertTrue(frame.uiState.showsEmptyQueue)
     }
 
     @Test
     fun `controls are hidden while the phone is unreachable, however fresh the snapshot`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
 
-        val uiState = watchPlayerUiState(PhoneLink.DISCONNECTED, received, nowElapsedMs = 0L)
+        val uiState = watchPlayerFrame(PhoneLink.DISCONNECTED, received, nowElapsedMs = 0L).uiState
 
         assertFalse(uiState.showsControls)
     }
@@ -78,7 +127,7 @@ class WatchPlayerUiStateTest {
     fun `controls appear once the phone is reachable and has something loaded`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
 
-        val uiState = watchPlayerUiState(PhoneLink.CONNECTED, received, nowElapsedMs = 0L)
+        val uiState = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 0L).uiState
 
         assertTrue(uiState.showsControls)
         assertFalse(uiState.showsEmptyQueue)
@@ -91,7 +140,7 @@ class WatchPlayerUiStateTest {
         )
         val received = ReceivedSnapshot(idleWithQueue, receivedAtElapsedMs = 0L)
 
-        val uiState = watchPlayerUiState(PhoneLink.CONNECTED, received, nowElapsedMs = 0L)
+        val uiState = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 0L).uiState
 
         assertFalse(uiState.showsControls)
         assertFalse(uiState.showsEmptyQueue)
@@ -101,16 +150,16 @@ class WatchPlayerUiStateTest {
     fun `a scrub in progress overrides the extrapolated position`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
 
-        val uiState = watchPlayerUiState(
+        val frame = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = received,
             nowElapsedMs = 11_000L,
             scrub = ScrubState(positionMs = 200_000L),
         )
 
-        assertEquals(200_000L, uiState.positionMs)
-        assertEquals(200_000f / 300_000f, uiState.progress, 0.001f)
-        assertTrue(uiState.isScrubbing)
+        assertEquals(200_000L, frame.position.positionMs)
+        assertEquals(200_000f / 300_000f, frame.position.progress, 0.001f)
+        assertTrue(frame.uiState.isScrubbing)
     }
 
     @Test
@@ -119,16 +168,16 @@ class WatchPlayerUiStateTest {
         // bar back to where the user just dragged it away from.
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
 
-        val uiState = watchPlayerUiState(
+        val frame = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = received,
             nowElapsedMs = 3_000L,
             scrub = ScrubState(positionMs = 200_000L, committedAtElapsedMs = 2_000L),
         )
 
-        assertEquals(200_000L, uiState.positionMs)
+        assertEquals(200_000L, frame.position.positionMs)
         // Held, but no longer being dragged: the user has let go.
-        assertFalse(uiState.isScrubbing)
+        assertFalse(frame.uiState.isScrubbing)
     }
 
     @Test
@@ -138,7 +187,7 @@ class WatchPlayerUiStateTest {
             receivedAtElapsedMs = 2_500L,
         )
 
-        val uiState = watchPlayerUiState(
+        val frame = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = confirmation,
             nowElapsedMs = 3_500L,
@@ -146,14 +195,14 @@ class WatchPlayerUiStateTest {
         )
 
         // Back to extrapolating, from the confirmed snapshot rather than the held value.
-        assertEquals(201_000L, uiState.positionMs)
+        assertEquals(201_000L, frame.position.positionMs)
     }
 
     @Test
     fun `the hold releases on its own if the phone never confirms`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
 
-        val uiState = watchPlayerUiState(
+        val frame = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = received,
             nowElapsedMs = 2_000L + SEEK_HOLD_MS,
@@ -161,21 +210,37 @@ class WatchPlayerUiStateTest {
         )
 
         // A phone that went silent must not freeze the bar where the user left it forever.
-        assertEquals(playing.positionAfter(1_000L + SEEK_HOLD_MS), uiState.positionMs)
+        assertEquals(playing.positionAfter(1_000L + SEEK_HOLD_MS), frame.position.positionMs)
     }
 
     @Test
     fun `a failed command is carried into the state`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
 
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = received,
             nowElapsedMs = 0L,
             lastCommandFailed = true,
-        )
+        ).uiState
 
         assertTrue(uiState.lastCommandFailed)
+    }
+
+    @Test
+    fun `the transient cues are carried into the state`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
+
+        val uiState = watchPlayerFrame(
+            link = PhoneLink.CONNECTED,
+            received = received,
+            nowElapsedMs = 0L,
+            momentSaved = true,
+            showsScrubHint = true,
+        ).uiState
+
+        assertTrue(uiState.momentSaved)
+        assertTrue(uiState.showsScrubHint)
     }
 
     // ---- What the watch itself is playing and holding ------------------------------------------
@@ -188,17 +253,17 @@ class WatchPlayerUiStateTest {
     fun `playing on the watch replaces what the phone is showing`() {
         val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
 
-        val uiState = watchPlayerUiState(
+        val frame = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = received,
             nowElapsedMs = 0L,
             local = localPlayback,
         )
 
-        assertEquals(PlaybackSource.WATCH, uiState.source)
-        assertEquals("The one about batteries", uiState.snapshot.title)
-        assertEquals(60_000L, uiState.positionMs)
-        assertTrue(uiState.showsControls)
+        assertEquals(PlaybackSource.WATCH, frame.uiState.source)
+        assertEquals("The one about batteries", frame.uiState.snapshot.title)
+        assertEquals(60_000L, frame.position.positionMs)
+        assertTrue(frame.uiState.showsControls)
     }
 
     /**
@@ -209,12 +274,12 @@ class WatchPlayerUiStateTest {
     fun `local playback keeps the phone's skip intervals`() {
         val configured = playing.copy(skipForwardMs = 45_000L, skipBackMs = 15_000L)
 
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = ReceivedSnapshot(configured, receivedAtElapsedMs = 0L),
             nowElapsedMs = 0L,
             local = localPlayback,
-        )
+        ).uiState
 
         assertEquals(45_000L, uiState.snapshot.skipForwardMs)
         assertEquals(15_000L, uiState.snapshot.skipBackMs)
@@ -226,12 +291,12 @@ class WatchPlayerUiStateTest {
      */
     @Test
     fun `an unreachable phone does not hide the episodes the watch holds`() {
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.DISCONNECTED,
             received = null,
             nowElapsedMs = 0L,
             stored = listOf(stored),
-        )
+        ).uiState
 
         assertFalse(uiState.showsLinkProblem)
         assertTrue(uiState.showsPhoneOutOfRange)
@@ -239,11 +304,11 @@ class WatchPlayerUiStateTest {
 
     @Test
     fun `an unreachable phone with nothing on the watch is still a dead end`() {
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.DISCONNECTED,
             received = null,
             nowElapsedMs = 0L,
-        )
+        ).uiState
 
         assertTrue(uiState.showsLinkProblem)
         assertFalse(uiState.showsPhoneOutOfRange)
@@ -251,13 +316,13 @@ class WatchPlayerUiStateTest {
 
     @Test
     fun `playing on the watch keeps its controls with no phone in range`() {
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.DISCONNECTED,
             received = null,
             nowElapsedMs = 0L,
             local = localPlayback,
             stored = listOf(stored),
-        )
+        ).uiState
 
         assertTrue(uiState.showsControls)
         assertFalse(uiState.showsLinkProblem)
@@ -269,7 +334,7 @@ class WatchPlayerUiStateTest {
      */
     @Test
     fun `what can be copied leaves out what is already here or on its way`() {
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = null,
             nowElapsedMs = 0L,
@@ -280,20 +345,20 @@ class WatchPlayerUiStateTest {
                 OfflineEpisode(id = "ep-3", title = "Could be copied"),
             ),
             transfers = mapOf("ep-2" to TransferProgress(receivedBytes = 5L, expectedBytes = 10L)),
-        )
+        ).uiState
 
         assertEquals(listOf("ep-3"), uiState.copyable.map { it.id })
     }
 
     @Test
     fun `an arriving episode is named by the offer it came from`() {
-        val uiState = watchPlayerUiState(
+        val uiState = watchPlayerFrame(
             link = PhoneLink.CONNECTED,
             received = null,
             nowElapsedMs = 0L,
             offered = listOf(OfflineEpisode(id = "ep-2", title = "On its way")),
             transfers = mapOf("ep-2" to TransferProgress(receivedBytes = 5L, expectedBytes = 10L)),
-        )
+        ).uiState
 
         val arriving = uiState.arriving.single()
         assertEquals("On its way", arriving.episode.title)

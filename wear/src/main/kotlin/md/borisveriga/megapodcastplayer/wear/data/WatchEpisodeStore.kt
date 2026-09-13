@@ -435,11 +435,14 @@ class WatchEpisodeStore @Inject constructor(
         /**
          * How much has to arrive before the progress bar is told again.
          *
-         * A quarter of the send buffer: frequent enough that the bar never looks stuck on a link
-         * moving tens of kilobytes a second, rare enough that a stream handed back in small pieces
-         * does not put a map copy behind every one of them.
+         * Every report is a new screen state, and a new screen state recomposes the list the bar
+         * sits in. An episode is tens of megabytes and the bar is a couple of hundred pixels wide,
+         * so it moves about a pixel per hundred kilobytes: anything finer than this is invisible
+         * and only wakes the screen — which, over a Bluetooth link, was happening several times a
+         * second while a swipe was trying to happen on top of it. Coarse enough to stop that,
+         * fine enough that the bar still visibly moves a few times a minute on a slow link.
          */
-        const val PROGRESS_STEP_BYTES = 16 * 1024L
+        const val PROGRESS_STEP_BYTES = 256 * 1024L
     }
 }
 

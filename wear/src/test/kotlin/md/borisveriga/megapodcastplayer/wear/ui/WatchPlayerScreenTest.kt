@@ -1,12 +1,15 @@
 package md.borisveriga.megapodcastplayer.wear.ui
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -64,7 +67,8 @@ class WatchPlayerScreenTest {
     @Test
     fun theEpisodeAndItsTransportControlsAreOnTheFirstScreen() {
         setScreen(
-            WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing, positionMs = 252_000L),
+            uiState = WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing),
+            position = { PlaybackPosition(positionMs = 252_000L, progress = 0.07f) },
         )
 
         composeTestRule.onNodeWithText("The one about batteries").assertIsDisplayed()
@@ -73,6 +77,27 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithText("4:12").assertIsDisplayed()
         composeTestRule.onNodeWithText("1:00:00").assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
+    }
+
+    /**
+     * The position reaches the screen through a lambda rather than as part of the state, so that
+     * the clock moving recomposes the label and not the pager. This checks the half of that which
+     * a test can see: the label does follow the lambda.
+     */
+    @Test
+    fun `the time label follows the position on its own`() {
+        val position = mutableStateOf(PlaybackPosition(positionMs = 252_000L, progress = 0.07f))
+        setScreen(
+            uiState = WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing),
+            position = { position.value },
+        )
+        composeTestRule.onNodeWithText("4:12").assertIsDisplayed()
+
+        composeTestRule.runOnIdle {
+            position.value = PlaybackPosition(positionMs = 253_000L, progress = 0.07f)
+        }
+
+        composeTestRule.onNodeWithText("4:13").assertIsDisplayed()
     }
 
     @Test
@@ -171,7 +196,6 @@ class WatchPlayerScreenTest {
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
                 snapshot = playing,
-                positionMs = 252_000L,
                 isScrubbing = true,
             ),
         )
@@ -251,7 +275,8 @@ class WatchPlayerScreenTest {
         )
 
         composeTestRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Stored episode 0").assertDoesNotExist()
+        // Composed — the other page is kept ready — but off the screen, which is what matters.
+        composeTestRule.onNodeWithText("Stored episode 0").assertIsNotDisplayed()
     }
 
     @Test
@@ -264,12 +289,39 @@ class WatchPlayerScreenTest {
             ),
         )
 
-        composeTestRule.onNodeWithText("On this watch").assertDoesNotExist()
+        composeTestRule.onNodeWithText("On this watch").assertIsNotDisplayed()
 
         openEpisodes()
 
         scrollTo("On this watch")
         composeTestRule.onNodeWithText("On this watch").assertIsDisplayed()
+    }
+
+    /**
+     * Both pages stay composed while the other is showing. The visible half of that is the list
+     * remembering where it was: before, the episodes page was thrown away on every swipe back to
+     * the transport and rebuilt — from the top — on every swipe out to it, which was also the
+     * stumble at the start of each swipe.
+     */
+    @Test
+    fun `the episodes list keeps its place when paged away from and back`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing,
+                stored = List(12) { index ->
+                    stored.copy(id = "ep-$index", title = "Stored episode $index")
+                },
+            ),
+        )
+        openEpisodes()
+        scrollTo("Stored episode 11")
+        composeTestRule.onNodeWithText("Stored episode 11").assertIsDisplayed()
+
+        backToNowPlaying()
+        openEpisodes()
+
+        composeTestRule.onNodeWithText("Stored episode 11").assertIsDisplayed()
     }
 
     /**
@@ -308,13 +360,15 @@ class WatchPlayerScreenTest {
             ),
         )
 
+        // Both pages are composed, so the sentence exists twice; the one on the page being shown
+        // is the one that has to be visible.
         scrollTo(OUT_OF_RANGE)
-        composeTestRule.onNodeWithText(OUT_OF_RANGE).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(OUT_OF_RANGE)[page].assertIsDisplayed()
 
         openEpisodes()
 
         scrollTo(OUT_OF_RANGE)
-        composeTestRule.onNodeWithText(OUT_OF_RANGE).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(OUT_OF_RANGE)[page].assertIsDisplayed()
     }
 
     // ---- What a stored row says about itself ----------------------------------------------------
@@ -355,14 +409,23 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithText("Radio Hardware · 20m left").assertIsDisplayed()
     }
 
+    /**
+     * The page being shown, as an index into the pager's lists.
+     *
+     * Both pages are composed at once — the pager keeps the other one ready so a swipe never has
+     * to build it — so a matcher for "the list" finds two, and the tests have to say which. With
+     * no pager on the screen there is one list and this is its index too.
+     */
+    private var page = NOW_PLAYING_PAGE
+
     /** Scrolls the list on whichever page is showing until the node holding [text] is on it. */
     private fun scrollTo(text: String) {
-        composeTestRule.onNode(isVerticalList()).performScrollToNode(hasText(text))
+        composeTestRule.onAllNodes(isVerticalList())[page].performScrollToNode(hasText(text))
     }
 
     /** The same, for a node that carries no text of its own — a button that is only a glyph. */
     private fun scrollToDescription(description: String) {
-        composeTestRule.onNode(isVerticalList())
+        composeTestRule.onAllNodes(isVerticalList())[page]
             .performScrollToNode(hasContentDescription(description))
     }
 
@@ -375,6 +438,13 @@ class WatchPlayerScreenTest {
      */
     private fun openEpisodes() {
         composeTestRule.onNode(isPager()).performScrollToIndex(EPISODES_PAGE)
+        page = EPISODES_PAGE
+    }
+
+    /** The way back; see [openEpisodes]. */
+    private fun backToNowPlaying() {
+        composeTestRule.onNode(isPager()).performScrollToIndex(NOW_PLAYING_PAGE)
+        page = NOW_PLAYING_PAGE
     }
 
     /** The pager: the one scrollable on this screen that moves sideways. */
@@ -605,7 +675,6 @@ class WatchPlayerScreenTest {
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
                 snapshot = playing,
-                positionMs = 252_000L,
                 isScrubbing = true,
                 showsScrubHint = true,
             ),
@@ -620,7 +689,6 @@ class WatchPlayerScreenTest {
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
                 snapshot = playing,
-                positionMs = 252_000L,
                 isScrubbing = true,
             ),
         )
@@ -634,6 +702,7 @@ class WatchPlayerScreenTest {
 
     private fun setScreen(
         uiState: WatchPlayerUiState,
+        position: () -> PlaybackPosition = { PlaybackPosition() },
         onTogglePlayPause: () -> Unit = {},
         onPlayOnPhone: (String) -> Unit = {},
         onRetry: () -> Unit = {},
@@ -646,6 +715,7 @@ class WatchPlayerScreenTest {
                 androidx.wear.compose.material3.AppScaffold {
                     WatchPlayerScreen(
                         uiState = uiState,
+                        position = position,
                         onTogglePlayPause = onTogglePlayPause,
                         onSkipForward = {},
                         onSkipBack = {},
@@ -663,6 +733,9 @@ class WatchPlayerScreenTest {
         }
     }
 }
+
+/** The now-playing page's index in the pager: the first, because it is what a raised wrist asks. */
+private const val NOW_PLAYING_PAGE = 0
 
 /** The episodes page's index in the pager; the now-playing page is the one before it. */
 private const val EPISODES_PAGE = 1

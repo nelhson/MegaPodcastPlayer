@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
@@ -133,6 +134,61 @@ class WatchPlayerViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    /**
+     * The screen is a pager that collects [WatchPlayerViewModel.uiState] above both of its pages,
+     * so anything that changes it rebuilds them — and the position changes by itself once a
+     * second. It therefore travels separately, and a phone reporting the same episode further
+     * along must reach the bar without waking the pages.
+     *
+     * Driven by a fresh snapshot rather than by the ticker: on the JVM the clock the ticker reads
+     * stands still, so a ticking clock here would prove nothing.
+     */
+    @Test
+    fun `a new reading of the position reaches the bar without re-emitting the screen state`() =
+        runTest {
+            val snapshots = MutableStateFlow<ReceivedSnapshot?>(ReceivedSnapshot(playing, 0L))
+            every { client.snapshots } returns snapshots
+            val viewModel = viewModel()
+            // Kept subscribed, so the flow is live and its value can be read directly below.
+            backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.position.collect {} }
+
+            viewModel.uiState.test {
+                awaitItem()
+                assertEquals(30_000L, viewModel.position.value.positionMs)
+
+                snapshots.value = ReceivedSnapshot(playing.copy(positionMs = 31_000L), 0L)
+
+                assertEquals(31_000L, viewModel.position.value.positionMs)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    /** The same, for the watch's own player, which is polled twice a second while it plays. */
+    @Test
+    fun `the watch's player being polled reaches the bar without re-emitting the screen state`() =
+        runTest {
+            val polled = WatchPlaybackState(
+                episode = StoredEpisode(id = "ep-1", title = "Episode one", showTitle = "Show"),
+                isPlaying = true,
+                positionMs = 60_000L,
+                durationMs = 300_000L,
+            )
+            localPlayback.value = polled
+            val viewModel = viewModel()
+            backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.position.collect {} }
+
+            viewModel.uiState.test {
+                assertEquals(PlaybackSource.WATCH, awaitItem().source)
+
+                localPlayback.value = polled.copy(positionMs = 60_500L)
+
+                assertEquals(60_500L, viewModel.position.value.positionMs)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
 
     @Test
     fun `scrubbing sends one seek, on commit, and not before`() = runTest {
@@ -277,7 +333,7 @@ class WatchPlayerViewModelTest {
             viewModel.scrubBy(10_000L)
 
             // The sentence sits where the times do; once the gesture is understood it is in the way.
-            awaitItem()
+            // One emission, not two: the bar moving is the position's business, not the screen's.
             assertFalse(awaitItem().showsScrubHint)
             cancelAndIgnoreRemainingEvents()
         }

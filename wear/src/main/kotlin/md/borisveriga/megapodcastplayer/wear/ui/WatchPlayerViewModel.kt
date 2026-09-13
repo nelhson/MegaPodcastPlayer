@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -107,14 +108,21 @@ class WatchPlayerViewModel @Inject constructor(
         library.library,
     ) { local, stored, transfers, offered -> WatchState(local, stored, transfers, offered.episodes) }
 
-    val uiState: StateFlow<WatchPlayerUiState> = combine(
+    /**
+     * Everything the screen draws, computed once per change of any input.
+     *
+     * Private, and split in two below, because its inputs move at two very different rates. The
+     * clock in [phone] ticks every second, so this flow emits every second — and the screen is a
+     * pager whose pages must not be rebuilt for a clock tick, so the screen is never handed this.
+     */
+    private val frame: StateFlow<WatchPlayerFrame> = combine(
         phone,
         watch,
         lastCommandFailed,
         scrub,
         cues,
     ) { phone, watch, failed, scrubState, cues ->
-        watchPlayerUiState(
+        watchPlayerFrame(
             link = phone.link,
             received = phone.received,
             nowElapsedMs = phone.nowElapsedMs,
@@ -124,12 +132,47 @@ class WatchPlayerViewModel @Inject constructor(
             stored = watch.stored,
             offered = watch.offered,
             transfers = watch.transfers,
-        ).copy(momentSaved = cues.momentSaved, showsScrubHint = cues.scrubHint)
+            momentSaved = cues.momentSaved,
+            showsScrubHint = cues.scrubHint,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
-        initialValue = WatchPlayerUiState(),
+        initialValue = WatchPlayerFrame(),
     )
+
+    /**
+     * What the pages draw.
+     *
+     * Emits only when something other than the clock changed. [frame] emits every second, but a
+     * state flow drops a value equal to the one it holds, and [WatchPlayerUiState] carries nothing
+     * that moves by itself — so the pager, which collects this, sits still while an episode plays.
+     * That is what keeps a swipe between the pages smooth; see [position] for the part that moves.
+     *
+     * No timeout of its own: [frame] is what keeps the Data Layer listeners warm across a brief
+     * absence, and a second timeout here would only stack on top of it.
+     */
+    val uiState: StateFlow<WatchPlayerUiState> = frame
+        .map { it.uiState }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = frame.value.uiState,
+        )
+
+    /**
+     * What the bar draws: the position, and only the position.
+     *
+     * Collected by the one composable that shows it, so a clock tick recomposes a time label and
+     * nothing else. See [uiState].
+     */
+    val position: StateFlow<PlaybackPosition> = frame
+        .map { it.position }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(),
+            initialValue = frame.value.position,
+        )
 
     init {
         // The cached data item may predate the phone being restarted, and asking also starts the
@@ -159,13 +202,13 @@ class WatchPlayerViewModel @Inject constructor(
     /** Jumps forward by the interval configured on the phone, on whichever device is playing. */
     fun skipForward() = onSource(
         onPhone = { send(WearCommand.SkipForward) },
-        onWatch = { playback.skipForward(uiState.value.snapshot.skipForwardMs) },
+        onWatch = { playback.skipForward(frame.value.uiState.snapshot.skipForwardMs) },
     )
 
     /** Jumps back by the interval configured on the phone; see [skipForward]. */
     fun skipBack() = onSource(
         onPhone = { send(WearCommand.SkipBack) },
-        onWatch = { playback.skipBack(uiState.value.snapshot.skipBackMs) },
+        onWatch = { playback.skipBack(frame.value.uiState.snapshot.skipBackMs) },
     )
 
     /**
@@ -176,12 +219,12 @@ class WatchPlayerViewModel @Inject constructor(
      * local playback, and this guards the case where something else calls it.
      */
     fun skipToNext() {
-        if (uiState.value.source == PlaybackSource.PHONE) send(WearCommand.SkipToNext)
+        if (frame.value.uiState.source == PlaybackSource.PHONE) send(WearCommand.SkipToNext)
     }
 
     /** Restarts the episode, or moves to the previous one; the phone's queue only, as [skipToNext]. */
     fun skipToPrevious() {
-        if (uiState.value.source == PlaybackSource.PHONE) send(WearCommand.SkipToPrevious)
+        if (frame.value.uiState.source == PlaybackSource.PHONE) send(WearCommand.SkipToPrevious)
     }
 
     /**
@@ -194,7 +237,7 @@ class WatchPlayerViewModel @Inject constructor(
     fun cycleSpeed() = onSource(
         onPhone = { send(WearCommand.CycleSpeed) },
         onWatch = {
-            playback.setSpeed(PlaybackSettings(speed = uiState.value.snapshot.speed).nextSpeed())
+            playback.setSpeed(PlaybackSettings(speed = frame.value.uiState.snapshot.speed).nextSpeed())
         },
     )
 
@@ -216,8 +259,8 @@ class WatchPlayerViewModel @Inject constructor(
      * bar jump the instant it is touched.
      */
     fun beginScrub() {
-        if (!uiState.value.canScrub) return
-        scrub.value = ScrubState(positionMs = uiState.value.positionMs)
+        if (!frame.value.uiState.canScrub) return
+        scrub.value = ScrubState(positionMs = frame.value.position.positionMs)
         explainScrubbingOnce()
     }
 
@@ -245,7 +288,7 @@ class WatchPlayerViewModel @Inject constructor(
      * @param deltaMs how far to move; negative rewinds.
      */
     fun scrubBy(deltaMs: Long) {
-        val duration = uiState.value.snapshot.knownDurationMs ?: return
+        val duration = frame.value.uiState.snapshot.knownDurationMs ?: return
         val current = scrub.value ?: return
         if (current.committedAtElapsedMs != null) return
 
@@ -300,12 +343,13 @@ class WatchPlayerViewModel @Inject constructor(
      */
     fun markMoment() {
         viewModelScope.launch {
-            val state = uiState.value
+            // One reading of the frame, so the position belongs to the episode it is filed under.
+            val (state, position) = frame.value
             val reached = if (state.source == PlaybackSource.WATCH) {
                 val episodeId = state.snapshot.episodeId ?: return@launch
                 // Queued when it cannot be delivered, so from the wearer's side this always
                 // worked — which is why the outcome is discarded rather than reported.
-                pendingMoments.mark(episodeId, state.positionMs)
+                pendingMoments.mark(episodeId, position.positionMs)
                 true
             } else {
                 client.send(WearCommand.MarkMoment())
@@ -406,8 +450,8 @@ class WatchPlayerViewModel @Inject constructor(
      */
     fun removeFromWatch(episodeId: String) {
         viewModelScope.launch {
-            if (uiState.value.snapshot.episodeId == episodeId &&
-                uiState.value.source == PlaybackSource.WATCH
+            if (frame.value.uiState.snapshot.episodeId == episodeId &&
+                frame.value.uiState.source == PlaybackSource.WATCH
             ) {
                 playback.stop()
             }
@@ -433,7 +477,7 @@ class WatchPlayerViewModel @Inject constructor(
      * @param onWatch what to do when the watch is.
      */
     private fun onSource(onPhone: () -> Unit, onWatch: suspend () -> Unit) {
-        if (uiState.value.source == PlaybackSource.WATCH) {
+        if (frame.value.uiState.source == PlaybackSource.WATCH) {
             viewModelScope.launch { onWatch() }
         } else {
             onPhone()
