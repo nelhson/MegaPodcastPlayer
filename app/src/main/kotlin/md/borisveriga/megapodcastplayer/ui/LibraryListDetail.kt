@@ -90,7 +90,9 @@ fun LibraryListDetail(
     val detailGraph = detailNavController.rememberDetailPaneGraph {
         // Deliberately blank. This destination is only ever seen on a screen wide enough for two
         // panes, beside a library that is already the invitation to pick something; a placeholder
-        // saying so was a label for a fact the layout makes obvious.
+        // saying so was a label for a fact the layout makes obvious. It is never *returned* to by
+        // a back gesture: opening a show replaces it rather than stacking on it, which is what
+        // keeps a folded phone from showing this blank pane between the show and the list.
         composable<Route.NoShowSelected> {}
 
         composable<Route.PodcastDetail> {

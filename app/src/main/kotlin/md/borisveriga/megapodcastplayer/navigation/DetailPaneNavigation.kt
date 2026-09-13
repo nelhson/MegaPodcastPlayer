@@ -15,8 +15,13 @@ import androidx.navigation.toRoute
 /**
  * The four things the library's detail pane does to its own small graph.
  *
- * That graph is a back stack of exactly two shapes — [Route.NoShowSelected] at the bottom and at
- * most one [Route.PodcastDetail] above it — and keeping it that shape is most of the logic here.
+ * That graph is a back stack of exactly one entry — [Route.NoShowSelected] until a show is picked,
+ * one [Route.PodcastDetail] from then on — and keeping it that shape is most of the logic here. One
+ * entry and never two, because the pane's `NavHost` claims the system back gesture whenever it has
+ * something to pop, and it is composed inside the pane scaffold and so is asked first. With the
+ * placeholder left underneath the show, back on a folded phone popped to the placeholder — a blank
+ * pane filling the screen — and only the *next* back closed the pane. With nothing underneath, the
+ * gesture goes straight to the scaffold, which closes the pane and shows the list.
  * It lives beside [navigateToTopLevel] rather than inside `LibraryListDetail` for the same reason
  * that one does: a back stack rule is the kind of thing that is wrong in a way no screenshot shows,
  * so it is written where a test can drive it with no composition around it.
@@ -80,6 +85,13 @@ internal fun NavHostController.rememberDetailPaneGraph(
  * walk back through them one at a time instead of leaving the pane — the user tapped three rows of
  * one list, and to them that is one place visited three times, not three places.
  *
+ * The pop clears the whole stack, placeholder included, and that is the whole difference between a
+ * back gesture that closes the pane and one that shows a blank screen first; see the file's doc.
+ * The show does not need the placeholder underneath it: what comes after the show is decided by
+ * the pane scaffold, never by this stack. The graph rather than the placeholder is named as the
+ * pop target because the placeholder is only there until the first show; naming it would leave a
+ * second show stacked on the first.
+ *
  * The early return is the same promise [navigateToTopLevel] makes about a tab the user is already
  * standing on, and it is needed here for the same reason it is needed there: `launchSingleTop` does
  * not cover it. That flag reuses an entry only when the destination is already on top, and the
@@ -93,20 +105,24 @@ internal fun NavController.openShowInDetailPane(podcastId: String) {
     if (currentBackStackEntry.openPodcastId() == podcastId) return
 
     navigate(Route.PodcastDetail(podcastId)) {
-        popUpTo<Route.NoShowSelected>()
+        popUpTo(graph.id) { inclusive = true }
     }
 }
 
 /**
  * Puts the detail pane back to its placeholder.
  *
- * Called when the show that was in it is gone — either backed out of on a screen too narrow to hold
- * both panes, or removed from the library while it was open. Not `popBackStack()` on its own: that
- * would be right for the first case and wrong for the second, because a removal can arrive while
- * the pane is showing a show that was itself opened over nothing.
+ * Called when the show that was in it is gone — removed from the library while it was open on a
+ * screen wide enough to show both panes. A navigation to the placeholder rather than a pop, because
+ * [openShowInDetailPane] took the placeholder off the stack, so there is nothing to pop back *to*;
+ * the show is popped on the way, and `launchSingleTop` keeps a pane that was already showing the
+ * placeholder from gaining a second copy of it.
  */
 internal fun NavController.clearDetailPane() {
-    popBackStack(route = Route.NoShowSelected, inclusive = false)
+    navigate(Route.NoShowSelected) {
+        popUpTo<Route.PodcastDetail> { inclusive = true }
+        launchSingleTop = true
+    }
 }
 
 /**

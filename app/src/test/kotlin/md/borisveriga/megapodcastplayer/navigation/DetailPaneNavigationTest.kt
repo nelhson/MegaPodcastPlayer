@@ -100,12 +100,15 @@ class DetailPaneNavigationTest {
     }
 
     @Test
-    fun `opening a show puts it over the placeholder`() {
+    fun `opening a show replaces the placeholder rather than stacking on it`() {
         setUpPane()
 
         onNav { openShowInDetailPane("show-1") }
 
-        assertEquals(listOf("NoShowSelected", "PodcastDetail"), backStack)
+        // One entry, not two. With the placeholder left underneath, the pane's own NavHost owned
+        // the back gesture and a folded phone went show -> blank pane -> list; with the show alone
+        // on the stack the gesture falls through to the pane scaffold, which closes the pane.
+        assertEquals(listOf("PodcastDetail"), backStack)
         composeTestRule.runOnIdle {
             assertEquals("show-1", navController.currentBackStackEntry.openPodcastId())
         }
@@ -118,7 +121,7 @@ class DetailPaneNavigationTest {
         onNav { openShowInDetailPane("show-1") }
         onNav { openShowInDetailPane("show-2") }
 
-        assertEquals(listOf("NoShowSelected", "PodcastDetail"), backStack)
+        assertEquals(listOf("PodcastDetail"), backStack)
         composeTestRule.runOnIdle {
             assertEquals("show-2", navController.currentBackStackEntry.openPodcastId())
         }
@@ -133,7 +136,7 @@ class DetailPaneNavigationTest {
 
         onNav { openShowInDetailPane("show-1") }
 
-        assertEquals(listOf("NoShowSelected", "PodcastDetail"), backStack)
+        assertEquals(listOf("PodcastDetail"), backStack)
         // The same entry, not a rebuilt one: `launchSingleTop` is what keeps the show's view model,
         // its scroll position and its open sheet alive when the row under the finger is the row
         // already showing.
@@ -175,7 +178,7 @@ class DetailPaneNavigationTest {
 
         onNav { openShowInDetailPane("show-1") }
 
-        assertEquals(listOf("NoShowSelected", "PodcastDetail"), backStack)
+        assertEquals(listOf("PodcastDetail"), backStack)
         composeTestRule.runOnIdle {
             assertEquals("show-1", navController.currentBackStackEntry.openPodcastId())
         }
@@ -193,7 +196,7 @@ class DetailPaneNavigationTest {
         composeTestRule.runOnIdle { isPaneOnScreen.value = true }
         composeTestRule.waitForIdle()
 
-        assertEquals(listOf("NoShowSelected", "PodcastDetail"), backStack)
+        assertEquals(listOf("PodcastDetail"), backStack)
         composeTestRule.runOnIdle {
             assertEquals("show-1", navController.currentBackStackEntry.openPodcastId())
         }
