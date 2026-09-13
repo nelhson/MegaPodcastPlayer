@@ -251,6 +251,32 @@ class SwipeActionsRowTest {
     }
 
     @Test
+    fun `a committed row springs shut without showing its buttons on the way back`() {
+        setContent()
+        // The clock is held so the settle can be stepped through a frame at a time. Left to run
+        // free it would finish inside the swipe call and hide the whole journey back.
+        composeRule.mainClock.autoAdvance = false
+
+        swipeLeftBy(FULL_SWIPE_PX)
+
+        // The row is on its way back from the far edge, and that way passes over the buttons. They
+        // used to fade back in for the crossing — "delete, then queue, then delete again" for one
+        // gesture — before the row covered them. A button that is not in the semantics tree is one
+        // the component is holding hidden.
+        repeat(SETTLE_FRAMES) {
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.onNodeWithText("Mark played").assertDoesNotExist()
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+
+        // And shut, ready for the next swipe: a new pull has to find the buttons again.
+        composeRule.onNodeWithText("Mark played").assertDoesNotExist()
+        swipeLeftBy(SHORT_SWIPE_PX)
+        composeRule.onNodeWithText("Mark played").assertIsDisplayed()
+    }
+
+    @Test
     fun `without a full-swipe action the row cannot be pulled far enough to commit`() {
         var marked = 0
         setContent(onMarkPlayed = { marked++ }, withFullSwipe = false)
@@ -288,5 +314,13 @@ class SwipeActionsRowTest {
 
         /** Comfortably past half the row's width, which is where a release commits. */
         const val FULL_SWIPE_PX = 1_000f
+
+        /**
+         * Enough 16ms frames to carry the settle spring from the far edge back over the buttons.
+         *
+         * Two seconds. The spring is done long before that, and stepping past its end costs only
+         * a few no-op frames; stopping short of the crossing would miss the bug entirely.
+         */
+        const val SETTLE_FRAMES = 120
     }
 }

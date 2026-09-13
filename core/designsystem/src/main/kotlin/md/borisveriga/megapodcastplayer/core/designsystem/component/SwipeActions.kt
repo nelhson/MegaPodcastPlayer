@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -23,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,10 +39,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
@@ -112,15 +110,40 @@ fun SwipeActionsRow(
     var rowWidth by remember { mutableFloatStateOf(0f) }
     // Read late, so a release cannot call a handler from a composition that has since gone.
     val currentFullSwipe by rememberUpdatedState(fullSwipeAction)
+    // Set when a full swipe fires, held until the row is shut again. The way back from the far
+    // edge crosses the buttons, and without this they would fade in for the crossing — one
+    // gesture showing "delete", then "queue", then "delete" again — before the row covered them.
+    // The action has already happened; the only thing left to show is the row closing over it.
+    var isClosingAfterCommit by remember { mutableStateOf(false) }
 
-    val commitThreshold = if (fullSwipeAction != null) rowWidth * FULL_SWIPE_FRACTION else 0f
-    val travelLimit = if (fullSwipeAction != null) rowWidth else revealWidth
-    val pulled = -offsetPx
-    val isOpen = pulled > OPEN_EPSILON_PX
+    val hasFullSwipe = fullSwipeAction != null
+    val commitThreshold = if (hasFullSwipe) rowWidth * FULL_SWIPE_FRACTION else 0f
+    val travelLimit = if (hasFullSwipe) rowWidth else revealWidth
+    val gesturesEnabled = enabled && (actions.isNotEmpty() || hasFullSwipe)
+
+    // Derived rather than computed inline, and that is what keeps the drag smooth. The offset
+    // changes on every pointer event and every frame of a settle; read directly in composition
+    // it would recompose this whole row each time, and everything under it that could not skip.
+    // Derived, the composition is only invalidated when one of these actually flips, and the
+    // offset itself is read where it is used: in the layer that moves the row.
+    val isOpen by remember { derivedStateOf { -offsetPx > OPEN_EPSILON_PX } }
     // Past the buttons is past the point of choosing between them.
-    val isCommitting = fullSwipeAction != null && pulled > revealWidth
-    val isArmed = commitThreshold > 0f && pulled >= commitThreshold
-    val gesturesEnabled = enabled && (actions.isNotEmpty() || fullSwipeAction != null)
+    val isCommitting by remember(hasFullSwipe) {
+        derivedStateOf { hasFullSwipe && -offsetPx > revealWidth }
+    }
+    val isArmed by remember(hasFullSwipe) {
+        derivedStateOf {
+            val threshold = if (hasFullSwipe) rowWidth * FULL_SWIPE_FRACTION else 0f
+            // Kept lit through the close, so what the backdrop shows on the way shut is the thing
+            // that was just done rather than a warning about something that might be.
+            isClosingAfterCommit || (threshold > 0f && -offsetPx >= threshold)
+        }
+    }
+
+    // Shut is the one state where nothing is held: the next pull finds the buttons in place.
+    LaunchedEffect(isOpen) {
+        if (!isOpen) isClosingAfterCommit = false
+    }
 
     // A tick the instant the backdrop lights up. Both say the same thing — "let go now and this
     // happens" — and the hand is the half of the pair the user can perceive while their thumb is
@@ -176,7 +199,7 @@ fun SwipeActionsRow(
                 actions = actions,
                 // Faded rather than removed: they are still what defines the reveal width, and the
                 // fade is what makes the two tiers read as one gesture rather than two.
-                isVisible = !isCommitting,
+                isVisible = !isCommitting && !isClosingAfterCommit,
                 isOpen = isOpen,
                 onWidthChange = { revealWidth = it },
                 onAction = { action ->
@@ -188,7 +211,10 @@ fun SwipeActionsRow(
 
         Box(
             modifier = Modifier
-                .offset { IntOffset(offsetPx.roundToInt(), 0) }
+                // A layer translation rather than an `offset`: it moves the row at draw time
+                // without a layout pass, and it takes the offset as it is instead of rounding it
+                // to a pixel first. Between them that is what a 120Hz drag needs to keep up.
+                .graphicsLayer { translationX = offsetPx }
                 .draggable(
                     state = rememberDraggableState { delta ->
                         // Clamped rather than rubber-banded: the travel limit is the whole extent
@@ -199,8 +225,12 @@ fun SwipeActionsRow(
                     orientation = Orientation.Horizontal,
                     enabled = gesturesEnabled,
                     // A settle still springing when the next gesture starts would fight the finger
-                    // for the same value, and the finger has to win.
-                    onDragStarted = { settleJob?.cancel() },
+                    // for the same value, and the finger has to win. A pull that catches the row
+                    // on its way shut after a commit is a new gesture, and gets its buttons back.
+                    onDragStarted = {
+                        settleJob?.cancel()
+                        isClosingAfterCommit = false
+                    },
                     onDragStopped = { velocity ->
                         val outcome =
                             releaseOutcome(offsetPx, velocity, revealWidth, commitThreshold)
@@ -210,7 +240,10 @@ fun SwipeActionsRow(
                         // it — comes from the data a beat later, and a row that flew away and then
                         // sprang back in order to vanish properly is worse than one that never
                         // left.
-                        if (outcome == SwipeRelease.COMMIT) currentFullSwipe?.onClick?.invoke()
+                        if (outcome == SwipeRelease.COMMIT) {
+                            isClosingAfterCommit = true
+                            currentFullSwipe?.onClick?.invoke()
+                        }
                         settleTo(if (outcome == SwipeRelease.OPEN) -revealWidth else 0f)
                     },
                 )
