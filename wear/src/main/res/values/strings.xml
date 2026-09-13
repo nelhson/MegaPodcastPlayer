@@ -14,13 +14,10 @@
     <string name="app_name">MegaPodcastPlayer</string>
 
     <!--
-      Section headers for the two lists that describe the *phone*, as opposed to watch_on_this_watch
-      below. Each names the list rather than the action its rows perform: the watch shows three lists
-      one under another, and on a 45 mm screen the header is the only thing saying whose episodes
-      these are.
+      Section header for the phone's queue. It names the list rather than the action its rows
+      perform: on a 45 mm screen the header is the only thing saying whose episodes these are.
     -->
     <string name="watch_phone_queue">Phone queue</string>
-    <string name="watch_downloaded_on_phone">Downloaded on phone</string>
 
     <string name="watch_play">Play</string>
     <string name="watch_pause">Pause</string>
@@ -58,39 +55,6 @@
     <string name="watch_link_disconnected_description">Bring your phone closer, or turn Bluetooth back on.</string>
 
     <string name="watch_retry">Retry</string>
-
-    <!--
-      Episodes carried over to the watch itself. This is the one part of the app that works with the
-      phone out of range, so its copy says "on this watch" rather than naming the phone at all.
-    -->
-    <string name="watch_on_this_watch">On this watch</string>
-    <!--
-      The two things a downloaded-on-phone row offers, read by TalkBack from the glyph on each.
-      Tapping the row starts the episode on the phone, which is what is usually wanted; the button
-      beside it fetches the audio over so the watch can play it with the phone left behind.
-    -->
-    <string name="watch_play_on_phone">Play on phone</string>
-    <string name="watch_copy_to_watch">Copy to watch</string>
-    <string name="watch_copying">Copying…</string>
-    <!-- The action beside an arriving episode's bar; read by TalkBack from its icon. -->
-    <string name="watch_cancel_copy">Cancel copy</string>
-    <!-- COPY-2: the watch's copy is a file on the watch, so it is deleted rather than removed. -->
-    <string name="watch_remove_from_watch">Delete from watch</string>
-    <string name="watch_free_up_space">Delete all from watch</string>
-    <string name="watch_nothing_to_copy">Download an episode on your phone to copy it here.</string>
-    <string name="watch_playing_on_watch">Playing on this watch</string>
-    <!--
-      Second line of a stored row. Every one of them answers the same question — will this fit my
-      walk — so a part-heard episode gives what is left, an unstarted one its whole length, and a
-      finished one says it is finished rather than quoting a number nobody is deciding on.
-    -->
-    <string name="watch_stored_remaining">%1$s · %2$s left</string>
-    <string name="watch_stored_length">%1$s · %2$s</string>
-    <string name="watch_stored_played">%1$s · Played</string>
-    <string name="watch_back_to_phone">Back to the phone</string>
-    <string name="watch_phone_out_of_range">Phone out of range. Episodes on this watch still play.</string>
-    <!-- Stands in for a title when audio arrives without the offer that described it. -->
-    <string name="watch_unknown_episode">Episode</string>
 
     <!--
       The tile, one swipe from the watch face. Its skip labels are deliberately unnumbered: the tile

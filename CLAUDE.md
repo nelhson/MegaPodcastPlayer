@@ -1,8 +1,7 @@
 # MegaPodcastPlayer
 
 Personal, sideloaded podcast player for Android (`:app`) with a Wear OS companion (`:wear`) that is
-a remote control, a tile, a watch-face complication, and — for episodes the phone has sent it — a
-player of its own.
+a remote control, a tile and a watch-face complication. The watch plays nothing itself.
 Kotlin, Jetpack Compose, Hilt, Room, Media3. Application ID `md.borisveriga.megapodcastplayer`.
 
 This file is deliberately short. The conventions are enforced by code, so read the source of
@@ -52,13 +51,10 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
   `isPlayableMediaUrl` in `:core:model`.
 - **The watch pairing is package name plus signing certificate.** `:app` and `:wear` share both;
   no `applicationIdSuffix` on debug, ever. Install both sides from the same build.
-- **Three things cross the Data Layer, and each has its own shape.** State is a *data item* (kept
-  and replayed on connect), a command is a *message* (an event, never de-duplicated), and episode
-  audio is a *channel* (tens of megabytes, one node, opened and closed per transfer). Putting one on
-  another's transport is the mistake `:core:wearprotocol`'s `WearPaths` exists to prevent.
-- **The watch's copy of an episode is the watch's.** It keeps its own index and its own position,
-  and reports that position back with `ReportPosition`; a run out of Bluetooth range is reconciled
-  when the phone is next reachable, not lost.
+- **Two things cross the Data Layer, and each has its own shape.** State is a *data item* (kept
+  and replayed on connect) and a command is a *message* (an event, never de-duplicated). Putting one
+  on the other's transport is the mistake `:core:wearprotocol`'s `WearPaths` exists to prevent. No
+  audio ever crosses: the watch is a remote for the phone's player, not a player of its own.
 - **No version compatibility.** Phone and watch are always installed from the same build and the
   database is never migrated, so a schema or protocol change is free: JSON decoding is strict (an
   unknown field is corruption, not a newer peer) and Room's destructive fallback is on, which wipes

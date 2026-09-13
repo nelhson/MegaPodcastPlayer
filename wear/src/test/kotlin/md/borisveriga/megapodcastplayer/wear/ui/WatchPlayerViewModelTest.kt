@@ -11,20 +11,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
-import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineLibrary
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
-import md.borisveriga.megapodcastplayer.wear.data.PendingMoments
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.PhonePlayerClient
-import md.borisveriga.megapodcastplayer.wear.data.PositionReporter
 import md.borisveriga.megapodcastplayer.wear.data.ReceivedSnapshot
-import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
-import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
-import md.borisveriga.megapodcastplayer.wear.data.WatchEpisodeStore
 import md.borisveriga.megapodcastplayer.wear.data.WatchHints
-import md.borisveriga.megapodcastplayer.wear.data.WatchLibrary
-import md.borisveriga.megapodcastplayer.wear.playback.WatchPlayback
-import md.borisveriga.megapodcastplayer.wear.playback.WatchPlaybackState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,18 +30,7 @@ class WatchPlayerViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val client = mockk<PhonePlayerClient>(relaxed = true)
-    private val playback = mockk<WatchPlayback>(relaxed = true)
-    private val store = mockk<WatchEpisodeStore>(relaxed = true)
-    private val reporter = mockk<PositionReporter>(relaxed = true)
-    private val pendingMoments = mockk<PendingMoments>(relaxed = true)
     private val hints = mockk<WatchHints>(relaxed = true)
-    private val library = mockk<WatchLibrary>(relaxed = true)
-
-    /** What the watch's own player is doing; nothing, unless a test says otherwise. */
-    private val localPlayback = MutableStateFlow<WatchPlaybackState?>(null)
-
-    /** What the watch holds on disk. */
-    private val stored = MutableStateFlow(emptyList<StoredEpisode>())
 
     /** Paused, so the scrub tests are not racing the position ticker while they assert on it. */
     private val playing = NowPlayingSnapshot(
@@ -69,18 +49,12 @@ class WatchPlayerViewModelTest {
         // emits would leave it pinned to its initial value forever.
         every { client.snapshots } returns flowOf<ReceivedSnapshot?>(null)
         coEvery { client.send(any()) } returns true
-        // Same reasoning as the snapshots flow: a flow that never emits would stall the combine.
-        every { playback.state } returns localPlayback
-        every { store.episodes } returns stored
-        every { store.transfers } returns MutableStateFlow(emptyMap<String, TransferProgress>())
-        every { library.library } returns flowOf(OfflineLibrary())
         // Seen already, so the scrub tests are not also asserting on a hint they are not about.
         coEvery { hints.hasSeenScrubHint() } returns true
     }
 
-    /** Builds the view model under test with both of its sources stubbed. */
-    private fun viewModel() =
-        WatchPlayerViewModel(client, playback, store, reporter, pendingMoments, hints, library)
+    /** Builds the view model under test with its sources stubbed. */
+    private fun viewModel() = WatchPlayerViewModel(client, hints)
 
     @Test
     fun `opening the app asks the phone to republish its state`() = runTest {
@@ -136,10 +110,10 @@ class WatchPlayerViewModelTest {
     }
 
     /**
-     * The screen is a pager that collects [WatchPlayerViewModel.uiState] above both of its pages,
+     * The screen is a list that collects [WatchPlayerViewModel.uiState] above all of its rows,
      * so anything that changes it rebuilds them — and the position changes by itself once a
      * second. It therefore travels separately, and a phone reporting the same episode further
-     * along must reach the bar without waking the pages.
+     * along must reach the bar without waking the rows.
      *
      * Driven by a fresh snapshot rather than by the ticker: on the JVM the clock the ticker reads
      * stands still, so a ticking clock here would prove nothing.
@@ -160,31 +134,6 @@ class WatchPlayerViewModelTest {
                 snapshots.value = ReceivedSnapshot(playing.copy(positionMs = 31_000L), 0L)
 
                 assertEquals(31_000L, viewModel.position.value.positionMs)
-                expectNoEvents()
-                cancelAndIgnoreRemainingEvents()
-            }
-        }
-
-    /** The same, for the watch's own player, which is polled twice a second while it plays. */
-    @Test
-    fun `the watch's player being polled reaches the bar without re-emitting the screen state`() =
-        runTest {
-            val polled = WatchPlaybackState(
-                episode = StoredEpisode(id = "ep-1", title = "Episode one", showTitle = "Show"),
-                isPlaying = true,
-                positionMs = 60_000L,
-                durationMs = 300_000L,
-            )
-            localPlayback.value = polled
-            val viewModel = viewModel()
-            backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.position.collect {} }
-
-            viewModel.uiState.test {
-                assertEquals(PlaybackSource.WATCH, awaitItem().source)
-
-                localPlayback.value = polled.copy(positionMs = 60_500L)
-
-                assertEquals(60_500L, viewModel.position.value.positionMs)
                 expectNoEvents()
                 cancelAndIgnoreRemainingEvents()
             }
@@ -339,40 +288,6 @@ class WatchPlayerViewModelTest {
         }
     }
 
-    /**
-     * Cancelling is two errands, and the order matters: the watch owns the bytes it is receiving and
-     * stops on its own, then the phone is asked to stop sending the rest.
-     */
-    @Test
-    fun `cancelling a copy stops the watch receiving it and asks the phone to stop sending`() =
-        runTest {
-            val viewModel = viewModel()
-
-            viewModel.cancelCopyToWatch("ep-7")
-
-            coVerify(exactly = 1) { store.cancel("ep-7") }
-            coVerify(exactly = 1) { client.send(WearCommand.CancelCopyToWatch("ep-7")) }
-        }
-
-    /**
-     * A phone out of range is a phone whose transfer has already stopped, so telling it is
-     * housekeeping. Reporting the failure would put "could not reach your phone" over a button that
-     * did exactly what it said.
-     */
-    @Test
-    fun `cancelling a copy the phone cannot be told about is not reported as a failure`() = runTest {
-        val viewModel = viewModel()
-        coEvery { client.send(WearCommand.CancelCopyToWatch("ep-7")) } returns false
-
-        viewModel.cancelCopyToWatch("ep-7")
-
-        coVerify(exactly = 1) { store.cancel("ep-7") }
-        viewModel.uiState.test {
-            assertFalse(awaitItem().lastCommandFailed)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
     @Test
     fun `an undeliverable command is reported rather than swallowed`() = runTest {
         coEvery { client.send(any()) } returns false
@@ -401,47 +316,46 @@ class WatchPlayerViewModelTest {
         }
     }
 
+    /**
+     * The command carries no position: the watch only ever has an extrapolation of a snapshot up
+     * to a second old, and the phone's own playhead is the one that is true.
+     */
     @Test
-    fun `marking while the phone is playing asks the phone to mark its own position`() = runTest {
+    fun `marking asks the phone to mark its own position`() = runTest {
         val viewModel = viewModel()
 
         viewModel.markMoment()
 
-        coVerify(exactly = 1) { client.send(WearCommand.MarkMoment()) }
-        coVerify(exactly = 0) { pendingMoments.mark(any(), any()) }
+        coVerify(exactly = 1) { client.send(WearCommand.MarkMoment) }
     }
 
     @Test
-    fun `marking while the watch is playing names the episode and the second`() = runTest {
-        localPlayback.value = WatchPlaybackState(
-            episode = StoredEpisode(
-                id = "ep-1",
-                title = "The one about batteries",
-                showTitle = "Radio Hardware",
-                durationMs = 3_600_000L,
-            ),
-            // Paused, so the position the mark reads is the one set here rather than one the
-            // ticker has extrapolated past it.
-            isPlaying = false,
-            positionMs = 743_000L,
-            durationMs = 3_600_000L,
-        )
+    fun `a mark that reaches the phone is confirmed on the screen`() = runTest {
         val viewModel = viewModel()
 
+        viewModel.markMoment()
+
         viewModel.uiState.test {
-            awaitItem()
-            viewModel.markMoment()
+            val state = awaitItem()
+            assertTrue(state.momentSaved)
+            assertFalse(state.lastCommandFailed)
             cancelAndIgnoreRemainingEvents()
         }
-
-        coVerify(exactly = 1) { pendingMoments.mark("ep-1", 743_000L) }
-        coVerify(exactly = 0) { client.send(WearCommand.MarkMoment()) }
     }
 
+    /** A phone that cannot be reached is not playing, so there is nothing to keep for later. */
     @Test
-    fun `a phone that comes back into range is told about marks made without it`() = runTest {
-        viewModel()
+    fun `a mark that cannot reach the phone is reported as a failed command`() = runTest {
+        coEvery { client.send(WearCommand.MarkMoment) } returns false
+        val viewModel = viewModel()
 
-        coVerify(exactly = 1) { pendingMoments.flush() }
+        viewModel.markMoment()
+
+        viewModel.uiState.test {
+            val state = awaitItem()
+            assertFalse(state.momentSaved)
+            assertTrue(state.lastCommandFailed)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

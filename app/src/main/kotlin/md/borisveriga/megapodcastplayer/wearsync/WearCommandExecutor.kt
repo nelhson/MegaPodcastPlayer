@@ -26,8 +26,6 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
  * @property episodePlayer resolves an episode id into something the player can accept.
  * @property publisher used to answer
  *   [WearCommand.RequestState] and to confirm the outcome of the rest.
- * @property libraryPublisher republishes what the phone holds offline, for the same reason.
- * @property audioTransfers starts, and stops, a copy of an episode's audio to the watch that asked.
  */
 @Singleton
 internal class WearCommandExecutor @Inject constructor(
@@ -36,19 +34,17 @@ internal class WearCommandExecutor @Inject constructor(
     private val momentsRepository: MomentsRepository,
     private val episodePlayer: EpisodePlayer,
     private val publisher: NowPlayingPublisher,
-    private val libraryPublisher: OfflineLibraryPublisher,
-    private val audioTransfers: EpisodeAudioTransfers,
 ) {
 
     /**
      * Runs one command.
      *
+     * The sender is not a parameter: every command acts on the phone, where there is nobody to
+     * address, and [WearCommandService] has already refused anything from a node it does not trust.
+     *
      * @param command what the watch asked for.
-     * @param sourceNodeId the watch that asked. Only the commands that send something *back* to a
-     *   particular device need it; everything else acts on the phone, where there is nobody to
-     *   address.
      */
-    suspend fun execute(command: WearCommand, sourceNodeId: String) {
+    suspend fun execute(command: WearCommand) {
         when (command) {
             WearCommand.TogglePlayPause -> connection.togglePlayPause()
 
@@ -76,27 +72,10 @@ internal class WearCommandExecutor @Inject constructor(
 
             is WearCommand.PlayEpisode -> episodePlayer.play(command.episodeId)
 
-            // The snapshot is answered by the publish below, which every command does anyway. The
-            // offline library is not — it is published on its own clock — so an opening watch that
-            // asks for state gets both, which is the moment it needs both.
-            WearCommand.RequestState -> libraryPublisher.publishCurrent()
+            // Answered by the publish below, which every command does anyway.
+            WearCommand.RequestState -> Unit
 
-            is WearCommand.CopyToWatch -> audioTransfers.start(sourceNodeId, command.episodeId)
-
-            // The watch has already stopped listening by the time this arrives; this is only about
-            // stopping the phone from spending the next few minutes sending bytes into nothing.
-            is WearCommand.CancelCopyToWatch -> audioTransfers.cancel(command.episodeId)
-
-            is WearCommand.MarkMoment -> markMoment(command)
-
-            // Audio the watch played is audio the phone did not, so this is the one command that
-            // writes playback state rather than asking for it. A finished episode goes back to the
-            // start, exactly as finishing it on the phone would.
-            is WearCommand.ReportPosition -> playbackRepository.setPlayed(
-                episodeId = command.episodeId,
-                isPlayed = command.isPlayed,
-                positionMs = if (command.isPlayed) 0L else command.positionMs,
-            )
+            WearCommand.MarkMoment -> markMoment()
         }
 
         // The state flow would eventually carry the change to the watch on its own, but only once
@@ -106,26 +85,15 @@ internal class WearCommandExecutor @Inject constructor(
     }
 
     /**
-     * Saves a moment for whichever device is actually playing.
+     * Saves a moment at the phone's own playhead.
      *
-     * A command naming an episode and a position is the watch playing its own copy: it is the only
-     * device that knows either, so it is believed. An empty one is the watch as a remote control,
-     * and the position is read from the phone's player here rather than taken from the watch's
-     * screen — what the watch draws is an extrapolation of a snapshot that is up to a second old,
-     * and a moment is a claim about a particular second.
+     * The position is read from the phone's player here rather than taken from the watch's screen:
+     * what the watch draws is an extrapolation of a snapshot that is up to a second old, and a
+     * moment is a claim about a particular second.
      *
      * A mark with nothing playing is dropped rather than guessed at.
-     *
-     * @param command the request, in either of its two shapes.
      */
-    private suspend fun markMoment(command: WearCommand.MarkMoment) {
-        val episodeId = command.episodeId
-        val positionMs = command.positionMs
-        if (episodeId != null && positionMs != null) {
-            momentsRepository.mark(episodeId, positionMs)
-            return
-        }
-
+    private suspend fun markMoment() {
         val state = connection.currentState()
         val playing = state.episodeId ?: return
         momentsRepository.mark(playing, state.positionMs)

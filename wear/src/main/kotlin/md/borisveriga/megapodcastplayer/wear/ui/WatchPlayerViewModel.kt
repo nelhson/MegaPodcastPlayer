@@ -11,60 +11,33 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
-import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineEpisode
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
-import md.borisveriga.megapodcastplayer.wear.data.PendingMoments
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.PhonePlayerClient
-import md.borisveriga.megapodcastplayer.wear.data.PositionReporter
 import md.borisveriga.megapodcastplayer.wear.data.ReceivedSnapshot
-import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
-import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
-import md.borisveriga.megapodcastplayer.wear.data.WatchEpisodeStore
 import md.borisveriga.megapodcastplayer.wear.data.WatchHints
-import md.borisveriga.megapodcastplayer.wear.data.WatchLibrary
-import md.borisveriga.megapodcastplayer.wear.playback.WatchPlayback
-import md.borisveriga.megapodcastplayer.wear.playback.WatchPlaybackState
 
 /**
- * Drives the watch's screen, which is a remote control and, when asked, a player.
+ * Drives the watch's screen, which is a remote control for the phone's player.
  *
- * Which of the two it is at any moment is [PlaybackSource]: every control below routes to the phone
- * or to the watch's own player depending on where the audio is actually coming from. That is the
- * whole of the switch — there is no second screen and no mode to enter, because a wrist has room for
- * one set of buttons and they should always drive the thing making the noise.
- *
- * Two things are still computed locally for the phone's playback. The position ticks between the
- * phone's publishes so the bar moves without a Bluetooth write per second, and a scrub in progress
- * is held here rather than sent continuously.
+ * Every button becomes a [WearCommand] and goes to the phone; the watch decides nothing about
+ * playback itself and learns the result from the phone's next snapshot. Two things are still
+ * computed locally. The position ticks between the phone's publishes so the bar moves without a
+ * Bluetooth write per second, and a scrub in progress is held here rather than sent continuously.
  *
  * @property client the connection to the phone.
- * @property playback the watch's own player.
- * @property store the episodes the watch holds.
- * @property library what the phone has offered to send.
- * @property reporter carries positions played here back to the phone.
- * @property pendingMoments carries marks made here back to the phone, now or when it is next in
- *   range.
  * @property hints what the watch has already explained once.
  */
 @HiltViewModel
 class WatchPlayerViewModel @Inject constructor(
     private val client: PhonePlayerClient,
-    private val playback: WatchPlayback,
-    private val store: WatchEpisodeStore,
-    private val reporter: PositionReporter,
-    private val pendingMoments: PendingMoments,
     private val hints: WatchHints,
-    library: WatchLibrary,
 ) : ViewModel() {
 
     /** Set when a command could not be delivered; cleared as soon as one gets through. */
@@ -92,7 +65,7 @@ class WatchPlayerViewModel @Inject constructor(
      * What the phone is doing, and when it said so.
      *
      * Grouped because these three change together and because `combine` gives typed lambdas only up
-     * to five sources; the screen needs rather more than five things now.
+     * to five sources.
      */
     private val phone = combine(
         client.phoneLink.onStart { emit(PhoneLink.CHECKING) },
@@ -100,38 +73,25 @@ class WatchPlayerViewModel @Inject constructor(
         elapsedRealtimeTicker(),
     ) { link, received, nowElapsedMs -> PhoneState(link, received, nowElapsedMs) }
 
-    /** What the watch itself holds and is playing. */
-    private val watch = combine(
-        playback.state,
-        store.episodes,
-        store.transfers,
-        library.library,
-    ) { local, stored, transfers, offered -> WatchState(local, stored, transfers, offered.episodes) }
-
     /**
      * Everything the screen draws, computed once per change of any input.
      *
      * Private, and split in two below, because its inputs move at two very different rates. The
      * clock in [phone] ticks every second, so this flow emits every second — and the screen is a
-     * pager whose pages must not be rebuilt for a clock tick, so the screen is never handed this.
+     * list whose rows must not be rebuilt for a clock tick, so the screen is never handed this.
      */
     private val frame: StateFlow<WatchPlayerFrame> = combine(
         phone,
-        watch,
         lastCommandFailed,
         scrub,
         cues,
-    ) { phone, watch, failed, scrubState, cues ->
+    ) { phone, failed, scrubState, cues ->
         watchPlayerFrame(
             link = phone.link,
             received = phone.received,
             nowElapsedMs = phone.nowElapsedMs,
             lastCommandFailed = failed,
             scrub = scrubState,
-            local = watch.local,
-            stored = watch.stored,
-            offered = watch.offered,
-            transfers = watch.transfers,
             momentSaved = cues.momentSaved,
             showsScrubHint = cues.scrubHint,
         )
@@ -142,12 +102,12 @@ class WatchPlayerViewModel @Inject constructor(
     )
 
     /**
-     * What the pages draw.
+     * What the screen draws.
      *
      * Emits only when something other than the clock changed. [frame] emits every second, but a
      * state flow drops a value equal to the one it holds, and [WatchPlayerUiState] carries nothing
-     * that moves by itself — so the pager, which collects this, sits still while an episode plays.
-     * That is what keeps a swipe between the pages smooth; see [position] for the part that moves.
+     * that moves by itself — so the list, which collects this, sits still while an episode plays.
+     * That is what keeps a scroll through it smooth; see [position] for the part that moves.
      *
      * No timeout of its own: [frame] is what keeps the Data Layer listeners warm across a brief
      * absence, and a second timeout here would only stack on top of it.
@@ -178,78 +138,36 @@ class WatchPlayerViewModel @Inject constructor(
         // The cached data item may predate the phone being restarted, and asking also starts the
         // phone's process if it is not running — so the first thing the watch does is ask.
         send(WearCommand.RequestState)
-
-        // Anything played or marked out of range is still owed to the phone; this settles both
-        // debts, in that order — a position is what the phone needs to agree about, a moment is
-        // what the wearer would notice missing.
-        viewModelScope.launch {
-            client.phoneLink
-                .distinctUntilChanged()
-                .filter { it == PhoneLink.CONNECTED }
-                .collect {
-                    reporter.flush()
-                    pendingMoments.flush()
-                }
-        }
     }
 
-    /** Starts or pauses playback, wherever it is happening. */
-    fun togglePlayPause() = onSource(
-        onPhone = { send(WearCommand.TogglePlayPause) },
-        onWatch = { playback.togglePlayPause() },
-    )
+    /** Starts or pauses playback on the phone. */
+    fun togglePlayPause() = send(WearCommand.TogglePlayPause)
 
-    /** Jumps forward by the interval configured on the phone, on whichever device is playing. */
-    fun skipForward() = onSource(
-        onPhone = { send(WearCommand.SkipForward) },
-        onWatch = { playback.skipForward(frame.value.uiState.snapshot.skipForwardMs) },
-    )
+    /** Jumps forward by the interval configured on the phone. */
+    fun skipForward() = send(WearCommand.SkipForward)
 
     /** Jumps back by the interval configured on the phone; see [skipForward]. */
-    fun skipBack() = onSource(
-        onPhone = { send(WearCommand.SkipBack) },
-        onWatch = { playback.skipBack(frame.value.uiState.snapshot.skipBackMs) },
-    )
+    fun skipBack() = send(WearCommand.SkipBack)
 
-    /**
-     * Moves to the next queued episode.
-     *
-     * Only the phone has a queue: the watch holds a handful of episodes chosen one at a time, and
-     * "next" among them is not a thing the wearer asked for. The screen hides this button during
-     * local playback, and this guards the case where something else calls it.
-     */
-    fun skipToNext() {
-        if (frame.value.uiState.source == PlaybackSource.PHONE) send(WearCommand.SkipToNext)
-    }
+    /** Moves to the next queued episode. */
+    fun skipToNext() = send(WearCommand.SkipToNext)
 
-    /** Restarts the episode, or moves to the previous one; the phone's queue only, as [skipToNext]. */
-    fun skipToPrevious() {
-        if (frame.value.uiState.source == PlaybackSource.PHONE) send(WearCommand.SkipToPrevious)
-    }
+    /** Restarts the episode, or moves to the previous one. */
+    fun skipToPrevious() = send(WearCommand.SkipToPrevious)
 
     /**
      * Advances to the next playback speed.
      *
-     * The phone owns the preference, so cycling it there both stores and applies it. The watch's own
-     * player has nowhere to store one — its speed lasts as long as the episode does — but it steps
-     * through the same list, so the button means the same thing on both.
+     * The phone owns the preference, so cycling it there both stores and applies it.
      */
-    fun cycleSpeed() = onSource(
-        onPhone = { send(WearCommand.CycleSpeed) },
-        onWatch = {
-            playback.setSpeed(PlaybackSettings(speed = frame.value.uiState.snapshot.speed).nextSpeed())
-        },
-    )
+    fun cycleSpeed() = send(WearCommand.CycleSpeed)
 
     /**
      * Seeks within the current episode.
      *
-     * @param positionMs the absolute position; the far end clamps it.
+     * @param positionMs the absolute position; the phone clamps it.
      */
-    fun seekTo(positionMs: Long) = onSource(
-        onPhone = { send(WearCommand.SeekTo(positionMs)) },
-        onWatch = { playback.seekTo(positionMs) },
-    )
+    fun seekTo(positionMs: Long) = send(WearCommand.SeekTo(positionMs))
 
     /**
      * Takes hold of the progress bar, starting from wherever it currently reads.
@@ -310,9 +228,7 @@ class WatchPlayerViewModel @Inject constructor(
      * Applies the scrubbed position.
      *
      * The scrub is kept, stamped with the moment the command went out, so the bar stays where the
-     * user put it across the Bluetooth round trip instead of bouncing back; see [SEEK_HOLD_MS]. On
-     * the watch's own player there is no round trip, but the hold costs nothing and keeps one code
-     * path.
+     * user put it across the Bluetooth round trip instead of bouncing back; see [SEEK_HOLD_MS].
      */
     fun commitScrub() {
         val current = scrub.value ?: return
@@ -334,27 +250,14 @@ class WatchPlayerViewModel @Inject constructor(
     /**
      * Marks the moment the wearer just heard.
      *
-     * The two sources are genuinely different requests, not one request with a different sender.
-     * Controlling the phone, the watch does not know where the phone's playhead is — what the bar
-     * shows is an extrapolation of a snapshot up to a second old — so it asks the phone to mark its
-     * own position. Playing its own copy, the watch is the only device that knows the episode and
-     * the second, and the phone may not even be in range: that mark is queued if it cannot be
-     * delivered, because unlike a position it cannot be reconstructed later. See [PendingMoments].
+     * The watch does not know where the phone's playhead is — what the bar shows is an
+     * extrapolation of a snapshot up to a second old — so it asks the phone to mark its own
+     * position rather than sending one. A phone that cannot be reached is a phone that is not
+     * playing, so there is nothing to queue for later; the failure is shown like any other.
      */
     fun markMoment() {
         viewModelScope.launch {
-            // One reading of the frame, so the position belongs to the episode it is filed under.
-            val (state, position) = frame.value
-            val reached = if (state.source == PlaybackSource.WATCH) {
-                val episodeId = state.snapshot.episodeId ?: return@launch
-                // Queued when it cannot be delivered, so from the wearer's side this always
-                // worked — which is why the outcome is discarded rather than reported.
-                pendingMoments.mark(episodeId, position.positionMs)
-                true
-            } else {
-                client.send(WearCommand.MarkMoment())
-            }
-
+            val reached = client.send(WearCommand.MarkMoment)
             lastCommandFailed.value = !reached
             if (reached) confirmMoment()
         }
@@ -376,113 +279,14 @@ class WatchPlayerViewModel @Inject constructor(
     }
 
     /**
-     * Plays an episode on the phone.
+     * Plays a queued episode on the phone.
      *
-     * Serves both of the lists that describe the phone: the queue, and what the phone has
-     * downloaded. The phone resolves the id against its whole library rather than against the
-     * queue, so an episode that was only ever downloaded starts exactly as a queued one does.
-     *
-     * @param episodeId the episode, as it arrived in the snapshot's queue or the offered library.
+     * @param episodeId the episode, as it arrived in the snapshot's queue.
      */
     fun playOnPhone(episodeId: String) = send(WearCommand.PlayEpisode(episodeId))
 
-    /**
-     * Plays an episode the watch holds, on the watch.
-     *
-     * This is the tap that turns a remote control into a player. Nothing is asked of the phone —
-     * that is the whole point — so it works with the phone switched off.
-     *
-     * @param episode the stored episode to start.
-     */
-    fun playOnWatch(episode: StoredEpisode) {
-        viewModelScope.launch { playback.play(episode) }
-    }
-
-    /**
-     * Hands the screen back to the phone by unloading the watch's player.
-     *
-     * The position is written down and reported by the playback service as it stops, so nothing is
-     * lost by leaving.
-     */
-    fun backToPhone() {
-        viewModelScope.launch { playback.stop() }
-    }
-
-    /**
-     * Asks the phone to send an episode's audio over.
-     *
-     * The reply is not a message but a channel, minutes long; the screen learns it started when the
-     * transfer appears in [WatchPlayerUiState.transfers].
-     *
-     * @param episodeId the episode, as it arrived in the offered library.
-     */
-    fun copyToWatch(episodeId: String) = send(WearCommand.CopyToWatch(episodeId))
-
-    /**
-     * Gives up on an episode that is arriving.
-     *
-     * The watch is told first, and it is what the wearer sees: the row goes and the partial file is
-     * deleted whether or not there is a phone in range to be told. The phone is told second so that
-     * it stops pouring the rest of the episode down a link nobody is reading — a copy that would
-     * otherwise hold its foreground service up for minutes.
-     *
-     * That second half is deliberately not reported as a failure when it does not get through.
-     * Cancelling has already succeeded from where the wearer stands, and a phone out of range is one
-     * whose transfer has stopped anyway; "could not reach your phone" over a button that plainly
-     * worked would just be wrong.
-     *
-     * @param episodeId the arriving episode to abandon.
-     */
-    fun cancelCopyToWatch(episodeId: String) {
-        viewModelScope.launch {
-            store.cancel(episodeId)
-            client.send(WearCommand.CancelCopyToWatch(episodeId))
-        }
-    }
-
-    /**
-     * Deletes an episode from the watch.
-     *
-     * Stops it first if it is the one playing: removing the file underneath a running player would
-     * leave the screen showing controls for audio that has stopped existing.
-     *
-     * @param episodeId the episode to remove.
-     */
-    fun removeFromWatch(episodeId: String) {
-        viewModelScope.launch {
-            if (frame.value.uiState.snapshot.episodeId == episodeId &&
-                frame.value.uiState.source == PlaybackSource.WATCH
-            ) {
-                playback.stop()
-            }
-            store.remove(episodeId)
-        }
-    }
-
-    /** Deletes everything the watch holds, stopping local playback first. */
-    fun removeAllFromWatch() {
-        viewModelScope.launch {
-            playback.stop()
-            store.removeAll()
-        }
-    }
-
     /** Asks the phone to republish its state, for the pull-to-retry on the disconnected screen. */
     fun retry() = send(WearCommand.RequestState)
-
-    /**
-     * Runs whichever of two actions matches where the audio is.
-     *
-     * @param onPhone what to do when the phone is playing.
-     * @param onWatch what to do when the watch is.
-     */
-    private fun onSource(onPhone: () -> Unit, onWatch: suspend () -> Unit) {
-        if (frame.value.uiState.source == PlaybackSource.WATCH) {
-            viewModelScope.launch { onWatch() }
-        } else {
-            onPhone()
-        }
-    }
 
     /**
      * Sends a command and records whether it got through.
@@ -518,21 +322,6 @@ class WatchPlayerViewModel @Inject constructor(
     private data class Cues(
         val momentSaved: Boolean,
         val scrubHint: Boolean,
-    )
-
-    /**
-     * The watch's half.
-     *
-     * @property local what its own player is doing, or null.
-     * @property stored the episodes it holds.
-     * @property transfers copies arriving now.
-     * @property offered what the phone says it could send.
-     */
-    private data class WatchState(
-        val local: WatchPlaybackState?,
-        val stored: List<StoredEpisode>,
-        val transfers: Map<String, TransferProgress>,
-        val offered: List<OfflineEpisode>,
     )
 
     private companion object {

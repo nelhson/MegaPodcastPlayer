@@ -21,8 +21,6 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearPaths
  * @property senderVerifier decides whether the sending node is one this phone is paired with.
  * @property publisher started here as well as from the application class, because this service may
  *   be what brought the process up.
- * @property libraryPublisher started here for the same reason: a watch opening the "copy to watch"
- *   list is often what wakes this process, and the list has to be current when it arrives.
  * @property scope application scope: [onMessageReceived] must return promptly, and the work it
  *   starts has to outlive the callback.
  */
@@ -39,9 +37,6 @@ class WearCommandService : WearableListenerService() {
     internal lateinit var publisher: NowPlayingPublisher
 
     @Inject
-    internal lateinit var libraryPublisher: OfflineLibraryPublisher
-
-    @Inject
     @ApplicationScope
     lateinit var scope: CoroutineScope
 
@@ -49,7 +44,6 @@ class WearCommandService : WearableListenerService() {
         super.onCreate()
         // Idempotent; the application class normally wins the race, and it does not matter which.
         publisher.start()
-        libraryPublisher.start()
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
@@ -64,7 +58,7 @@ class WearCommandService : WearableListenerService() {
             // suspends, and this callback must return promptly. Verifying before executing — not
             // after — is the point: an unverified command never reaches the player.
             if (senderVerifier.isTrusted(sourceNodeId)) {
-                executor.execute(command, sourceNodeId)
+                executor.execute(command)
             }
         }
     }

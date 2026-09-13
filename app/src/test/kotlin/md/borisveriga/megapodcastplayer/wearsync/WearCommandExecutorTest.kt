@@ -25,8 +25,6 @@ class WearCommandExecutorTest {
     private val momentsRepository = mockk<MomentsRepository>(relaxed = true)
     private val episodePlayer = mockk<EpisodePlayer>(relaxed = true)
     private val publisher = mockk<NowPlayingPublisher>(relaxed = true)
-    private val libraryPublisher = mockk<OfflineLibraryPublisher>(relaxed = true)
-    private val audioTransfers = mockk<EpisodeAudioTransfers>(relaxed = true)
 
     private lateinit var executor: WearCommandExecutor
 
@@ -41,22 +39,20 @@ class WearCommandExecutorTest {
             momentsRepository,
             episodePlayer,
             publisher,
-            libraryPublisher,
-            audioTransfers,
         )
     }
 
     @Test
     fun `toggle reaches the player`() = runTest {
-        executor.execute(WearCommand.TogglePlayPause, WATCH_NODE)
+        executor.execute(WearCommand.TogglePlayPause)
 
         coVerify(exactly = 1) { connection.togglePlayPause() }
     }
 
     @Test
     fun `skipping uses the phone's configured intervals rather than a watch default`() = runTest {
-        executor.execute(WearCommand.SkipForward, WATCH_NODE)
-        executor.execute(WearCommand.SkipBack, WATCH_NODE)
+        executor.execute(WearCommand.SkipForward)
+        executor.execute(WearCommand.SkipBack)
 
         coVerify(exactly = 1) { connection.skipForward(45_000L) }
         coVerify(exactly = 1) { connection.skipBack(15_000L) }
@@ -64,8 +60,8 @@ class WearCommandExecutorTest {
 
     @Test
     fun `next and previous reach the player`() = runTest {
-        executor.execute(WearCommand.SkipToNext, WATCH_NODE)
-        executor.execute(WearCommand.SkipToPrevious, WATCH_NODE)
+        executor.execute(WearCommand.SkipToNext)
+        executor.execute(WearCommand.SkipToPrevious)
 
         coVerify(exactly = 1) { connection.skipToNext() }
         coVerify(exactly = 1) { connection.skipToPrevious() }
@@ -73,7 +69,7 @@ class WearCommandExecutorTest {
 
     @Test
     fun `cycling the speed both stores and applies the new rate`() = runTest {
-        executor.execute(WearCommand.CycleSpeed, WATCH_NODE)
+        executor.execute(WearCommand.CycleSpeed)
 
         // 1f is a step, so the next one up is 1.2f.
         coVerifyOrder {
@@ -84,21 +80,21 @@ class WearCommandExecutorTest {
 
     @Test
     fun `seeking passes the position through`() = runTest {
-        executor.execute(WearCommand.SeekTo(positionMs = 90_000L), WATCH_NODE)
+        executor.execute(WearCommand.SeekTo(positionMs = 90_000L))
 
         coVerify(exactly = 1) { connection.seekTo(90_000L) }
     }
 
     @Test
     fun `playing a queued episode goes through the id resolver`() = runTest {
-        executor.execute(WearCommand.PlayEpisode(episodeId = "ep-7"), WATCH_NODE)
+        executor.execute(WearCommand.PlayEpisode(episodeId = "ep-7"))
 
         coVerify(exactly = 1) { episodePlayer.play("ep-7") }
     }
 
     @Test
     fun `a state request touches the player only to publish`() = runTest {
-        executor.execute(WearCommand.RequestState, WATCH_NODE)
+        executor.execute(WearCommand.RequestState)
 
         coVerify(exactly = 1) { publisher.publishCurrent() }
         coVerify(exactly = 0) { connection.togglePlayPause() }
@@ -107,7 +103,7 @@ class WearCommandExecutorTest {
 
     @Test
     fun `every command is confirmed to the watch by a publish`() = runTest {
-        executor.execute(WearCommand.TogglePlayPause, WATCH_NODE)
+        executor.execute(WearCommand.TogglePlayPause)
 
         coVerifyOrder {
             connection.togglePlayPause()
@@ -115,108 +111,22 @@ class WearCommandExecutorTest {
         }
     }
 
-    /**
-     * An opening watch asks for state once and needs two answers: what is playing, and what it could
-     * take with it. Publishing only the first is what left the "copy to watch" list a day stale.
-     */
     @Test
-    fun `a state request also republishes what the phone holds offline`() = runTest {
-        executor.execute(WearCommand.RequestState, WATCH_NODE)
-
-        coVerify(exactly = 1) { libraryPublisher.publishCurrent() }
-    }
-
-    @Test
-    fun `a copy request is addressed to the watch that asked`() = runTest {
-        executor.execute(WearCommand.CopyToWatch(episodeId = "ep-7"), WATCH_NODE)
-
-        coVerify(exactly = 1) { audioTransfers.start(WATCH_NODE, "ep-7") }
-    }
-
-    /**
-     * A cancel is not addressed to a node: the copy is already going to exactly one watch, and the
-     * episode names it.
-     */
-    @Test
-    fun `a cancelled copy stops the transfer rather than starting another`() = runTest {
-        executor.execute(WearCommand.CancelCopyToWatch(episodeId = "ep-7"), WATCH_NODE)
-
-        coVerify(exactly = 1) { audioTransfers.cancel("ep-7") }
-        coVerify(exactly = 0) { audioTransfers.start(any(), any()) }
-    }
-
-    @Test
-    fun `a position played on the watch is written to the phone`() = runTest {
-        executor.execute(
-            WearCommand.ReportPosition(episodeId = "ep-7", positionMs = 900_000L),
-            WATCH_NODE,
-        )
-
-        coVerify(exactly = 1) {
-            playbackRepository.setPlayed(episodeId = "ep-7", isPlayed = false, positionMs = 900_000L)
-        }
-    }
-
-    /** Finishing an episode on the watch has to leave it exactly as finishing it on the phone does. */
-    @Test
-    fun `an episode finished on the watch goes back to the start`() = runTest {
-        executor.execute(
-            WearCommand.ReportPosition(
-                episodeId = "ep-7",
-                positionMs = 3_599_000L,
-                isPlayed = true,
-            ),
-            WATCH_NODE,
-        )
-
-        coVerify(exactly = 1) {
-            playbackRepository.setPlayed(episodeId = "ep-7", isPlayed = true, positionMs = 0L)
-        }
-    }
-
-    private companion object {
-        /** The node a command arrived from; only the commands that answer one care which. */
-        const val WATCH_NODE = "watch-node-1"
-    }
-
-    @Test
-    fun `a mark from the wrist naming an episode is written where the watch says`() = runTest {
-        executor.execute(
-            WearCommand.MarkMoment(episodeId = "episode-1", positionMs = 743_000L),
-            WATCH_NODE,
-        )
-
-        coVerify(exactly = 1) { momentsRepository.mark("episode-1", 743_000L) }
-        // The phone's own player is never consulted: the watch is the device that has the audio.
-        coVerify(exactly = 0) { connection.currentState() }
-    }
-
-    @Test
-    fun `an empty mark is written wherever the phone's own playhead is`() = runTest {
+    fun `a mark is written wherever the phone's own playhead is`() = runTest {
         coEvery { connection.currentState() } returns
             PlaybackState(episodeId = "episode-2", positionMs = 61_000L)
 
-        executor.execute(WearCommand.MarkMoment(), WATCH_NODE)
+        executor.execute(WearCommand.MarkMoment)
 
         coVerify(exactly = 1) { momentsRepository.mark("episode-2", 61_000L) }
     }
 
     @Test
-    fun `an empty mark with nothing playing is dropped rather than guessed at`() = runTest {
+    fun `a mark with nothing playing is dropped rather than guessed at`() = runTest {
         coEvery { connection.currentState() } returns PlaybackState()
 
-        executor.execute(WearCommand.MarkMoment(), WATCH_NODE)
+        executor.execute(WearCommand.MarkMoment)
 
         coVerify(exactly = 0) { momentsRepository.mark(any(), any(), any()) }
-    }
-
-    @Test
-    fun `half an address is treated as no address`() = runTest {
-        coEvery { connection.currentState() } returns
-            PlaybackState(episodeId = "episode-2", positionMs = 61_000L)
-
-        executor.execute(WearCommand.MarkMoment(episodeId = "episode-1"), WATCH_NODE)
-
-        coVerify(exactly = 1) { momentsRepository.mark("episode-2", 61_000L) }
     }
 }

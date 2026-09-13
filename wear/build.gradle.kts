@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.megapodcastplayer.android.application.wear)
     alias(libs.plugins.megapodcastplayer.android.crashlytics)
     alias(libs.plugins.megapodcastplayer.android.hilt)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -30,7 +29,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.hilt.navigation.compose)
-    implementation(libs.kotlinx.serialization.json)
 
     // The watch-face surfaces: a tile beside the face, and a complication on it. Both render the
     // same data item the app reads, so neither needs the phone to be awake to draw itself.
@@ -38,15 +36,8 @@ dependencies {
     implementation(libs.androidx.wear.protolayout)
     implementation(libs.androidx.wear.protolayout.expression)
     implementation(libs.androidx.wear.watchface.complications.data.source)
+    // `CallbackToFutureAdapter`, which bridges the tile's coroutines to the futures it must return.
     implementation(libs.androidx.concurrent.futures)
-    // `ListenableFuture.await()`, for connecting the media controller to the playback service.
-    implementation(libs.androidx.concurrent.futures.ktx)
-
-    // Playback of episodes carried over to the watch. The same player the phone uses, minus the
-    // download machinery: the watch receives finished files rather than fetching anything.
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.session)
-    implementation(libs.androidx.media3.common)
     // Unused by the watch: it draws no remote imagery at all — the now-playing header is a generated
     // waveform in the show's own colour. Kept because dropping it shifts the resolved Kotlin stdlib
     // version and would require regenerating gradle/verification-metadata.xml; that cleanup belongs

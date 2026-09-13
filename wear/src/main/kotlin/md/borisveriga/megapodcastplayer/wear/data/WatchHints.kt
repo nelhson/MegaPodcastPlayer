@@ -20,9 +20,8 @@ import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
  * bezel — cannot be discovered by looking at the screen, and a sentence the first time is the whole
  * of the fix.
  *
- * A marker file rather than a preferences store, for the reason [PendingMoments] and
- * [WatchEpisodeStore] give for theirs: this module holds a handful of facts and no storage
- * dependency, and one boolean does not earn the first one. The file's *existence* is the value, so
+ * A marker file rather than a preferences store: this module holds a handful of facts and no
+ * storage dependency, and one boolean does not earn the first one. The file's *existence* is the value, so
  * there is nothing to parse and nothing that can be corrupt — an unreadable state is indistinguishable
  * from a fresh install, and a hint shown once more after one is the harmless side of that trade.
  *

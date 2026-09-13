@@ -19,7 +19,6 @@ import md.borisveriga.megapodcastplayer.core.data.playback.ShowSpeedApplier
 import md.borisveriga.megapodcastplayer.core.network.di.MegaPodcastPlayerOkHttp
 import md.borisveriga.megapodcastplayer.sync.RefreshScheduler
 import md.borisveriga.megapodcastplayer.wearsync.NowPlayingPublisher
-import md.borisveriga.megapodcastplayer.wearsync.OfflineLibraryPublisher
 import okhttp3.OkHttpClient
 
 /**
@@ -70,9 +69,6 @@ class MegaPodcastPlayerApplication :
     @Inject
     internal lateinit var nowPlayingPublisher: NowPlayingPublisher
 
-    @Inject
-    internal lateinit var offlineLibraryPublisher: OfflineLibraryPublisher
-
     /** Constructed for its side effects; see the class KDoc. */
     @Inject
     lateinit var crashReporter: CrashReporter
@@ -102,10 +98,6 @@ class MegaPodcastPlayerApplication :
         // Likewise returns immediately. Costs nothing when no watch is paired: the publisher only
         // writes when playback changes, and a write with no peer simply fails and is swallowed.
         nowPlayingPublisher.start()
-        // The other half of what the watch reads: which episodes it could take with it. Cheap for
-        // the same reason — one Data Layer write when the download list changes, and none at all
-        // when it does not.
-        offlineLibraryPublisher.start()
         // Cheap and idempotent: WorkManager keeps the run already scheduled, so this is a no-op on
         // every start after the first.
         refreshScheduler.schedule()

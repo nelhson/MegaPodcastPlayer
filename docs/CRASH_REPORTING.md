@@ -8,10 +8,10 @@ the process breadcrumb each writes on start-up ("Phone process started" / "Watch
 
 ## Why the watch reports separately
 
-The watch is not a screen for the phone. It holds its own copy of an episode, plays it off the
-wrist, keeps its own position and reconciles later — most of that happens with the phone out of
-Bluetooth range. A watch-side crash there leaves no trace on the phone at all, which is exactly the
-window this is for.
+The watch is its own process on its own device. It reads the phone's state off the Data Layer,
+draws a tile and a complication from it and sends commands back, and a crash in any of that — a
+snapshot it could not render, a tile refresh that died — leaves no trace on the phone at all, which
+is exactly the window this is for.
 
 ## What is wired
 
@@ -41,8 +41,6 @@ Wired so far:
 - `OfflineFirstPodcastRepository.refreshAll` — a feed that failed to refresh, with the feed URL as a
   custom key rather than in the message, so every such failure groups into one issue.
 - `ChapterResolver` — a publisher's chapters document that could not be fetched or read.
-- `EpisodeAudioSender` — a channel the watch would not accept, and a transfer that stopped short.
-  Kept apart because the causes differ: out of range versus a gap in the download cache.
 
 The rule for adding one: report a failure a person would want to know about **after** the fact and
 that the code has already decided not to show anyone. Not expected outcomes, not user mistakes, and

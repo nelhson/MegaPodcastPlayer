@@ -167,7 +167,7 @@ was skipped, and whether the pair is now on matching builds.
 | `INSTALL_FAILED_INSUFFICIENT_STORAGE` on the watch | Wear devices have very little free space | uninstall unused watch apps; the `:wear` APK is small, so this usually means the watch is genuinely full |
 | Gradle installs to the wrong device | `ANDROID_SERIAL` unset or stale | set it per install, clear it after |
 | `adb` hangs on first use | it is starting its server | expected once; give it a few seconds |
-| `InstallException: EOF`, `DeviceException` | the adb link died mid-transfer — the usual outcome on the watch, because the debug `:wear` APK is **~72 MB** and wireless debugging rarely survives it | step 2, then push the already-built APK directly (below) rather than re-running Gradle |
+| `InstallException: EOF`, `DeviceException` | the adb link died mid-transfer — the usual outcome on the watch, because the debug `:wear` APK is **~95 MB** (no R8 on debug) and wireless debugging rarely survives it | step 2, then push the already-built APK directly (below) rather than re-running Gradle |
 | Watch drops to `offline` mid-install | wireless debugging timed out | step 2, then re-run only the `:wear` install |
 
 **Before suggesting an uninstall, warn Boris what it costs.** `adb uninstall md.borisveriga.megapodcastplayer`

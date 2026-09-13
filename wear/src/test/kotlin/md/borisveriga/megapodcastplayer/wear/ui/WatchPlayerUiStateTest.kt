@@ -1,13 +1,9 @@
 package md.borisveriga.megapodcastplayer.wear.ui
 
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
-import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineEpisode
 import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.ReceivedSnapshot
-import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
-import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
-import md.borisveriga.megapodcastplayer.wear.playback.WatchPlaybackState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -73,26 +69,6 @@ class WatchPlayerUiStateTest {
         assertEquals(earlier.uiState, later.uiState)
     }
 
-    /**
-     * The watch's own player is polled twice a second, and each poll carries a new position. That
-     * reading has to end up in the bar and nowhere else, for the same reason as the clock above.
-     */
-    @Test
-    fun `the watch's own player being polled moves the position and nothing else`() {
-        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
-
-        val earlier = watchPlayerFrame(PhoneLink.CONNECTED, received, 0L, local = localPlayback)
-        val later = watchPlayerFrame(
-            PhoneLink.CONNECTED,
-            received,
-            nowElapsedMs = 0L,
-            local = localPlayback.copy(positionMs = 60_500L),
-        )
-
-        assertEquals(60_500L, later.position.positionMs)
-        assertEquals(earlier.uiState, later.uiState)
-    }
-
     /** The bar reads the position from one place, so the snapshot does not carry a second copy. */
     @Test
     fun `the snapshot's own position is not carried into the screen state`() {
@@ -144,6 +120,26 @@ class WatchPlayerUiStateTest {
 
         assertFalse(uiState.showsControls)
         assertFalse(uiState.showsEmptyQueue)
+    }
+
+    /**
+     * The watch is a remote control and nothing else, so a phone it cannot reach leaves it nothing
+     * to show but the sentence saying so — whatever the last snapshot claimed.
+     */
+    @Test
+    fun `an unreachable phone is a link problem, whatever the last snapshot said`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
+
+        val uiState = watchPlayerFrame(PhoneLink.DISCONNECTED, received, nowElapsedMs = 0L).uiState
+
+        assertTrue(uiState.showsLinkProblem)
+    }
+
+    @Test
+    fun `a reachable phone is not a link problem`() {
+        val uiState = watchPlayerFrame(PhoneLink.CONNECTED, received = null, nowElapsedMs = 0L).uiState
+
+        assertFalse(uiState.showsLinkProblem)
     }
 
     @Test
@@ -242,143 +238,4 @@ class WatchPlayerUiStateTest {
         assertTrue(uiState.momentSaved)
         assertTrue(uiState.showsScrubHint)
     }
-
-    // ---- What the watch itself is playing and holding ------------------------------------------
-
-    /**
-     * Local playback takes the screen over. Anything else would put the phone's episode title above
-     * buttons that pause the watch.
-     */
-    @Test
-    fun `playing on the watch replaces what the phone is showing`() {
-        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
-
-        val frame = watchPlayerFrame(
-            link = PhoneLink.CONNECTED,
-            received = received,
-            nowElapsedMs = 0L,
-            local = localPlayback,
-        )
-
-        assertEquals(PlaybackSource.WATCH, frame.uiState.source)
-        assertEquals("The one about batteries", frame.uiState.snapshot.title)
-        assertEquals(60_000L, frame.position.positionMs)
-        assertTrue(frame.uiState.showsControls)
-    }
-
-    /**
-     * The skip intervals are the user's preference, set once on the phone. A watch that jumped a
-     * different distance for its own audio would be a second opinion nobody asked for.
-     */
-    @Test
-    fun `local playback keeps the phone's skip intervals`() {
-        val configured = playing.copy(skipForwardMs = 45_000L, skipBackMs = 15_000L)
-
-        val uiState = watchPlayerFrame(
-            link = PhoneLink.CONNECTED,
-            received = ReceivedSnapshot(configured, receivedAtElapsedMs = 0L),
-            nowElapsedMs = 0L,
-            local = localPlayback,
-        ).uiState
-
-        assertEquals(45_000L, uiState.snapshot.skipForwardMs)
-        assertEquals(15_000L, uiState.snapshot.skipBackMs)
-    }
-
-    /**
-     * The whole point of carrying episodes: the phone is at home and the watch still works. The
-     * unreachable-phone screen must not stand in front of that.
-     */
-    @Test
-    fun `an unreachable phone does not hide the episodes the watch holds`() {
-        val uiState = watchPlayerFrame(
-            link = PhoneLink.DISCONNECTED,
-            received = null,
-            nowElapsedMs = 0L,
-            stored = listOf(stored),
-        ).uiState
-
-        assertFalse(uiState.showsLinkProblem)
-        assertTrue(uiState.showsPhoneOutOfRange)
-    }
-
-    @Test
-    fun `an unreachable phone with nothing on the watch is still a dead end`() {
-        val uiState = watchPlayerFrame(
-            link = PhoneLink.DISCONNECTED,
-            received = null,
-            nowElapsedMs = 0L,
-        ).uiState
-
-        assertTrue(uiState.showsLinkProblem)
-        assertFalse(uiState.showsPhoneOutOfRange)
-    }
-
-    @Test
-    fun `playing on the watch keeps its controls with no phone in range`() {
-        val uiState = watchPlayerFrame(
-            link = PhoneLink.DISCONNECTED,
-            received = null,
-            nowElapsedMs = 0L,
-            local = localPlayback,
-            stored = listOf(stored),
-        ).uiState
-
-        assertTrue(uiState.showsControls)
-        assertFalse(uiState.showsLinkProblem)
-    }
-
-    /**
-     * The phone offers everything it holds, because it cannot know what arrived — a transfer that
-     * died halfway leaves it thinking it sent an episode the watch threw away.
-     */
-    @Test
-    fun `what can be copied leaves out what is already here or on its way`() {
-        val uiState = watchPlayerFrame(
-            link = PhoneLink.CONNECTED,
-            received = null,
-            nowElapsedMs = 0L,
-            stored = listOf(stored),
-            offered = listOf(
-                OfflineEpisode(id = "ep-1", title = "Already here"),
-                OfflineEpisode(id = "ep-2", title = "On its way"),
-                OfflineEpisode(id = "ep-3", title = "Could be copied"),
-            ),
-            transfers = mapOf("ep-2" to TransferProgress(receivedBytes = 5L, expectedBytes = 10L)),
-        ).uiState
-
-        assertEquals(listOf("ep-3"), uiState.copyable.map { it.id })
-    }
-
-    @Test
-    fun `an arriving episode is named by the offer it came from`() {
-        val uiState = watchPlayerFrame(
-            link = PhoneLink.CONNECTED,
-            received = null,
-            nowElapsedMs = 0L,
-            offered = listOf(OfflineEpisode(id = "ep-2", title = "On its way")),
-            transfers = mapOf("ep-2" to TransferProgress(receivedBytes = 5L, expectedBytes = 10L)),
-        ).uiState
-
-        val arriving = uiState.arriving.single()
-        assertEquals("On its way", arriving.episode.title)
-        assertEquals(0.5f, arriving.progress.fraction, 0.001f)
-    }
-
-    /** An episode on the watch, with the fields the rows and the header read. */
-    private val stored = StoredEpisode(
-        id = "ep-1",
-        title = "The one about batteries",
-        showTitle = "Radio Hardware",
-        durationMs = 300_000L,
-        sizeBytes = 28_000_000L,
-    )
-
-    /** The watch playing that episode, a minute in. */
-    private val localPlayback = WatchPlaybackState(
-        episode = stored,
-        isPlaying = true,
-        positionMs = 60_000L,
-        durationMs = 300_000L,
-    )
 }

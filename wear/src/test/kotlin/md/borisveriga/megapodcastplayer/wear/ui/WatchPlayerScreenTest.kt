@@ -5,25 +5,19 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
-import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
-import md.borisveriga.megapodcastplayer.core.wearprotocol.OfflineEpisode
 import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
-import md.borisveriga.megapodcastplayer.wear.data.StoredEpisode
-import md.borisveriga.megapodcastplayer.wear.data.TransferProgress
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -64,6 +58,11 @@ class WatchPlayerScreenTest {
         ),
     )
 
+    /** A queue long enough to push anything below it off a 45 mm screen. */
+    private val longQueue = List(12) { index ->
+        QueuedEpisode(id = "ep-$index", title = "Queued episode $index", showTitle = "Signal Path")
+    }
+
     @Test
     fun theEpisodeAndItsTransportControlsAreOnTheFirstScreen() {
         setScreen(
@@ -81,7 +80,7 @@ class WatchPlayerScreenTest {
 
     /**
      * The position reaches the screen through a lambda rather than as part of the state, so that
-     * the clock moving recomposes the label and not the pager. This checks the half of that which
+     * the clock moving recomposes the label and not the list. This checks the half of that which
      * a test can see: the label does follow the lambda.
      */
     @Test
@@ -153,7 +152,6 @@ class WatchPlayerScreenTest {
             onPlayOnPhone = { played = it },
         )
 
-        openEpisodes()
         scrollTo("The one about antennas")
         composeTestRule.onNodeWithText("The one about antennas").performClick()
 
@@ -254,421 +252,93 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithText("MegaPodcastPlayer is not on your phone").assertIsDisplayed()
     }
 
-    // ---- Two pages ------------------------------------------------------------------------------
+    // ---- One column -----------------------------------------------------------------------------
 
     /**
-     * The whole reason the screen was split. The episode lists grow without limit — the phone's
-     * queue, what the phone has downloaded, what this watch holds — and in one column that pushed
-     * pause off the bottom of a 45 mm screen. On a page of its own the transport sits exactly where
-     * it sits when the watch is carrying nothing.
+     * The queue is the only part of the column whose length the phone decides, and it comes last,
+     * so the transport sits exactly where it sits when the queue is empty. This is what a second
+     * page used to guarantee; with the queue at the bottom, one column guarantees it too.
      */
     @Test
-    fun `the transport stays put however many episodes the watch is carrying`() {
+    fun `the transport stays put however long the phone's queue is`() {
         setScreen(
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = List(12) { index ->
-                    stored.copy(id = "ep-$index", title = "Stored episode $index")
-                },
+                snapshot = playing.copy(upNext = longQueue),
             ),
         )
 
         composeTestRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
-        // Composed — the other page is kept ready — but off the screen, which is what matters.
-        composeTestRule.onNodeWithText("Stored episode 0").assertIsNotDisplayed()
-    }
-
-    @Test
-    fun `the episodes are one swipe away rather than one scroll`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = listOf(stored),
-            ),
-        )
-
-        composeTestRule.onNodeWithText("On this watch").assertIsNotDisplayed()
-
-        openEpisodes()
-
-        scrollTo("On this watch")
-        composeTestRule.onNodeWithText("On this watch").assertIsDisplayed()
+        // Below the fold, not beside it: the queue is a scroll away, never a swipe.
+        composeTestRule.onNodeWithText("Queued episode 0").assertIsNotDisplayed()
+        composeTestRule.onNode(isHorizontalPager()).assertDoesNotExist()
     }
 
     /**
-     * Both pages stay composed while the other is showing. The visible half of that is the list
-     * remembering where it was: before, the episodes page was thrown away on every swipe back to
-     * the transport and rebuilt — from the top — on every swipe out to it, which was also the
-     * stumble at the start of each swipe.
+     * The order the column is read in. The moment button is the last control, and the queue starts
+     * directly under it — not above the transport, and not on a page of its own.
      */
     @Test
-    fun `the episodes list keeps its place when paged away from and back`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = List(12) { index ->
-                    stored.copy(id = "ep-$index", title = "Stored episode $index")
-                },
-            ),
-        )
-        openEpisodes()
-        scrollTo("Stored episode 11")
-        composeTestRule.onNodeWithText("Stored episode 11").assertIsDisplayed()
+    fun `the queue sits right under the moment button`() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
 
-        backToNowPlaying()
-        openEpisodes()
+        // Two scrolls, because a lazy column only composes what is near the viewport and the three
+        // items do not all fit a 192 dp screen at once; each pair is compared while both exist.
+        scrollTo("Save moment")
+        val speed = composeTestRule.onNodeWithText("1.5x").getUnclippedBoundsInRoot()
+        val moment = composeTestRule.onNodeWithText("Save moment").getUnclippedBoundsInRoot()
+        assertTrue("speed row above the moment button", speed.bottom <= moment.top)
 
-        composeTestRule.onNodeWithText("Stored episode 11").assertIsDisplayed()
+        scrollTo("Phone queue")
+        val momentAgain = composeTestRule.onNodeWithText("Save moment").getUnclippedBoundsInRoot()
+        val queue = composeTestRule.onNodeWithText("Phone queue").getUnclippedBoundsInRoot()
+        assertTrue("queue header below the moment button", momentAgain.bottom <= queue.top)
     }
 
     /**
-     * With nothing playing there is no page worth swiping to, so the screen collapses back to the
-     * one list it always was — and the sentence explaining the empty transport sits above the
-     * episodes it is telling the wearer to pick from.
+     * With nothing playing there are no controls, and the sentence explaining the empty transport
+     * sits above the episodes it is telling the wearer to pick from.
      */
     @Test
-    fun `an idle phone keeps its episodes on the one page`() {
+    fun `an idle phone still lists its queue`() {
         setScreen(
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
                 snapshot = NowPlayingSnapshot(upNext = playing.upNext),
-                stored = listOf(stored),
             ),
         )
 
         composeTestRule.onNodeWithText("Nothing playing").assertIsDisplayed()
 
-        scrollTo("The one about capacitors")
-        composeTestRule.onNodeWithText("The one about capacitors").assertIsDisplayed()
+        scrollTo("The one about antennas")
+        composeTestRule.onNodeWithText("The one about antennas").assertIsDisplayed()
     }
 
     /**
-     * A fact about the phone is true on whichever page the thumb happens to be on, so the two link
-     * notes are drawn on both rather than assigned to one of them.
+     * The header names the list rather than the action its rows perform: on a screen this small it
+     * is the only thing saying whose episodes these are.
      */
     @Test
-    fun `a phone out of range says so on both pages`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.DISCONNECTED,
-                snapshot = playing,
-                source = PlaybackSource.WATCH,
-                stored = listOf(stored),
-            ),
-        )
-
-        // Both pages are composed, so the sentence exists twice; the one on the page being shown
-        // is the one that has to be visible.
-        scrollTo(OUT_OF_RANGE)
-        composeTestRule.onAllNodesWithText(OUT_OF_RANGE)[page].assertIsDisplayed()
-
-        openEpisodes()
-
-        scrollTo(OUT_OF_RANGE)
-        composeTestRule.onAllNodesWithText(OUT_OF_RANGE)[page].assertIsDisplayed()
-    }
-
-    // ---- What a stored row says about itself ----------------------------------------------------
-
-    /**
-     * Every stored row answers the same question — will this fit my walk — so one nobody has started
-     * gives its whole length rather than only naming the show.
-     */
-    @Test
-    fun `an episode nobody has started says how long it is`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = listOf(stored),
-            ),
-        )
-
-        openEpisodes()
-        scrollTo("The one about capacitors")
-
-        composeTestRule.onNodeWithText("Radio Hardware · 30m").assertIsDisplayed()
-    }
-
-    @Test
-    fun `a part-heard episode says what is left of it instead`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = listOf(stored.copy(positionMs = 600_000L)),
-            ),
-        )
-
-        openEpisodes()
-        scrollTo("The one about capacitors")
-
-        composeTestRule.onNodeWithText("Radio Hardware · 20m left").assertIsDisplayed()
-    }
-
-    /**
-     * The page being shown, as an index into the pager's lists.
-     *
-     * Both pages are composed at once — the pager keeps the other one ready so a swipe never has
-     * to build it — so a matcher for "the list" finds two, and the tests have to say which. With
-     * no pager on the screen there is one list and this is its index too.
-     */
-    private var page = NOW_PLAYING_PAGE
-
-    /** Scrolls the list on whichever page is showing until the node holding [text] is on it. */
-    private fun scrollTo(text: String) {
-        composeTestRule.onAllNodes(isVerticalList())[page].performScrollToNode(hasText(text))
-    }
-
-    /** The same, for a node that carries no text of its own — a button that is only a glyph. */
-    private fun scrollToDescription(description: String) {
-        composeTestRule.onAllNodes(isVerticalList())[page]
-            .performScrollToNode(hasContentDescription(description))
-    }
-
-    /**
-     * Moves from the now-playing page to the episodes page.
-     *
-     * Driven through the pager's own scroll-to-index rather than by a swipe gesture: the left edge
-     * of the first page is reserved for the system's swipe-to-dismiss, and a test that has to aim
-     * around that zone ends up asserting on the gesture rather than on the page it lands on.
-     */
-    private fun openEpisodes() {
-        composeTestRule.onNode(isPager()).performScrollToIndex(EPISODES_PAGE)
-        page = EPISODES_PAGE
-    }
-
-    /** The way back; see [openEpisodes]. */
-    private fun backToNowPlaying() {
-        composeTestRule.onNode(isPager()).performScrollToIndex(NOW_PLAYING_PAGE)
-        page = NOW_PLAYING_PAGE
-    }
-
-    /** The pager: the one scrollable on this screen that moves sideways. */
-    private fun isPager(): SemanticsMatcher = hasScrollToNodeAction() and
-        SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
-
-    /** The list on the page being shown: the one scrollable that moves up and down. */
-    private fun isVerticalList(): SemanticsMatcher = hasScrollToNodeAction() and
-        SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
-
-    // ---- Episodes the watch holds ---------------------------------------------------------------
-
-    @Test
-    fun `episodes on the watch are listed and can be played from here`() {
-        var played: StoredEpisode? = null
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = listOf(stored),
-            ),
-            onPlayOnWatch = { played = it },
-        )
-
-        openEpisodes()
-        scrollTo("The one about capacitors")
-        composeTestRule.onNodeWithText("The one about capacitors").performClick()
-
-        assertEquals("ep-9", played?.id)
-    }
-
-    @Test
-    fun `an episode the phone has and the watch does not can be asked for`() {
-        var copied: String? = null
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                offered = listOf(
-                    OfflineEpisode(id = "ep-8", title = "The one about resistors", showTitle = "Radio Hardware"),
-                ),
-            ),
-            onCopyToWatch = { copied = it },
-        )
-
-        openEpisodes()
-        scrollToDescription("Copy to watch")
-        composeTestRule.onNodeWithContentDescription("Copy to watch").performClick()
-
-        assertEquals("ep-8", copied)
-    }
-
-    /**
-     * The common want, and the one this list could not serve before: the phone is in a pocket and
-     * the episode should come out of it now, without minutes of Bluetooth first.
-     */
-    @Test
-    fun `tapping a downloaded-on-phone episode starts it on the phone`() {
-        var played: String? = null
-        var copied: String? = null
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                offered = listOf(
-                    OfflineEpisode(id = "ep-8", title = "The one about resistors", showTitle = "Radio Hardware"),
-                ),
-            ),
-            onPlayOnPhone = { played = it },
-            onCopyToWatch = { copied = it },
-        )
-
-        openEpisodes()
-        scrollTo("The one about resistors")
-        composeTestRule.onNodeWithText("The one about resistors").performClick()
-
-        assertEquals("ep-8", played)
-        // The expensive half of the row must stay behind its own button.
-        assertNull(copied)
-    }
-
-    /**
-     * The whole point of carrying episodes over: the phone is at home and the watch still plays. The
-     * unreachable-phone screen must not stand in front of that.
-     */
-    @Test
-    fun `an unreachable phone still shows what the watch can play by itself`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.DISCONNECTED,
-                snapshot = NowPlayingSnapshot(),
-                stored = listOf(stored),
-            ),
-        )
-
-        composeTestRule.onNodeWithText("Phone not connected").assertDoesNotExist()
-        scrollTo("The one about capacitors")
-        composeTestRule.onNodeWithText("The one about capacitors").assertIsDisplayed()
-    }
-
-    /**
-     * While the watch is playing its own audio the phone's queue is not what "next" means, so the
-     * button that would skip through it is replaced by the way back to the phone.
-     */
-    @Test
-    fun `local playback swaps the queue controls for the way back to the phone`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                source = PlaybackSource.WATCH,
-                stored = listOf(stored),
-            ),
-        )
-
-        scrollTo("1.5x")
-        composeTestRule.onNodeWithContentDescription("Back to the phone").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription("Next episode").assertDoesNotExist()
-    }
-
-    /**
-     * Three lists run down this screen one after another, and the only thing separating them is a
-     * header. Each therefore has to name the list rather than the action its rows perform: "up next"
-     * and "downloaded" are both true of the phone at once, and neither is true of the watch.
-     */
-    @Test
-    fun `each list names whose episodes it holds`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                stored = listOf(stored),
-                offered = listOf(
-                    OfflineEpisode(
-                        id = "ep-8",
-                        title = "The one about resistors",
-                        showTitle = "Radio Hardware",
-                    ),
-                ),
-            ),
-        )
-
-        openEpisodes()
+    fun `the queue names whose episodes it holds`() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
 
         scrollTo("Phone queue")
         composeTestRule.onNodeWithText("Phone queue").assertIsDisplayed()
-
-        scrollTo("Downloaded on phone")
-        composeTestRule.onNodeWithText("Downloaded on phone").assertIsDisplayed()
-
-        scrollTo("On this watch")
-        composeTestRule.onNodeWithText("On this watch").assertIsDisplayed()
     }
 
-    /**
-     * With the header naming the list rather than the action, the row's two icons are the only
-     * thing left saying which device each target reaches — and TalkBack cannot see an icon.
-     */
-    @Test
-    fun `a downloaded-on-phone row announces both of the things it can do`() {
-        setScreen(
-            WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                offered = listOf(
-                    OfflineEpisode(
-                        id = "ep-8",
-                        title = "The one about resistors",
-                        showTitle = "Radio Hardware",
-                    ),
-                ),
-            ),
-        )
-
-        openEpisodes()
-        scrollTo("The one about resistors")
-        composeTestRule.onNodeWithContentDescription("Play on phone").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription("Copy to watch").assertIsDisplayed()
+    /** Scrolls the column until the node holding [text] is on screen. */
+    private fun scrollTo(text: String) {
+        composeTestRule.onNode(isVerticalList()).performScrollToNode(hasText(text))
     }
 
-    /**
-     * An episode is minutes of Bluetooth, so the wrong one tapped — or one that has plainly stalled
-     * — needs a way out that is not "wait for it".
-     */
-    @Test
-    fun `a copy that is arriving can be cancelled`() {
-        var cancelled: String? = null
-        val coming = OfflineEpisode(
-            id = "ep-8",
-            title = "The one about resistors",
-            showTitle = "Radio Hardware",
-            sizeBytes = 20_000_000L,
-        )
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                offered = listOf(coming),
-                transfers = mapOf(
-                    "ep-8" to TransferProgress(receivedBytes = 5_000_000L, expectedBytes = 20_000_000L),
-                ),
-            ),
-            onCancelCopyToWatch = { cancelled = it },
-        )
+    /** A pager: a scrollable that moves sideways. There must not be one on this screen any more. */
+    private fun isHorizontalPager(): SemanticsMatcher = hasScrollToNodeAction() and
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
 
-        openEpisodes()
-        // Scrolled to the button rather than to the row's title: the row is taller than a quarter
-        // of this screen, so a scroll that lands the title leaves the button below the bezel.
-        scrollToDescription("Cancel copy")
-        composeTestRule.onNodeWithContentDescription("Cancel copy").performClick()
+    /** The column: the one scrollable on the screen, and it moves up and down. */
+    private fun isVerticalList(): SemanticsMatcher = hasScrollToNodeAction() and
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
 
-        assertEquals("ep-8", cancelled)
-    }
-
-    /** An episode on the watch, distinct from everything else on screen. */
-    private val stored = StoredEpisode(
-        id = "ep-9",
-        title = "The one about capacitors",
-        showTitle = "Radio Hardware",
-        durationMs = 1_800_000L,
-        sizeBytes = 14_000_000L,
-    )
-
-    /** Renders the screen with no-op callbacks except the ones a test cares about. */
     @Test
     fun theFirstScrubSaysWhatTheBezelDoes() {
         setScreen(
@@ -700,15 +370,13 @@ class WatchPlayerScreenTest {
             .assertIsDisplayed()
     }
 
+    /** Renders the screen with no-op callbacks except the ones a test cares about. */
     private fun setScreen(
         uiState: WatchPlayerUiState,
         position: () -> PlaybackPosition = { PlaybackPosition() },
         onTogglePlayPause: () -> Unit = {},
         onPlayOnPhone: (String) -> Unit = {},
         onRetry: () -> Unit = {},
-        onPlayOnWatch: (StoredEpisode) -> Unit = {},
-        onCopyToWatch: (String) -> Unit = {},
-        onCancelCopyToWatch: (String) -> Unit = {},
     ) {
         composeTestRule.setContent {
             androidx.wear.compose.material3.MaterialTheme {
@@ -724,21 +392,9 @@ class WatchPlayerScreenTest {
                         onCycleSpeed = {},
                         onPlayOnPhone = onPlayOnPhone,
                         onRetry = onRetry,
-                        onPlayOnWatch = onPlayOnWatch,
-                        onCopyToWatch = onCopyToWatch,
-                        onCancelCopyToWatch = onCancelCopyToWatch,
                     )
                 }
             }
         }
     }
 }
-
-/** The now-playing page's index in the pager: the first, because it is what a raised wrist asks. */
-private const val NOW_PLAYING_PAGE = 0
-
-/** The episodes page's index in the pager; the now-playing page is the one before it. */
-private const val EPISODES_PAGE = 1
-
-/** Spelled once because two assertions in a row read it, and it is a whole sentence. */
-private const val OUT_OF_RANGE = "Phone out of range. Episodes on this watch still play."

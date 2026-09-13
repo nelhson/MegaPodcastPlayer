@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-feature android:name="android.hardware.type.watch" />
 
@@ -8,20 +7,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Keeps playback controls reachable from the watch face via an OngoingActivity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!--
-      Playing an episode the watch holds, with the screen off and the phone at home. The media
-      playback type is what lets that service keep running while the wrist is down.
-    -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- The end-of-episode bell, which reaches a sleeping wearer through the wrist and not the ear. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!--
-      No backup. What the watch keeps of its own is episode audio the phone sent it and how far
-      through each one the wearer got — tens of megabytes that would be pointless to back up and are
-      replaceable in one tap, and positions that are reported back to the phone anyway.
+      No backup. The watch keeps nothing of its own worth carrying to a new device: everything it
+      shows is the phone's, replayed from the Data Layer the moment the two are paired again.
 
       No right-to-left either, in step with the phone (DS-8, D-5). Nothing here would break if it
       were mirrored — there are no swipe rows on the watch — but two halves of one app, installed
@@ -83,22 +75,6 @@
                     android:pathPrefix="/megapodcastplayer_phone_player" />
             </intent-filter>
         </service>
-        <!--
-          Receives an episode's audio from the phone. Play Services starts this - and with it the
-          watch app's process - when the phone opens the channel, which is what lets a transfer
-          begin while the app is closed and finish while it stays closed.
-        -->
-        <service
-            android:name=".data.EpisodeAudioReceiverService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/megapodcastplayer/episode_audio" />
-            </intent-filter>
-        </service>
 
         <!--
           Buzzes the wrist when the phone's end-of-episode bell rings. Play Services starts this -
@@ -114,27 +90,6 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/megapodcastplayer/bell" />
-            </intent-filter>
-        </service>
-
-        <!--
-          The watch's own player, for episodes it holds. A MediaSessionService rather than a player
-          owned by the screen: the audio has to survive the wrist dropping, and a Bluetooth headset's
-          buttons have to reach it.
-
-          exported="true" is required by Media3 - the system's media controls bind the session from
-          outside the app - and lint's ExportedService check wants a permission on it that no system
-          surface would hold. Access control lives in the session's onConnect instead, which rejects
-          every controller that is not this app or the system. Suppressed here, next to the reason,
-          exactly as :core:media does for the phone's player.
-        -->
-        <service
-            android:name=".playback.WatchPlaybackService"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback"
-            tools:ignore="ExportedService">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
 
