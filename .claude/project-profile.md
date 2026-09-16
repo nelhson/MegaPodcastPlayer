@@ -6,7 +6,7 @@
 - **Application ID(s):** `md.borisveriga.megapodcastplayer` for both `:app` and `:wear` (debug suffix: none, deliberately — ever). Namespaces differ (`…megapodcastplayer` / `…megapodcastplayer.wear`).
 - **Modules:** apps `:app`, `:wear`; pure JVM `:core:model`, `:core:wearprotocol`; Android `:core:{common,database,datastore,network,youtube,media,data,designsystem}`; test fixtures `:core:testing`; features `:feature:{library,downloads,search,podcast,player,moments,settings}`. Sources at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
 - **Conventions live in:** `CLAUDE.md`, `build-logic/convention/`, `config/detekt/detekt.yml`, `gradle/libs.versions.toml`, `docs/` (`REFACTORING_PLAN.md`, `RELEASE_SIGNING.md`, `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, `SCREENSHOT_TESTS.md`, `COPY_RULES.md`).
-- **Default branch:** `master` (there is no `main`).
+- **Default branch:** `main` (renamed from `master` on 2026-09-16).
 
 ## Commands
 
@@ -54,6 +54,7 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 
 ## merge-to-main
 
+- **CI gate:** none. CI does not run on pull requests and `main` has no branch protection; merge once the local detekt, unit-test and lint runs pass, without waiting for CI (Boris's call, 2026-09-16). CI still builds `main` after the merge.
 - **Review checklist extras:** URL/`youtube://` spellings and podcast-id hash unchanged; new URL input via `isPlayableMediaUrl`; data items vs messages (`WearPaths`), no audio to watch; `suspendRunCatching` + `CrashReporter`; KDoc, tests, no `TODO`/`FIXME`/`!!`; strings per `docs/COPY_RULES.md`; version bumps refresh `verification-metadata.xml`; moments export untouched or deliberate. Goldens in `src/test/screenshots/*.png` must be opened.
 - **Changed paths → install:** `wear/**`, `core/wearprotocol/**`, `core/common/**`, `core/model/**` → watch (and phone; protocol changes → **both**). `app/**`, `feature/**`, other `core/**` → phone. `build-logic/**`, `gradle/libs.versions.toml`, `verification-metadata.xml`, root scripts → both. Only `docs/**`, `.claude/**`, `.github/**`, `config/**`, `*.md`, `src/test/**` → nothing.
 
@@ -76,7 +77,7 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 
 ## project-report
 
-- **Standing risks to re-check:** YouTube extraction (`:core:youtube`, NewPipeExtractor from JitPack) violates YouTube ToS and breaks when YouTube changes; CI branch trigger vs default branch (currently `master`, correct); detekt alpha on JDK 25.
+- **Standing risks to re-check:** YouTube extraction (`:core:youtube`, NewPipeExtractor from JitPack) violates YouTube ToS and breaks when YouTube changes; CI branch trigger vs default branch (currently `main`, correct); detekt alpha on JDK 25.
 
 ## security-plan
 

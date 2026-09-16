@@ -6,10 +6,11 @@
 name: CI
 
 on:
+  # Not on pull requests: changes are merged straight into main once the local checks pass, so a
+  # PR check would only be a wait nobody is gated on. main is still built on every push.
   push:
-    branches: [master]
-  pull_request:
-  # Lets a maintainer re-run CI without pushing an empty commit.
+    branches: [main]
+  # Lets a maintainer run CI on any branch without pushing an empty commit.
   workflow_dispatch:
 
 concurrency:
@@ -40,9 +41,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # Only the default branch writes the remote cache; PRs read it. Otherwise a PR could
-          # poison the cache for everyone.
-          cache-read-only: ${{ github.ref != 'refs/heads/master' }}
+          # Only the default branch writes the remote cache; other branches read it. Otherwise a
+          # branch could poison the cache for everyone.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
           validate-wrappers: true
 
       # Dependency verification (gradle/verification-metadata.xml) is enforced by every command

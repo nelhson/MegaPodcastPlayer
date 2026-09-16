@@ -83,8 +83,9 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
 - No `TODO`/`FIXME` comments and no `!!` in production code (detekt rejects both).
 - User-facing strings live in each module's `strings.xml`, never in Kotlin literals; how they are
   worded is `docs/COPY_RULES.md`.
-- CI (`.github/workflows/ci.yml`) runs on pushes to `master` (the working branch), on pull requests
-  and on manual dispatch. It includes a debug-signed release smoke build whose APKs are discarded.
+- CI (`.github/workflows/ci.yml`) runs on pushes to `main` (the working branch) and on manual
+  dispatch, not on pull requests: changes are merged once the local checks pass. It includes a
+  debug-signed release smoke build whose APKs are discarded.
 - Do not commit unless asked. Reports go to `docs/reports/YYYY-MM-DD-<name>.md`.
 - Workflow skills (`install_on_devices`, `distribute`, `merge-to-main`, `*-plan`, `project-report`) come from
   the `android-workflow` plugin (`E:\projects\pet\mobile-apps\claude-setup-android`); their
