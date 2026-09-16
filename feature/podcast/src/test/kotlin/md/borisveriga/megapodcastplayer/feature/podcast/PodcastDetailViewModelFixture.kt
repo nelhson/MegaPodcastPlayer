@@ -1,6 +1,5 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
-import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import io.mockk.coEvery
 import io.mockk.every
@@ -9,7 +8,6 @@ import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
-import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
@@ -37,7 +35,7 @@ import org.junit.Rule
  * A base class, as the player's tests use: the fixture is stateful (flows a test pushes values into,
  * and a view model built from them), and JUnit's `@Rule` and `@Before` are inherited, so every
  * subclass gets a fresh one per test. [PodcastDetailViewModelTest] covers the list, its downloads
- * and its refreshes; [PodcastDetailExportTest] covers the two exports.
+ * and its refreshes; [PodcastDetailExportTest] covers *Download and export*.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 abstract class PodcastDetailViewModelFixture {
@@ -94,8 +92,6 @@ abstract class PodcastDetailViewModelFixture {
     protected lateinit var connection: PlaybackConnection
     protected val playbackState = MutableStateFlow(PlaybackState())
     protected lateinit var downloadExporter: DownloadExporter
-    protected val fileStore = mockk<BackupFileStore>(relaxed = true)
-    protected val documentUri = mockk<Uri>(relaxed = true)
     protected val exportRun = MutableStateFlow<ExportRun?>(null)
 
     @Before
@@ -137,7 +133,6 @@ abstract class PodcastDetailViewModelFixture {
             playbackRepository = playbackRepository,
             connection = connection,
             downloadExporter = downloadExporter,
-            fileStore = fileStore,
             savedStateHandle = SavedStateHandle(
                 mapOf(PodcastDetailViewModel.PODCAST_ID_ARG to podcast.id),
             ),

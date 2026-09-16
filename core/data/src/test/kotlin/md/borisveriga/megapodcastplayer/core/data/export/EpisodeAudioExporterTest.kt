@@ -1,6 +1,8 @@
 package md.borisveriga.megapodcastplayer.core.data.export
 
 import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.ByteArrayInputStream
@@ -8,18 +10,30 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
 import md.borisveriga.megapodcastplayer.core.database.dao.PodcastDao
+import md.borisveriga.megapodcastplayer.core.database.model.DownloadListRowEntity
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.media.download.DownloadedAudioReader
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,7 +43,11 @@ import org.junit.Test
  *
  * The cases are the ones the user can see in the folder afterwards: files in order under the right
  * names, nothing overwritten on a second run, no half-written file left behind by a failure or a
- * cancellation, and one bad episode not costing the rest.
+ * cancellation, and one bad episode not costing the rest. Before any of that, the download half:
+ * the episodes the filter lists are the ones asked for, and nothing is copied until they arrive.
+ *
+ * The episode rows are a small in-memory table: [states] is what the download stack has written,
+ * and the DAO's reads are answered from it, so a test moves a download along by writing to it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class EpisodeAudioExporterTest {
@@ -39,6 +57,7 @@ class EpisodeAudioExporterTest {
 
     private lateinit var podcastDao: PodcastDao
     private lateinit var episodeDao: EpisodeDao
+    private lateinit var downloadRepository: DownloadRepository
     private lateinit var crashReporter: CrashReporter
     private lateinit var reader: FakeReader
     private lateinit var directory: FakeDirectory
@@ -59,7 +78,13 @@ class EpisodeAudioExporterTest {
         autoRefresh = true,
     )
 
-    private fun episode(id: String, title: String) = EpisodeEntity(
+    /** The show's episodes in export order, as the feed stored them. */
+    private var rows = listOf<EpisodeEntity>()
+
+    /** Each episode's download state, which the download stack would write. */
+    private val states = MutableStateFlow(emptyMap<String, DownloadState>())
+
+    private fun episode(id: String, title: String, isPlayed: Boolean = false) = EpisodeEntity(
         id = id,
         podcastId = show.id,
         guid = id,
@@ -70,29 +95,62 @@ class EpisodeAudioExporterTest {
         durationMs = null,
         publishedAt = null,
         sizeBytes = null,
+        isPlayed = isPlayed,
     )
 
     @Before
     fun setUp() {
         podcastDao = mockk()
         episodeDao = mockk()
+        downloadRepository = mockk()
         crashReporter = mockk(relaxed = true)
         reader = FakeReader()
         directory = FakeDirectory()
         coEvery { podcastDao.getById(show.id) } returns show
+        coEvery { episodeDao.getForExport(show.id) } answers {
+            rows.map { row ->
+                row.copy(downloadState = states.value[row.id] ?: DownloadState.NOT_DOWNLOADED)
+            }
+        }
+        every { episodeDao.observeDownloadStates(any()) } answers {
+            val ids = firstArg<List<String>>()
+            states.map { current -> ids.mapNotNull { current[it] } }
+        }
+        coEvery { episodeDao.getDownloadListForIds(any()) } returns emptyList()
+        // What the real repository does before Media3 has said anything: mark the row queued.
+        coEvery { downloadRepository.download(any()) } answers {
+            states.value = states.value + (firstArg<String>() to DownloadState.QUEUED)
+            true
+        }
         exporter = EpisodeAudioExporter(
             podcastDao = podcastDao,
             episodeDao = episodeDao,
+            downloadRepository = downloadRepository,
             reader = reader,
             directory = directory,
             crashReporter = crashReporter,
+            clock = Clock.fixed(Instant.parse("2026-09-16T10:00:00Z"), ZoneOffset.UTC),
             ioDispatcher = UnconfinedTestDispatcher(),
         )
     }
 
+    /** Stores [episodes] in this order, each already downloaded. */
     private fun givenEpisodes(vararg episodes: EpisodeEntity) {
-        coEvery { episodeDao.getDownloadedForExport(show.id) } returns episodes.toList()
+        givenEpisodes(DownloadState.COMPLETED, *episodes)
     }
+
+    /** Stores [episodes] in this order, each in [state]. */
+    private fun givenEpisodes(state: DownloadState, vararg episodes: EpisodeEntity) {
+        rows = episodes.toList()
+        states.value = episodes.associate { it.id to state }
+    }
+
+    /** Runs an export of the whole show into a folder named after it. */
+    private suspend fun export(
+        filter: EpisodeFilter = EpisodeFilter.ALL,
+        folderName: String = show.title,
+        onProgress: suspend (ExportProgress) -> Unit = {},
+    ) = exporter.export(show.id, "tree", folderName, filter, onProgress)
 
     @Test
     fun `episodes are written in order into a folder named after the show`() = runTest {
@@ -101,7 +159,7 @@ class EpisodeAudioExporterTest {
         reader.audio["youtube://video/b"] = mp3
         val progress = mutableListOf<ExportProgress>()
 
-        val summary = exporter.export(show.id, "tree", onProgress = { progress += it }).getOrThrow()
+        val summary = export(onProgress = { progress += it }).getOrThrow()
 
         assertEquals(ExportSummary(exported = 2, alreadyThere = 0, failed = 0), summary)
         val folder = directory.folders.getValue("Talks 2026")
@@ -109,7 +167,13 @@ class EpisodeAudioExporterTest {
         assertArrayEquals(mp3, folder.getValue("002 - Second.mp3").bytes.toByteArray())
         assertEquals("audio/mp4", folder.getValue("001 - First.m4a").mimeType)
         assertEquals(
-            listOf(ExportProgress(0, 2), ExportProgress(1, 2), ExportProgress(2, 2)),
+            listOf(
+                ExportProgress(0, 2, ExportStage.DOWNLOADING),
+                ExportProgress(2, 2, ExportStage.DOWNLOADING),
+                ExportProgress(0, 2, ExportStage.COPYING),
+                ExportProgress(1, 2, ExportStage.COPYING),
+                ExportProgress(2, 2, ExportStage.COPYING),
+            ),
             progress,
         )
     }
@@ -119,10 +183,10 @@ class EpisodeAudioExporterTest {
         givenEpisodes(episode("a", "First"), episode("b", "Second"))
         reader.audio["youtube://video/a"] = m4a
         reader.audio["youtube://video/b"] = m4a
-        exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        export().getOrThrow()
         directory.created.clear()
 
-        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        val summary = export().getOrThrow()
 
         assertEquals(ExportSummary(exported = 0, alreadyThere = 2, failed = 0), summary)
         assertTrue(directory.created.isEmpty())
@@ -134,13 +198,13 @@ class EpisodeAudioExporterTest {
         givenEpisodes(episode("a", "First"), episode("b", "Second"))
         reader.audio["youtube://video/a"] = m4a
         reader.audio["youtube://video/b"] = mp3
-        exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        export().getOrThrow()
         directory.created.clear()
 
         // A new video joined the playlist at the top, so every earlier episode moved down one.
         givenEpisodes(episode("c", "Newest"), episode("a", "First"), episode("b", "Second"))
         reader.audio["youtube://video/c"] = mp3
-        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        val summary = export().getOrThrow()
 
         assertEquals(ExportSummary(exported = 1, alreadyThere = 2, failed = 0), summary)
         assertEquals(listOf("001 - Newest.mp3"), directory.created)
@@ -155,7 +219,7 @@ class EpisodeAudioExporterTest {
             "001 - First.m4a" to FakeFile("audio/mp4").apply { bytes.write(m4a, 0, 1_000) },
         )
 
-        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        val summary = export().getOrThrow()
 
         assertEquals(ExportSummary(exported = 1, alreadyThere = 0, failed = 0), summary)
         val folder = directory.folders.getValue("Talks 2026")
@@ -170,7 +234,7 @@ class EpisodeAudioExporterTest {
         reader.audio["youtube://video/b"] = m4a
         reader.incomplete += "youtube://video/a"
 
-        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        val summary = export().getOrThrow()
 
         assertEquals(ExportSummary(exported = 1, alreadyThere = 0, failed = 1), summary)
         assertEquals(setOf("002 - Second.m4a"), directory.folders.getValue("Talks 2026").keys)
@@ -184,7 +248,7 @@ class EpisodeAudioExporterTest {
         reader.audio["youtube://video/b"] = m4a
         reader.failAfterHeader += "youtube://video/a"
 
-        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        val summary = export().getOrThrow()
 
         assertEquals(ExportSummary(exported = 1, alreadyThere = 0, failed = 1), summary)
         assertEquals(setOf("002 - Second.m4a"), directory.folders.getValue("Talks 2026").keys)
@@ -197,7 +261,7 @@ class EpisodeAudioExporterTest {
         reader.audio["youtube://video/a"] = m4a
         directory.cancelOnWrite = true
 
-        val result = runCatching { exporter.export(show.id, "tree", onProgress = {}) }
+        val result = runCatching { export() }
 
         assertTrue(result.exceptionOrNull() is CancellationException)
         assertTrue(directory.folders.getValue("Talks 2026").isEmpty())
@@ -209,7 +273,7 @@ class EpisodeAudioExporterTest {
         givenEpisodes(episode("a", "First"))
         directory.refuseFolders = true
 
-        val result = exporter.export(show.id, "tree", onProgress = {})
+        val result = export()
 
         assertTrue(result.isFailure)
         verify { crashReporter.recordNonFatal("Episode audio export could not start", any()) }
@@ -219,7 +283,133 @@ class EpisodeAudioExporterTest {
     fun `a show that no longer exists fails the export`() = runTest {
         coEvery { podcastDao.getById("gone") } returns null
 
-        assertTrue(exporter.export("gone", "tree", onProgress = {}).isFailure)
+        val result = exporter.export("gone", "tree", "Gone", EpisodeFilter.ALL, onProgress = {})
+
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `only the episodes the filter lists are downloaded and exported`() = runTest {
+        givenEpisodes(
+            DownloadState.NOT_DOWNLOADED,
+            episode("a", "First", isPlayed = true),
+            episode("b", "Second"),
+        )
+        reader.audio["youtube://video/b"] = m4a
+
+        val run = async { export(filter = EpisodeFilter.UNPLAYED) }
+        runCurrent()
+        states.value = states.value + ("b" to DownloadState.COMPLETED)
+
+        val summary = run.await().getOrThrow()
+        assertEquals(ExportSummary(exported = 1, alreadyThere = 0, failed = 0), summary)
+        assertEquals(setOf("001 - Second.m4a"), directory.folders.getValue("Talks 2026").keys)
+        coVerify(exactly = 1) { downloadRepository.download("b") }
+        coVerify(exactly = 0) { downloadRepository.download("a") }
+    }
+
+    @Test
+    fun `nothing is copied until the downloads it asked for have arrived`() = runTest {
+        givenEpisodes(DownloadState.NOT_DOWNLOADED, episode("a", "First"), episode("b", "Second"))
+        states.value = states.value + ("b" to DownloadState.COMPLETED)
+        reader.audio["youtube://video/a"] = m4a
+        reader.audio["youtube://video/b"] = mp3
+
+        val run = async { export() }
+        runCurrent()
+
+        assertFalse(run.isCompleted)
+        assertTrue(directory.created.isEmpty())
+        coVerify(exactly = 1) { downloadRepository.download("a") }
+        coVerify(exactly = 0) { downloadRepository.download("b") }
+
+        states.value = states.value + ("a" to DownloadState.DOWNLOADING)
+        runCurrent()
+        assertFalse(run.isCompleted)
+
+        states.value = states.value + ("a" to DownloadState.COMPLETED)
+        assertEquals(
+            ExportSummary(exported = 2, alreadyThere = 0, failed = 0),
+            run.await().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun `a download that fails is counted and the rest keep their numbers`() = runTest {
+        givenEpisodes(DownloadState.FAILED, episode("a", "First"), episode("b", "Second"))
+        reader.audio["youtube://video/b"] = m4a
+
+        val run = async { export() }
+        runCurrent()
+        // Asked for again, because a failed download is retried; this time one of them arrives.
+        coVerify { downloadRepository.download("a") }
+        states.value = mapOf("a" to DownloadState.FAILED, "b" to DownloadState.COMPLETED)
+
+        assertEquals(
+            ExportSummary(exported = 1, alreadyThere = 0, failed = 1),
+            run.await().getOrThrow(),
+        )
+        assertEquals(setOf("002 - Second.m4a"), directory.folders.getValue("Talks 2026").keys)
+    }
+
+    @Test
+    fun `the folder takes the name the user gave it`() = runTest {
+        givenEpisodes(episode("a", "First"))
+        reader.audio["youtube://video/a"] = m4a
+
+        export(folderName = "Car: Monday").getOrThrow()
+
+        assertEquals(setOf("Car Monday"), directory.folders.keys)
+    }
+
+    @Test
+    fun `a list of the exported episodes is written beside them and replaced next time`() = runTest {
+        givenEpisodes(episode("a", "First"))
+        reader.audio["youtube://video/a"] = m4a
+        val row = DownloadListRowEntity(
+            showTitle = show.title,
+            feedUrl = show.feedUrl,
+            episodeTitle = "First",
+            audioUrl = "youtube://video/a",
+            publishedAt = null,
+            durationMs = null,
+            sizeBytes = null,
+        )
+        coEvery { episodeDao.getDownloadListForIds(listOf("a")) } returns listOf(row)
+
+        export(folderName = "Talks").getOrThrow()
+        export(folderName = "Talks").getOrThrow()
+
+        val folder = directory.folders.getValue("Talks")
+        assertEquals(setOf("001 - First.m4a", "Talks.md"), folder.keys)
+        assertEquals("text/markdown", folder.getValue("Talks.md").mimeType)
+        val list = folder.getValue("Talks.md").bytes.toString(Charsets.UTF_8.name())
+        assertTrue(list.contains(show.feedUrl))
+        assertTrue(list.contains("First"))
+    }
+
+    @Test
+    fun `a list that cannot be read costs the list and not the export`() = runTest {
+        givenEpisodes(episode("a", "First"))
+        reader.audio["youtube://video/a"] = m4a
+        coEvery { episodeDao.getDownloadListForIds(any()) } throws IllegalStateException("db")
+
+        val summary = export().getOrThrow()
+
+        assertEquals(ExportSummary(exported = 1, alreadyThere = 0, failed = 0), summary)
+        verify {
+            crashReporter.recordNonFatal("Download list could not be written to the export", any())
+        }
+    }
+
+    @Test
+    fun `a filter that lists nothing exports nothing and asks for nothing`() = runTest {
+        givenEpisodes(DownloadState.NOT_DOWNLOADED, episode("a", "First"))
+
+        val summary = export(filter = EpisodeFilter.DOWNLOADED).getOrThrow()
+
+        assertEquals(ExportSummary(exported = 0, alreadyThere = 0, failed = 0), summary)
+        coVerify(exactly = 0) { downloadRepository.download(any()) }
     }
 
     /** A cache holding whole audio by URL, with switches for the two ways reading goes wrong. */

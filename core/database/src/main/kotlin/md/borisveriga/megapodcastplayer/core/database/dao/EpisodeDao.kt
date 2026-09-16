@@ -155,25 +155,59 @@ interface EpisodeDao {
     suspend fun getIdsForPodcast(podcastId: String): List<String>
 
     /**
-     * One show's finished downloads, in the order they are exported as files.
+     * Every episode of one show, whatever its download state, in the order they are exported as
+     * files.
      *
      * `sort_order` first, which is the playlist's own order for a YouTube show — the order the user
      * sees and may have arranged by hand. An RSS show never writes that column, so every row ties
      * on it and the publication date decides instead, oldest first: numbered files are listened to
      * from `001` up, and a feed's first episode is its oldest. Undated episodes go last.
      *
-     * Only `COMPLETED`: an episode still transferring has nothing whole to export yet.
+     * Not limited to finished downloads: *Download and export* downloads what is missing first. The
+     * caller narrows the list to the episodes the show page's filter shows.
      *
-     * @param podcastId the show being exported.
+     * @param podcastId the show being downloaded and exported.
      */
     @Query(
         """
         SELECT * FROM episodes
-        WHERE podcast_id = :podcastId AND download_state = 'COMPLETED'
+        WHERE podcast_id = :podcastId
         ORDER BY sort_order ASC, published_at IS NULL, published_at ASC
         """,
     )
-    suspend fun getDownloadedForExport(podcastId: String): List<EpisodeEntity>
+    suspend fun getForExport(podcastId: String): List<EpisodeEntity>
+
+    /**
+     * Observes the download state of a set of episodes.
+     *
+     * What *Download and export* waits on: the copy starts once none of these is queued or
+     * transferring any more. An episode deleted meanwhile simply drops out of the list.
+     *
+     * @param ids the episodes to watch.
+     */
+    @Query("SELECT download_state FROM episodes WHERE id IN (:ids)")
+    fun observeDownloadStates(ids: List<String>): Flow<List<DownloadState>>
+
+    /**
+     * Finished downloads among the given episodes, with the show fields the Markdown list needs.
+     *
+     * The [getDownloadList] projection narrowed to one export's episodes, so the list written into
+     * an exported folder describes exactly the audio beside it.
+     *
+     * @param ids the episodes in the export.
+     */
+    @Query(
+        """
+        SELECT p.title AS show_title, p.feed_url AS feed_url, e.title AS episode_title,
+            e.audio_url AS audio_url, e.published_at AS published_at, e.duration_ms AS duration_ms,
+            CASE WHEN e.downloaded_bytes > 0 THEN e.downloaded_bytes ELSE e.size_bytes END
+                AS size_bytes
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.download_state = 'COMPLETED' AND e.id IN (:ids)
+        """,
+    )
+    suspend fun getDownloadListForIds(ids: List<String>): List<DownloadListRowEntity>
 
     /**
      * Finished downloads with the show fields the Markdown download list needs.

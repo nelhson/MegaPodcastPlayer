@@ -3,31 +3,52 @@ package md.borisveriga.megapodcastplayer.core.data.export
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.Dispatcher
 import md.borisveriga.megapodcastplayer.core.common.di.MegaPodcastPlayerDispatcher
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
 import md.borisveriga.megapodcastplayer.core.database.dao.PodcastDao
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
+import md.borisveriga.megapodcastplayer.core.database.model.asExternalModel
 import md.borisveriga.megapodcastplayer.core.media.download.DownloadedAudioReader
 import md.borisveriga.megapodcastplayer.core.model.AudioContainer
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
+import md.borisveriga.megapodcastplayer.core.model.downloadListMarkdown
 import md.borisveriga.megapodcastplayer.core.model.exportFileName
 import md.borisveriga.megapodcastplayer.core.model.exportFileNameWithoutPosition
 import md.borisveriga.megapodcastplayer.core.model.exportFolderName
+import md.borisveriga.megapodcastplayer.core.model.exportListFileName
 
 /**
- * Copies one show's downloaded episodes out of the download cache into a folder the user picked.
+ * Downloads the episodes of one show that are on screen, then copies them out of the download cache
+ * into a folder the user named and placed.
  *
- * What the user gets is a folder named after the show, holding one ordinary audio file per episode,
- * numbered in the show's own order: `Show/001 - First talk.m4a`. That is a playlist any other player,
- * file manager or car stereo can read, which a download inside Media3's cache is not.
+ * What the user gets is that folder holding one ordinary audio file per episode, numbered in the
+ * show's own order, and a Markdown list of what they are: `Talks/001 - First talk.m4a` beside
+ * `Talks/Talks.md`. That is a playlist any other player, file manager or car stereo can read, which
+ * a download inside Media3's cache is not.
+ *
+ * ## Downloading first
+ *
+ * The episodes are the ones the show page's filter lists, worked out once when the run starts. Any
+ * of them not yet on the device is asked for through [DownloadRepository], which is the same request
+ * the row's download button makes, so the "Wi-Fi only" rule applies and Media3's own service does
+ * the transfer. The run then waits until none of them is queued or transferring. An episode whose
+ * download failed, or that was deleted meanwhile, is counted as [ExportSummary.failed] and the rest
+ * are copied.
  *
  * ## One episode's failure is not the export's
  *
@@ -43,65 +64,174 @@ import md.borisveriga.megapodcastplayer.core.model.exportFolderName
  * and a deleted episode moves everything after it up by one. The size is checked because a copy cut
  * short by the process dying keeps its name; a file that fails the check is replaced.
  *
- * Exporting the same show twice therefore picks up where an interrupted run stopped, and adds only
- * what was downloaded since. A copy that fails or is cancelled deletes its partial file straight
- * away, and the size check catches the ones that could not be deleted.
+ * Exporting into the same folder twice therefore picks up where an interrupted run stopped, and adds
+ * only what is new. A copy that fails or is cancelled deletes its partial file straight away, and
+ * the size check catches the ones that could not be deleted. The list is rewritten every time.
  *
- * @property podcastDao reads the show's title for the folder name.
- * @property episodeDao lists the show's finished downloads, in export order.
+ * @property podcastDao confirms the show still exists.
+ * @property episodeDao lists the show's episodes in export order, and watches their downloads.
+ * @property downloadRepository asks for the episodes that are not on the device yet.
  * @property reader reads each episode's audio back out of the cache.
  * @property directory the picked folder.
  * @property crashReporter told about each episode that could not be written, which the user only
- *   sees as a count.
+ *   sees as a count, and about a list that could not be written, which the user does not see at all.
+ * @property clock dates the list.
  * @property ioDispatcher everything here blocks on disk.
  */
 @Singleton
 class EpisodeAudioExporter @Inject constructor(
     private val podcastDao: PodcastDao,
     private val episodeDao: EpisodeDao,
+    private val downloadRepository: DownloadRepository,
     private val reader: DownloadedAudioReader,
     private val directory: ExportDirectory,
     private val crashReporter: CrashReporter,
+    private val clock: Clock,
     @param:Dispatcher(MegaPodcastPlayerDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
 ) {
 
     /**
-     * Exports every finished download of one show.
+     * Downloads, then exports, the episodes of one show that a filter lists.
      *
      * @param podcastId the show.
-     * @param treeUri the folder the user picked.
-     * @param onProgress told after each episode, and once before the first.
+     * @param treeUri the location the user picked.
+     * @param folderName the name the user gave the folder inside it; cleaned of what a file system
+     *   refuses.
+     * @param filter the show page's filter, which decides the episodes.
+     * @param onProgress told as downloads finish, then after each episode is copied, and once before
+     *   each stage starts.
      * @return what happened to each episode, or the failure that stopped the export reaching the
      *   folder at all. A show that no longer exists is a failure too.
      */
     suspend fun export(
         podcastId: String,
         treeUri: String,
+        folderName: String,
+        filter: EpisodeFilter,
         onProgress: suspend (ExportProgress) -> Unit,
     ): Result<ExportSummary> = withContext(ioDispatcher) {
         suspendRunCatching {
-            val podcast = checkNotNull(podcastDao.getById(podcastId)) { "No show $podcastId" }
-            val episodes = episodeDao.getDownloadedForExport(podcastId)
-            onProgress(ExportProgress(done = 0, total = episodes.size))
+            checkNotNull(podcastDao.getById(podcastId)) { "No show $podcastId" }
+            val selected = episodeDao.getForExport(podcastId)
+                .filter { filter.matches(it.asExternalModel()) }
 
+            // Reached before anything is downloaded: a folder the app cannot write to should fail
+            // the run now, not after an hour of downloading.
             val folder = directory.findOrCreateFolder(
                 parent = directory.root(treeUri),
-                name = exportFolderName(podcast.title),
+                name = exportFolderName(folderName),
             )
-            val existing = directory.files(folder).toMutableList()
 
-            var summary = ExportSummary(exported = 0, alreadyThere = 0, failed = 0)
-            episodes.forEachIndexed { index, episode ->
-                summary = when (exportOne(folder, existing, episode, index + 1, episodes.size)) {
-                    Outcome.EXPORTED -> summary.copy(exported = summary.exported + 1)
-                    Outcome.ALREADY_THERE -> summary.copy(alreadyThere = summary.alreadyThere + 1)
-                    Outcome.FAILED -> summary.copy(failed = summary.failed + 1)
-                }
-                onProgress(ExportProgress(done = index + 1, total = episodes.size))
-            }
+            awaitDownloads(selected, onProgress)
+            val summary = copyAll(podcastId, folder, selected, onProgress)
+            writeList(folder, folderName, selected.map { it.id })
             summary
         }.onFailure { failure ->
             crashReporter.recordNonFatal("Episode audio export could not start", failure)
+        }
+    }
+
+    /**
+     * Asks for every selected episode that is not on the device, and waits until none is pending.
+     *
+     * Waiting on the rows rather than on Media3 keeps this on the one source of truth the rest of
+     * the app reads. [DownloadRepository.download] marks a row queued before it returns, so the wait
+     * cannot see the old state and finish before the downloads have begun.
+     *
+     * @param selected the export's episodes, as they were when it started.
+     * @param onProgress told how many are on the device, each time that changes.
+     */
+    private suspend fun awaitDownloads(
+        selected: List<EpisodeEntity>,
+        onProgress: suspend (ExportProgress) -> Unit,
+    ) {
+        val total = selected.size
+        onProgress(ExportProgress(done = 0, total = total, stage = ExportStage.DOWNLOADING))
+        if (selected.isEmpty()) return
+
+        selected
+            .filter { it.downloadState in REQUESTABLE_STATES }
+            .forEach { downloadRepository.download(it.id) }
+
+        episodeDao.observeDownloadStates(selected.map { it.id })
+            // Rows are rewritten on every percent of every download; only a change of state is news.
+            .distinctUntilChanged()
+            .onEach { states ->
+                val done = states.count { it == DownloadState.COMPLETED }
+                onProgress(ExportProgress(done = done, total = total, stage = ExportStage.DOWNLOADING))
+            }
+            .first { states -> states.none { it in PENDING_STATES } }
+    }
+
+    /**
+     * Copies every selected episode that is now downloaded.
+     *
+     * Positions are counted over the whole selection, so an episode that failed to download leaves a
+     * gap in the numbers rather than renumbering everything after it — the next run, once it has
+     * downloaded, fills the gap without moving any other file.
+     *
+     * @param podcastId the show, re-read so the copy sees the downloads that just finished.
+     * @param folder the export's folder.
+     * @param selected the export's episodes, in export order.
+     * @param onProgress told after each episode.
+     * @return what became of each episode.
+     */
+    private suspend fun copyAll(
+        podcastId: String,
+        folder: String,
+        selected: List<EpisodeEntity>,
+        onProgress: suspend (ExportProgress) -> Unit,
+    ): ExportSummary {
+        val total = selected.size
+        onProgress(ExportProgress(done = 0, total = total, stage = ExportStage.COPYING))
+        val downloaded = episodeDao.getForExport(podcastId)
+            .filter { it.downloadState == DownloadState.COMPLETED }
+            .associateBy { it.id }
+        val existing = directory.files(folder).toMutableList()
+
+        var summary = ExportSummary(exported = 0, alreadyThere = 0, failed = 0)
+        selected.forEachIndexed { index, episode ->
+            val current = downloaded[episode.id]
+            val outcome = if (current == null) {
+                Outcome.FAILED
+            } else {
+                exportOne(folder, existing, current, index + 1, total)
+            }
+            summary = when (outcome) {
+                Outcome.EXPORTED -> summary.copy(exported = summary.exported + 1)
+                Outcome.ALREADY_THERE -> summary.copy(alreadyThere = summary.alreadyThere + 1)
+                Outcome.FAILED -> summary.copy(failed = summary.failed + 1)
+            }
+            onProgress(ExportProgress(done = index + 1, total = total, stage = ExportStage.COPYING))
+        }
+        return summary
+    }
+
+    /**
+     * Writes the Markdown list of the exported episodes into the folder, replacing an earlier one.
+     *
+     * Best effort: the audio is what the user asked for and is already in the folder, so a list that
+     * cannot be written is recorded and does not fail the run.
+     *
+     * @param folder the export's folder.
+     * @param folderName the name the user gave it, which the list is named after.
+     * @param ids the export's episodes; only the ones that finished downloading are listed.
+     */
+    private suspend fun writeList(folder: String, folderName: String, ids: List<String>) {
+        if (ids.isEmpty()) return
+        suspendRunCatching {
+            val rows = episodeDao.getDownloadListForIds(ids)
+            if (rows.isNotEmpty()) {
+                val markdown = downloadListMarkdown(rows.map { it.asExternalModel() }, clock.millis())
+                val name = exportListFileName(folderName)
+                directory.files(folder)
+                    .filter { it.name == name }
+                    .forEach { directory.delete(it.location) }
+                val file = directory.createFile(folder, name, LIST_MIME_TYPE)
+                writeOrDelete(file) { output -> output.write(markdown.toByteArray(Charsets.UTF_8)) }
+            }
+        }.onFailure { failure ->
+            crashReporter.recordNonFatal("Download list could not be written to the export", failure)
         }
     }
 
@@ -242,5 +372,14 @@ class EpisodeAudioExporter @Inject constructor(
     private companion object {
         /** Chunk size for the copy, and the input buffer the header is peeked through. */
         const val COPY_BUFFER_BYTES = 64 * 1024
+
+        /** The list's type; the same one the downloads screen writes its list as. */
+        const val LIST_MIME_TYPE = "text/markdown"
+
+        /** States a download is asked for from: never tried, or tried and failed. */
+        val REQUESTABLE_STATES = setOf(DownloadState.NOT_DOWNLOADED, DownloadState.FAILED)
+
+        /** States that mean a download is still on its way. */
+        val PENDING_STATES = setOf(DownloadState.QUEUED, DownloadState.DOWNLOADING)
     }
 }

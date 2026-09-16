@@ -58,7 +58,9 @@
       finished one is what tells them it is safe to go and look in the folder.
     -->
     <string name="export_channel_name">Exporting episodes</string>
-    <string name="export_channel_description">Progress while downloaded episodes are copied to a folder</string>
+    <string name="export_channel_description">Progress while episodes are downloaded and copied to a folder</string>
+    <!-- The first half of Download and export: waiting for the episodes that were not on the device. -->
+    <string name="export_downloading_title">Downloading episodes to export…</string>
     <string name="export_progress_title">Exporting episodes…</string>
     <!-- %1$d episodes done so far, %2$d in the export. -->
     <string name="export_progress_text">%1$d of %2$d</string>

@@ -4,10 +4,8 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -27,7 +25,6 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Link
@@ -36,6 +33,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -44,6 +42,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -76,12 +75,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
-import java.time.LocalDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
 import md.borisveriga.megapodcastplayer.core.common.format.toPlainText
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
+import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
 import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
@@ -176,8 +175,7 @@ fun PodcastDetailRoute(
         onRefresh = viewModel::refresh,
         onRebuild = viewModel::rebuild,
         onRemove = viewModel::removePodcast,
-        onExportDownloads = viewModel::exportDownloads,
-        onExportDownloadList = viewModel::exportDownloadList,
+        onDownloadAndExport = viewModel::downloadAndExport,
         onMessageShown = viewModel::onMessageShown,
         showBackButton = showBackButton,
         modifier = modifier,
@@ -213,10 +211,8 @@ fun PodcastDetailRoute(
  *   the pull does now. Called without a confirmation: episodes still in the feed keep their
  *   progress and downloads, so nothing the user could miss is at stake.
  * @param onRemove remove-show handler.
- * @param onExportDownloads starts copying the show's downloaded episodes into the folder the user
- *   just picked, given as the picker's tree URI.
- * @param onExportDownloadList writes the show's download list as Markdown to the document the user
- *   just created.
+ * @param onDownloadAndExport downloads the episodes on screen and copies them into a folder: given
+ *   the location the user just picked, as the picker's tree URI, and the name they gave the folder.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
  * @param showBackButton whether to render the back arrow.
@@ -242,8 +238,7 @@ fun PodcastDetailScreen(
     onRefresh: () -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
-    onExportDownloads: (String) -> Unit,
-    onExportDownloadList: (Uri) -> Unit,
+    onDownloadAndExport: (treeUri: String, folderName: String) -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
@@ -270,10 +265,25 @@ fun PodcastDetailScreen(
 
     val undoLabel = stringResource(R.string.podcast_undo)
 
-    val exportFolderPicker = rememberExportFolderPicker(onExportDownloads)
-    val downloadListPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(DOWNLOAD_LIST_MIME_TYPE),
-    ) { uri -> uri?.let(onExportDownloadList) }
+    // The export asks two things in turn: what the folder is called, then where it goes. The name
+    // is held here, saveably, across the system picker, which can recreate the activity.
+    var exportNameDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var exportFolderName by rememberSaveable { mutableStateOf("") }
+    val exportFolderPicker = rememberExportFolderPicker { treeUri ->
+        onDownloadAndExport(treeUri, exportFolderName)
+    }
+
+    uiState.podcast?.takeIf { exportNameDialogOpen }?.let { podcast ->
+        ExportFolderNameDialog(
+            initialName = podcast.title,
+            onConfirm = { name ->
+                exportNameDialogOpen = false
+                exportFolderName = name
+                exportFolderPicker.launch(null)
+            },
+            onDismiss = { exportNameDialogOpen = false },
+        )
+    }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -370,14 +380,9 @@ fun PodcastDetailScreen(
                                 )
                             },
                             onOpenSettings = { showSettingsOpen = true },
-                            canExport = uiState.hasDownloads,
+                            canExport = uiState.hasExportableEpisodes,
                             exportProgress = uiState.exportProgress,
-                            onExportDownloads = { exportFolderPicker.launch(null) },
-                            onExportDownloadList = {
-                                downloadListPicker.launch(
-                                    downloadListFileName(uiState.podcast.title, LocalDate.now()),
-                                )
-                            },
+                            onDownloadAndExport = { exportNameDialogOpen = true },
                             onRemove = onRemove,
                         )
                     }
@@ -1018,12 +1023,11 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  *   opened in a browser is a page of XML, and what it is actually for is being pasted into another
  *   podcast app.
  * @param onOpenSettings opens the per-show settings sheet.
- * @param canExport whether any episode is downloaded. The export entry is disabled rather than
- *   hidden without one, so it can be found before the first download.
+ * @param canExport whether the list on screen has any episodes. The export entry is disabled rather
+ *   than hidden without one, so it can still be found under a filter that lists nothing.
  * @param exportProgress how far a running export has got, or null. While one runs the entry says so
  *   and cannot start another.
- * @param onExportDownloads opens the folder picker for an export.
- * @param onExportDownloadList opens the file picker for the download list, a Markdown file.
+ * @param onDownloadAndExport asks for the folder's name, which then leads to the folder picker.
  * @param onRemove remove-show handler.
  */
 @Composable
@@ -1033,8 +1037,7 @@ private fun OverflowMenu(
     onOpenSettings: () -> Unit,
     canExport: Boolean,
     exportProgress: ExportProgress?,
-    onExportDownloads: () -> Unit,
-    onExportDownloadList: () -> Unit,
+    onDownloadAndExport: () -> Unit,
     onRemove: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -1077,40 +1080,14 @@ private fun OverflowMenu(
             },
         )
         DropdownMenuItem(
-            text = {
-                Text(
-                    text = when {
-                        exportProgress == null -> stringResource(R.string.podcast_export_downloads)
-
-                        exportProgress.total == 0 -> stringResource(R.string.podcast_exporting)
-
-                        else -> stringResource(
-                            R.string.podcast_exporting_progress,
-                            exportProgress.done,
-                            exportProgress.total,
-                        )
-                    },
-                )
-            },
+            text = { Text(text = exportMenuLabel(exportProgress)) },
             leadingIcon = {
                 Icon(imageVector = Icons.Rounded.DriveFileMove, contentDescription = null)
             },
             enabled = canExport && exportProgress == null,
             onClick = {
                 expanded = false
-                onExportDownloads()
-            },
-        )
-        DropdownMenuItem(
-            text = { Text(text = stringResource(R.string.podcast_export_download_list)) },
-            leadingIcon = {
-                Icon(imageVector = Icons.Rounded.Description, contentDescription = null)
-            },
-            // Not blocked by a running audio export: the list reads the database, not the files.
-            enabled = canExport,
-            onClick = {
-                expanded = false
-                onExportDownloadList()
+                onDownloadAndExport()
             },
         )
         DropdownMenuItem(
@@ -1124,6 +1101,73 @@ private fun OverflowMenu(
             },
         )
     }
+}
+
+/**
+ * What the export entry says: the action when idle, and how far a run has got while one goes.
+ *
+ * The stage is named because a run can wait on downloads for a long time, and a number that does not
+ * move under "Exporting" would look stuck.
+ *
+ * @param progress the running export's progress, or null when none is running.
+ * @return the entry's label.
+ */
+@Composable
+private fun exportMenuLabel(progress: ExportProgress?): String = when {
+    progress == null -> stringResource(R.string.podcast_download_and_export)
+
+    progress.total == 0 -> stringResource(R.string.podcast_exporting)
+
+    progress.stage == ExportStage.DOWNLOADING ->
+        stringResource(R.string.podcast_export_downloading_progress, progress.done, progress.total)
+
+    else -> stringResource(R.string.podcast_exporting_progress, progress.done, progress.total)
+}
+
+/**
+ * Asks what the exported folder is called, before the picker asks where it goes.
+ *
+ * Starts from the show's title, which is what most exports want; the user edits it when they are
+ * exporting a filtered part of a show, or into a folder they already use. The same name fills the
+ * same folder on a second run.
+ *
+ * @param initialName the name the field starts with.
+ * @param onConfirm receives the name, trimmed; not called while it is blank.
+ * @param onDismiss closes the dialog without exporting.
+ */
+@Composable
+private fun ExportFolderNameDialog(
+    initialName: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.podcast_export_name_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md)) {
+                Text(text = stringResource(R.string.podcast_export_name_body))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(text = stringResource(R.string.podcast_export_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
+                Text(text = stringResource(R.string.podcast_export_name_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.podcast_export_name_cancel))
+            }
+        },
+    )
 }
 
 /**
@@ -1336,8 +1380,13 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
         title,
     )
 
-    PodcastDetailMessage.ExportStarted ->
-        resources.getString(R.string.podcast_message_export_started)
+    is PodcastDetailMessage.ExportStarted -> resources.getString(
+        if (waitingForWifi) {
+            R.string.podcast_message_export_started_wifi
+        } else {
+            R.string.podcast_message_export_started
+        },
+    )
 
     is PodcastDetailMessage.ExportFinished -> {
         // Files already there from an earlier export count: they are in the folder, which is what
@@ -1357,24 +1406,7 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 
     PodcastDetailMessage.ExportFailed ->
         resources.getString(R.string.podcast_message_export_failed)
-
-    is PodcastDetailMessage.DownloadListExport -> resources.getString(outcome.messageRes())
 }
-
-/**
- * The snackbar text for how a download list export ended.
- *
- * @return the string resource.
- */
-@StringRes
-private fun DownloadListOutcome.messageRes(): Int = when (this) {
-    DownloadListOutcome.WRITTEN -> R.string.podcast_message_download_list_exported
-    DownloadListOutcome.EMPTY -> R.string.podcast_message_download_list_empty
-    DownloadListOutcome.FAILED -> R.string.podcast_message_download_list_export_failed
-}
-
-/** What the picker is asked to create for a show's download list. */
-private const val DOWNLOAD_LIST_MIME_TYPE = "text/markdown"
 
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
@@ -1450,8 +1482,7 @@ internal fun PodcastDetailScreenPreview() {
             onRefresh = {},
             onRebuild = {},
             onRemove = {},
-            onExportDownloads = {},
-            onExportDownloadList = {},
+            onDownloadAndExport = { _, _ -> },
             onMessageShown = {},
         )
     }
@@ -1486,8 +1517,7 @@ internal fun PodcastDetailScreenInPanePreview() {
             onRefresh = {},
             onRebuild = {},
             onRemove = {},
-            onExportDownloads = {},
-            onExportDownloadList = {},
+            onDownloadAndExport = { _, _ -> },
             onMessageShown = {},
             showBackButton = false,
         )

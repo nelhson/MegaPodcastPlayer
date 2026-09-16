@@ -161,31 +161,35 @@
     <string name="podcast_undo">Undo</string>
 
     <!--
-        Exporting the show's downloaded episodes as ordinary audio files, into a folder the user
-        picks. The menu entry changes to the running form while an export is copying, so it cannot
-        be started twice; %1$d is episodes done, %2$d episodes in the export.
+        Download and export: downloads the episodes on screen that are not on the device, then
+        copies them as ordinary audio files, with a Markdown list, into a folder the user names and
+        places. The menu entry changes to the running form while a run goes, so it cannot be
+        started twice; %1$d is episodes done in that stage, %2$d episodes in the export.
     -->
-    <string name="podcast_export_downloads">Export downloads</string>
+    <string name="podcast_download_and_export">Download and export</string>
     <string name="podcast_exporting">Exporting…</string>
+    <string name="podcast_export_downloading_progress">Downloading %1$d of %2$d…</string>
     <string name="podcast_exporting_progress">Exporting %1$d of %2$d…</string>
-    <string name="podcast_message_export_started">Exporting downloads to the folder you picked</string>
+    <!-- The dialog before the folder picker. The field starts with the show's title. -->
+    <string name="podcast_export_name_title">Name the folder</string>
+    <string name="podcast_export_name_body">Episodes on screen are downloaded, then copied into this folder with a list of what they are. Next, pick where it goes.</string>
+    <string name="podcast_export_name_label">Folder name</string>
+    <string name="podcast_export_name_confirm">Choose location</string>
+    <string name="podcast_export_name_cancel">Cancel</string>
+    <string name="podcast_message_export_started">Downloading, then exporting to your folder</string>
+    <string name="podcast_message_export_started_wifi">Exporting to your folder once episodes download on Wi-Fi</string>
     <!-- %1$d is how many of the show's episodes are now in the folder. -->
     <plurals name="podcast_message_exported">
         <item quantity="one">Exported %1$d episode</item>
         <item quantity="other">Exported %1$d episodes</item>
     </plurals>
-    <!-- %1$d episodes in the folder, %2$d that could not be copied; the plural follows %2$d. -->
+    <!-- %1$d episodes in the folder, %2$d that could not be downloaded or copied; the plural follows %2$d. -->
     <plurals name="podcast_message_exported_with_failures">
-        <item quantity="one">Exported %1$d · %2$d episode could not be copied</item>
-        <item quantity="other">Exported %1$d · %2$d episodes could not be copied</item>
+        <item quantity="one">Exported %1$d · %2$d episode could not be exported</item>
+        <item quantity="other">Exported %1$d · %2$d episodes could not be exported</item>
     </plurals>
     <string name="podcast_message_export_failed">Couldn\'t export. Pick the folder again.</string>
 
-    <!-- Saves the show's finished downloads as a Markdown list: the feed, and a link per episode. -->
-    <string name="podcast_export_download_list">Export download list</string>
-    <string name="podcast_message_download_list_exported">Download list exported</string>
-    <string name="podcast_message_download_list_export_failed">Couldn\'t write the download list</string>
-    <string name="podcast_message_download_list_empty">Nothing from this show has finished downloading yet</string>
 
 
     <!--

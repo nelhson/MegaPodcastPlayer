@@ -19,7 +19,9 @@ import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
+import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 
 /**
  * Starts [DownloadExportWorker] and translates WorkManager's view of it back into [ExportRun].
@@ -36,7 +38,12 @@ class DownloadExportScheduler @Inject constructor(
     private val crashReporter: CrashReporter,
 ) : DownloadExporter {
 
-    override fun start(podcastId: String, treeUri: String) {
+    override fun start(
+        podcastId: String,
+        treeUri: String,
+        folderName: String,
+        filter: EpisodeFilter,
+    ) {
         keepAccess(treeUri.toUri())
 
         val request = OneTimeWorkRequestBuilder<DownloadExportWorker>()
@@ -44,6 +51,8 @@ class DownloadExportScheduler @Inject constructor(
                 workDataOf(
                     DownloadExportWorker.KEY_PODCAST_ID to podcastId,
                     DownloadExportWorker.KEY_TREE_URI to treeUri,
+                    DownloadExportWorker.KEY_FOLDER_NAME to folderName,
+                    DownloadExportWorker.KEY_FILTER to filter.name,
                 ),
             )
             .build()
@@ -102,6 +111,10 @@ internal fun WorkInfo.asExportRun(): ExportRun = when (state) {
             ExportProgress(
                 done = progress.getInt(DownloadExportWorker.KEY_DONE, 0),
                 total = progress.getInt(DownloadExportWorker.KEY_TOTAL, 0),
+                // Nothing reported yet means the run has not started, and it starts by downloading.
+                stage = progress.getString(DownloadExportWorker.KEY_STAGE)
+                    ?.let { name -> ExportStage.entries.firstOrNull { it.name == name } }
+                    ?: ExportStage.DOWNLOADING,
             ),
         )
 

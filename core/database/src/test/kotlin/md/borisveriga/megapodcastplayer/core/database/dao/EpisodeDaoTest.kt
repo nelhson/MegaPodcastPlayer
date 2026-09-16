@@ -183,7 +183,7 @@ class EpisodeDaoTest {
     }
 
     @Test
-    fun `getDownloadedForExport lists one show's finished downloads oldest first`() = runTest {
+    fun `getForExport lists every episode of one show oldest first`() = runTest {
         podcastDao.upsert(podcast)
         podcastDao.upsert(podcast.copy(id = "other", feedUrl = "https://example.com/other"))
         episodeDao.upsertFromFeed(
@@ -195,15 +195,41 @@ class EpisodeDaoTest {
             ),
         )
         episodeDao.upsertFromFeed(listOf(episode("elsewhere").copy(podcastId = "other")))
-        listOf("new", "undated", "old", "elsewhere").forEach { id ->
-            episodeDao.updateDownloadState(id, DownloadState.COMPLETED, 5_000L, 100f)
-        }
+        episodeDao.updateDownloadState("new", DownloadState.COMPLETED, 5_000L, 100f)
         episodeDao.updateDownloadState("partial", DownloadState.DOWNLOADING, 1_000L, 20f)
 
         assertEquals(
-            listOf("old", "new", "undated"),
-            episodeDao.getDownloadedForExport(podcast.id).map { it.id },
+            listOf("old", "partial", "new", "undated"),
+            episodeDao.getForExport(podcast.id).map { it.id },
         )
+    }
+
+    @Test
+    fun `observeDownloadStates follows the watched episodes only`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b"), episode("c")))
+        episodeDao.updateDownloadState("a", DownloadState.QUEUED, 0L, 0f)
+        episodeDao.updateDownloadState("c", DownloadState.DOWNLOADING, 0L, 0f)
+
+        assertEquals(
+            listOf(DownloadState.NOT_DOWNLOADED, DownloadState.QUEUED),
+            episodeDao.observeDownloadStates(listOf("a", "b")).first().sortedBy { it.name },
+        )
+    }
+
+    @Test
+    fun `getDownloadListForIds lists only the finished downloads asked for`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b"), episode("c")))
+        listOf("a", "b").forEach { id ->
+            episodeDao.updateDownloadState(id, DownloadState.COMPLETED, 5_000L, 100f)
+        }
+        episodeDao.updateDownloadState("c", DownloadState.FAILED, 0L, 0f)
+
+        val rows = episodeDao.getDownloadListForIds(listOf("a", "c"))
+
+        assertEquals(listOf("Episode a"), rows.map { it.episodeTitle })
+        assertEquals(podcast.feedUrl, rows.single().feedUrl)
     }
 
     @Test
@@ -238,7 +264,7 @@ class EpisodeDaoTest {
     }
 
     @Test
-    fun `getDownloadedForExport follows a hand ordered show's own order`() = runTest {
+    fun `getForExport follows a hand ordered show's own order`() = runTest {
         podcastDao.upsert(podcast)
         episodeDao.upsertFromFeed(
             listOf(episode("a", publishedAt = 1L), episode("b", publishedAt = 2L), episode("c")),
@@ -251,7 +277,7 @@ class EpisodeDaoTest {
 
         assertEquals(
             listOf("c", "a", "b"),
-            episodeDao.getDownloadedForExport(podcast.id).map { it.id },
+            episodeDao.getForExport(podcast.id).map { it.id },
         )
     }
 

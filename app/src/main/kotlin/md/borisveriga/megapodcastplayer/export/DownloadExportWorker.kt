@@ -22,15 +22,21 @@ import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.export.EpisodeAudioExporter
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
+import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 
 /**
- * Exports one show's downloaded episodes into the folder the user picked.
+ * Downloads one show's on-screen episodes, then exports them into the folder the user named.
  *
  * A worker rather than a coroutine in the show's view model, because a playlist's worth of audio is
- * hundreds of megabytes and minutes of copying: long enough that the user will leave the app, and
- * long enough that the system would otherwise stop the process while they do. It runs in the
+ * hundreds of megabytes, downloaded and then copied: long enough that the user will leave the app,
+ * and long enough that the system would otherwise stop the process while they do. It runs in the
  * foreground for the same reason, with a progress notification that says what it is doing.
+ *
+ * The downloading itself is Media3's download service; this only waits for it. When the system
+ * stops a run part way (a foreground time limit, say), WorkManager runs it again and nothing is
+ * repeated: finished downloads are not asked for twice and copied files are recognised.
  *
  * It is handed the picked folder's URI, which a restore is not given: a folder the app holds a
  * *persistable* grant on is still writable whenever this runs, where a picked document is not. The
@@ -59,14 +65,24 @@ class DownloadExportWorker @AssistedInject constructor(
     private var foregroundRefused = false
 
     override suspend fun doWork(): Result {
-        val podcastId = inputData.getString(KEY_PODCAST_ID) ?: return Result.failure()
-        val treeUri = inputData.getString(KEY_TREE_URI) ?: return Result.failure()
+        val request = readRequest() ?: return Result.failure()
 
         ensureChannel()
         showProgress(ExportProgress(done = 0, total = 0))
 
-        val result = exporter.export(podcastId, treeUri) { progress ->
-            setProgress(workDataOf(KEY_DONE to progress.done, KEY_TOTAL to progress.total))
+        val result = exporter.export(
+            podcastId = request.podcastId,
+            treeUri = request.treeUri,
+            folderName = request.folderName,
+            filter = request.filter,
+        ) { progress ->
+            setProgress(
+                workDataOf(
+                    KEY_DONE to progress.done,
+                    KEY_TOTAL to progress.total,
+                    KEY_STAGE to progress.stage.name,
+                ),
+            )
             showProgress(progress)
         }
 
@@ -83,6 +99,41 @@ class DownloadExportWorker @AssistedInject constructor(
             },
         )
     }
+
+    /**
+     * Reads what the scheduler handed over.
+     *
+     * @return the run's inputs, or null when any is missing or the filter is not one this build
+     *   knows, which fails the run without exporting.
+     */
+    private fun readRequest(): ExportRequest? {
+        val podcastId = inputData.getString(KEY_PODCAST_ID)
+        val treeUri = inputData.getString(KEY_TREE_URI)
+        val folderName = inputData.getString(KEY_FOLDER_NAME)
+        val filterName = inputData.getString(KEY_FILTER)
+        val filter = EpisodeFilter.entries.firstOrNull { it.name == filterName }
+        val hasLocation = podcastId != null && treeUri != null && folderName != null
+        return if (hasLocation && filter != null) {
+            ExportRequest(podcastId, treeUri, folderName, filter)
+        } else {
+            null
+        }
+    }
+
+    /**
+     * One run's inputs, read and checked.
+     *
+     * @property podcastId the show.
+     * @property treeUri the picked location.
+     * @property folderName the name the user gave the folder.
+     * @property filter the show page's filter, which decides the episodes.
+     */
+    private data class ExportRequest(
+        val podcastId: String,
+        val treeUri: String,
+        val folderName: String,
+        val filter: EpisodeFilter,
+    )
 
     /**
      * Puts the run in the foreground, or updates its notification.
@@ -109,7 +160,9 @@ class DownloadExportWorker @AssistedInject constructor(
     /**
      * The ongoing notification.
      *
-     * Indeterminate until the exporter has counted the episodes, so it never shows "0 of 0".
+     * Indeterminate until the exporter has counted the episodes, so it never shows "0 of 0". The
+     * title names the stage, because a run waiting on downloads can sit at one number for a long
+     * time and "Exporting" would make that look stuck.
      */
     private fun progressNotification(progress: ExportProgress): Notification {
         val text = if (progress.total == 0) {
@@ -117,9 +170,13 @@ class DownloadExportWorker @AssistedInject constructor(
         } else {
             applicationContext.getString(R.string.export_progress_text, progress.done, progress.total)
         }
+        val title = when (progress.stage) {
+            ExportStage.DOWNLOADING -> R.string.export_downloading_title
+            ExportStage.COPYING -> R.string.export_progress_title
+        }
         return NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(applicationContext.getString(R.string.export_progress_title))
+            .setContentTitle(applicationContext.getString(title))
             .setContentText(text)
             .setProgress(progress.total, progress.done, progress.total == 0)
             .setOngoing(true)
@@ -204,6 +261,20 @@ class DownloadExportWorker @AssistedInject constructor(
 
         /** Input: the picked folder, which the scheduler already holds a persistable grant on. */
         const val KEY_TREE_URI = "tree_uri"
+
+        /** Input: the name the user gave the folder the files go into. */
+        const val KEY_FOLDER_NAME = "folder_name"
+
+        /**
+         * Input: the show page's filter, by name, which decides the episodes.
+         *
+         * The filter rather than the episode ids, because WorkManager's input is capped at 10 KB and
+         * a long show's ids would not fit.
+         */
+        const val KEY_FILTER = "filter"
+
+        /** Progress: whether the run is downloading or copying, as an [ExportStage] name. */
+        const val KEY_STAGE = "stage"
 
         /** Progress: episodes dealt with so far. */
         const val KEY_DONE = "done"
