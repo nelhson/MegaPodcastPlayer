@@ -344,12 +344,65 @@ class EpisodeAudioExporterTest {
         // Asked for again, because a failed download is retried; this time one of them arrives.
         coVerify { downloadRepository.download("a") }
         states.value = mapOf("a" to DownloadState.FAILED, "b" to DownloadState.COMPLETED)
+        runCurrent()
+        // One more round for what is still missing, and it fails again.
+        coVerify(exactly = 2) { downloadRepository.download("a") }
+        states.value = states.value + ("a" to DownloadState.FAILED)
 
         assertEquals(
             ExportSummary(exported = 1, alreadyThere = 0, failed = 1),
             run.await().getOrThrow(),
         )
         assertEquals(setOf("002 - Second.m4a"), directory.folders.getValue("Talks 2026").keys)
+    }
+
+    @Test
+    fun `a row left queued by a refused service start is asked for again`() = runTest {
+        // Queued in Room, unknown to Media3: the wait would never end if it were trusted.
+        givenEpisodes(DownloadState.QUEUED, episode("a", "First"))
+        reader.audio["youtube://video/a"] = m4a
+
+        val run = async { export() }
+        runCurrent()
+
+        coVerify(exactly = 1) { downloadRepository.download("a") }
+        states.value = states.value + ("a" to DownloadState.COMPLETED)
+        assertEquals(
+            ExportSummary(exported = 1, alreadyThere = 0, failed = 0),
+            run.await().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun `a request undone by another writer is made once more`() = runTest {
+        givenEpisodes(DownloadState.NOT_DOWNLOADED, episode("a", "First"))
+        reader.audio["youtube://video/a"] = m4a
+
+        val run = async { export() }
+        runCurrent()
+        // The start-up reconcile lands after the queued write and resets the row.
+        states.value = states.value + ("a" to DownloadState.NOT_DOWNLOADED)
+        runCurrent()
+
+        assertFalse(run.isCompleted)
+        coVerify(exactly = 2) { downloadRepository.download("a") }
+        states.value = states.value + ("a" to DownloadState.COMPLETED)
+        assertEquals(
+            ExportSummary(exported = 1, alreadyThere = 0, failed = 0),
+            run.await().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun `the list names only episodes whose audio reached the folder`() = runTest {
+        givenEpisodes(episode("a", "First"), episode("b", "Second"))
+        reader.audio["youtube://video/a"] = m4a
+        reader.audio["youtube://video/b"] = m4a
+        reader.incomplete += "youtube://video/a"
+
+        export().getOrThrow()
+
+        coVerify { episodeDao.getDownloadListForIds(listOf("b")) }
     }
 
     @Test

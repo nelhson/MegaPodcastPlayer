@@ -395,11 +395,15 @@ class PodcastDetailViewModel @Inject constructor(
      * @param folderName the name the user gave the folder.
      */
     fun downloadAndExport(treeUri: String, folderName: String) {
-        val state = uiState.value
-        if (state.exportProgress != null || folderName.isBlank()) return
+        if (uiState.value.exportProgress != null || folderName.isBlank()) return
         expectingExportOutcome = true
-        downloadExporter.start(podcastId, treeUri, folderName.trim(), state.settings.episodeFilter)
         viewModelScope.launch {
+            // Read from storage rather than from [uiState]: the picker can outlive this process, and
+            // a view model rebuilt to receive its result still holds the default state — whose
+            // filter is "All", which would download the whole show. A second run while one is
+            // going is refused by the exporter itself, so the stale guard above is only a shortcut.
+            val filter = showSettings.observeSettings(podcastId).first().episodeFilter
+            downloadExporter.start(podcastId, treeUri, folderName.trim(), filter)
             val waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly
             transientState.value = transientState.value.copy(
                 message = PodcastDetailMessage.ExportStarted(waitingForWifi),

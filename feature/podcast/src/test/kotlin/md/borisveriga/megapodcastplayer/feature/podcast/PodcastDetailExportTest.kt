@@ -37,6 +37,7 @@ class PodcastDetailExportTest : PodcastDetailViewModelFixture() {
             awaitItem()
 
             viewModel.downloadAndExport("content://tree/music", "  Talks  ")
+            runCurrent()
 
             verify {
                 downloadExporter.start(
@@ -53,6 +54,22 @@ class PodcastDetailExportTest : PodcastDetailViewModelFixture() {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `the filter comes from storage, not from a screen state that may not have loaded`() =
+        runTest {
+            // What a view model rebuilt after process death looks like: nobody has collected its
+            // state yet, so it still holds the default filter — All.
+            storedSettings.value =
+                ShowSettings.DEFAULT.copy(episodeFilter = EpisodeFilter.UNPLAYED)
+
+            viewModel.downloadAndExport("content://tree/music", "Talks")
+            runCurrent()
+
+            verify {
+                downloadExporter.start(podcast.id, "content://tree/music", "Talks", EpisodeFilter.UNPLAYED)
+            }
+        }
 
     @Test
     fun `starting says so when downloads wait for Wi-Fi`() = runTest {

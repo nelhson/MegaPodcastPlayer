@@ -176,7 +176,7 @@
     <string name="podcast_export_name_label">Folder name</string>
     <string name="podcast_export_name_confirm">Choose location</string>
     <string name="podcast_export_name_cancel">Cancel</string>
-    <string name="podcast_message_export_started">Downloading, then exporting to your folder</string>
+    <string name="podcast_message_export_started">Started downloading and exporting to your folder</string>
     <string name="podcast_message_export_started_wifi">Exporting to your folder once episodes download on Wi-Fi</string>
     <!-- %1$d is how many of the show's episodes are now in the folder. -->
     <plurals name="podcast_message_exported">
@@ -188,7 +188,7 @@
         <item quantity="one">Exported %1$d · %2$d episode could not be exported</item>
         <item quantity="other">Exported %1$d · %2$d episodes could not be exported</item>
     </plurals>
-    <string name="podcast_message_export_failed">Couldn\'t export. Pick the folder again.</string>
+    <string name="podcast_message_export_failed">Couldn\'t export. Try again.</string>
 
 
 
