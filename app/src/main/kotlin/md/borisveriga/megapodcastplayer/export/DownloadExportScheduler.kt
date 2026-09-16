@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
@@ -43,6 +46,7 @@ class DownloadExportScheduler @Inject constructor(
         treeUri: String,
         folderName: String,
         filter: EpisodeFilter,
+        network: ExportNetwork,
     ) {
         keepAccess(treeUri.toUri())
 
@@ -54,6 +58,11 @@ class DownloadExportScheduler @Inject constructor(
                     DownloadExportWorker.KEY_FOLDER_NAME to folderName,
                     DownloadExportWorker.KEY_FILTER to filter.name,
                 ),
+            )
+            // Not started until its downloads can move, and stopped if that network goes: waiting
+            // for Wi-Fi inside a running worker would hold a foreground service up doing nothing.
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(network.asNetworkType()).build(),
             )
             .build()
 
@@ -97,6 +106,17 @@ class DownloadExportScheduler @Inject constructor(
          */
         fun uniqueWorkName(podcastId: String): String = "episode-export-$podcastId"
     }
+}
+
+/**
+ * The WorkManager network requirement for a run.
+ *
+ * @return the network type the work request is constrained to.
+ */
+internal fun ExportNetwork.asNetworkType(): NetworkType = when (this) {
+    ExportNetwork.NONE -> NetworkType.NOT_REQUIRED
+    ExportNetwork.CONNECTED -> NetworkType.CONNECTED
+    ExportNetwork.UNMETERED -> NetworkType.UNMETERED
 }
 
 /**

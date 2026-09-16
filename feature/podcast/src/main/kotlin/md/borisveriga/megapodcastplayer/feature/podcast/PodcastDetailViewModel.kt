@@ -19,9 +19,11 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
+import md.borisveriga.megapodcastplayer.core.data.export.exportNetworkFor
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
@@ -233,8 +235,9 @@ sealed interface PodcastDetailMessage {
      * Confirmed because the work happens out of sight, in a notification the user may have
      * silenced, and the menu closing is otherwise the only sign the tap did anything.
      *
-     * @property waitingForWifi whether downloads wait for an unmetered network, which can hold the
-     *   export back for as long as the user is away from Wi-Fi.
+     * @property waitingForWifi whether the run waits for an unmetered network before it starts:
+     *   something is left to download and "Wi-Fi only" is on. That can hold the export back for as
+     *   long as the user is away from Wi-Fi, so it is said.
      */
     data class ExportStarted(val waitingForWifi: Boolean) : PodcastDetailMessage
 
@@ -403,8 +406,14 @@ class PodcastDetailViewModel @Inject constructor(
             // filter is "All", which would download the whole show. A second run while one is
             // going is refused by the exporter itself, so the stale guard above is only a shortcut.
             val filter = showSettings.observeSettings(podcastId).first().episodeFilter
-            downloadExporter.start(podcastId, treeUri, folderName.trim(), filter)
-            val waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly
+            val unmeteredOnly = downloadRepository.observeDownloadSettings().first().unmeteredOnly
+            val network = exportNetworkFor(
+                episodes = repository.observeEpisodes(podcastId).first(),
+                filter = filter,
+                unmeteredOnly = unmeteredOnly,
+            )
+            downloadExporter.start(podcastId, treeUri, folderName.trim(), filter, network)
+            val waitingForWifi = network == ExportNetwork.UNMETERED
             transientState.value = transientState.value.copy(
                 message = PodcastDetailMessage.ExportStarted(waitingForWifi),
             )

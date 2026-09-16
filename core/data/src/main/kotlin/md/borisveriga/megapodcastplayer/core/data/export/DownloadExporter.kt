@@ -1,7 +1,10 @@
 package md.borisveriga.megapodcastplayer.core.data.export
 
 import kotlinx.coroutines.flow.Flow
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
+import md.borisveriga.megapodcastplayer.core.model.filterBy
 
 /** Which half of a *Download and export* run is under way. */
 enum class ExportStage {
@@ -11,6 +14,46 @@ enum class ExportStage {
 
     /** Copying the downloaded audio into the folder. */
     COPYING,
+}
+
+/**
+ * The network a *Download and export* run waits for before it starts.
+ *
+ * A run that still has episodes to download can do nothing useful until the download stack can:
+ * with "Wi-Fi only" on and no Wi-Fi, Media3 holds every download back. Starting the run anyway would
+ * keep a foreground service up for hours doing nothing, which Android stops after six. So the run
+ * is not started until the network its downloads need is there, and is stopped (and later resumed,
+ * repeating nothing) if that network goes.
+ */
+enum class ExportNetwork {
+
+    /** Everything is already downloaded; the copy needs no network at all. */
+    NONE,
+
+    /** Downloads may use any connection. */
+    CONNECTED,
+
+    /** Downloads wait for Wi-Fi or another unmetered network. */
+    UNMETERED,
+}
+
+/**
+ * Decides which network a run over these episodes has to wait for.
+ *
+ * @param episodes the show's episodes, as stored.
+ * @param filter the show page's filter, which decides the run's episodes.
+ * @param unmeteredOnly the "Wi-Fi only" download setting.
+ * @return [ExportNetwork.NONE] when every episode the filter lists is already downloaded, otherwise
+ *   the network the download setting requires.
+ */
+fun exportNetworkFor(
+    episodes: List<Episode>,
+    filter: EpisodeFilter,
+    unmeteredOnly: Boolean,
+): ExportNetwork = when {
+    episodes.filterBy(filter).all { it.downloadState == DownloadState.COMPLETED } -> ExportNetwork.NONE
+    unmeteredOnly -> ExportNetwork.UNMETERED
+    else -> ExportNetwork.CONNECTED
 }
 
 /**
@@ -81,8 +124,15 @@ interface DownloadExporter {
      *   it, because the picker's own grant does not outlive the activity result.
      * @param folderName the name the user gave the folder the files go into.
      * @param filter the show page's filter when the user asked, which decides the episodes.
+     * @param network the network the run waits for before starting; see [exportNetworkFor].
      */
-    fun start(podcastId: String, treeUri: String, folderName: String, filter: EpisodeFilter)
+    fun start(
+        podcastId: String,
+        treeUri: String,
+        folderName: String,
+        filter: EpisodeFilter,
+        network: ExportNetwork,
+    )
 
     /**
      * Observes the current or most recent export of one show.

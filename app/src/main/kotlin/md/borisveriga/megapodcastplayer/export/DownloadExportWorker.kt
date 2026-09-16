@@ -34,9 +34,11 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
  * and long enough that the system would otherwise stop the process while they do. It runs in the
  * foreground for the same reason, with a progress notification that says what it is doing.
  *
- * The downloading itself is Media3's download service; this only waits for it. When the system
- * stops a run part way (a foreground time limit, say), WorkManager runs it again and nothing is
- * repeated: finished downloads are not asked for twice and copied files are recognised.
+ * The downloading itself is Media3's download service; this only waits for it. The scheduler holds
+ * the run back until the network its downloads need is there, so the foreground is spent on
+ * transfers and copying rather than on waiting for Wi-Fi. When the system stops a run part way (that
+ * network lost, or a foreground time limit), WorkManager runs it again and nothing is repeated:
+ * finished downloads are not asked for twice and copied files are recognised.
  *
  * It is handed the picked folder's URI, which a restore is not given: a folder the app holds a
  * *persistable* grant on is still writable whenever this runs, where a picked document is not. The

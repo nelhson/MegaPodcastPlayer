@@ -5,6 +5,7 @@ import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
@@ -45,6 +46,7 @@ class PodcastDetailExportTest : PodcastDetailViewModelFixture() {
                     "content://tree/music",
                     "Talks",
                     EpisodeFilter.UNPLAYED,
+                    ExportNetwork.NONE,
                 )
             }
             assertEquals(
@@ -67,18 +69,29 @@ class PodcastDetailExportTest : PodcastDetailViewModelFixture() {
             runCurrent()
 
             verify {
-                downloadExporter.start(podcast.id, "content://tree/music", "Talks", EpisodeFilter.UNPLAYED)
+                downloadExporter.start(
+                    podcast.id,
+                    "content://tree/music",
+                    "Talks",
+                    EpisodeFilter.UNPLAYED,
+                    any(),
+                )
             }
         }
 
     @Test
-    fun `starting says so when downloads wait for Wi-Fi`() = runTest {
+    fun `a run with downloads to make waits for Wi-Fi when downloads do, and says so`() = runTest {
+        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
         downloadSettings.value = DownloadSettings(unmeteredOnly = true)
         viewModel.uiState.test {
             awaitItem()
 
             viewModel.downloadAndExport("content://tree/music", "Talks")
+            runCurrent()
 
+            verify {
+                downloadExporter.start(any(), any(), any(), any(), ExportNetwork.UNMETERED)
+            }
             assertEquals(
                 PodcastDetailMessage.ExportStarted(waitingForWifi = true),
                 expectMostRecentItem().message,
@@ -88,13 +101,33 @@ class PodcastDetailExportTest : PodcastDetailViewModelFixture() {
     }
 
     @Test
+    fun `a run with nothing left to download waits for no network, and says nothing of Wi-Fi`() =
+        runTest {
+            episodes.value = listOf(episode("a", DownloadState.COMPLETED))
+            downloadSettings.value = DownloadSettings(unmeteredOnly = true)
+            viewModel.uiState.test {
+                awaitItem()
+
+                viewModel.downloadAndExport("content://tree/music", "Talks")
+                runCurrent()
+
+                verify { downloadExporter.start(any(), any(), any(), any(), ExportNetwork.NONE) }
+                assertEquals(
+                    PodcastDetailMessage.ExportStarted(waitingForWifi = false),
+                    expectMostRecentItem().message,
+                )
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `a blank folder name starts nothing`() = runTest {
         viewModel.uiState.test {
             awaitItem()
 
             viewModel.downloadAndExport("content://tree/music", "   ")
 
-            verify(exactly = 0) { downloadExporter.start(any(), any(), any(), any()) }
+            verify(exactly = 0) { downloadExporter.start(any(), any(), any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -107,7 +140,7 @@ class PodcastDetailExportTest : PodcastDetailViewModelFixture() {
 
             viewModel.downloadAndExport("content://tree/music", "Talks")
 
-            verify(exactly = 0) { downloadExporter.start(any(), any(), any(), any()) }
+            verify(exactly = 0) { downloadExporter.start(any(), any(), any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }

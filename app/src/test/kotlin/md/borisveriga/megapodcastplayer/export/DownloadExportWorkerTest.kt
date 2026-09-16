@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.export
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
@@ -16,6 +17,7 @@ import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.export.EpisodeAudioExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
@@ -131,6 +133,13 @@ class DownloadExportWorkerTest {
             ExportRun.Running(ExportProgress(0, 0, ExportStage.DOWNLOADING)),
             workInfo(WorkInfo.State.ENQUEUED).asExportRun(),
         )
+    }
+
+    @Test
+    fun `a run waits for the network its downloads need`() {
+        assertEquals(NetworkType.NOT_REQUIRED, ExportNetwork.NONE.asNetworkType())
+        assertEquals(NetworkType.CONNECTED, ExportNetwork.CONNECTED.asNetworkType())
+        assertEquals(NetworkType.UNMETERED, ExportNetwork.UNMETERED.asNetworkType())
     }
 
     @Test
