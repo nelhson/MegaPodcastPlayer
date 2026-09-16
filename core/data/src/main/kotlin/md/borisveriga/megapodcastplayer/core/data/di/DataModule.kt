@@ -6,6 +6,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapterSource
+import md.borisveriga.megapodcastplayer.core.data.export.DocumentTreeExportDirectory
+import md.borisveriga.megapodcastplayer.core.data.export.ExportDirectory
 import md.borisveriga.megapodcastplayer.core.data.repository.AutoDownloadScheduler
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultBackupRepository
@@ -122,4 +124,11 @@ abstract class DataModule {
     abstract fun bindsShowSettingsRepository(
         implementation: DefaultShowSettingsRepository,
     ): ShowSettingsRepository
+
+    /** The folder an export writes into: a Storage Access Framework tree the user picked. */
+    @Binds
+    @Singleton
+    abstract fun bindsExportDirectory(
+        implementation: DocumentTreeExportDirectory,
+    ): ExportDirectory
 }

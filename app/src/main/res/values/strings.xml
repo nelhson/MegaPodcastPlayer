@@ -53,6 +53,31 @@
     <string name="bell_text_unknown_episode">Your episode has ended. Playback is stopped.</string>
 
     <!--
+      Exporting a show's downloaded episodes to a folder, which runs in the background.
+
+      The progress notification is what the user sees if they leave the app during a long copy; the
+      finished one is what tells them it is safe to go and look in the folder.
+    -->
+    <string name="export_channel_name">Exporting episodes</string>
+    <string name="export_channel_description">Progress while downloaded episodes are copied to a folder</string>
+    <string name="export_progress_title">Exporting episodes…</string>
+    <!-- %1$d episodes done so far, %2$d in the export. -->
+    <string name="export_progress_text">%1$d of %2$d</string>
+    <string name="export_finished_title">Episodes exported</string>
+    <!-- Posted when the export could not reach the folder at all, so nothing was copied. -->
+    <string name="export_failed_title">Couldn\'t export episodes</string>
+    <string name="export_failed_text">Pick the folder again from the show\'s menu</string>
+    <plurals name="export_finished_text">
+        <item quantity="one">%1$d episode is in the folder</item>
+        <item quantity="other">%1$d episodes are in the folder</item>
+    </plurals>
+    <!-- %1$d episodes in the folder, %2$d that could not be copied; the plural follows %2$d. -->
+    <plurals name="export_finished_with_failures_text">
+        <item quantity="one">%1$d in the folder · %2$d could not be copied</item>
+        <item quantity="other">%1$d in the folder · %2$d could not be copied</item>
+    </plurals>
+
+    <!--
       The launcher's long-press shortcuts; see res/xml/shortcuts.xml.
 
       Short labels are one word wherever the destination has one, because a launcher truncates at

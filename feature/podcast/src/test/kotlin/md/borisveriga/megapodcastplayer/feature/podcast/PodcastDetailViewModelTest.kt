@@ -1,42 +1,20 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
-import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockk
 import java.time.Duration
-import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
-import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
-import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
-import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
-import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
-import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
-import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
-import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
-import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
-import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
-import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
-import md.borisveriga.megapodcastplayer.core.model.Podcast
-import md.borisveriga.megapodcastplayer.core.model.ShowSettings
-import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 
 /**
@@ -57,101 +35,7 @@ import org.junit.Test
  * business, not this one's.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class PodcastDetailViewModelTest {
-
-    @get:Rule
-    val mainDispatcherRule = MainDispatcherRule()
-
-    private val episodes = MutableStateFlow(emptyList<Episode>())
-    private val downloadSettings = MutableStateFlow(DownloadSettings())
-
-    private lateinit var repository: PodcastRepository
-    private lateinit var episodePlayer: EpisodePlayer
-    private lateinit var downloadRepository: DownloadRepository
-    private lateinit var viewModel: PodcastDetailViewModel
-
-    private val podcast = Podcast(
-        id = "podcast-1",
-        itunesId = null,
-        title = "Podlodka Podcast",
-        author = "Егор Толстой",
-        feedUrl = "https://example.com/feed.rss",
-        artworkUrl = null,
-        description = "",
-        addedAt = Instant.EPOCH,
-        lastRefreshAt = null,
-        etag = null,
-        lastModified = null,
-        autoRefresh = true,
-    )
-
-    private fun episode(
-        id: String,
-        downloadState: DownloadState,
-        isPlayed: Boolean = false,
-    ) = Episode(
-        id = id,
-        podcastId = podcast.id,
-        guid = "guid-$id",
-        title = "Episode $id",
-        description = "",
-        audioUrl = "https://cdn.example.com/$id.mp3",
-        artworkUrl = null,
-        durationMs = 60_000L,
-        publishedAt = Instant.EPOCH,
-        sizeBytes = null,
-        isPlayed = isPlayed,
-        downloadState = downloadState,
-    )
-
-    private lateinit var chapterResolver: ChapterResolver
-    private lateinit var showSettings: ShowSettingsRepository
-    private lateinit var playbackRepository: PlaybackRepository
-    private val storedSettings = MutableStateFlow(ShowSettings.DEFAULT)
-    private lateinit var connection: PlaybackConnection
-    private val playbackState = MutableStateFlow(PlaybackState())
-
-    @Before
-    fun setUp() {
-        repository = mockk(relaxed = true)
-        episodePlayer = mockk(relaxed = true)
-        downloadRepository = mockk(relaxed = true)
-        chapterResolver = mockk(relaxed = true)
-        showSettings = mockk(relaxed = true)
-        playbackRepository = mockk(relaxed = true)
-        every { playbackRepository.observePlaybackSettings() } returns flowOf(PlaybackSettings())
-        connection = mockk(relaxed = true)
-
-        // Another source `combine` waits on; unstubbed it would hold the whole screen at its
-        // initial value, which is the same trap the player's state is stubbed for below.
-        every { showSettings.observeSettings(any()) } returns storedSettings
-        coEvery { showSettings.update(any(), any()) } answers {
-            storedSettings.value = secondArg<(ShowSettings) -> ShowSettings>()(storedSettings.value)
-        }
-
-        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters()
-        // The screen combines this in, and `combine` emits nothing until every source has emitted
-        // once — an unstubbed player would freeze the whole screen at its initial value.
-        every { connection.playbackState } returns playbackState
-
-        every { repository.observePodcast(any()) } returns flowOf(podcast)
-        every { repository.observeEpisodes(any()) } returns episodes
-        every { downloadRepository.observeDownloadSettings() } returns downloadSettings
-        coEvery { downloadRepository.download(any()) } returns true
-
-        viewModel = PodcastDetailViewModel(
-            repository = repository,
-            episodePlayer = episodePlayer,
-            downloadRepository = downloadRepository,
-            chapterResolver = chapterResolver,
-            showSettings = showSettings,
-            playbackRepository = playbackRepository,
-            connection = connection,
-            savedStateHandle = SavedStateHandle(
-                mapOf(PodcastDetailViewModel.PODCAST_ID_ARG to podcast.id),
-            ),
-        )
-    }
+class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
 
     @Test
     fun `the sort order is remembered against this show`() = runTest {

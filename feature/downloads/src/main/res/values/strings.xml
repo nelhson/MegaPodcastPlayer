@@ -36,6 +36,8 @@
     <string name="downloads_action_cancel">Cancel download</string>
     <!-- Only on a row that is actually waiting for Wi-Fi. Kept short: it is drawn under an icon. -->
     <string name="downloads_action_download_now">Download now</string>
+    <!-- Only on a failed row. Tapping the row plays it; the swipe is what asks for it again. -->
+    <string name="downloads_action_retry">Try again</string>
 
     <!-- A drag is invisible to a screen reader, so the reorder is published as these two actions. -->
     <string name="downloads_move_up">Move up</string>
@@ -64,16 +66,11 @@
 
     <!--
         DL-3: what removes an episode from the device without being asked. Drawn as one line under
-        the storage bar, on the screen the question "why did that disappear" is asked on.
+        the storage bar, on the screen the question "why did that disappear" is asked on. One rule
+        only: the per-show limit bounds what a refresh downloads and never deletes anything.
     -->
-    <plurals name="downloads_rules_keep">
-        <item quantity="one">Keeps the newest episode of each show</item>
-        <item quantity="other">Keeps the newest %1$d episodes of each show</item>
-    </plurals>
-    <string name="downloads_rules_delete_played">deletes an episode when you finish it</string>
-    <!-- Joins the two rules (%1$s and %2$s) so a translator can re-punctuate the line. -->
-    <string name="downloads_rules_combined">%1$s · %2$s</string>
-    <!-- Both rules off: still stated, because "nothing" is an answer to the same question. -->
+    <string name="downloads_rules_delete_played">Deletes an episode when you finish it</string>
+    <!-- The rule off: still stated, because "nothing" is an answer to the same question. -->
     <string name="downloads_rules_none">Nothing is deleted automatically</string>
     <!-- Spoken as what activating the line does; the chevron says it to everyone else. -->
     <string name="downloads_rules_action">Change in settings</string>
@@ -92,8 +89,8 @@
     <string name="downloads_state_queued">Waiting to download</string>
     <!-- Wi-Fi only is on by default, so this is the usual reason a download has not started. -->
     <string name="downloads_state_queued_wifi">Waiting for Wi-Fi</string>
-    <!-- Names the action, because tapping the row is what retries it. -->
-    <string name="downloads_state_failed">Download failed — tap to try again</string>
+    <!-- Names the way out, because a tap plays the row rather than retrying it. -->
+    <string name="downloads_state_failed">Download failed — swipe to try again</string>
 
     <!--
         Said after "Download now". Names the wider effect on purpose: Media3 enforces one network
@@ -110,5 +107,11 @@
     <string name="downloads_message_retry_queued">Downloading \"%1$s\" again</string>
     <string name="downloads_message_retry_queued_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="downloads_message_unavailable">That episode is no longer in your library</string>
+
+    <!-- The top bar action that saves the finished downloads as a Markdown list, one link each. -->
+    <string name="downloads_export_list">Export download list</string>
+    <string name="downloads_message_list_exported">Download list exported</string>
+    <string name="downloads_message_list_export_failed">Could not write that file</string>
+    <string name="downloads_message_nothing_to_export">Nothing has finished downloading yet</string>
 
 </resources>

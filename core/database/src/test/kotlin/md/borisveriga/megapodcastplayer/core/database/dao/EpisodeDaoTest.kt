@@ -183,6 +183,79 @@ class EpisodeDaoTest {
     }
 
     @Test
+    fun `getDownloadedForExport lists one show's finished downloads oldest first`() = runTest {
+        podcastDao.upsert(podcast)
+        podcastDao.upsert(podcast.copy(id = "other", feedUrl = "https://example.com/other"))
+        episodeDao.upsertFromFeed(
+            listOf(
+                episode("new", publishedAt = 3_000L),
+                episode("undated", publishedAt = null),
+                episode("old", publishedAt = 1_000L),
+                episode("partial", publishedAt = 2_000L),
+            ),
+        )
+        episodeDao.upsertFromFeed(listOf(episode("elsewhere").copy(podcastId = "other")))
+        listOf("new", "undated", "old", "elsewhere").forEach { id ->
+            episodeDao.updateDownloadState(id, DownloadState.COMPLETED, 5_000L, 100f)
+        }
+        episodeDao.updateDownloadState("partial", DownloadState.DOWNLOADING, 1_000L, 20f)
+
+        assertEquals(
+            listOf("old", "new", "undated"),
+            episodeDao.getDownloadedForExport(podcast.id).map { it.id },
+        )
+    }
+
+    @Test
+    fun `getDownloadList joins the show and lists only finished downloads`() = runTest {
+        podcastDao.upsert(podcast)
+        podcastDao.upsert(
+            podcast.copy(id = "other", title = "Other", feedUrl = "https://example.com/other"),
+        )
+        episodeDao.upsertFromFeed(
+            listOf(episode("measured"), episode("unmeasured"), episode("partial")),
+        )
+        episodeDao.upsertFromFeed(listOf(episode("elsewhere").copy(podcastId = "other")))
+        episodeDao.updateDownloadState("measured", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.updateDownloadState("unmeasured", DownloadState.COMPLETED, 0L, 100f)
+        episodeDao.updateDownloadState("elsewhere", DownloadState.COMPLETED, 7_000L, 100f)
+        episodeDao.updateDownloadState("partial", DownloadState.DOWNLOADING, 1_000L, 20f)
+
+        val all = episodeDao.getDownloadList(podcastId = null).associateBy { it.episodeTitle }
+
+        assertEquals(setOf("Episode measured", "Episode unmeasured", "Episode elsewhere"), all.keys)
+        val measured = checkNotNull(all["Episode measured"])
+        assertEquals(podcast.title, measured.showTitle)
+        assertEquals(podcast.feedUrl, measured.feedUrl)
+        assertEquals("https://cdn.example.com/measured.mp3", measured.audioUrl)
+        // Bytes on disk when the download recorded them, the feed's size otherwise.
+        assertEquals(5_000L, measured.sizeBytes)
+        assertEquals(1_000L, all["Episode unmeasured"]?.sizeBytes)
+        assertEquals(
+            listOf("Episode elsewhere"),
+            episodeDao.getDownloadList(podcastId = "other").map { it.episodeTitle },
+        )
+    }
+
+    @Test
+    fun `getDownloadedForExport follows a hand ordered show's own order`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("a", publishedAt = 1L), episode("b", publishedAt = 2L), episode("c")),
+            handOrdered = true,
+        )
+        episodeDao.reorder(listOf("c", "a", "b"))
+        listOf("a", "b", "c").forEach { id ->
+            episodeDao.updateDownloadState(id, DownloadState.COMPLETED, 5_000L, 100f)
+        }
+
+        assertEquals(
+            listOf("c", "a", "b"),
+            episodeDao.getDownloadedForExport(podcast.id).map { it.id },
+        )
+    }
+
+    @Test
     fun `a refresh that omits the duration keeps the one the player measured`() = runTest {
         podcastDao.upsert(podcast)
         // The feed publishes no itunes:duration, so the player fills it in while streaming.

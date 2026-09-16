@@ -139,6 +139,8 @@ class PodcastDetailScreenTest {
                     onRefresh = {},
                     onRebuild = onRebuild,
                     onRemove = onRemove,
+                    onExportDownloads = {},
+                    onExportDownloadList = {},
                     onMessageShown = {},
                 )
             }

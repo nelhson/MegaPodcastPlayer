@@ -1,8 +1,11 @@
 package md.borisveriga.megapodcastplayer.feature.downloads
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -16,7 +19,6 @@ import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
-import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
@@ -82,13 +84,15 @@ class DownloadsScreenTest {
     private fun setScreen(
         downloads: List<EpisodeWithShow>,
         unmeteredOnly: Boolean = true,
+        onEpisodeClick: (String) -> Unit = {},
+        onEpisodeRetry: (String) -> Unit = {},
         onEpisodeRemove: (String) -> Unit = {},
         onEpisodeQueue: (String) -> Unit = {},
         onEpisodeDownloadNow: (String) -> Unit = {},
         onMove: (List<String>, Int, Int) -> Unit = { _, _, _ -> },
         onOpenSettings: () -> Unit = {},
+        onExportList: () -> Unit = {},
         scrollToTopSignal: Int = 0,
-        keepLimitPerPodcast: Int = DownloadSettings.KEEP_ALL,
         deleteAfterPlaying: Boolean = false,
     ) {
         composeRule.setContent {
@@ -105,12 +109,11 @@ class DownloadsScreenTest {
                         totalBytes = 90_000_000L,
                         freeBytes = 4_000_000_000L,
                         unmeteredOnly = unmeteredOnly,
-                        keepLimitPerPodcast = keepLimitPerPodcast,
                         deleteAfterPlaying = deleteAfterPlaying,
                         isLoading = false,
                     ),
-                    onEpisodeClick = {},
-                    onEpisodeRetry = {},
+                    onEpisodeClick = onEpisodeClick,
+                    onEpisodeRetry = onEpisodeRetry,
                     onEpisodeDownloadNow = onEpisodeDownloadNow,
                     onEpisodeRemove = onEpisodeRemove,
                     onEpisodeQueue = onEpisodeQueue,
@@ -119,6 +122,7 @@ class DownloadsScreenTest {
                     onBrowseLibrary = {},
                     onMessageShown = {},
                     onOpenSettings = onOpenSettings,
+                    onExportList = onExportList,
                     scrollToTopSignal = scrollToTopSignal,
                 )
             }
@@ -126,35 +130,20 @@ class DownloadsScreenTest {
     }
 
     /**
-     * DL-3. An episode that was here on Monday and gone on Tuesday was removed by one of two rules
-     * the user set once and has not thought about since, and this screen — the one it vanished
-     * from — used to say nothing about either.
+     * DL-3. An episode that was here on Monday and gone on Tuesday was removed by a rule the user
+     * set once and has not thought about since, and this screen — the one it vanished from — used
+     * to say nothing about it. Only the delete-after-playing rule is named: the per-show limit
+     * bounds what a refresh downloads and deletes nothing, so it does not belong on this line.
      */
     @Test
     fun `the storage card says what removes an episode`() {
         setScreen(
             listOf(download("a", DownloadState.COMPLETED)),
-            keepLimitPerPodcast = 3,
             deleteAfterPlaying = true,
         )
 
-        composeRule
-            .onNodeWithText(
-                "Keeps the newest 3 episodes of each show · " +
-                    "deletes an episode when you finish it",
-            )
-            .assertExists()
-    }
-
-    @Test
-    fun `only the rule in force is named`() {
-        setScreen(
-            listOf(download("a", DownloadState.COMPLETED)),
-            keepLimitPerPodcast = DownloadSettings.KEEP_ALL,
-            deleteAfterPlaying = true,
-        )
-
-        composeRule.onNodeWithText("deletes an episode when you finish it").assertExists()
+        composeRule.onNodeWithText("Deletes an episode when you finish it").assertExists()
+        composeRule.onNodeWithText("Keeps the newest", substring = true).assertDoesNotExist()
     }
 
     /**
@@ -165,7 +154,6 @@ class DownloadsScreenTest {
     fun `no rule in force still says so`() {
         setScreen(
             listOf(download("a", DownloadState.COMPLETED)),
-            keepLimitPerPodcast = DownloadSettings.KEEP_ALL,
             deleteAfterPlaying = false,
         )
 
@@ -182,7 +170,7 @@ class DownloadsScreenTest {
             deleteAfterPlaying = true,
         )
 
-        composeRule.onNodeWithText("deletes an episode when you finish it").performClick()
+        composeRule.onNodeWithText("Deletes an episode when you finish it").performClick()
 
         assertTrue(opened)
     }
@@ -218,7 +206,67 @@ class DownloadsScreenTest {
     fun `a failed download is visible and names the way out`() {
         setScreen(listOf(download("a", state = DownloadState.FAILED)))
 
-        composeRule.onNodeWithText("Download failed — tap to try again").assertExists()
+        composeRule.onNodeWithText("Download failed — swipe to try again").assertExists()
+    }
+
+    /**
+     * A row here is an episode the user asked for, so a tap on it plays it in every state: what is
+     * not on the device yet is streamed, and the download carries on underneath. A tap used to
+     * retry a failed row and do nothing on a running one.
+     */
+    @Test
+    fun `tapping a row plays it whatever its download is doing`() {
+        val played = mutableListOf<String>()
+        setScreen(
+            listOf(
+                download("done"),
+                download("moving", state = DownloadState.DOWNLOADING, downloadPercent = 42f),
+                download("waiting", state = DownloadState.QUEUED),
+                download("broken", state = DownloadState.FAILED),
+            ),
+            onEpisodeClick = { played += it },
+        )
+
+        listOf("done", "moving", "waiting", "broken").forEach { id ->
+            composeRule.onNodeWithText("Episode $id").performClick()
+        }
+
+        assertEquals(listOf("done", "moving", "waiting", "broken"), played)
+    }
+
+    @Test
+    fun `a failed download is retried from its swipe, not its tap`() {
+        var retried: String? = null
+        var played: String? = null
+        setScreen(
+            listOf(download("a", state = DownloadState.FAILED)),
+            onEpisodeClick = { played = it },
+            onEpisodeRetry = { retried = it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityActionWithLabel("Try again")
+
+        assertEquals("a", retried)
+        assertNull(played)
+    }
+
+    @Test
+    fun `only a failed download offers to try again`() {
+        setScreen(
+            listOf(
+                download("done"),
+                download("moving", state = DownloadState.DOWNLOADING, downloadPercent = 42f),
+            ),
+        )
+
+        listOf("done", "moving").forEach { id ->
+            val actions = composeRule.onNodeWithText("Episode $id")
+                .fetchSemanticsNode()
+                .config
+                .getOrNull(SemanticsActions.CustomActions)
+                .orEmpty()
+            assertTrue(actions.none { it.label == "Try again" })
+        }
     }
 
     @Test
@@ -499,5 +547,25 @@ class DownloadsScreenTest {
         composeRule.onNodeWithContentDescription("Settings").performClick()
 
         assertTrue(opened)
+    }
+
+    @Test
+    fun `the download list export needs a finished download`() {
+        var exported = false
+        setScreen(
+            downloads = listOf(download("a", DownloadState.COMPLETED)),
+            onExportList = { exported = true },
+        )
+
+        composeRule.onNodeWithContentDescription("Export download list").performClick()
+
+        assertTrue(exported)
+    }
+
+    @Test
+    fun `the download list export is off while nothing has finished`() {
+        setScreen(downloads = listOf(download("a", DownloadState.DOWNLOADING, downloadPercent = 40f)))
+
+        composeRule.onNodeWithContentDescription("Export download list").assertIsNotEnabled()
     }
 }

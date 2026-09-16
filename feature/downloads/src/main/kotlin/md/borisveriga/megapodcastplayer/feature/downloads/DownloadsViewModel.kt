@@ -1,8 +1,12 @@
 package md.borisveriga.megapodcastplayer.feature.downloads
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Clock
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -10,10 +14,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
+import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
-import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
@@ -38,11 +43,10 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  *   zero if the read fails, in which case the bar shows only the stored share.
  * @property unmeteredOnly whether downloads wait for Wi-Fi, which is what lets a waiting row say
  *   why it is waiting rather than just that it is.
- * @property keepLimitPerPodcast how many downloads a show is allowed to keep, or
- *   [DownloadSettings.KEEP_ALL] for no sweep at all. Here so the storage card can say what removes
- *   an episode, which is the question this screen provokes and used to answer nowhere (DL-3).
- * @property deleteAfterPlaying whether finishing an episode deletes its audio, the other half of
- *   the same answer.
+ * @property deleteAfterPlaying whether finishing an episode deletes its audio. Here so the storage
+ *   card can say what removes an episode, which is the question this screen provokes and used to
+ *   answer nowhere (DL-3). It is the only rule that does: the per-show limit bounds what a refresh
+ *   downloads and never deletes.
  * @property isLoading true until the first database emission arrives.
  * @property isRefreshing true while a pull-to-refresh is re-reading the storage figures; drives
  *   the gesture's own spinner, which is the only feedback it has.
@@ -56,7 +60,6 @@ data class DownloadsUiState(
     val totalBytes: Long = 0L,
     val freeBytes: Long = 0L,
     val unmeteredOnly: Boolean = false,
-    val keepLimitPerPodcast: Int = DownloadSettings.KEEP_ALL,
     val deleteAfterPlaying: Boolean = false,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
@@ -116,6 +119,15 @@ sealed interface DownloadsMessage {
      * Only reachable when the show is removed between the list rendering and the tap landing.
      */
     data object EpisodeUnavailable : DownloadsMessage
+
+    /** The download list was written to the file the user picked. */
+    data object ListExported : DownloadsMessage
+
+    /** The download list could not be written to the file the user picked. */
+    data object ListExportFailed : DownloadsMessage
+
+    /** Nothing has finished downloading, so there was no list to write. */
+    data object NothingToExport : DownloadsMessage
 }
 
 /**
@@ -127,11 +139,15 @@ sealed interface DownloadsMessage {
  *
  * @property downloadRepository the tracked episodes and the operations that retry and remove them.
  * @property episodePlayer starts playback and edits the queue from an episode id.
+ * @property fileStore writes the exported download list to the document the user picked.
+ * @property clock dates the suggested file name of that export.
  */
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
     private val episodePlayer: EpisodePlayer,
+    private val fileStore: BackupFileStore,
+    private val clock: Clock,
 ) : ViewModel() {
 
     private val transientState = MutableStateFlow<DownloadsMessage?>(null)
@@ -170,7 +186,6 @@ class DownloadsViewModel @Inject constructor(
             totalBytes = completed.sumOf { it.episode.downloadedBytes },
             freeBytes = free,
             unmeteredOnly = settings.unmeteredOnly,
-            keepLimitPerPodcast = settings.keepLimitPerPodcast,
             deleteAfterPlaying = settings.deleteAfterPlaying,
             isLoading = false,
             isRefreshing = isRefreshing,
@@ -185,7 +200,12 @@ class DownloadsViewModel @Inject constructor(
     )
 
     /**
-     * Plays a downloaded episode, resuming from wherever it was left.
+     * Plays a tracked episode, resuming from wherever it was left.
+     *
+     * Not only a finished one: a row still downloading, waiting or failed plays too, streamed from
+     * the same URL the download is fetching. The player reads through the download cache, so what
+     * has already arrived is served from disk and the rest from the network, and the transfer is
+     * neither paused nor restarted by the playback.
      *
      * @param episodeId the episode to play.
      * @param onPlaying invoked once playback has been handed to the player, so the caller can open
@@ -333,6 +353,37 @@ class DownloadsViewModel @Inject constructor(
         viewModelScope.launch { downloadRepository.reorderDownloads(reordered) }
     }
 
+    /**
+     * The file name to suggest when the picker asks where to put the download list.
+     *
+     * @return a name carrying today's date, so a folder of exports sorts by date.
+     */
+    fun suggestedFileName(): String =
+        FILE_NAME_PREFIX +
+            FILE_NAME_DATE.format(clock.instant().atZone(ZoneId.systemDefault())) +
+            FILE_NAME_SUFFIX
+
+    /**
+     * Writes the finished downloads as a Markdown list to the document the user created.
+     *
+     * Nothing is written when nothing has finished downloading, so the file the user named is never
+     * left with only a heading in it.
+     *
+     * @param uri the document the picker returned.
+     */
+    fun exportListTo(uri: Uri) {
+        viewModelScope.launch {
+            // The read fails only when the database does, and the user is told either way.
+            val markdown = suspendRunCatching { downloadRepository.exportListMarkdown() }
+            transientState.value = when {
+                markdown.isFailure -> DownloadsMessage.ListExportFailed
+                markdown.getOrThrow().isEmpty() -> DownloadsMessage.NothingToExport
+                fileStore.write(uri, markdown.getOrThrow()).isSuccess -> DownloadsMessage.ListExported
+                else -> DownloadsMessage.ListExportFailed
+            }
+        }
+    }
+
     /** Clears the current [DownloadsUiState.message] once its snackbar has been shown. */
     fun onMessageShown() {
         transientState.value = null
@@ -349,5 +400,14 @@ class DownloadsViewModel @Inject constructor(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
+
+        /** ISO order, hyphen-separated, so every document provider accepts the name as it is. */
+        val FILE_NAME_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+        /** Prefix of the suggested file name. */
+        const val FILE_NAME_PREFIX = "megapodcastplayer-downloads-"
+
+        /** Suffix of the suggested file name. */
+        const val FILE_NAME_SUFFIX = ".md"
     }
 }

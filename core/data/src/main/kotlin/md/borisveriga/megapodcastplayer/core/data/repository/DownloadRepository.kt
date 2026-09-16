@@ -102,18 +102,19 @@ interface DownloadRepository {
      */
     suspend fun removeDownload(episodeId: String)
 
+    /**
+     * Writes the finished downloads as a Markdown list, grouped by show.
+     *
+     * The text companion to the audio export: the show, its feed URL and a link for every episode.
+     * See `downloadListMarkdown` in `:core:model` for the format.
+     *
+     * @param podcastId one show to list, or null for every show.
+     * @return the document, or an empty string when nothing is downloaded.
+     */
+    suspend fun exportListMarkdown(podcastId: String? = null): String
+
     /** Removes every download and frees all the storage they occupy. */
     suspend fun removeAllDownloads()
-
-    /**
-     * Applies the keep-limit to one show, removing its oldest downloads.
-     *
-     * Never removes a queued episode, however old: deleting audio the user is about to play is a
-     * worse outcome than briefly holding one more episode than the limit allows.
-     *
-     * @param podcastId the show to sweep.
-     */
-    suspend fun enforceKeepLimit(podcastId: String)
 
     /** Enables or disables downloading episodes as a feed refresh discovers them. */
     suspend fun setAutoDownloadNewEpisodes(enabled: Boolean)
@@ -121,7 +122,10 @@ interface DownloadRepository {
     /** Sets whether downloads wait for an unmetered network. */
     suspend fun setUnmeteredOnly(enabled: Boolean)
 
-    /** Sets how many downloaded episodes to keep per show; [DownloadSettings.KEEP_ALL] disables it. */
+    /**
+     * Sets how many newly discovered episodes auto-download fetches per show;
+     * [DownloadSettings.KEEP_ALL] lifts the bound.
+     */
     suspend fun setKeepLimitPerPodcast(limit: Int)
 
     /** Sets whether finishing an episode removes its downloaded audio. */

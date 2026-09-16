@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.mockk
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -24,7 +27,6 @@ import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloadStatus
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
-import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -97,9 +99,9 @@ class MediaDownloadRepositoryTest {
         downloader = mockk(relaxed = true)
         repository = MediaDownloadRepository(
             episodeDao = database.episodeDao(),
-            queueDao = database.queueDao(),
             userPreferences = preferences,
             downloader = downloader,
+            clock = Clock.fixed(Instant.parse("2026-09-16T12:00:00Z"), ZoneOffset.UTC),
             ioDispatcher = UnconfinedTestDispatcher(),
             // The scope the "download now" rule-restore waits on. A test scope of its own rather
             // than `backgroundScope`: the wait is meant to outlive the call that started it, and
@@ -215,51 +217,33 @@ class MediaDownloadRepositoryTest {
         assertTrue(database.episodeDao().observeDownloaded().first().isEmpty())
     }
 
+    /**
+     * A refresh used to end by sweeping a show's oldest downloads back down to the limit, which
+     * deleted what the user had saved by hand because a new episode arrived. The limit now bounds
+     * only what auto-download fetches; nothing on the device is touched.
+     */
     @Test
-    fun `the keep limit removes the oldest downloads only`() = runTest {
+    fun `a refresh never removes a download already on the device`() = runTest {
         database.episodeDao().upsertFromFeed(
-            listOf(episode("new", 3_000L), episode("mid", 2_000L), episode("old", 1_000L)),
+            listOf(
+                episode("newest", 4_000L),
+                episode("new", 3_000L),
+                episode("mid", 2_000L),
+                episode("old", 1_000L),
+            ),
         )
         markDownloaded("new", "mid", "old")
-        preferences.setKeepLimitPerPodcast(2)
+        preferences.setAutoDownloadNewEpisodes(true)
+        preferences.setKeepLimitPerPodcast(1)
 
-        repository.enforceKeepLimit(podcast.id)
+        repository.onEpisodesDiscovered(podcast.id, listOf("newest"))
 
-        coVerify { downloader.remove("old", any()) }
-        coVerify(exactly = 0) { downloader.remove("new", any()) }
-        coVerify(exactly = 0) { downloader.remove("mid", any()) }
+        coVerify { downloader.download("newest", any(), false) }
+        coVerify(exactly = 0) { downloader.remove(any(), any()) }
         assertEquals(
-            listOf("new", "mid"),
+            listOf("new", "mid", "old"),
             database.episodeDao().observeDownloaded().first().map { it.id },
         )
-    }
-
-    @Test
-    fun `the keep limit never removes a queued episode`() = runTest {
-        database.episodeDao().upsertFromFeed(
-            listOf(episode("new", 3_000L), episode("mid", 2_000L), episode("old", 1_000L)),
-        )
-        markDownloaded("new", "mid", "old")
-        preferences.setKeepLimitPerPodcast(1)
-        // The user is about to listen to the oldest one; deleting it out from under them would be
-        // worse than holding one episode more than they asked for.
-        database.queueDao().enqueue("old")
-
-        repository.enforceKeepLimit(podcast.id)
-
-        coVerify(exactly = 0) { downloader.remove("old", any()) }
-        coVerify { downloader.remove("mid", any()) }
-    }
-
-    @Test
-    fun `keep-all sweeps nothing`() = runTest {
-        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L), episode("b", 2_000L)))
-        markDownloaded("a", "b")
-        preferences.setKeepLimitPerPodcast(DownloadSettings.KEEP_ALL)
-
-        repository.enforceKeepLimit(podcast.id)
-
-        coVerify(exactly = 0) { downloader.remove(any(), any()) }
     }
 
     @Test
@@ -402,6 +386,28 @@ class MediaDownloadRepositoryTest {
                 repository.observeDownloads().first().map { it.episode.id },
             )
         }
+
+    @Test
+    fun `the download list is empty when nothing has finished downloading`() = runTest {
+        database.episodeDao().insertIgnoringExisting(listOf(episode("e1", publishedAt = 1L)))
+
+        assertEquals("", repository.exportListMarkdown())
+    }
+
+    @Test
+    fun `the download list names each finished episode under its show`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L), episode("b", 2_000L)))
+        markDownloaded("a")
+
+        val document = repository.exportListMarkdown()
+
+        assertTrue(document, document.startsWith("# MegaPodcastPlayer downloads\n"))
+        assertTrue(document, document.contains("## Podlodka Podcast\n\nFeed: <${podcast.feedUrl}>"))
+        assertTrue(document, document.contains("- **Episode a** — "))
+        assertFalse(document, document.contains("Episode b"))
+        assertEquals(document, repository.exportListMarkdown(podcastId = podcast.id))
+        assertEquals("", repository.exportListMarkdown(podcastId = "someone-else"))
+    }
 
     /** Marks [ids] as fully downloaded, as a completed Media3 event would. */
     private suspend fun markDownloaded(vararg ids: String) {

@@ -180,6 +180,33 @@
     <string name="podcast_message_marked_unplayed">Marked \"%1$s\" unplayed</string>
     <string name="podcast_undo">Undo</string>
 
+    <!--
+        Exporting the show's downloaded episodes as ordinary audio files, into a folder the user
+        picks. The menu entry changes to the running form while an export is copying, so it cannot
+        be started twice; %1$d is episodes done, %2$d episodes in the export.
+    -->
+    <string name="podcast_export_downloads">Export downloads</string>
+    <string name="podcast_exporting">Exporting…</string>
+    <string name="podcast_exporting_progress">Exporting %1$d of %2$d…</string>
+    <string name="podcast_message_export_started">Exporting downloads to the folder you picked</string>
+    <!-- %1$d is how many of the show's episodes are now in the folder. -->
+    <plurals name="podcast_message_exported">
+        <item quantity="one">Exported %1$d episode</item>
+        <item quantity="other">Exported %1$d episodes</item>
+    </plurals>
+    <!-- %1$d episodes in the folder, %2$d that could not be copied; the plural follows %2$d. -->
+    <plurals name="podcast_message_exported_with_failures">
+        <item quantity="one">Exported %1$d · %2$d episode could not be copied</item>
+        <item quantity="other">Exported %1$d · %2$d episodes could not be copied</item>
+    </plurals>
+    <string name="podcast_message_export_failed">Couldn\'t export. Pick the folder again.</string>
+
+    <!-- Saves the show's finished downloads as a Markdown list: the feed, and a link per episode. -->
+    <string name="podcast_export_download_list">Export download list</string>
+    <string name="podcast_message_download_list_exported">Download list exported</string>
+    <string name="podcast_message_download_list_export_failed">Couldn\'t write the download list</string>
+    <string name="podcast_message_download_list_empty">Nothing from this show has finished downloading yet</string>
+
 
     <!--
         The episode sheet: an episode read rather than played.

@@ -58,7 +58,12 @@
     <string name="settings_unmetered_title">Wi-Fi only</string>
     <string name="settings_unmetered_description">Wait for an unmetered network before downloading</string>
 
-    <string name="settings_keep_limit_title">Episodes to keep per show</string>
+    <!--
+        Bounds what "Download new episodes" fetches when a refresh finds several at once; it never
+        deletes. It used to read "Episodes to keep per show", back when a refresh also swept a
+        show's older downloads down to it.
+    -->
+    <string name="settings_keep_limit_title">New episodes to download per show</string>
 
     <string name="settings_delete_after_playing_title">Delete after playing</string>
     <string name="settings_delete_after_playing_description">Free up storage when an episode finishes</string>

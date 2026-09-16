@@ -4,6 +4,10 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +27,8 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
@@ -73,10 +79,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
+import java.time.LocalDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
 import md.borisveriga.megapodcastplayer.core.common.format.toPlainText
+import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
@@ -171,6 +179,8 @@ fun PodcastDetailRoute(
         onRefresh = viewModel::refresh,
         onRebuild = viewModel::rebuild,
         onRemove = viewModel::removePodcast,
+        onExportDownloads = viewModel::exportDownloads,
+        onExportDownloadList = viewModel::exportDownloadList,
         onMessageShown = viewModel::onMessageShown,
         showBackButton = showBackButton,
         modifier = modifier,
@@ -206,6 +216,10 @@ fun PodcastDetailRoute(
  *   pull does now. The screen confirms first whenever the show has anything to lose, so this is
  *   only ever called on an empty hand or once the user has said yes.
  * @param onRemove remove-show handler.
+ * @param onExportDownloads starts copying the show's downloaded episodes into the folder the user
+ *   just picked, given as the picker's tree URI.
+ * @param onExportDownloadList writes the show's download list as Markdown to the document the user
+ *   just created.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
  * @param showBackButton whether to render the back arrow.
@@ -231,6 +245,8 @@ fun PodcastDetailScreen(
     onRefresh: () -> Unit,
     onRebuild: () -> Unit,
     onRemove: () -> Unit,
+    onExportDownloads: (String) -> Unit,
+    onExportDownloadList: (Uri) -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
@@ -258,6 +274,11 @@ fun PodcastDetailScreen(
     val feedClipLabel = stringResource(R.string.podcast_feed_clip_label)
 
     val undoLabel = stringResource(R.string.podcast_undo)
+
+    val exportFolderPicker = rememberExportFolderPicker(onExportDownloads)
+    val downloadListPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(DOWNLOAD_LIST_MIME_TYPE),
+    ) { uri -> uri?.let(onExportDownloadList) }
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
@@ -374,6 +395,14 @@ fun PodcastDetailScreen(
                                 )
                             },
                             onOpenSettings = { showSettingsOpen = true },
+                            canExport = uiState.hasDownloads,
+                            exportProgress = uiState.exportProgress,
+                            onExportDownloads = { exportFolderPicker.launch(null) },
+                            onExportDownloadList = {
+                                downloadListPicker.launch(
+                                    downloadListFileName(uiState.podcast.title, LocalDate.now()),
+                                )
+                            },
                             onRemove = onRemove,
                         )
                     }
@@ -1013,6 +1042,12 @@ private fun FilterEmptyState(onShowAll: () -> Unit, modifier: Modifier = Modifie
  *   opened in a browser is a page of XML, and what it is actually for is being pasted into another
  *   podcast app.
  * @param onOpenSettings opens the per-show settings sheet.
+ * @param canExport whether any episode is downloaded. The export entry is disabled rather than
+ *   hidden without one, so it can be found before the first download.
+ * @param exportProgress how far a running export has got, or null. While one runs the entry says so
+ *   and cannot start another.
+ * @param onExportDownloads opens the folder picker for an export.
+ * @param onExportDownloadList opens the file picker for the download list, a Markdown file.
  * @param onRemove remove-show handler.
  */
 @Composable
@@ -1020,6 +1055,10 @@ private fun OverflowMenu(
     onShare: () -> Unit,
     onCopyFeed: () -> Unit,
     onOpenSettings: () -> Unit,
+    canExport: Boolean,
+    exportProgress: ExportProgress?,
+    onExportDownloads: () -> Unit,
+    onExportDownloadList: () -> Unit,
     onRemove: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -1062,6 +1101,43 @@ private fun OverflowMenu(
             },
         )
         DropdownMenuItem(
+            text = {
+                Text(
+                    text = when {
+                        exportProgress == null -> stringResource(R.string.podcast_export_downloads)
+
+                        exportProgress.total == 0 -> stringResource(R.string.podcast_exporting)
+
+                        else -> stringResource(
+                            R.string.podcast_exporting_progress,
+                            exportProgress.done,
+                            exportProgress.total,
+                        )
+                    },
+                )
+            },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.DriveFileMove, contentDescription = null)
+            },
+            enabled = canExport && exportProgress == null,
+            onClick = {
+                expanded = false
+                onExportDownloads()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.podcast_export_download_list)) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Description, contentDescription = null)
+            },
+            // Not blocked by a running audio export: the list reads the database, not the files.
+            enabled = canExport,
+            onClick = {
+                expanded = false
+                onExportDownloadList()
+            },
+        )
+        DropdownMenuItem(
             text = { Text(text = stringResource(R.string.podcast_remove)) },
             leadingIcon = {
                 Icon(imageVector = Icons.Rounded.Delete, contentDescription = null)
@@ -1073,6 +1149,21 @@ private fun OverflowMenu(
         )
     }
 }
+
+/**
+ * The system folder picker an export starts from.
+ *
+ * A folder rather than a file, because an export is one file per episode. The exporter makes the
+ * grant it returns persistable, since the copying runs long after this result has been delivered.
+ *
+ * @param onPicked receives the picked folder's tree URI; not called when the picker is cancelled.
+ * @return the launcher; launch it with no starting folder.
+ */
+@Composable
+private fun rememberExportFolderPicker(onPicked: (String) -> Unit) =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
+        if (treeUri != null) onPicked(treeUri.toString())
+    }
 
 /**
  * The confirmation shown before the episode list is deleted and fetched again.
@@ -1343,7 +1434,46 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
         },
         title,
     )
+
+    PodcastDetailMessage.ExportStarted ->
+        resources.getString(R.string.podcast_message_export_started)
+
+    is PodcastDetailMessage.ExportFinished -> {
+        // Files already there from an earlier export count: they are in the folder, which is what
+        // the user asked for.
+        val inFolder = summary.exported + summary.alreadyThere
+        if (summary.failed == 0) {
+            resources.getQuantityString(R.plurals.podcast_message_exported, inFolder, inFolder)
+        } else {
+            resources.getQuantityString(
+                R.plurals.podcast_message_exported_with_failures,
+                summary.failed,
+                inFolder,
+                summary.failed,
+            )
+        }
+    }
+
+    PodcastDetailMessage.ExportFailed ->
+        resources.getString(R.string.podcast_message_export_failed)
+
+    is PodcastDetailMessage.DownloadListExport -> resources.getString(outcome.messageRes())
 }
+
+/**
+ * The snackbar text for how a download list export ended.
+ *
+ * @return the string resource.
+ */
+@StringRes
+private fun DownloadListOutcome.messageRes(): Int = when (this) {
+    DownloadListOutcome.WRITTEN -> R.string.podcast_message_download_list_exported
+    DownloadListOutcome.EMPTY -> R.string.podcast_message_download_list_empty
+    DownloadListOutcome.FAILED -> R.string.podcast_message_download_list_export_failed
+}
+
+/** What the picker is asked to create for a show's download list. */
+private const val DOWNLOAD_LIST_MIME_TYPE = "text/markdown"
 
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
@@ -1419,6 +1549,8 @@ internal fun PodcastDetailScreenPreview() {
             onRefresh = {},
             onRebuild = {},
             onRemove = {},
+            onExportDownloads = {},
+            onExportDownloadList = {},
             onMessageShown = {},
         )
     }
@@ -1453,6 +1585,8 @@ internal fun PodcastDetailScreenInPanePreview() {
             onRefresh = {},
             onRebuild = {},
             onRemove = {},
+            onExportDownloads = {},
+            onExportDownloadList = {},
             onMessageShown = {},
             showBackButton = false,
         )

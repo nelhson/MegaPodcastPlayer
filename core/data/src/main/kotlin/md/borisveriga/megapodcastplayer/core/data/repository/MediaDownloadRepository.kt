@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.core.data.repository
 
+import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
@@ -16,7 +17,6 @@ import md.borisveriga.megapodcastplayer.core.common.di.Dispatcher
 import md.borisveriga.megapodcastplayer.core.common.di.MegaPodcastPlayerDispatcher
 import md.borisveriga.megapodcastplayer.core.data.mapper.asEpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
-import md.borisveriga.megapodcastplayer.core.database.dao.QueueDao
 import md.borisveriga.megapodcastplayer.core.database.model.asExternalModel
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.DownloadStatusRecorder
@@ -27,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.downloadListMarkdown
 
 /**
  * Media3- and Room-backed implementation of the download stack.
@@ -41,9 +42,9 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
  * Media3 event, then Room write — so the two can never disagree for longer than one event.
  *
  * @property episodeDao episode rows, including the download columns.
- * @property queueDao read to find out which episodes the keep-limit sweep must spare.
  * @property userPreferences the download rules.
  * @property downloader the handle on Media3's download machinery.
+ * @property clock stamps the date on an exported download list.
  * @property ioDispatcher dispatcher for the database work.
  * @property scope application scope, for the one piece of work here that outlives its caller: the
  *   wait that puts the "Wi-Fi only" rule back after [downloadNow] lifted it.
@@ -51,9 +52,9 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 @Singleton
 class MediaDownloadRepository @Inject constructor(
     private val episodeDao: EpisodeDao,
-    private val queueDao: QueueDao,
     private val userPreferences: UserPreferencesDataSource,
     private val downloader: EpisodeDownloader,
+    private val clock: Clock,
     @Dispatcher(MegaPodcastPlayerDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
     @ApplicationScope private val scope: CoroutineScope,
 ) : DownloadRepository, AutoDownloadScheduler, DownloadStatusRecorder {
@@ -124,6 +125,12 @@ class MediaDownloadRepository @Inject constructor(
         return requested
     }
 
+    override suspend fun exportListMarkdown(podcastId: String?): String {
+        val entries = withContext(ioDispatcher) { episodeDao.getDownloadList(podcastId) }
+        if (entries.isEmpty()) return ""
+        return downloadListMarkdown(entries.map { it.asExternalModel() }, clock.millis())
+    }
+
     override suspend fun removeDownload(episodeId: String) {
         downloader.remove(episodeId)
         // Media3 confirms the removal with an event, but only once the file is actually gone. The
@@ -165,20 +172,6 @@ class MediaDownloadRepository @Inject constructor(
         recordAllDownloadsRemoved()
     }
 
-    override suspend fun enforceKeepLimit(podcastId: String) {
-        val settings = userPreferences.downloadSettings.first()
-        if (!settings.enforcesKeepLimit) return
-
-        val (downloaded, protectedIds) = withContext(ioDispatcher) {
-            val rows = episodeDao.getDownloadedForPodcast(podcastId).map { it.asExternalModel() }
-            rows to queueDao.getEntries().mapTo(mutableSetOf()) { it.episodeId }
-        }
-
-        settings.episodesToSweep(downloaded, protectedIds).forEach { episode ->
-            removeDownload(episode.id)
-        }
-    }
-
     override suspend fun onEpisodesDiscovered(podcastId: String, episodeIds: List<String>) {
         if (episodeIds.isEmpty()) return
         val settings = userPreferences.downloadSettings.first()
@@ -189,7 +182,11 @@ class MediaDownloadRepository @Inject constructor(
         if (!show.autoDownloadOr(settings.autoDownloadNewEpisodes)) return
 
         // A refresh that discovered fifty back-catalogue episodes must not queue fifty downloads;
-        // the keep-limit is what the user asked to hold, so it also bounds what is fetched.
+        // the limit is how many new ones the user asked for. It bounds what is *fetched* and
+        // nothing more: a refresh used to end by sweeping the show's oldest downloads back down to
+        // the limit, which deleted episodes the user had saved by hand because a new one arrived.
+        // Pulling the library down must never cost a download. What leaves the device now does so
+        // only by the user's own gesture or by the delete-after-playing rule.
         val toDownload = if (settings.enforcesKeepLimit) {
             episodeIds.take(settings.keepLimitPerPodcast)
         } else {
@@ -219,8 +216,6 @@ class MediaDownloadRepository @Inject constructor(
                 foreground = false,
             )
         }
-
-        enforceKeepLimit(podcastId)
     }
 
     override suspend fun recordDownloadStatus(status: EpisodeDownloadStatus) {

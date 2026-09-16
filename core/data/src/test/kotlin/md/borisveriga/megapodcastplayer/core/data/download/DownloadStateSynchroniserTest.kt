@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import java.time.Clock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,9 +92,9 @@ class DownloadStateSynchroniserTest {
 
         repository = MediaDownloadRepository(
             episodeDao = database.episodeDao(),
-            queueDao = database.queueDao(),
             userPreferences = UserPreferencesDataSource(InMemoryDataStore()),
             downloader = downloader,
+            clock = Clock.systemUTC(),
             ioDispatcher = UnconfinedTestDispatcher(),
             // Nothing here calls `downloadNow`, so the scope this hands over is never used.
             scope = backgroundScope,
