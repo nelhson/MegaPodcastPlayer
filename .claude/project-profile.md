@@ -43,7 +43,7 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 - **Build type:** `debug`. `installRelease` does not exist (no `keystore.properties` → `configureSharedSigning` leaves release unsigned; `failReleasePackagingWithoutAKeystore`).
 - **Install tasks:** `installDebug` only.
 - **Launch / smoke check:** `monkey -p md.borisveriga.megapodcastplayer -c android.intent.category.LAUNCHER 1` (two namespaces, one app id — do not hardcode a component).
-- **adb:** not on PATH; use `$env:LOCALAPPDATA\Android\Sdk\platform-toolsdb.exe`. Both devices are on wireless debugging, so their serials (IP:port) change on every reconnect: re-list before each install.
+- **adb:** not on PATH; use `$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe`. Both devices are on wireless debugging, so their serials (IP:port) change on every reconnect: re-list before each install.
 - **Quirks:** debug `wear-debug.apk` is ~95 MB (no R8), so wireless install often dies with `EOF` — push the built APK directly. `:wear` depends only on `:core:wearprotocol` + `:core:common`, so its APK is often already up to date. Stale pre-rename APK on the watch (old `/bpodcat/command` paths) was diagnosed 2026-09-03 via the phone's `dumpsys … gms.wearable`.
 
 ## distribute
