@@ -1,6 +1,5 @@
 package md.borisveriga.megapodcastplayer.core.designsystem.component
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material.icons.Icons
@@ -17,7 +16,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.R
 /**
  * The two things every top-level destination has in common besides its bar.
  *
- * Both exist because a tab is not a screen in isolation — it is one of five, and the five have to
+ * Both exist because a tab is not a screen in isolation — it is one of four, and the four have to
  * behave the same. Settings has to be one tap from any of them, and re-tapping the tab you are
  * standing on has to do what re-tapping a tab does everywhere else.
  */
@@ -25,9 +24,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.R
 /**
  * The gear, on every top-level bar.
  *
- * It used to be on the library's alone, which made settings a tab switch plus a tap from four of
- * the five screens. An overflow was the alternative and is worse: a menu holding one item on four
- * screens out of five is a container invented to hide the single thing inside it (NAV-5, D-7).
+ * It used to be on the library's alone, which made settings a tab switch plus a tap from every
+ * other screen. An overflow was the alternative and is worse: a menu holding one item on most
+ * screens is a container invented to hide the single thing inside it (NAV-5, D-7).
  *
  * @param onClick opens settings.
  * @param modifier layout modifier.
@@ -82,22 +81,5 @@ fun ScrollToTopEffect(signal: Int, state: LazyGridState) {
     val arrivedAt = remember { signal }
     LaunchedEffect(signal) {
         if (signal != arrivedAt) state.animateScrollToItem(0)
-    }
-}
-
-/**
- * The same, for a column that scrolls as one piece rather than as a list of items.
- *
- * Listen is the one screen of the five shaped that way: three shelves that scroll together, because
- * the shelves are the content and there is no fourth.
- *
- * @param signal the app's re-tap count for this destination.
- * @param state the scroll position to reset.
- */
-@Composable
-fun ScrollToTopEffect(signal: Int, state: ScrollState) {
-    val arrivedAt = remember { signal }
-    LaunchedEffect(signal) {
-        if (signal != arrivedAt) state.animateScrollTo(0)
     }
 }

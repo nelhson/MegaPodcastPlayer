@@ -618,8 +618,8 @@ private fun ShowGrid(
  * One entry, and that is not an oversight. The menu exists to close the gap the grid had against
  * the list, and the list's swipe holds exactly one thing: a show can be removed. The show's own
  * page offers two more - its settings sheet and a rebuild - and both stay there, because both need
- * what the library has not got. A rebuild has to clear the show's downloads before it throws away
- * the rows that name them, which means reading the show's episode list; the settings sheet is the
+ * what the library has not got. A rebuild has to free the downloads of the episodes it drops, which
+ * the download stack the show's page holds does; the settings sheet is the
  * show's page in miniature. Copying either into a second module would be the second place to
  * maintain that this plan keeps declining to build (D-23).
  *

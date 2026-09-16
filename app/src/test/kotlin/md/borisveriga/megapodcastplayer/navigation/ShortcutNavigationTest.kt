@@ -51,8 +51,7 @@ class ShortcutNavigationTest {
     private fun setUpGraph() {
         composeTestRule.setContent {
             navController = rememberNavController()
-            NavHost(navController = navController, startDestination = Route.Listen) {
-                composable<Route.Listen> {}
+            NavHost(navController = navController, startDestination = Route.Library) {
                 composable<Route.Library> {}
                 composable<Route.Queue> {}
                 composable<Route.Downloads> {}
@@ -76,7 +75,7 @@ class ShortcutNavigationTest {
 
         onNav { navigateToShortcut(LaunchShortcut.QUEUE) }
 
-        assertEquals(listOf("Listen", "Queue"), backStack)
+        assertEquals(listOf("Library", "Queue"), backStack)
     }
 
     @Test
@@ -85,20 +84,19 @@ class ShortcutNavigationTest {
 
         onNav { navigateToShortcut(LaunchShortcut.DOWNLOADS) }
 
-        assertEquals(listOf("Listen", "Downloads"), backStack)
+        assertEquals(listOf("Library", "Downloads"), backStack)
     }
 
     @Test
     fun `a tab shortcut drops whatever the app was showing, as tapping the tab does`() {
         setUpGraph()
 
-        onNav { navigate(Route.Library) }
         onNav { navigate(Route.PodcastDetail("show-1")) }
         onNav { navigateToShortcut(LaunchShortcut.DOWNLOADS) }
 
         // The show is gone rather than buried: arriving from the launcher is arriving at the app,
         // not somewhere on top of a session the user had finished with.
-        assertEquals(listOf("Listen", "Downloads"), backStack)
+        assertEquals(listOf("Library", "Downloads"), backStack)
     }
 
     @Test
@@ -108,7 +106,7 @@ class ShortcutNavigationTest {
         onNav { navigateToShortcut(LaunchShortcut.ADD_SHOW) }
 
         // Pushed, not swapped: backing out of it returns to the app rather than leaving it.
-        assertEquals(listOf("Listen", "Search"), backStack)
+        assertEquals(listOf("Library", "Search"), backStack)
     }
 
     @Test
@@ -118,18 +116,18 @@ class ShortcutNavigationTest {
         onNav { navigateToShortcut(LaunchShortcut.ADD_SHOW) }
         onNav { navigateToShortcut(LaunchShortcut.ADD_SHOW) }
 
-        assertEquals(listOf("Listen", "Search"), backStack)
+        assertEquals(listOf("Library", "Search"), backStack)
     }
 
     @Test
     fun `the resume shortcut moves nothing`() {
         setUpGraph()
 
-        onNav { navigate(Route.Library) }
+        onNav { navigate(Route.Downloads) }
         onNav { navigateToShortcut(LaunchShortcut.RESUME) }
 
         // Resume is playback, and the player is a sheet over whatever is already there: taking the
         // user somewhere as well would be answering "carry on" by moving them.
-        assertEquals(listOf("Listen", "Library"), backStack)
+        assertEquals(listOf("Library", "Downloads"), backStack)
     }
 }

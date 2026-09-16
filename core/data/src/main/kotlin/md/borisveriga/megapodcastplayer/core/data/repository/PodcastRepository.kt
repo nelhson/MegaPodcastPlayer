@@ -131,6 +131,18 @@ data class RefreshSummary(
 }
 
 /**
+ * Result of rebuilding one show's episode list.
+ *
+ * @property episodeCount how many episodes the feed yielded, which is how many the show now has.
+ * @property withdrawnDownloadIds episodes the feed no longer lists that had a download in any
+ *   state. Their rows are gone, so the audio is stranded until the caller frees it.
+ */
+data class RebuildResult(
+    val episodeCount: Int,
+    val withdrawnDownloadIds: List<String> = emptyList(),
+)
+
+/**
  * The single entry point for everything the app knows about podcasts.
  *
  * Reads are offline-first: they come from Room and never touch the network, so the UI renders
@@ -177,23 +189,13 @@ interface PodcastRepository {
     /**
      * Observes the episodes the user has started and not finished, across every show.
      *
-     * The *Continue listening* shelf. Everything the app knew to answer this was already in the
+     * What the home-screen widget shows. Everything the app knew to answer this was already in the
      * database — `positionMs`, `isPlayed` — and no screen had ever asked the question across shows,
      * which is why picking up where you left off meant remembering which show it was in.
      *
      * @param limit how many to return; a shelf is read across rather than scrolled.
      */
     fun observeInProgressEpisodes(limit: Int): Flow<List<EpisodeWithShow>>
-
-    /**
-     * Observes the episodes that arrived in a refresh and have not been looked at, across shows.
-     *
-     * The *New episodes* shelf: the same `isNew` flag the library badges count, as a list rather
-     * than as a number.
-     *
-     * @param limit how many to return.
-     */
-    fun observeNewEpisodes(limit: Int): Flow<List<EpisodeWithShow>>
 
     /** Observes a single episode. */
     fun observeEpisode(episodeId: String): Flow<Episode?>
@@ -264,26 +266,28 @@ interface PodcastRepository {
     ): RefreshSummary
 
     /**
-     * Discards this show's stored episode list and imports the feed again from scratch.
+     * Re-reads this show's feed from scratch and makes the stored list match it exactly.
      *
-     * [refresh] merges a feed into what is already stored and goes out of its way to preserve
-     * playback progress, played flags, download state and any hand-made order. This deliberately
-     * loses all of it, because it is the answer to a list a merge cannot fix: a publisher who
-     * re-issued their back catalogue under new GUIDs, a playlist whose stored order no longer
-     * resembles the real one, or a feed that was half-read at import time. In every one of those a
-     * refresh only ever adds to the wrong list.
+     * [refresh] merges a feed into what is already stored, which can only ever add: a publisher who
+     * withdrew episodes or re-issued them under new GUIDs, a playlist whose stored order no longer
+     * resembles the real one, or a feed that was half-read at import time all stay wrong forever.
+     * This deletes the episodes the feed no longer lists and, for a hand-ordered show, replaces the
+     * stored order with the feed's.
+     *
+     * Every episode the feed still lists keeps its playback progress, played flag and download —
+     * only what the feed withdrew is lost.
      *
      * The feed is fetched *before* anything is deleted, and unconditionally — no `ETag`, no
      * `Last-Modified` — so a failed fetch leaves the show exactly as it was, and the server cannot
      * answer "unchanged" to a request whose entire point is to be told everything again.
      *
-     * Never downloads audio, and does not remove any that is already on the device: the rows that
-     * tracked those downloads are gone afterwards, so freeing the files is the caller's job.
+     * Never downloads audio, and does not remove any either: the downloads of withdrawn episodes
+     * are returned for the caller to free.
      *
      * @param podcastId the show to rebuild.
-     * @return how many episodes the feed yielded, or a failure carrying the fetch error.
+     * @return what the rebuild left, or a failure carrying the fetch error.
      */
-    suspend fun rebuild(podcastId: String): Result<Int>
+    suspend fun rebuild(podcastId: String): Result<RebuildResult>
 
     /** Removes a show and, by cascade, its episodes and queue entries. */
     suspend fun remove(podcastId: String)

@@ -100,8 +100,8 @@ internal fun widgetSnapshot(
         progressPercent = when {
             loaded != null -> playback.progress
 
-            // The stored fraction, which is what the row on the Listen screen draws for the same
-            // episode — the widget and the shelf agree about how far through it you are.
+            // The stored fraction, which is what the episode's row on its show page draws — the
+            // widget and the app agree about how far through it you are.
             else -> resumable?.episode?.playedFraction ?: 0f
         }.asPercent(),
         continueListening = inProgress

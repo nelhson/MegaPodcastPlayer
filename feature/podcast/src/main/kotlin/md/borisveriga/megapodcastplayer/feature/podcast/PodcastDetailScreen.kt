@@ -34,10 +34,8 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
-import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -69,7 +67,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -210,11 +207,11 @@ fun PodcastDetailRoute(
  * @param onSortChange remembers which end of this show the list starts at.
  * @param onShowSettingsChange applies a change made in the show settings sheet.
  * @param onRefresh the empty state's action. A show with no episodes is the one place a plain
- *   re-fetch is still what is wanted: there is nothing stored for a rebuild to throw away, and no
+ *   re-fetch is still what is wanted: there is nothing stored for a rebuild to prune, and no
  *   list for a pull to act on either.
- * @param onRebuild deletes the episode list and imports the feed again from scratch — what the
- *   pull does now. The screen confirms first whenever the show has anything to lose, so this is
- *   only ever called on an empty hand or once the user has said yes.
+ * @param onRebuild re-reads the feed from scratch and drops the episodes it no longer lists — what
+ *   the pull does now. Called without a confirmation: episodes still in the feed keep their
+ *   progress and downloads, so nothing the user could miss is at stake.
  * @param onRemove remove-show handler.
  * @param onExportDownloads starts copying the show's downloaded episodes into the folder the user
  *   just picked, given as the picker's tree URI.
@@ -258,10 +255,8 @@ fun PodcastDetailScreen(
     val resources = LocalResources.current
     val now = remember { Instant.now() }
     // The filter and the sort order used to live here, as screen state. They are the show's now:
-    // see [ShowSettings]. What is still screen state is a confirmation the user is halfway through,
-    // saveable so opening the Fold 7 does not abandon it.
+    // see [ShowSettings].
     val filter = uiState.settings.episodeFilter
-    var confirmingRebuild by rememberSaveable { mutableStateOf(false) }
     // Saveable so opening the Fold 7 mid-decision does not close the sheet.
     var showSettingsOpen by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -342,26 +337,6 @@ fun PodcastDetailScreen(
             appAutoDownload = uiState.appAutoDownload,
             onSettingsChange = onShowSettingsChange,
             onDismiss = { showSettingsOpen = false },
-        )
-    }
-
-    // The gesture's whole decision, in one place because the pull and the dialog have to agree on
-    // it. A confirmation that protects nothing is only a tax — a show whose episodes are all
-    // untouched and undownloaded loses nothing a second fetch will not bring back — so the question
-    // is asked exactly when there is an answer worth having.
-    val requestRebuild = {
-        if (uiState.episodes.none { it.isAtStakeInARebuild }) onRebuild() else confirmingRebuild = true
-    }
-
-    if (confirmingRebuild) {
-        RebuildDialog(
-            episodeCount = uiState.episodes.size,
-            atStakeCount = uiState.episodes.count { it.isAtStakeInARebuild },
-            onConfirm = {
-                confirmingRebuild = false
-                onRebuild()
-            },
-            onDismiss = { confirmingRebuild = false },
         )
     }
 
@@ -459,11 +434,12 @@ fun PodcastDetailScreen(
                 // The pull rebuilds. It used to re-fetch, which on a feed that has gone wrong —
                 // the reason anyone pulls a show's page twice — changes nothing at all, and the one
                 // thing that would fix it was three taps into a menu. The gesture now means "fetch
-                // this show again from scratch", with the dialog above standing between it and
-                // anything the user would miss.
+                // this show again from scratch". It asks nothing first: every episode the feed
+                // still lists keeps its progress and its audio, so the only things it removes are
+                // episodes the publisher already took away.
                 else -> PullToRefreshBox(
                     isRefreshing = uiState.isRebuilding,
-                    onRefresh = requestRebuild,
+                    onRefresh = onRebuild,
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     // Only a YouTube playlist is arranged by hand. An RSS show is a chronology,
@@ -1164,81 +1140,6 @@ private fun rememberExportFolderPicker(onPicked: (String) -> Unit) =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
         if (treeUri != null) onPicked(treeUri.toString())
     }
-
-/**
- * The confirmation shown before the episode list is deleted and fetched again.
- *
- * Everything else on this screen is either reversible or replaces one episode's state; this throws
- * away the show's whole history in a way no second tap undoes, so it asks first — and unlike
- * "Remove this podcast", which at least announces itself by emptying the library, a rebuild leaves
- * a list that looks much like the one before it, so a mis-tap could go unnoticed for weeks.
- *
- * What is at stake is counted rather than described, because "you will lose your progress" is
- * frightening in the abstract and decidable in the concrete: nobody hesitates over a show they have
- * never started, and everybody wants to know before they lose twelve downloads.
- *
- * @param episodeCount how many episodes will be deleted.
- * @param atStakeCount how many of those carry something the rebuild destroys; the sentence is
- *   omitted entirely at zero rather than warning about nothing.
- * @param onConfirm proceed.
- * @param onDismiss cancel.
- */
-@Composable
-private fun RebuildDialog(
-    episodeCount: Int,
-    atStakeCount: Int,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(imageVector = Icons.Rounded.RestartAlt, contentDescription = null) },
-        title = {
-            Text(
-                text = pluralStringResource(
-                    R.plurals.podcast_rebuild_dialog_title,
-                    episodeCount,
-                    episodeCount,
-                ),
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm)) {
-                Text(text = stringResource(R.string.podcast_rebuild_dialog_text))
-                if (atStakeCount > 0) {
-                    Text(
-                        text = pluralStringResource(
-                            R.plurals.podcast_rebuild_dialog_at_stake,
-                            atStakeCount,
-                            atStakeCount,
-                        ),
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(text = stringResource(R.string.podcast_rebuild_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.podcast_cancel))
-            }
-        },
-    )
-}
-
-/**
- * Whether a rebuild would destroy anything about this episode worth being warned about.
- *
- * Deliberately not "has it been touched": a played episode with no audio on the device costs the
- * user a mark they can set again in one tap, and counting it would inflate the warning past the
- * point anyone reads it. Progress mid-episode and audio on the device are the two that cost real
- * time to recover.
- */
-private val Episode.isAtStakeInARebuild: Boolean
-    get() = positionMs > 0 || downloadState != DownloadState.NOT_DOWNLOADED
 
 /**
  * The metadata line under an episode title.

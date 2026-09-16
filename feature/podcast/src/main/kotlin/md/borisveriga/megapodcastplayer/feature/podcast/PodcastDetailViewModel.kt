@@ -560,35 +560,30 @@ class PodcastDetailViewModel @Inject constructor(
     }
 
     /**
-     * Deletes this show's episode list and imports the feed again from scratch.
+     * Re-reads this show's feed from scratch and makes the stored list match it.
      *
-     * The escape hatch for a list a refresh cannot repair — a feed re-issued under new GUIDs, a
-     * playlist whose stored order has drifted, an import that only half-worked — where every
-     * further refresh merges into the same wrong list. It costs playback progress, played flags
-     * and any hand-made order, which is the trade the user is making by choosing it.
+     * The escape hatch for a list a refresh cannot repair — episodes the publisher withdrew, a feed
+     * re-issued under new GUIDs, a playlist whose stored order has drifted — where every further
+     * refresh merges into the same wrong list. Episodes the feed still lists keep their progress,
+     * played flag and download; a hand-made order is replaced by the feed's.
      *
-     * It also clears the show's downloads. The rows that tracked them do not survive the rebuild,
-     * so leaving the audio in place would strand however many gigabytes on the device with nothing
-     * left pointing at them. The ids are read *before* the rebuild, because afterwards the rows
-     * that named them are gone, and the removal runs only on success — a failed rebuild leaves the
-     * old list in place, and those downloads still belong to it.
+     * The downloads of episodes the feed withdrew are cleared: their rows do not survive, so the
+     * audio would otherwise sit on the device with nothing left pointing at it. The repository
+     * reports them only on success — a failed rebuild deletes nothing, and frees nothing.
      */
     fun rebuild() {
         if (transientState.value.isBusy) return
         transientState.value = TransientState(isRebuilding = true)
-        val downloadedIds = uiState.value.episodes
-            .filter { it.downloadState != DownloadState.NOT_DOWNLOADED }
-            .map { it.id }
 
         viewModelScope.launch {
             val result = repository.rebuild(podcastId)
-            if (result.isSuccess) {
-                downloadedIds.forEach { downloadRepository.removeDownload(it) }
+            result.onSuccess { rebuilt ->
+                rebuilt.withdrawnDownloadIds.forEach { downloadRepository.removeDownload(it) }
             }
             transientState.value = TransientState(
                 isRebuilding = false,
                 message = result.fold(
-                    onSuccess = { PodcastDetailMessage.Rebuilt(it) },
+                    onSuccess = { PodcastDetailMessage.Rebuilt(it.episodeCount) },
                     onFailure = { error ->
                         PodcastDetailMessage.RebuildFailed(
                             error.message ?: error::class.simpleName.orEmpty(),

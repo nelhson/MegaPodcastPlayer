@@ -57,7 +57,6 @@ include(":core:designsystem")
 include(":core:testing")
 
 // Features
-include(":feature:listen")
 include(":feature:library")
 include(":feature:downloads")
 include(":feature:search")

@@ -26,11 +26,10 @@ class TopLevelDestinationTest {
         ApplicationProvider.getApplicationContext<Context>().resources
 
     @Test
-    fun `the bar opens on what to listen to, then the lists the app is made of`() {
-        // Listen first, and first for a reason: it is the answer to the question a session opens
-        // with, and the library behind it is the inventory you reach for when it has no answer.
+    fun `the bar opens on the library, then the lists the app is made of`() {
+        // The library first: it is the start destination, and every session begins with a show.
         assertEquals(
-            listOf("Listen", "Library", "Queue", "Downloads", "Moments"),
+            listOf("Library", "Queue", "Downloads", "Moments"),
             TopLevelDestination.entries.map { resources.getString(it.labelResId) },
         )
     }

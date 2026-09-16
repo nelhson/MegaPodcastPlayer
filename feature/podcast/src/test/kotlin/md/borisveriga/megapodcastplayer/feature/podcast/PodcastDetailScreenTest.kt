@@ -377,9 +377,15 @@ class PodcastDetailScreenTest {
     }
 
     @Test
-    fun `the pull rebuilds the list and asks before it deletes`() {
+    fun `the pull rebuilds the list without asking`() {
         var rebuilds = 0
-        setScreen(listOf(episode("a", positionMs = 600_000L)), onRebuild = { rebuilds++ })
+        setScreen(
+            listOf(
+                episode("started", positionMs = 600_000L),
+                episode("stored", downloadState = DownloadState.COMPLETED),
+            ),
+            onRebuild = { rebuilds++ },
+        )
 
         // It left the menu: a gesture is what a reader reaches for when a show's page looks wrong.
         composeRule.onNodeWithContentDescription("More actions").performClick()
@@ -388,60 +394,9 @@ class PodcastDetailScreenTest {
 
         composeRule.pullDown()
 
-        // The pull opens the question; it must not be the answer.
-        assertEquals(0, rebuilds)
-        composeRule.onNodeWithText("Delete 1 episode and reload?").assertExists()
-
-        composeRule.onNodeWithText("Delete and reload").performClick()
-
+        // No confirmation, even with progress and audio on screen: a rebuild keeps both for every
+        // episode the feed still lists, so there is nothing a dialog could protect.
         assertEquals(1, rebuilds)
-    }
-
-    @Test
-    fun `cancelling the confirmation deletes nothing`() {
-        var rebuilds = 0
-        setScreen(listOf(episode("a", positionMs = 600_000L)), onRebuild = { rebuilds++ })
-
-        composeRule.pullDown()
-        composeRule.onNodeWithText("Cancel").performClick()
-
-        assertEquals(0, rebuilds)
-        composeRule.onNodeWithText("Delete 1 episode and reload?").assertDoesNotExist()
-    }
-
-    @Test
-    fun `the confirmation counts what the rebuild would actually cost`() {
-        setScreen(
-            listOf(
-                episode("untouched"),
-                episode("started", positionMs = 600_000L),
-                episode("stored", downloadState = DownloadState.COMPLETED),
-                // Played but never downloaded: a mark that costs one tap to set again, which is
-                // not worth inflating the warning with.
-                episode("finished", isPlayed = true),
-            ),
-        )
-
-        composeRule.pullDown()
-
-        composeRule.onNodeWithText("Delete 4 episodes and reload?").assertExists()
-        composeRule
-            .onNodeWithText("2 episodes lose their place and any audio saved on this device.")
-            .assertExists()
-    }
-
-    @Test
-    fun `a show with nothing to lose is not asked to confirm`() {
-        var rebuilds = 0
-        setScreen(listOf(episode("a")), onRebuild = { rebuilds++ })
-
-        composeRule.pullDown()
-
-        // Nothing stored means nothing the confirmation could protect, and a dialog that only ever
-        // says "these episodes will be fetched again" teaches people to dismiss the one that
-        // matters.
-        assertEquals(1, rebuilds)
-        composeRule.onNodeWithText("Delete 1 episode and reload?").assertDoesNotExist()
     }
 
     @Test

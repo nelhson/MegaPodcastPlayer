@@ -111,10 +111,6 @@ class OfflineFirstPodcastRepository @Inject constructor(
         episodeDao.observeInProgressWithShow(limit)
             .map { rows -> rows.map { it.asEpisodeWithShow() } }
 
-    override fun observeNewEpisodes(limit: Int): Flow<List<EpisodeWithShow>> =
-        episodeDao.observeNewWithShow(limit)
-            .map { rows -> rows.map { it.asEpisodeWithShow() } }
-
     override fun observeEpisode(episodeId: String): Flow<Episode?> =
         episodeDao.observeById(episodeId).map { it?.asExternalModel() }
 
@@ -483,13 +479,21 @@ class OfflineFirstPodcastRepository @Inject constructor(
         val newEpisodes: List<NewEpisode> = emptyList(),
     )
 
-    override suspend fun rebuild(podcastId: String): Result<Int> = withContext(ioDispatcher) {
-        val podcast = podcastDao.getById(podcastId)
-            ?: return@withContext Result.failure(
-                NoSuchElementException("Unknown podcast $podcastId"),
-            )
+    override suspend fun rebuild(podcastId: String): Result<RebuildResult> =
+        withContext(ioDispatcher) {
+            rebuildStored(podcastId)
+        }
 
-        suspendRunCatching {
+    /**
+     * The body of [rebuild], on whatever dispatcher it is called from.
+     *
+     * @param podcastId the show to rebuild.
+     */
+    private suspend fun rebuildStored(podcastId: String): Result<RebuildResult> {
+        val podcast = podcastDao.getById(podcastId)
+            ?: return Result.failure(NoSuchElementException("Unknown podcast $podcastId"))
+
+        return suspendRunCatching {
             // Fetched before anything is deleted, and with no validators: nothing is thrown away
             // until the replacement is in hand, so a dead network leaves the user the list they
             // already had rather than an empty show.
@@ -509,7 +513,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
             }
 
             val episodes = channel.channel.items.map { it.asEpisodeEntity(podcastId) }
-            episodeDao.replaceForPodcast(
+            val withdrawnDownloadIds = episodeDao.replaceForPodcast(
                 podcastId = podcastId,
                 episodes = episodes,
                 handOrdered = podcast.source == PodcastSource.YOUTUBE,
@@ -521,10 +525,10 @@ class OfflineFirstPodcastRepository @Inject constructor(
                 lastModified = channel.lastModified,
             )
 
-            // No `autoDownloadScheduler` call, unlike `refreshOne`. Every episode here is
-            // technically newly inserted, and handing the whole back catalogue to the download
-            // stack is precisely what nobody asked for by rebuilding a list.
-            episodes.size
+            // No `autoDownloadScheduler` call, unlike `refreshOne`. A rebuild can insert a whole
+            // back catalogue the feed had been hiding, and handing that to the download stack is
+            // precisely what nobody asked for by rebuilding a list.
+            RebuildResult(episodes.size, withdrawnDownloadIds)
         }
     }
 
