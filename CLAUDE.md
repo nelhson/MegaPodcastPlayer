@@ -86,3 +86,6 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
 - CI (`.github/workflows/ci.yml`) runs on pushes to `master` (the working branch), on pull requests
   and on manual dispatch. It includes a debug-signed release smoke build whose APKs are discarded.
 - Do not commit unless asked. Reports go to `docs/reports/YYYY-MM-DD-<name>.md`.
+- Workflow skills (`install_on_devices`, `distribute`, `merge-to-main`, `*-plan`, `project-report`) come from
+  the `android-workflow` plugin (`E:\projects\pet\mobile-apps\claude-setup-android`); their
+  project specifics live in `.claude/project-profile.md` — keep it current.
