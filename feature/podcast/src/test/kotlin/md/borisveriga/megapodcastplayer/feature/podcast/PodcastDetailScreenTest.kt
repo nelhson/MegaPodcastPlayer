@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.podcast
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -139,8 +140,7 @@ class PodcastDetailScreenTest {
                     onRefresh = {},
                     onRebuild = onRebuild,
                     onRemove = onRemove,
-                    onExportDownloads = {},
-                    onExportDownloadList = {},
+                    onDownloadAndExport = { _, _ -> },
                     onMessageShown = {},
                 )
             }
@@ -360,6 +360,20 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithText("Remove show").performClick()
 
         assertEquals(1, removals)
+    }
+
+    @Test
+    fun `the overflow offers one export, usable before anything is downloaded`() {
+        setScreen(listOf(episode("a")))
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+
+        composeRule.onNodeWithText("Export downloads").assertDoesNotExist()
+        composeRule.onNodeWithText("Export download list").assertDoesNotExist()
+        composeRule.onNodeWithText("Download and export").assertIsEnabled()
+        // What the entry opens, the folder-name dialog, is not driven from here: a text field in a
+        // dialog never settles under Robolectric (the same reason `NoteDialog` has no screen test).
+        // Its two rules — trimmed, never blank — are enforced again, and tested, in the view model.
     }
 
     /**

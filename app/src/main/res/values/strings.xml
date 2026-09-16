@@ -58,22 +58,24 @@
       finished one is what tells them it is safe to go and look in the folder.
     -->
     <string name="export_channel_name">Exporting episodes</string>
-    <string name="export_channel_description">Progress while downloaded episodes are copied to a folder</string>
+    <string name="export_channel_description">Progress while episodes are downloaded and copied to a folder</string>
+    <!-- The first half of Download and export: waiting for the episodes that were not on the device. -->
+    <string name="export_downloading_title">Downloading episodes to export…</string>
     <string name="export_progress_title">Exporting episodes…</string>
     <!-- %1$d episodes done so far, %2$d in the export. -->
     <string name="export_progress_text">%1$d of %2$d</string>
     <string name="export_finished_title">Episodes exported</string>
-    <!-- Posted when the export could not reach the folder at all, so nothing was copied. -->
+    <!-- Posted when the export could not start: no folder access, or the show is gone. -->
     <string name="export_failed_title">Couldn\'t export episodes</string>
-    <string name="export_failed_text">Pick the folder again from the show\'s menu</string>
+    <string name="export_failed_text">Try again from the show\'s menu</string>
     <plurals name="export_finished_text">
         <item quantity="one">%1$d episode is in the folder</item>
         <item quantity="other">%1$d episodes are in the folder</item>
     </plurals>
-    <!-- %1$d episodes in the folder, %2$d that could not be copied; the plural follows %2$d. -->
+    <!-- %1$d episodes in the folder, %2$d that could not be downloaded or copied; the plural follows %2$d. -->
     <plurals name="export_finished_with_failures_text">
-        <item quantity="one">%1$d in the folder · %2$d could not be copied</item>
-        <item quantity="other">%1$d in the folder · %2$d could not be copied</item>
+        <item quantity="one">%1$d in the folder · %2$d could not be exported</item>
+        <item quantity="other">%1$d in the folder · %2$d could not be exported</item>
     </plurals>
 
     <!--

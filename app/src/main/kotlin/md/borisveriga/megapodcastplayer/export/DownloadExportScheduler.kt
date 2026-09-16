@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -17,9 +19,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
+import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 
 /**
  * Starts [DownloadExportWorker] and translates WorkManager's view of it back into [ExportRun].
@@ -36,7 +41,13 @@ class DownloadExportScheduler @Inject constructor(
     private val crashReporter: CrashReporter,
 ) : DownloadExporter {
 
-    override fun start(podcastId: String, treeUri: String) {
+    override fun start(
+        podcastId: String,
+        treeUri: String,
+        folderName: String,
+        filter: EpisodeFilter,
+        network: ExportNetwork,
+    ) {
         keepAccess(treeUri.toUri())
 
         val request = OneTimeWorkRequestBuilder<DownloadExportWorker>()
@@ -44,7 +55,14 @@ class DownloadExportScheduler @Inject constructor(
                 workDataOf(
                     DownloadExportWorker.KEY_PODCAST_ID to podcastId,
                     DownloadExportWorker.KEY_TREE_URI to treeUri,
+                    DownloadExportWorker.KEY_FOLDER_NAME to folderName,
+                    DownloadExportWorker.KEY_FILTER to filter.name,
                 ),
+            )
+            // Not started until its downloads can move, and stopped if that network goes: waiting
+            // for Wi-Fi inside a running worker would hold a foreground service up doing nothing.
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(network.asNetworkType()).build(),
             )
             .build()
 
@@ -91,6 +109,17 @@ class DownloadExportScheduler @Inject constructor(
 }
 
 /**
+ * The WorkManager network requirement for a run.
+ *
+ * @return the network type the work request is constrained to.
+ */
+internal fun ExportNetwork.asNetworkType(): NetworkType = when (this) {
+    ExportNetwork.NONE -> NetworkType.NOT_REQUIRED
+    ExportNetwork.CONNECTED -> NetworkType.CONNECTED
+    ExportNetwork.UNMETERED -> NetworkType.UNMETERED
+}
+
+/**
  * Maps one work state onto what the show page needs to say.
  *
  * @return the run's state. Waiting to start reads as running with nothing counted yet, so the
@@ -102,6 +131,10 @@ internal fun WorkInfo.asExportRun(): ExportRun = when (state) {
             ExportProgress(
                 done = progress.getInt(DownloadExportWorker.KEY_DONE, 0),
                 total = progress.getInt(DownloadExportWorker.KEY_TOTAL, 0),
+                // Nothing reported yet means the run has not started, and it starts by downloading.
+                stage = progress.getString(DownloadExportWorker.KEY_STAGE)
+                    ?.let { name -> ExportStage.entries.firstOrNull { it.name == name } }
+                    ?: ExportStage.DOWNLOADING,
             ),
         )
 

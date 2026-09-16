@@ -1,6 +1,5 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
-import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,14 +16,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
-import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
+import md.borisveriga.megapodcastplayer.core.data.export.exportNetworkFor
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
@@ -39,6 +38,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.filterBy
 
 /**
  * State rendered by the podcast detail screen.
@@ -70,8 +70,8 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
  * @property appSpeed the app-wide playback rate, which the settings sheet names on the chip that
  *   defers to it — an override is only a decision if the thing being overridden is visible.
  * @property appAutoDownload the app-wide auto-download answer, shown for the same reason.
- * @property exportProgress how far an export of this show's downloads has got, or null when none is
- *   running. Held so the menu can say so, rather than offering to start a second one.
+ * @property exportProgress how far a *Download and export* of this show has got, or null when none
+ *   is running. Held so the menu can say so, rather than offering to start a second one.
  */
 data class PodcastDetailUiState(
     val podcast: Podcast? = null,
@@ -93,8 +93,13 @@ data class PodcastDetailUiState(
     /** The episode the sheet is about, or null when it is closed or the episode has gone. */
     val openEpisode: Episode? get() = episodes.firstOrNull { it.id == openEpisodeId }
 
-    /** Whether any episode is fully downloaded, which is what there is to export. */
-    val hasDownloads: Boolean get() = episodes.any { it.downloadState == DownloadState.COMPLETED }
+    /**
+     * Whether the list on screen has anything in it, which is what *Download and export* covers.
+     *
+     * Not "whether anything is downloaded": downloading what is missing is half of what the entry
+     * does, so a show with no downloads at all is exactly the one it is for.
+     */
+    val hasExportableEpisodes: Boolean get() = episodes.filterBy(settings.episodeFilter).isNotEmpty()
 }
 
 /**
@@ -225,12 +230,16 @@ sealed interface PodcastDetailMessage {
     data class PlayedChanged(val title: String, val isPlayed: Boolean) : PodcastDetailMessage
 
     /**
-     * An export of this show's downloads was started.
+     * A *Download and export* of this show was started.
      *
-     * Confirmed because the copying happens out of sight, in a notification the user may have
+     * Confirmed because the work happens out of sight, in a notification the user may have
      * silenced, and the menu closing is otherwise the only sign the tap did anything.
+     *
+     * @property waitingForWifi whether the run waits for an unmetered network before it starts:
+     *   something is left to download and "Wi-Fi only" is on. That can hold the export back for as
+     *   long as the user is away from Wi-Fi, so it is said.
      */
-    data object ExportStarted : PodcastDetailMessage
+    data class ExportStarted(val waitingForWifi: Boolean) : PodcastDetailMessage
 
     /**
      * An export this screen watched run has finished.
@@ -241,29 +250,6 @@ sealed interface PodcastDetailMessage {
 
     /** An export could not reach the folder at all, so nothing was copied. */
     data object ExportFailed : PodcastDetailMessage
-
-    /**
-     * An export of this show's download list ended.
-     *
-     * @property outcome how it ended.
-     */
-    data class DownloadListExport(val outcome: DownloadListOutcome) : PodcastDetailMessage
-}
-
-/** How an export of a show's download list ended. */
-enum class DownloadListOutcome {
-
-    /** The list was written to the file the user picked. */
-    WRITTEN,
-
-    /**
-     * Nothing of the show had finished downloading by the time the picker returned, so there was
-     * no list to write.
-     */
-    EMPTY,
-
-    /** The list could not be read or written. */
-    FAILED,
 }
 
 /**
@@ -276,8 +262,8 @@ enum class DownloadListOutcome {
  * @property showSettings this show's own settings: sort, filter, speed, downloads, notifications.
  * @property playbackRepository read only for the app-wide rate the settings sheet compares against.
  * @property connection read only, and only for which row is playing.
- * @property downloadExporter copies this show's downloads to a folder, in the background.
- * @property fileStore writes this show's download list to the document the user picked.
+ * @property downloadExporter downloads this show's episodes and copies them to a folder, in the
+ *   background.
  * @param savedStateHandle carries the `podcastId` navigation argument.
  */
 @HiltViewModel
@@ -290,7 +276,6 @@ class PodcastDetailViewModel @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val connection: PlaybackConnection,
     private val downloadExporter: DownloadExporter,
-    private val fileStore: BackupFileStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -403,39 +388,34 @@ class PodcastDetailViewModel @Inject constructor(
     }
 
     /**
-     * Starts copying this show's downloaded episodes into a folder the user picked.
+     * Downloads the episodes on screen, then copies them into a named folder the user placed.
      *
-     * Runs in the background and outlives this screen; see [DownloadExporter]. Ignored while an
-     * export of this show is already running, which the menu also prevents.
+     * "On screen" is this show's filter as it is now; the run works out the episodes from it when it
+     * starts. Runs in the background and outlives this screen; see [DownloadExporter]. Ignored while
+     * a run for this show is already going, which the menu also prevents.
      *
-     * @param treeUri the folder the picker returned.
+     * @param treeUri the location the picker returned.
+     * @param folderName the name the user gave the folder.
      */
-    fun exportDownloads(treeUri: String) {
-        if (uiState.value.exportProgress != null) return
+    fun downloadAndExport(treeUri: String, folderName: String) {
+        if (uiState.value.exportProgress != null || folderName.isBlank()) return
         expectingExportOutcome = true
-        downloadExporter.start(podcastId, treeUri)
-        transientState.value = transientState.value.copy(message = PodcastDetailMessage.ExportStarted)
-    }
-
-    /**
-     * Writes this show's finished downloads as a Markdown list to the document the user created.
-     *
-     * The text companion to [exportDownloads]: the show's feed URL and a link to every episode.
-     *
-     * @param uri the document the picker returned.
-     */
-    fun exportDownloadList(uri: Uri) {
         viewModelScope.launch {
-            // The read fails only when the database does, and the user is told either way.
-            val markdown = suspendRunCatching { downloadRepository.exportListMarkdown(podcastId) }
-            val outcome = when {
-                markdown.isFailure -> DownloadListOutcome.FAILED
-                markdown.getOrThrow().isEmpty() -> DownloadListOutcome.EMPTY
-                fileStore.write(uri, markdown.getOrThrow()).isSuccess -> DownloadListOutcome.WRITTEN
-                else -> DownloadListOutcome.FAILED
-            }
+            // Read from storage rather than from [uiState]: the picker can outlive this process, and
+            // a view model rebuilt to receive its result still holds the default state — whose
+            // filter is "All", which would download the whole show. A second run while one is
+            // going is refused by the exporter itself, so the stale guard above is only a shortcut.
+            val filter = showSettings.observeSettings(podcastId).first().episodeFilter
+            val unmeteredOnly = downloadRepository.observeDownloadSettings().first().unmeteredOnly
+            val network = exportNetworkFor(
+                episodes = repository.observeEpisodes(podcastId).first(),
+                filter = filter,
+                unmeteredOnly = unmeteredOnly,
+            )
+            downloadExporter.start(podcastId, treeUri, folderName.trim(), filter, network)
+            val waitingForWifi = network == ExportNetwork.UNMETERED
             transientState.value = transientState.value.copy(
-                message = PodcastDetailMessage.DownloadListExport(outcome),
+                message = PodcastDetailMessage.ExportStarted(waitingForWifi),
             )
         }
     }

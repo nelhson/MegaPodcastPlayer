@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.export
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
@@ -16,9 +17,12 @@ import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.export.EpisodeAudioExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportNetwork
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
+import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
+import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -43,7 +47,12 @@ class DownloadExportWorkerTest {
         crashReporter = mockk(relaxed = true)
     }
 
-    private fun buildWorker(podcastId: String? = "show", treeUri: String? = "content://tree/1") =
+    private fun buildWorker(
+        podcastId: String? = "show",
+        treeUri: String? = "content://tree/1",
+        folderName: String? = "Talks",
+        filter: String? = EpisodeFilter.UNPLAYED.name,
+    ) =
         TestListenableWorkerBuilder<DownloadExportWorker>(
             ApplicationProvider.getApplicationContext<Context>(),
         )
@@ -51,6 +60,8 @@ class DownloadExportWorkerTest {
                 workDataOf(
                     DownloadExportWorker.KEY_PODCAST_ID to podcastId,
                     DownloadExportWorker.KEY_TREE_URI to treeUri,
+                    DownloadExportWorker.KEY_FOLDER_NAME to folderName,
+                    DownloadExportWorker.KEY_FILTER to filter,
                 ),
             )
             .setWorkerFactory(
@@ -72,7 +83,9 @@ class DownloadExportWorkerTest {
     @Test
     fun `exports the handed-over show into the handed-over folder and reports the summary`() =
         runTest {
-            coEvery { exporter.export("show", "content://tree/1", any()) } returns
+            coEvery {
+                exporter.export("show", "content://tree/1", "Talks", EpisodeFilter.UNPLAYED, any())
+            } returns
                 Result.success(ExportSummary(exported = 4, alreadyThere = 2, failed = 1))
 
             val result = buildWorker().doWork()
@@ -85,7 +98,7 @@ class DownloadExportWorkerTest {
 
     @Test
     fun `an export that cannot reach the folder fails the run`() = runTest {
-        coEvery { exporter.export(any(), any(), any()) } returns
+        coEvery { exporter.export(any(), any(), any(), any(), any()) } returns
             Result.failure(IOException("No permission"))
 
         assertEquals(ListenableWorker.Result.failure(), buildWorker().doWork())
@@ -95,7 +108,10 @@ class DownloadExportWorkerTest {
     fun `fails without exporting when the input is missing`() = runTest {
         assertEquals(ListenableWorker.Result.failure(), buildWorker(podcastId = null).doWork())
         assertEquals(ListenableWorker.Result.failure(), buildWorker(treeUri = null).doWork())
-        coVerify(exactly = 0) { exporter.export(any(), any(), any()) }
+        assertEquals(ListenableWorker.Result.failure(), buildWorker(folderName = null).doWork())
+        assertEquals(ListenableWorker.Result.failure(), buildWorker(filter = null).doWork())
+        assertEquals(ListenableWorker.Result.failure(), buildWorker(filter = "SOMETIMES").doWork())
+        coVerify(exactly = 0) { exporter.export(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -105,14 +121,25 @@ class DownloadExportWorkerTest {
             progress = workDataOf(
                 DownloadExportWorker.KEY_DONE to 3,
                 DownloadExportWorker.KEY_TOTAL to 9,
+                DownloadExportWorker.KEY_STAGE to ExportStage.COPYING.name,
             ),
         )
 
-        assertEquals(ExportRun.Running(ExportProgress(3, 9)), running.asExportRun())
         assertEquals(
-            ExportRun.Running(ExportProgress(0, 0)),
+            ExportRun.Running(ExportProgress(3, 9, ExportStage.COPYING)),
+            running.asExportRun(),
+        )
+        assertEquals(
+            ExportRun.Running(ExportProgress(0, 0, ExportStage.DOWNLOADING)),
             workInfo(WorkInfo.State.ENQUEUED).asExportRun(),
         )
+    }
+
+    @Test
+    fun `a run waits for the network its downloads need`() {
+        assertEquals(NetworkType.NOT_REQUIRED, ExportNetwork.NONE.asNetworkType())
+        assertEquals(NetworkType.CONNECTED, ExportNetwork.CONNECTED.asNetworkType())
+        assertEquals(NetworkType.UNMETERED, ExportNetwork.UNMETERED.asNetworkType())
     }
 
     @Test

@@ -74,6 +74,25 @@ fun exportFolderName(showTitle: String): String =
         .trimEnd(' ', '.')
         .ifEmpty { FALLBACK_FOLDER_NAME }
 
+/** The extension of the Markdown list written beside the exported audio. */
+private const val LIST_EXTENSION = ".md"
+
+/**
+ * The name of the Markdown list written into an exported folder: `Talks.md` inside `Talks/`.
+ *
+ * Named after the folder rather than dated, so a second export into the same folder replaces the
+ * list instead of adding one per day — the list describes the audio beside it, and there is one set.
+ * It sorts apart from the audio, whose names all start with a number.
+ *
+ * @param folderName the folder's name as the user typed it; cleaned the way [exportFolderName] is.
+ * @return a file name safe to hand to a storage provider, extension included.
+ */
+fun exportListFileName(folderName: String): String =
+    cleanFileNamePart(folderName, FALLBACK_FOLDER_NAME)
+        .truncateToUtf8Bytes(MAX_FILE_NAME_BYTES - LIST_EXTENSION.length)
+        .trimEnd(' ', '.')
+        .ifEmpty { FALLBACK_FOLDER_NAME } + LIST_EXTENSION
+
 /**
  * An exported file's name without its position: `First talk.m4a` for `001 - First talk.m4a`.
  *
