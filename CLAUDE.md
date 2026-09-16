@@ -39,7 +39,7 @@ Twenty modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapod
 `testDebugUnitTest` verifies the screenshot goldens; the flag above is the only way they are
 rewritten, and the images are then read before committing. See `docs/SCREENSHOT_TESTS.md`.
 
-`adb` is not on PATH; the `install_on_devices` skill knows where it is. Release builds fail
+`adb` is not on PATH; `.claude/project-profile.md` says where it is. Release builds fail
 without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
 
 ## Constraints that features break

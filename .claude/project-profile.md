@@ -43,11 +43,13 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 - **Build type:** `debug`. `installRelease` does not exist (no `keystore.properties` → `configureSharedSigning` leaves release unsigned; `failReleasePackagingWithoutAKeystore`).
 - **Install tasks:** `installDebug` only.
 - **Launch / smoke check:** `monkey -p md.borisveriga.megapodcastplayer -c android.intent.category.LAUNCHER 1` (two namespaces, one app id — do not hardcode a component).
+- **adb:** not on PATH; use `$env:LOCALAPPDATA\Android\Sdk\platform-toolsdb.exe`. Both devices are on wireless debugging, so their serials (IP:port) change on every reconnect: re-list before each install.
 - **Quirks:** debug `wear-debug.apk` is ~95 MB (no R8), so wireless install often dies with `EOF` — push the built APK directly. `:wear` depends only on `:core:wearprotocol` + `:core:common`, so its APK is often already up to date. Stale pre-rename APK on the watch (old `/bpodcat/command` paths) was diagnosed 2026-09-03 via the phone's `dumpsys … gms.wearable`.
 
 ## distribute
 
-- **Path:** B — local signed APKs. `.github/workflows/ci.yml` only verifies (detekt, assembleDebug, tests, lint, Kover, debug-signed release smoke build discarded); no Firebase App Distribution.
+- **Path:** B — local signed APKs. `.github/workflows/ci.yml` only verifies (detekt, assembleDebug, tests, lint, Kover, debug-signed release smoke build discarded) and publishes nothing.
+- **Handing a build to Boris for download:** Firebase App Distribution on project `megapodcastplayer`, used since 2026-09-13. Run `npx -y firebase-tools@latest appdistribution:distribute <apk>` with `$env:CI = "1"`; it is already logged in. Upload **debug** APKs of both sides from the same commit, as separate releases of the one app id `1:860786298283:android:a06b5caf417d126f44d6ee`, with notes saying PHONE or WATCH and the SHA. Tester: borisveriga@gmail.com. Link the tester page, not the binary URL, which expires.
 - **Details:** keystore via `tools\create-release-keystore.ps1` or `docs/RELEASE_SIGNING.md`. Build `:app:assembleRelease :wear:assembleRelease`; archive both mapping files to `dist\<sha>\`. Both APK certificate digests must match. Never offer `-PallowDebugSigningForRelease` — a debug-signed impostor could send `WearCommand`s and read `NowPlayingSnapshot`. Recipient caveats: both APKs needed; version 1.0 update may need uninstall (loses library). YouTube extraction blocks Play Store distribution — raise it if publishing comes up. No baseline profiles.
 
 ## merge-to-main
