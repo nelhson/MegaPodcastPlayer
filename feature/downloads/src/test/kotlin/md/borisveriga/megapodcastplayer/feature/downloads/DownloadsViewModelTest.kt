@@ -130,6 +130,20 @@ class DownloadsViewModelTest {
     }
 
     @Test
+    fun `a download list that cannot be read says so instead of crashing`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(null) } throws IllegalStateException("db")
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.exportListTo(uri)
+
+            assertEquals(DownloadsMessage.ListExportFailed, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify(exactly = 0) { fileStore.write(any(), any()) }
+    }
+
+    @Test
     fun `a download list that could not be written says that instead`() = runTest {
         coEvery { downloadRepository.exportListMarkdown(null) } returns LIST_DOCUMENT
         coEvery { fileStore.write(uri, any()) } returns Result.failure(RuntimeException("gone"))

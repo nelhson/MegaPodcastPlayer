@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
@@ -241,14 +242,28 @@ sealed interface PodcastDetailMessage {
     /** An export could not reach the folder at all, so nothing was copied. */
     data object ExportFailed : PodcastDetailMessage
 
-    /** This show's download list was written to the file the user picked. */
-    data object DownloadListExported : PodcastDetailMessage
+    /**
+     * An export of this show's download list ended.
+     *
+     * @property outcome how it ended.
+     */
+    data class DownloadListExport(val outcome: DownloadListOutcome) : PodcastDetailMessage
+}
+
+/** How an export of a show's download list ended. */
+enum class DownloadListOutcome {
+
+    /** The list was written to the file the user picked. */
+    WRITTEN,
 
     /**
-     * This show's download list was not written: the file could not be written, or nothing of the
-     * show had finished downloading by the time the picker returned.
+     * Nothing of the show had finished downloading by the time the picker returned, so there was
+     * no list to write.
      */
-    data object DownloadListExportFailed : PodcastDetailMessage
+    EMPTY,
+
+    /** The list could not be read or written. */
+    FAILED,
 }
 
 /**
@@ -294,6 +309,15 @@ class PodcastDetailViewModel @Inject constructor(
     private val arrivingEpisodeId: String? = savedStateHandle[EPISODE_ID_ARG]
 
     private val transientState = MutableStateFlow(TransientState())
+
+    /**
+     * True from the moment this screen starts an export until that export has been reported.
+     *
+     * Lets a run that fails before it was ever seen running still be announced. WorkManager can
+     * go straight from enqueued to failed in one emission, and without this the user would be
+     * told the export started and then nothing more.
+     */
+    private var expectingExportOutcome = false
 
     /**
      * The mark [undoPlayedChange] would reverse, or null.
@@ -388,6 +412,7 @@ class PodcastDetailViewModel @Inject constructor(
      */
     fun exportDownloads(treeUri: String) {
         if (uiState.value.exportProgress != null) return
+        expectingExportOutcome = true
         downloadExporter.start(podcastId, treeUri)
         transientState.value = transientState.value.copy(message = PodcastDetailMessage.ExportStarted)
     }
@@ -401,23 +426,30 @@ class PodcastDetailViewModel @Inject constructor(
      */
     fun exportDownloadList(uri: Uri) {
         viewModelScope.launch {
-            val markdown = downloadRepository.exportListMarkdown(podcastId)
-            val written = markdown.isNotEmpty() && fileStore.write(uri, markdown).isSuccess
-            val message = if (written) {
-                PodcastDetailMessage.DownloadListExported
-            } else {
-                PodcastDetailMessage.DownloadListExportFailed
+            // The read fails only when the database does, and the user is told either way.
+            val markdown = suspendRunCatching { downloadRepository.exportListMarkdown(podcastId) }
+            val outcome = when {
+                markdown.isFailure -> DownloadListOutcome.FAILED
+                markdown.getOrThrow().isEmpty() -> DownloadListOutcome.EMPTY
+                fileStore.write(uri, markdown.getOrThrow()).isSuccess -> DownloadListOutcome.WRITTEN
+                else -> DownloadListOutcome.FAILED
             }
-            transientState.value = transientState.value.copy(message = message)
+            transientState.value = transientState.value.copy(
+                message = PodcastDetailMessage.DownloadListExport(outcome),
+            )
         }
     }
 
     /**
      * Says how an export ended, when this screen saw it running.
      *
-     * Only a run that was seen *running* is reported. WorkManager replays a finished run to every
-     * new observer, and announcing last week's export each time the show is opened would be noise;
-     * a run that ended while the user was elsewhere has already said so in its notification.
+     * Only a run that was seen *running*, or that this screen has just started, is reported.
+     * WorkManager replays a finished run to every new observer, and announcing last week's export
+     * each time the show is opened would be noise; a run that ended while the user was elsewhere has
+     * already said so in its notification.
+     *
+     * A run started here is trusted only to *fail* unseen. A success always passes through running
+     * first, so a success that arrives unseen is the previous run's, replayed.
      */
     private suspend fun reportExportOutcomes() {
         var sawRunning = false
@@ -428,8 +460,10 @@ class PodcastDetailViewModel @Inject constructor(
                 ExportRun.Failed -> PodcastDetailMessage.ExportFailed
                 null -> null
             }
-            if (message != null && sawRunning) {
+            val failedUnseen = run == ExportRun.Failed && expectingExportOutcome
+            if (message != null && (sawRunning || failedUnseen)) {
                 transientState.value = transientState.value.copy(message = message)
+                expectingExportOutcome = false
             }
             sawRunning = run is ExportRun.Running
         }

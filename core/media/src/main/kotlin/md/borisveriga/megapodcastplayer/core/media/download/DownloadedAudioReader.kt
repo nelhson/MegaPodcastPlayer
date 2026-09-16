@@ -35,6 +35,17 @@ interface DownloadedAudioReader {
     fun isFullyDownloaded(audioUrl: String): Boolean
 
     /**
+     * How many bytes an episode's audio has, as the download recorded it.
+     *
+     * What a copy of it must be as long as: an export uses it to tell a finished file in the folder
+     * from one an interrupted run left half-written.
+     *
+     * @param audioUrl the episode's stored audio URL, which is also its cache key.
+     * @return the length, or null when the download never learned it.
+     */
+    fun contentLength(audioUrl: String): Long?
+
+    /**
      * Opens an episode's cached audio.
      *
      * Blocking: call it, and read the stream, off the main thread. Never reaches the network — a
@@ -61,10 +72,15 @@ class CacheDownloadedAudioReader @Inject constructor(
 ) : DownloadedAudioReader {
 
     override fun isFullyDownloaded(audioUrl: String): Boolean {
+        val length = contentLength(audioUrl) ?: return false
+        return cache.isCached(audioUrl, 0, length)
+    }
+
+    override fun contentLength(audioUrl: String): Long? {
         // The key is the URL exactly as stored — the `youtube://video/<id>` sentinel for a video —
         // because that is what the download was indexed under. See `EpisodeDownloader`.
         val length = ContentMetadata.getContentLength(cache.getContentMetadata(audioUrl))
-        return length != C.LENGTH_UNSET.toLong() && cache.isCached(audioUrl, 0, length)
+        return length.takeIf { it != C.LENGTH_UNSET.toLong() }
     }
 
     override fun open(audioUrl: String): InputStream {

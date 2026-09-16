@@ -205,6 +205,7 @@
     <string name="podcast_export_download_list">Export download list</string>
     <string name="podcast_message_download_list_exported">Download list exported</string>
     <string name="podcast_message_download_list_export_failed">Couldn\'t write the download list</string>
+    <string name="podcast_message_download_list_empty">Nothing from this show has finished downloading yet</string>
 
 
     <!--

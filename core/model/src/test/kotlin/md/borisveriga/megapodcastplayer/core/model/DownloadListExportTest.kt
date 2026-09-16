@@ -140,5 +140,8 @@ class DownloadListExportTest {
         assertEquals("3 KB", formatSize(3_200L))
         assertEquals("84 MB", formatSize(84_000_000L))
         assertEquals("1.4 GB", formatSize(1_400_000_000L))
+        // Just under a unit rounds into it, rather than printing 1000 of the smaller one.
+        assertEquals("1.0 GB", formatSize(999_600_000L))
+        assertEquals("1 MB", formatSize(999_700L))
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileNotFoundException
@@ -43,19 +44,20 @@ interface ExportDirectory {
     fun findOrCreateFolder(parent: String, name: String): String
 
     /**
-     * The names of everything directly inside [folder].
+     * Everything directly inside [folder].
      *
      * @param folder the folder to list.
-     * @return display names.
+     * @return one entry per child.
      */
-    fun childNames(folder: String): Set<String>
+    fun files(folder: String): List<ExportedFile>
 
     /**
      * Creates an empty file.
      *
      * @param folder where to create it.
      * @param name its display name, extension included.
-     * @param mimeType what it holds.
+     * @param mimeType what it holds. An implementation may prefer the type its storage associates
+     *   with the name's extension, so the storage does not add an extension of its own.
      * @return the new file's location.
      */
     fun createFile(folder: String, name: String, mimeType: String): String
@@ -75,6 +77,15 @@ interface ExportDirectory {
      */
     fun delete(file: String)
 }
+
+/**
+ * One file already in an export folder.
+ *
+ * @property location where it is, for [ExportDirectory.delete].
+ * @property name its display name.
+ * @property sizeBytes its size, or null when the storage does not say.
+ */
+data class ExportedFile(val location: String, val name: String, val sizeBytes: Long?)
 
 /**
  * [ExportDirectory] over a Storage Access Framework tree.
@@ -109,11 +120,20 @@ class DocumentTreeExportDirectory @Inject constructor(
         return create(parentUri, Document.MIME_TYPE_DIR, name)
     }
 
-    override fun childNames(folder: String): Set<String> =
-        children(folder.toUri()).mapTo(mutableSetOf()) { it.name }
+    override fun files(folder: String): List<ExportedFile> =
+        children(folder.toUri())
+            .filter { it.mimeType != Document.MIME_TYPE_DIR }
+            .map { ExportedFile(it.uri.toString(), it.name, it.sizeBytes) }
 
-    override fun createFile(folder: String, name: String, mimeType: String): String =
-        create(folder.toUri(), mimeType, name)
+    override fun createFile(folder: String, name: String, mimeType: String): String {
+        // The file-system provider appends the extension it associates with the MIME type when the
+        // name's own differs: `audio/webm` would turn `001 - Talk.webm` into `001 - Talk.webm.weba`,
+        // a name the next export would not recognise. The type the platform gives the extension
+        // cannot disagree with it.
+        val extension = name.substringAfterLast('.', missingDelimiterValue = "").lowercase()
+        val platformType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+        return create(folder.toUri(), platformType ?: mimeType, name)
+    }
 
     override fun openOutput(file: String): OutputStream =
         context.contentResolver.openOutputStream(file.toUri(), WRITE_TRUNCATE)
@@ -149,6 +169,7 @@ class DocumentTreeExportDirectory @Inject constructor(
             Document.COLUMN_DOCUMENT_ID,
             Document.COLUMN_DISPLAY_NAME,
             Document.COLUMN_MIME_TYPE,
+            Document.COLUMN_SIZE,
         )
         val cursor = context.contentResolver.query(childrenUri, projection, null, null, null)
             ?: return emptyList()
@@ -163,6 +184,7 @@ class DocumentTreeExportDirectory @Inject constructor(
                             ),
                             name = it.getString(COLUMN_NAME).orEmpty(),
                             mimeType = it.getString(COLUMN_MIME).orEmpty(),
+                            sizeBytes = if (it.isNull(COLUMN_SIZE)) null else it.getLong(COLUMN_SIZE),
                         ),
                     )
                 }
@@ -176,8 +198,14 @@ class DocumentTreeExportDirectory @Inject constructor(
      * @property uri the child's document URI.
      * @property name its display name.
      * @property mimeType its type; [Document.MIME_TYPE_DIR] for a folder.
+     * @property sizeBytes its size, or null when the provider does not report one.
      */
-    private data class Child(val uri: Uri, val name: String, val mimeType: String)
+    private data class Child(
+        val uri: Uri,
+        val name: String,
+        val mimeType: String,
+        val sizeBytes: Long?,
+    )
 
     private companion object {
         /** Truncate on open, as `BackupFileStore` does, so no tail of an older file survives. */
@@ -187,5 +215,6 @@ class DocumentTreeExportDirectory @Inject constructor(
         const val COLUMN_ID = 0
         const val COLUMN_NAME = 1
         const val COLUMN_MIME = 2
+        const val COLUMN_SIZE = 3
     }
 }

@@ -7,6 +7,7 @@ import android.content.res.Resources
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -1456,11 +1457,19 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
     PodcastDetailMessage.ExportFailed ->
         resources.getString(R.string.podcast_message_export_failed)
 
-    PodcastDetailMessage.DownloadListExported ->
-        resources.getString(R.string.podcast_message_download_list_exported)
+    is PodcastDetailMessage.DownloadListExport -> resources.getString(outcome.messageRes())
+}
 
-    PodcastDetailMessage.DownloadListExportFailed ->
-        resources.getString(R.string.podcast_message_download_list_export_failed)
+/**
+ * The snackbar text for how a download list export ended.
+ *
+ * @return the string resource.
+ */
+@StringRes
+private fun DownloadListOutcome.messageRes(): Int = when (this) {
+    DownloadListOutcome.WRITTEN -> R.string.podcast_message_download_list_exported
+    DownloadListOutcome.EMPTY -> R.string.podcast_message_download_list_empty
+    DownloadListOutcome.FAILED -> R.string.podcast_message_download_list_export_failed
 }
 
 /** What the picker is asked to create for a show's download list. */

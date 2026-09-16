@@ -64,6 +64,9 @@
     <!-- %1$d episodes done so far, %2$d in the export. -->
     <string name="export_progress_text">%1$d of %2$d</string>
     <string name="export_finished_title">Episodes exported</string>
+    <!-- Posted when the export could not reach the folder at all, so nothing was copied. -->
+    <string name="export_failed_title">Couldn\'t export episodes</string>
+    <string name="export_failed_text">Pick the folder again from the show\'s menu</string>
     <plurals name="export_finished_text">
         <item quantity="one">%1$d episode is in the folder</item>
         <item quantity="other">%1$d episodes are in the folder</item>

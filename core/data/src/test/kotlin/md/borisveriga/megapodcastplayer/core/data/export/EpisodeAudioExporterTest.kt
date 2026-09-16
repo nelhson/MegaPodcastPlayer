@@ -130,6 +130,40 @@ class EpisodeAudioExporterTest {
     }
 
     @Test
+    fun `a second run recognises files whose numbers have moved`() = runTest {
+        givenEpisodes(episode("a", "First"), episode("b", "Second"))
+        reader.audio["youtube://video/a"] = m4a
+        reader.audio["youtube://video/b"] = mp3
+        exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+        directory.created.clear()
+
+        // A new video joined the playlist at the top, so every earlier episode moved down one.
+        givenEpisodes(episode("c", "Newest"), episode("a", "First"), episode("b", "Second"))
+        reader.audio["youtube://video/c"] = mp3
+        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+
+        assertEquals(ExportSummary(exported = 1, alreadyThere = 2, failed = 0), summary)
+        assertEquals(listOf("001 - Newest.mp3"), directory.created)
+    }
+
+    @Test
+    fun `a file cut short by an earlier run is replaced by a whole copy`() = runTest {
+        givenEpisodes(episode("a", "First"))
+        reader.audio["youtube://video/a"] = m4a
+        // What a process killed mid-copy leaves: the right name, too few bytes.
+        directory.folders["Talks 2026"] = mutableMapOf(
+            "001 - First.m4a" to FakeFile("audio/mp4").apply { bytes.write(m4a, 0, 1_000) },
+        )
+
+        val summary = exporter.export(show.id, "tree", onProgress = {}).getOrThrow()
+
+        assertEquals(ExportSummary(exported = 1, alreadyThere = 0, failed = 0), summary)
+        val folder = directory.folders.getValue("Talks 2026")
+        assertEquals(setOf("001 - First.m4a"), folder.keys)
+        assertArrayEquals(m4a, folder.getValue("001 - First.m4a").bytes.toByteArray())
+    }
+
+    @Test
     fun `an incomplete download fails alone and is reported`() = runTest {
         givenEpisodes(episode("a", "First"), episode("b", "Second"))
         reader.audio["youtube://video/a"] = m4a
@@ -197,6 +231,8 @@ class EpisodeAudioExporterTest {
         override fun isFullyDownloaded(audioUrl: String): Boolean =
             audioUrl in audio && audioUrl !in incomplete
 
+        override fun contentLength(audioUrl: String): Long? = audio[audioUrl]?.size?.toLong()
+
         override fun open(audioUrl: String): InputStream {
             val bytes = audio.getValue(audioUrl)
             if (audioUrl !in failAfterHeader) return ByteArrayInputStream(bytes)
@@ -228,7 +264,10 @@ class EpisodeAudioExporterTest {
             return name
         }
 
-        override fun childNames(folder: String): Set<String> = folders.getValue(folder).keys.toSet()
+        override fun files(folder: String): List<ExportedFile> =
+            folders.getValue(folder).map { (name, file) ->
+                ExportedFile("$folder/$name", name, file.bytes.size().toLong())
+            }
 
         override fun createFile(folder: String, name: String, mimeType: String): String {
             folders.getValue(folder)[name] = FakeFile(mimeType)

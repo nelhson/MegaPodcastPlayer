@@ -50,6 +50,14 @@ class DownloadExportWorker @AssistedInject constructor(
 
     private val notificationManager = NotificationManagerCompat.from(applicationContext)
 
+    /**
+     * Set once the platform has refused the foreground.
+     *
+     * The refusal does not change for the rest of the run, and trying again after every episode
+     * would send one crash report per episode for a single cause.
+     */
+    private var foregroundRefused = false
+
     override suspend fun doWork(): Result {
         val podcastId = inputData.getString(KEY_PODCAST_ID) ?: return Result.failure()
         val treeUri = inputData.getString(KEY_TREE_URI) ?: return Result.failure()
@@ -67,8 +75,12 @@ class DownloadExportWorker @AssistedInject constructor(
                 notifyFinished(summary)
                 Result.success(summary.asOutputData())
             },
-            // Already recorded by the exporter; the screen says the export could not start.
-            onFailure = { Result.failure() },
+            // Already recorded by the exporter. Said here as well as on the screen, because the
+            // user may have left it, and a failed run would otherwise end in silence.
+            onFailure = {
+                notifyFailed()
+                Result.failure()
+            },
         )
     }
 
@@ -79,8 +91,10 @@ class DownloadExportWorker @AssistedInject constructor(
      * not a reason to abandon a copy that can still finish, so it is recorded and the work goes on.
      */
     private suspend fun showProgress(progress: ExportProgress) {
+        if (foregroundRefused) return
         suspendRunCatching { setForeground(foregroundInfo(progressNotification(progress))) }
             .onFailure { failure ->
+                foregroundRefused = true
                 crashReporter.recordNonFatal("Episode export could not enter the foreground", failure)
             }
     }
@@ -143,6 +157,26 @@ class DownloadExportWorker @AssistedInject constructor(
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle(applicationContext.getString(R.string.export_finished_title))
             .setContentText(text)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(FINISHED_NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * Says the export could not reach the folder, so nothing was copied.
+     *
+     * Posted under the finished notification's id: a run ends one way or the other, never both.
+     */
+    private fun notifyFailed() {
+        val granted = ContextCompat.checkSelfPermission(
+            applicationContext,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) return
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle(applicationContext.getString(R.string.export_failed_title))
+            .setContentText(applicationContext.getString(R.string.export_failed_text))
             .setAutoCancel(true)
             .build()
         notificationManager.notify(FINISHED_NOTIFICATION_ID, notification)

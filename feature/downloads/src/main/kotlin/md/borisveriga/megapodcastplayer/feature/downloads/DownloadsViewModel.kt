@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
@@ -372,15 +373,13 @@ class DownloadsViewModel @Inject constructor(
      */
     fun exportListTo(uri: Uri) {
         viewModelScope.launch {
-            val markdown = downloadRepository.exportListMarkdown()
-            if (markdown.isEmpty()) {
-                transientState.value = DownloadsMessage.NothingToExport
-                return@launch
-            }
-            transientState.value = if (fileStore.write(uri, markdown).isSuccess) {
-                DownloadsMessage.ListExported
-            } else {
-                DownloadsMessage.ListExportFailed
+            // The read fails only when the database does, and the user is told either way.
+            val markdown = suspendRunCatching { downloadRepository.exportListMarkdown() }
+            transientState.value = when {
+                markdown.isFailure -> DownloadsMessage.ListExportFailed
+                markdown.getOrThrow().isEmpty() -> DownloadsMessage.NothingToExport
+                fileStore.write(uri, markdown.getOrThrow()).isSuccess -> DownloadsMessage.ListExported
+                else -> DownloadsMessage.ListExportFailed
             }
         }
     }

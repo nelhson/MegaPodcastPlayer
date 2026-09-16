@@ -20,6 +20,9 @@ import md.borisveriga.megapodcastplayer.core.model.format.formatTimecode
 /** Bytes in a kilobyte, a megabyte and a gigabyte, in decimal units as storage is sold. */
 private const val BYTES_PER_UNIT = 1_000.0
 
+/** The smallest figure that rounds to a whole next unit, so 999.6 MB is written as 1.0 GB. */
+private const val ROUNDS_UP_TO_NEXT_UNIT = 999.5
+
 /** Separates the facts about one episode (date, duration, size) on its bullet. */
 private const val FACT_SEPARATOR = " · "
 
@@ -140,9 +143,9 @@ internal fun formatSize(bytes: Long): String {
     val megabytes = kilobytes / BYTES_PER_UNIT
     val gigabytes = megabytes / BYTES_PER_UNIT
     return when {
-        gigabytes >= 1.0 -> String.format(Locale.US, "%.1f GB", gigabytes)
-        megabytes >= 1.0 -> String.format(Locale.US, "%.0f MB", megabytes)
-        kilobytes >= 1.0 -> String.format(Locale.US, "%.0f KB", kilobytes)
+        megabytes >= ROUNDS_UP_TO_NEXT_UNIT -> String.format(Locale.US, "%.1f GB", gigabytes)
+        kilobytes >= ROUNDS_UP_TO_NEXT_UNIT -> String.format(Locale.US, "%.0f MB", megabytes)
+        bytes >= ROUNDS_UP_TO_NEXT_UNIT -> String.format(Locale.US, "%.0f KB", kilobytes)
         else -> "$bytes B"
     }
 }

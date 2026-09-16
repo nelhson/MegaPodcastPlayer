@@ -13,7 +13,9 @@ import java.io.IOException
 import kotlin.random.Random
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -77,6 +79,18 @@ class CacheDownloadedAudioReaderTest {
         write("https://cdn.example.com/1.mp3", Random(1).nextBytes(10_000), length = 4_000L)
 
         assertFalse(reader.isFullyDownloaded("https://cdn.example.com/1.mp3"))
+    }
+
+    @Test
+    fun `a whole download knows its length`() {
+        write("youtube://video/abc", Random(3).nextBytes(12_345))
+
+        assertEquals(12_345L, reader.contentLength("youtube://video/abc"))
+    }
+
+    @Test
+    fun `an episode never downloaded has no length`() {
+        assertNull(reader.contentLength("https://cdn.example.com/none.mp3"))
     }
 
     @Test

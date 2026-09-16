@@ -75,6 +75,24 @@ fun exportFolderName(showTitle: String): String =
         .ifEmpty { FALLBACK_FOLDER_NAME }
 
 /**
+ * An exported file's name without its position: `First talk.m4a` for `001 - First talk.m4a`.
+ *
+ * Positions move. A new video joins a playlist at `001`, and a deleted episode pulls everything
+ * after it up by one, so the number is no way to recognise a file written by an earlier export. The
+ * rest of the name is.
+ *
+ * @param fileName a file's display name.
+ * @return the name after the number, or null when [fileName] does not start with the digits and
+ *   separator [exportFileName] writes.
+ */
+fun exportFileNameWithoutPosition(fileName: String): String? {
+    val separator = fileName.indexOf(POSITION_SEPARATOR)
+    if (separator < MIN_POSITION_DIGITS) return null
+    if (!fileName.substring(0, separator).all { it in '0'..'9' }) return null
+    return fileName.substring(separator + POSITION_SEPARATOR.length)
+}
+
+/**
  * Removes what a file system would refuse, and what would make a name awkward to read.
  *
  * Leading and trailing dots go as well as spaces: a leading dot hides the file on most systems, and

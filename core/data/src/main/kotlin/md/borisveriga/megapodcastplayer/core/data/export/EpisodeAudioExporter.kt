@@ -19,6 +19,7 @@ import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.media.download.DownloadedAudioReader
 import md.borisveriga.megapodcastplayer.core.model.AudioContainer
 import md.borisveriga.megapodcastplayer.core.model.exportFileName
+import md.borisveriga.megapodcastplayer.core.model.exportFileNameWithoutPosition
 import md.borisveriga.megapodcastplayer.core.model.exportFolderName
 
 /**
@@ -36,10 +37,15 @@ import md.borisveriga.megapodcastplayer.core.model.exportFolderName
  *
  * ## Running it again
  *
- * A file whose name is already in the folder is left alone and counted as [ExportSummary.alreadyThere].
+ * An episode already in the folder is left alone and counted as [ExportSummary.alreadyThere].
+ * "Already there" means a file with the same name *after its number* and the same size as the
+ * download. The number is left out because positions move between runs: a new video sorts to `001`
+ * and a deleted episode moves everything after it up by one. The size is checked because a copy cut
+ * short by the process dying keeps its name; a file that fails the check is replaced.
+ *
  * Exporting the same show twice therefore picks up where an interrupted run stopped, and adds only
- * what was downloaded since. A partly written file never survives to be mistaken for a finished one:
- * it is deleted whether the copy failed or was cancelled.
+ * what was downloaded since. A copy that fails or is cancelled deletes its partial file straight
+ * away, and the size check catches the ones that could not be deleted.
  *
  * @property podcastDao reads the show's title for the folder name.
  * @property episodeDao lists the show's finished downloads, in export order.
@@ -82,7 +88,7 @@ class EpisodeAudioExporter @Inject constructor(
                 parent = directory.root(treeUri),
                 name = exportFolderName(podcast.title),
             )
-            val existing = directory.childNames(folder).toMutableSet()
+            val existing = directory.files(folder).toMutableList()
 
             var summary = ExportSummary(exported = 0, alreadyThere = 0, failed = 0)
             episodes.forEachIndexed { index, episode ->
@@ -103,8 +109,8 @@ class EpisodeAudioExporter @Inject constructor(
      * Writes one episode, unless its file is already there.
      *
      * @param folder the show's folder.
-     * @param existing names already in it; the new file's name is added on success, so two episodes
-     *   whose titles clean to the same name do not both claim it.
+     * @param existing files in the folder not yet matched to an episode. A match is removed, so two
+     *   episodes whose titles clean to the same name cannot both claim one file.
      * @param episode the episode.
      * @param position its place in the export, from 1.
      * @param total the export's size.
@@ -112,7 +118,7 @@ class EpisodeAudioExporter @Inject constructor(
      */
     private suspend fun exportOne(
         folder: String,
-        existing: MutableSet<String>,
+        existing: MutableList<ExportedFile>,
         episode: EpisodeEntity,
         position: Int,
         total: Int,
@@ -129,17 +135,45 @@ class EpisodeAudioExporter @Inject constructor(
             reader.open(episode.audioUrl).buffered(COPY_BUFFER_BYTES).use { input ->
                 val container = AudioContainer.sniff(input.peek(AudioContainer.HEADER_BYTES))
                 val name = exportFileName(position, total, episode.title, container.extension)
-                if (name in existing) return@use Outcome.ALREADY_THERE
+                val length = checkNotNull(reader.contentLength(episode.audioUrl)) {
+                    "No recorded length: ${episode.id}"
+                }
+
+                val copy = existing.firstOrNull { it.isWholeCopy(name, length) }
+                if (copy != null) {
+                    existing -= copy
+                    return@use Outcome.ALREADY_THERE
+                }
+                // A file under this very name that is not a whole copy is what an interrupted run
+                // left behind. Replaced rather than kept beside, so the folder has one of each.
+                existing.firstOrNull { it.name == name }?.let { stale ->
+                    directory.delete(stale.location)
+                    existing -= stale
+                }
 
                 val file = directory.createFile(folder, name, container.mimeType)
                 writeOrDelete(file) { output -> input.copyCancellably(output) }
-                existing += name
                 Outcome.EXPORTED
             }
         }.getOrElse { failure ->
             crashReporter.recordNonFatal("Episode audio export failed", failure)
             Outcome.FAILED
         }
+    }
+
+    /**
+     * Whether this file is a finished copy of the episode that would be written as [name].
+     *
+     * Same name apart from the number, and as many bytes as the download. A storage that reports no
+     * size gets the benefit of the doubt, as every file did before sizes were compared.
+     *
+     * @param name the name the episode would be written under now.
+     * @param length the download's length in bytes.
+     */
+    private fun ExportedFile.isWholeCopy(name: String, length: Long): Boolean {
+        val title = exportFileNameWithoutPosition(name) ?: return this.name == name
+        return exportFileNameWithoutPosition(this.name) == title &&
+            (sizeBytes == null || sizeBytes == length)
     }
 
     /**
@@ -158,9 +192,12 @@ class EpisodeAudioExporter @Inject constructor(
             finished = true
         } finally {
             if (!finished) {
-                // Best effort: a provider that refuses to delete leaves a partial file, which the
-                // next export will not overwrite. Nothing better is possible from here.
-                runCatching { directory.delete(file) }
+                // Best effort: a provider that refuses leaves a partial file, which the next export
+                // replaces because its size is wrong. `delete` does not suspend, so this cannot
+                // swallow a cancellation.
+                runCatching { directory.delete(file) }.onFailure { failure ->
+                    crashReporter.recordNonFatal("Episode export left a partial file", failure)
+                }
             }
         }
     }
