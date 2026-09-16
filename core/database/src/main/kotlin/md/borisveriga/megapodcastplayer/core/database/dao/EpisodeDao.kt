@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
+import md.borisveriga.megapodcastplayer.core.database.model.DownloadListRowEntity
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeWithShowEntity
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -174,6 +175,48 @@ interface EpisodeDao {
 
     @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId")
     suspend fun getIdsForPodcast(podcastId: String): List<String>
+
+    /**
+     * One show's finished downloads, in the order they are exported as files.
+     *
+     * `sort_order` first, which is the playlist's own order for a YouTube show — the order the user
+     * sees and may have arranged by hand. An RSS show never writes that column, so every row ties
+     * on it and the publication date decides instead, oldest first: numbered files are listened to
+     * from `001` up, and a feed's first episode is its oldest. Undated episodes go last.
+     *
+     * Only `COMPLETED`: an episode still transferring has nothing whole to export yet.
+     *
+     * @param podcastId the show being exported.
+     */
+    @Query(
+        """
+        SELECT * FROM episodes
+        WHERE podcast_id = :podcastId AND download_state = 'COMPLETED'
+        ORDER BY sort_order ASC, published_at IS NULL, published_at ASC
+        """,
+    )
+    suspend fun getDownloadedForExport(podcastId: String): List<EpisodeEntity>
+
+    /**
+     * Finished downloads with the show fields the Markdown download list needs.
+     *
+     * Unordered: the export sorts the rows itself. The size is what is on disk when the download
+     * recorded it, and otherwise the size the feed published.
+     *
+     * @param podcastId one show to list, or null for every show.
+     */
+    @Query(
+        """
+        SELECT p.title AS show_title, p.feed_url AS feed_url, e.title AS episode_title,
+            e.audio_url AS audio_url, e.published_at AS published_at, e.duration_ms AS duration_ms,
+            CASE WHEN e.downloaded_bytes > 0 THEN e.downloaded_bytes ELSE e.size_bytes END
+                AS size_bytes
+        FROM episodes e
+        INNER JOIN podcasts p ON p.id = e.podcast_id
+        WHERE e.download_state = 'COMPLETED' AND (:podcastId IS NULL OR e.podcast_id = :podcastId)
+        """,
+    )
+    suspend fun getDownloadList(podcastId: String?): List<DownloadListRowEntity>
 
     /** Total bytes on disk for one show, used by the storage screen. */
     @Query(
@@ -399,21 +442,6 @@ interface EpisodeDao {
      */
     @Query("UPDATE episodes SET chapters_json = :chaptersJson WHERE id = :id")
     suspend fun setChaptersJson(id: String, chaptersJson: String)
-
-    /**
-     * One show's downloaded episodes, newest first — the order the keep-limit sweep expects.
-     *
-     * Matches [observeDownloaded]'s ordering so that "the oldest downloads" means the same thing
-     * everywhere.
-     */
-    @Query(
-        """
-        SELECT * FROM episodes
-        WHERE podcast_id = :podcastId AND download_state = 'COMPLETED'
-        ORDER BY published_at IS NULL, published_at DESC
-        """,
-    )
-    suspend fun getDownloadedForPodcast(podcastId: String): List<EpisodeEntity>
 
     /** The download state of one episode, or null when the episode is not stored. */
     @Query("SELECT download_state FROM episodes WHERE id = :id")

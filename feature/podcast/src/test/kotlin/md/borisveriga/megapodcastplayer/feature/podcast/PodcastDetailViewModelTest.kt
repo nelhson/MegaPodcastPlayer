@@ -1,11 +1,13 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
@@ -14,8 +16,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
+import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
+import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
+import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
+import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
@@ -34,6 +41,7 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -110,6 +118,10 @@ class PodcastDetailViewModelTest {
     private val storedSettings = MutableStateFlow(ShowSettings.DEFAULT)
     private lateinit var connection: PlaybackConnection
     private val playbackState = MutableStateFlow(PlaybackState())
+    private lateinit var downloadExporter: DownloadExporter
+    private val fileStore = mockk<BackupFileStore>(relaxed = true)
+    private val documentUri = mockk<Uri>(relaxed = true)
+    private val exportRun = MutableStateFlow<ExportRun?>(null)
 
     @Before
     fun setUp() {
@@ -138,6 +150,8 @@ class PodcastDetailViewModelTest {
         every { repository.observeEpisodes(any()) } returns episodes
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.download(any()) } returns true
+        downloadExporter = mockk(relaxed = true)
+        every { downloadExporter.observe(podcast.id) } returns exportRun
 
         viewModel = PodcastDetailViewModel(
             repository = repository,
@@ -147,6 +161,8 @@ class PodcastDetailViewModelTest {
             showSettings = showSettings,
             playbackRepository = playbackRepository,
             connection = connection,
+            downloadExporter = downloadExporter,
+            fileStore = fileStore,
             savedStateHandle = SavedStateHandle(
                 mapOf(PodcastDetailViewModel.PODCAST_ID_ARG to podcast.id),
             ),
@@ -668,6 +684,136 @@ class PodcastDetailViewModelTest {
 
             coVerify(exactly = 0) { episodePlayer.setPlayed(any(), any()) }
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `exporting starts the exporter for this show and confirms it`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.exportDownloads("content://tree/music")
+
+            verify { downloadExporter.start(podcast.id, "content://tree/music") }
+            assertEquals(PodcastDetailMessage.ExportStarted, awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a written download list lists only this show and says so`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(podcast.id) } returns "# list"
+        coEvery { fileStore.write(documentUri, "# list") } returns Result.success(Unit)
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.exportDownloadList(documentUri)
+
+            assertEquals(PodcastDetailMessage.DownloadListExported, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a download list that could not be written says so`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(podcast.id) } returns "# list"
+        coEvery { fileStore.write(any(), any()) } returns Result.failure(RuntimeException("gone"))
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.exportDownloadList(documentUri)
+
+            assertEquals(
+                PodcastDetailMessage.DownloadListExportFailed,
+                expectMostRecentItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an empty download list writes no file`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(podcast.id) } returns ""
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.exportDownloadList(documentUri)
+
+            assertEquals(
+                PodcastDetailMessage.DownloadListExportFailed,
+                expectMostRecentItem().message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify(exactly = 0) { fileStore.write(any(), any()) }
+    }
+
+    @Test
+    fun `an export already running is not started again`() = runTest {
+        exportRun.value = ExportRun.Running(ExportProgress(done = 1, total = 4))
+        viewModel.uiState.test {
+            assertEquals(ExportProgress(1, 4), awaitItem().exportProgress)
+
+            viewModel.exportDownloads("content://tree/music")
+
+            verify(exactly = 0) { downloadExporter.start(any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an export seen running reports its summary when it finishes`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+            exportRun.value = ExportRun.Running(ExportProgress(done = 2, total = 3))
+            assertEquals(ExportProgress(2, 3), awaitItem().exportProgress)
+
+            val summary = ExportSummary(exported = 2, alreadyThere = 0, failed = 1)
+            exportRun.value = ExportRun.Finished(summary)
+
+            val finished = expectMostRecentItem()
+            assertNull(finished.exportProgress)
+            assertEquals(PodcastDetailMessage.ExportFinished(summary), finished.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an export seen running that dies reports the failure`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+            exportRun.value = ExportRun.Running(ExportProgress(done = 0, total = 0))
+            awaitItem()
+
+            exportRun.value = ExportRun.Failed
+
+            assertEquals(PodcastDetailMessage.ExportFailed, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a finished export replayed on opening the show is not announced again`() = runTest {
+        exportRun.value = ExportRun.Finished(
+            ExportSummary(exported = 5, alreadyThere = 0, failed = 0),
+        )
+        viewModel.uiState.test {
+            runCurrent()
+            val state = expectMostRecentItem()
+            assertNull(state.message)
+            assertNull(state.exportProgress)
+        }
+    }
+
+    @Test
+    fun `only a fully downloaded episode makes the show exportable`() = runTest {
+        episodes.value = listOf(episode("a", DownloadState.DOWNLOADING))
+        viewModel.uiState.test {
+            assertFalse(awaitItem().hasDownloads)
+
+            episodes.value = listOf(episode("a", DownloadState.COMPLETED))
+
+            assertTrue(awaitItem().hasDownloads)
         }
     }
 }

@@ -1,15 +1,19 @@
 package md.borisveriga.megapodcastplayer.feature.downloads
 
+import android.net.Uri
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
@@ -47,6 +51,8 @@ class DownloadsViewModelTest {
     private lateinit var downloadRepository: DownloadRepository
     private lateinit var episodePlayer: EpisodePlayer
     private lateinit var viewModel: DownloadsViewModel
+    private val fileStore = mockk<BackupFileStore>(relaxed = true)
+    private val uri = mockk<Uri>(relaxed = true)
 
     private fun download(
         id: String,
@@ -81,7 +87,60 @@ class DownloadsViewModelTest {
         every { downloadRepository.observeDownloads() } returns downloads
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.freeBytes() } returns FREE_BYTES
-        viewModel = DownloadsViewModel(downloadRepository, episodePlayer)
+        viewModel = DownloadsViewModel(
+            downloadRepository = downloadRepository,
+            episodePlayer = episodePlayer,
+            fileStore = fileStore,
+            clock = Clock.fixed(Instant.parse("2026-09-16T10:00:00Z"), ZoneOffset.UTC),
+        )
+    }
+
+    @Test
+    fun `the suggested list file name carries the day it was written`() {
+        assertEquals("megapodcastplayer-downloads-2026-09-16.md", viewModel.suggestedFileName())
+    }
+
+    @Test
+    fun `a download list with nothing in it writes no file`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(null) } returns ""
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.exportListTo(uri)
+
+            assertEquals(DownloadsMessage.NothingToExport, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify(exactly = 0) { fileStore.write(any(), any()) }
+    }
+
+    @Test
+    fun `a written download list says so`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(null) } returns LIST_DOCUMENT
+        coEvery { fileStore.write(uri, any()) } returns Result.success(Unit)
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.exportListTo(uri)
+
+            assertEquals(DownloadsMessage.ListExported, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify { fileStore.write(uri, LIST_DOCUMENT) }
+    }
+
+    @Test
+    fun `a download list that could not be written says that instead`() = runTest {
+        coEvery { downloadRepository.exportListMarkdown(null) } returns LIST_DOCUMENT
+        coEvery { fileStore.write(uri, any()) } returns Result.failure(RuntimeException("gone"))
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.exportListTo(uri)
+
+            assertEquals(DownloadsMessage.ListExportFailed, expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -468,3 +527,6 @@ class DownloadsViewModelTest {
 
 /** A plausible amount of free space; the figure only has to be recognisable in an assertion. */
 private const val FREE_BYTES = 12_000_000_000L
+
+/** A stand-in for the exported download list; its content is not what these tests are about. */
+private const val LIST_DOCUMENT = "# MegaPodcastPlayer downloads"

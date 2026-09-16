@@ -324,7 +324,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { downloadRepository.setUnmeteredOnly(enabled) }
     }
 
-    /** Sets how many downloaded episodes to keep per show. */
+    /** Sets how many newly discovered episodes auto-download fetches per show. */
     fun setKeepLimit(limit: Int) {
         viewModelScope.launch { downloadRepository.setKeepLimitPerPodcast(limit) }
     }

@@ -1,6 +1,8 @@
 package md.borisveriga.megapodcastplayer.feature.downloads
 
 import android.content.res.Resources
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,11 +26,14 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -85,7 +90,6 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
-import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
@@ -100,6 +104,7 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  * @param onBrowseLibrary invoked from the empty state, to send the user somewhere they can download
  *   something.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
+ * @param onExportList asks where to save the list of finished downloads as a Markdown file.
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
  *   at the top (NAV-4).
  * @param modifier layout modifier.
@@ -115,6 +120,10 @@ fun DownloadsRoute(
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Here rather than in the stateless screen, so the screen can be tested without an activity.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(EXPORT_MIME_TYPE),
+    ) { uri -> uri?.let(viewModel::exportListTo) }
 
     DownloadsScreen(
         uiState = uiState,
@@ -127,6 +136,7 @@ fun DownloadsRoute(
         onRefresh = viewModel::refresh,
         onBrowseLibrary = onBrowseLibrary,
         onOpenSettings = onOpenSettings,
+        onExportList = { exportLauncher.launch(viewModel.suggestedFileName()) },
         scrollToTopSignal = scrollToTopSignal,
         onMessageShown = viewModel::onMessageShown,
         modifier = modifier,
@@ -137,9 +147,9 @@ fun DownloadsRoute(
  * Stateless downloads screen.
  *
  * @param uiState what to render.
- * @param onEpisodeClick episode tap handler; a tap plays a finished episode. Called only for
- *   rows that are actually on the device.
- * @param onEpisodeRetry retry handler for a failed download.
+ * @param onEpisodeClick episode tap handler; a tap plays the episode whatever state its download
+ *   is in. What is not on the device yet is streamed, as it would be from the library.
+ * @param onEpisodeRetry retry handler for a failed download, from the row's swipe.
  * @param onEpisodeDownloadNow starts a download that is waiting for Wi-Fi, now.
  * @param onEpisodeRemove delete-this-download handler; cancels the transfer when it has not
  *   finished. A finished episode is confirmed first by the screen; a transfer is not.
@@ -168,6 +178,7 @@ fun DownloadsScreen(
     onRefresh: () -> Unit,
     onBrowseLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
+    onExportList: () -> Unit,
     scrollToTopSignal: Int,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -213,7 +224,17 @@ fun DownloadsScreen(
             MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.downloads_title),
                 scrollBehavior = scrollBehavior,
-                actions = { SettingsAction(onClick = onOpenSettings) },
+                actions = {
+                    SettingsAction(onClick = onOpenSettings)
+                    // Enabled only when something has finished: the list names what is on the
+                    // device, and a transfer still running is not on it yet.
+                    IconButton(onClick = onExportList, enabled = uiState.completedCount > 0) {
+                        Icon(
+                            imageVector = Icons.Rounded.Upload,
+                            contentDescription = stringResource(R.string.downloads_export_list),
+                        )
+                    }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -289,8 +310,8 @@ fun DownloadsScreen(
  *   rather than in [DownloadsScreen] because the list state is built here.
  * @param uiState what to render.
  * @param now reference time for relative date formatting.
- * @param onEpisodeClick tap handler for a finished episode.
- * @param onEpisodeRetry tap handler for a failed download.
+ * @param onEpisodeClick tap handler; plays the row's episode in any state.
+ * @param onEpisodeRetry retry handler for a failed download, from the row's swipe.
  * @param onEpisodeDownloadNow starts a download that is waiting for Wi-Fi, now.
  * @param onEpisodeQueue add-to-queue handler for a row's full swipe.
  * @param onEpisodeRemove delete-or-cancel handler, called with the whole row so the caller can
@@ -344,7 +365,6 @@ private fun DownloadList(
                 episodeCount = uiState.completedCount,
                 totalBytes = uiState.totalBytes,
                 freeBytes = uiState.freeBytes,
-                keepLimitPerPodcast = uiState.keepLimitPerPodcast,
                 deleteAfterPlaying = uiState.deleteAfterPlaying,
                 onOpenSettings = onOpenSettings,
             )
@@ -420,8 +440,8 @@ private val DownloadSection.labelResId: Int
  * @param metadata the line under the title, already assembled.
  * @param onDownloadNow starts this download without waiting for Wi-Fi; null unless it is actually
  *   waiting for one.
- * @param onClick tap handler for a finished episode.
- * @param onRetry tap handler for a failed download.
+ * @param onClick tap handler; plays the episode in any state.
+ * @param onRetry swipe handler for a failed download, asking for it again.
  * @param onQueue adds this episode to the end of the play queue.
  * @param onRemove delete-or-cancel handler.
  * @param modifier layout modifier.
@@ -485,7 +505,16 @@ private fun DownloadRow(
             onClick = start,
         )
     }
-    val revealed = listOfNotNull(downloadNow, remove)
+    // A failed download used to retry on tap. The tap now plays — see the row's `onClick` — so the
+    // retry moves to the swipe, next to the other things a row in a particular state can do.
+    val retry = SwipeAction(
+        icon = Icons.Rounded.Refresh,
+        label = stringResource(R.string.downloads_action_retry),
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        onClick = { onRetry(episode.id) },
+    ).takeIf { isFailed }
+    val revealed = listOfNotNull(downloadNow, retry, remove)
 
     SwipeActionsRow(
         actions = revealed,
@@ -525,15 +554,12 @@ private fun DownloadRow(
             artworkUrl = download.artworkUrl,
             isPlayed = isCompleted && episode.isPlayed,
             playedFraction = if (isCompleted) episode.playedFraction else 0f,
-            // What a tap does follows the state, because that is the only thing a tap could
-            // sensibly mean: a finished episode plays, a failed one retries, and a transfer in
-            // progress does nothing at all — there is no local audio to play, and streaming
-            // instead would spend mobile data nobody asked to spend.
-            onClick = when {
-                isCompleted -> ({ onClick(episode.id) })
-                isFailed -> ({ onRetry(episode.id) })
-                else -> null
-            },
+            // A tap plays, whatever the download is doing. A row here is an episode the user
+            // asked for, and the only reason to tap one is to hear it; the player streams what the
+            // cache does not hold yet, exactly as it would from the library, and the download
+            // carries on underneath. A tap used to retry a failed row and ignore a running one,
+            // which left the list's most-wanted episodes as the only ones a tap would not play.
+            onClick = { onClick(episode.id) },
         )
     }
 }
@@ -553,15 +579,14 @@ private fun DownloadRow(
  * @param totalBytes what they occupy.
  * The housekeeping line under the bar is DL-3, and it is here rather than in Settings because
  * this is the screen the question is asked on. An episode that was on the device on Monday and
- * gone on Tuesday was removed by one of two rules the user set once and has not thought about
- * since, and the screen it vanished from said nothing about either. The line states both, and
- * opens the place they are changed.
+ * gone on Tuesday was removed by a rule the user set once and has not thought about since, and
+ * the screen it vanished from said nothing about it. The line states the rule, and opens the
+ * place it is changed.
  *
  * @param freeBytes what is left on the volume; zero when it could not be read, which draws the
  *   figures without the bar rather than a bar that is a guess.
- * @param keepLimitPerPodcast how many downloads a show may keep, or [DownloadSettings.KEEP_ALL].
  * @param deleteAfterPlaying whether finishing an episode deletes its audio.
- * @param onOpenSettings opens the settings screen, where both rules are set.
+ * @param onOpenSettings opens the settings screen, where the rule is set.
  * @param modifier layout modifier.
  */
 @Composable
@@ -569,7 +594,6 @@ private fun StorageCard(
     episodeCount: Int,
     totalBytes: Long,
     freeBytes: Long,
-    keepLimitPerPodcast: Int,
     deleteAfterPlaying: Boolean,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -661,7 +685,6 @@ private fun StorageCard(
             }
 
             HousekeepingLine(
-                keepLimitPerPodcast = keepLimitPerPodcast,
                 deleteAfterPlaying = deleteAfterPlaying,
                 onOpenSettings = onOpenSettings,
             )
@@ -672,25 +695,33 @@ private fun StorageCard(
 /**
  * What removes an episode from this device without being asked, and where to change it.
  *
- * One row rather than two lines of prose, and a row that goes somewhere: the two rules are set in
- * Settings, and a sentence naming a setting the user then has to go and find is half an answer.
- * The chevron is what says the line is a door; the click label is what says so to TalkBack, which
- * cannot see one.
+ * A row rather than a line of prose, and a row that goes somewhere: the rule is set in Settings,
+ * and a sentence naming a setting the user then has to go and find is half an answer. The chevron
+ * is what says the line is a door; the click label is what says so to TalkBack, which cannot see
+ * one.
  *
- * @param keepLimitPerPodcast how many downloads a show may keep, or [DownloadSettings.KEEP_ALL].
+ * Only one rule is named, because only one deletes. The per-show limit used to be the other half
+ * of this line, back when a refresh swept a show's oldest downloads down to it; it now bounds what
+ * a refresh fetches and removes nothing, so it has no place on a line about what disappears.
+ *
  * @param deleteAfterPlaying whether finishing an episode deletes its audio.
  * @param onOpenSettings opens the settings screen.
  */
 @Composable
 private fun HousekeepingLine(
-    keepLimitPerPodcast: Int,
     deleteAfterPlaying: Boolean,
     onOpenSettings: () -> Unit,
 ) {
-    val resources = LocalResources.current
-    val rules = remember(keepLimitPerPodcast, deleteAfterPlaying, resources) {
-        housekeepingText(resources, keepLimitPerPodcast, deleteAfterPlaying)
-    }
+    val rules = stringResource(
+        if (deleteAfterPlaying) {
+            R.string.downloads_rules_delete_played
+        } else {
+            // Said rather than left out: "no rule is in force" is the answer to "why did that
+            // episode disappear" just as much as a rule is, and a line that came and went with
+            // the setting would make the card's height depend on a preference.
+            R.string.downloads_rules_none
+        },
+    )
 
     Row(
         modifier = Modifier
@@ -716,41 +747,6 @@ private fun HousekeepingLine(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-/**
- * The housekeeping rules as one sentence.
- *
- * Says nothing is deleted when nothing is, rather than leaving the line out: "no rule is in force"
- * is the answer to "why did that episode disappear" just as much as a rule is, and a line that
- * came and went with the settings would make the card's height depend on a preference.
- *
- * @param resources for the plural and the joiner.
- * @param keepLimitPerPodcast how many downloads a show may keep, or [DownloadSettings.KEEP_ALL].
- * @param deleteAfterPlaying whether finishing an episode deletes its audio.
- * @return the sentence.
- */
-private fun housekeepingText(
-    resources: Resources,
-    keepLimitPerPodcast: Int,
-    deleteAfterPlaying: Boolean,
-): String {
-    val parts = buildList {
-        if (keepLimitPerPodcast > DownloadSettings.KEEP_ALL) {
-            add(
-                resources.getQuantityString(
-                    R.plurals.downloads_rules_keep,
-                    keepLimitPerPodcast,
-                    keepLimitPerPodcast,
-                ),
-            )
-        }
-        if (deleteAfterPlaying) add(resources.getString(R.string.downloads_rules_delete_played))
-    }
-    if (parts.isEmpty()) return resources.getString(R.string.downloads_rules_none)
-    return parts.reduce { line, part ->
-        resources.getString(R.string.downloads_rules_combined, line, part)
     }
 }
 
@@ -876,9 +872,20 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
 
     DownloadsMessage.EpisodeUnavailable ->
         resources.getString(R.string.downloads_message_unavailable)
+
+    DownloadsMessage.ListExported -> resources.getString(R.string.downloads_message_list_exported)
+
+    DownloadsMessage.ListExportFailed ->
+        resources.getString(R.string.downloads_message_list_export_failed)
+
+    DownloadsMessage.NothingToExport ->
+        resources.getString(R.string.downloads_message_nothing_to_export)
 }
 
 private const val STORAGE_CARD_KEY = "storage-card"
+
+/** What the picker is asked to create for the download list. */
+private const val EXPORT_MIME_TYPE = "text/markdown"
 
 /** How far a picked-up row is lifted above its neighbours, in pixels; matches the queue. */
 private const val DRAG_ELEVATION = 8f
@@ -929,7 +936,6 @@ internal fun DownloadsScreenPreview() {
                 totalBytes = 90_000_000L,
                 freeBytes = 4_000_000_000L,
                 unmeteredOnly = true,
-                keepLimitPerPodcast = 3,
                 deleteAfterPlaying = true,
                 downloads = downloads,
                 sections = downloads.groupIntoSections(),
@@ -943,6 +949,7 @@ internal fun DownloadsScreenPreview() {
             onRefresh = {},
             onBrowseLibrary = {},
             onOpenSettings = {},
+            onExportList = {},
             scrollToTopSignal = 0,
             onMessageShown = {},
         )

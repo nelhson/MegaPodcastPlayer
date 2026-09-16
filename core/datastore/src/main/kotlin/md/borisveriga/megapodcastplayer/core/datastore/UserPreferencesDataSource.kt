@@ -206,7 +206,7 @@ class UserPreferencesDataSource @Inject constructor(
     /**
      * Sets how many downloaded episodes to keep per show.
      *
-     * @param limit the new limit; [DownloadSettings.KEEP_ALL] disables the sweep. Negative values
+     * @param limit the new limit; [DownloadSettings.KEEP_ALL] lifts the bound. Negative values
      *   are treated as [DownloadSettings.KEEP_ALL] rather than rejected, so a bad caller cannot
      *   produce a limit that deletes everything.
      */

@@ -179,6 +179,17 @@
         </receiver>
 
         <!--
+          WorkManager's own foreground service, which DownloadExportWorker runs in while it copies a
+          show's downloads to a folder. The platform refuses a foreground service whose type the
+          manifest does not declare, and WorkManager's library manifest declares none, so the type
+          is merged in here. dataSync is what copying files is, and its permission is declared above.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
+        <!--
           MegaPodcastPlayerApplication supplies WorkManager's Configuration so that @HiltWorker workers can be
           injected. On-demand initialisation and the default androidx.startup initializer are
           mutually exclusive, so the default one is removed here.

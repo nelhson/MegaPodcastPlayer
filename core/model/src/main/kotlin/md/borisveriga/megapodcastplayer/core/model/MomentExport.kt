@@ -42,10 +42,14 @@ private const val YOUTUBE_WATCH_PREFIX = "https://www.youtube.com/watch?v="
 private const val MEDIA_FRAGMENT_PREFIX = "#t="
 
 /** Date the export header is stamped with, in the reader's own locale. */
-private val EXPORT_DATE = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+internal val exportDate = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
 
-/** Collapses any run of whitespace, so a note typed over three lines still fits on one bullet. */
-private val WHITESPACE_RUN = Regex("\\s+")
+/**
+ * Collapses any run of whitespace, so a note typed over three lines still fits on one bullet.
+ *
+ * Shared by every export in this package: file names and download list titles use it too.
+ */
+internal val whitespaceRun = Regex("\\s+")
 
 /**
  * A link that opens [audioUrl] at [positionMs].
@@ -66,16 +70,31 @@ private val WHITESPACE_RUN = Regex("\\s+")
  * @return the link, or null when [audioUrl] cannot carry one.
  */
 fun momentLink(audioUrl: String, positionMs: Long): String? {
-    if (!isPlayableMediaUrl(audioUrl)) return null
+    val link = episodeLink(audioUrl) ?: return null
     val seconds = positionSeconds(positionMs)
 
-    val videoId = youTubeVideoIdOrNull(audioUrl)
-    if (videoId != null) return YOUTUBE_WATCH_PREFIX + videoId + YOUTUBE_TIME_PARAM + seconds + "s"
+    if (youTubeVideoIdOrNull(audioUrl) != null) return link + YOUTUBE_TIME_PARAM + seconds + "s"
 
     // An enclosure that already carries a fragment gets no second one: whatever the publisher put
     // there is more likely to be meaningful than an offset appended after it.
-    if (audioUrl.contains('#')) return audioUrl
-    return audioUrl + MEDIA_FRAGMENT_PREFIX + seconds
+    if (link.contains('#')) return link
+    return link + MEDIA_FRAGMENT_PREFIX + seconds
+}
+
+/**
+ * A link that opens [audioUrl] from the beginning, with no offset at all.
+ *
+ * The same rules as [momentLink] without the position: a `youtube://video/<id>` sentinel becomes a
+ * watch URL, an ordinary `http(s)` enclosure is written as it is, and anything
+ * [isPlayableMediaUrl] rejects gets no link rather than a guess.
+ *
+ * @param audioUrl the episode's stored audio URL.
+ * @return the link, or null when [audioUrl] cannot carry one.
+ */
+fun episodeLink(audioUrl: String): String? {
+    if (!isPlayableMediaUrl(audioUrl)) return null
+    val videoId = youTubeVideoIdOrNull(audioUrl)
+    return if (videoId != null) YOUTUBE_WATCH_PREFIX + videoId else audioUrl
 }
 
 /**
@@ -200,7 +219,7 @@ private fun StringBuilder.appendShow(showMoments: List<MomentWithEpisode>) {
 private fun momentBullet(entry: MomentWithEpisode): String = buildString {
     append("- **" + formatTimecode(entry.moment.positionMs) + "**")
     entry.moment.note?.takeIf { it.isNotBlank() }?.let { note ->
-        append(" — " + note.trim().replace(WHITESPACE_RUN, " "))
+        append(" — " + note.trim().replace(whitespaceRun, " "))
     }
     entry.link?.let { append(" — <" + it + ">") }
 }
@@ -214,7 +233,7 @@ private fun momentBullet(entry: MomentWithEpisode): String = buildString {
  * @return the header line.
  */
 private fun exportHeader(count: Int, exportedAtMs: Long, zone: ZoneId): String {
-    val date = EXPORT_DATE.withZone(zone).format(Instant.ofEpochMilli(exportedAtMs))
+    val date = exportDate.withZone(zone).format(Instant.ofEpochMilli(exportedAtMs))
     val noun = if (count == 1) "moment" else "moments"
     return "$count $noun, exported $date."
 }
