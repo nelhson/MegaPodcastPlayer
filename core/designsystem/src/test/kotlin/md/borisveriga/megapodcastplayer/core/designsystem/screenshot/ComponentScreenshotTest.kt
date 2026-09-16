@@ -7,9 +7,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdropPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadButtonPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyStatePreview
-import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeCardPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRowPreview
-import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeShelfPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingStatePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBarPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButtonPreview
@@ -81,12 +79,6 @@ class ComponentScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun episodeRow() = capture("episode-row") { EpisodeRowPreview() }
-
-    @Test
-    fun episodeShelf() = capture("episode-shelf") { EpisodeShelfPreview() }
-
-    @Test
-    fun episodeCard() = capture("episode-card") { EpisodeCardPreview() }
 
     @Test
     fun showRow() = capture("show-row") { ShowRowPreview() }

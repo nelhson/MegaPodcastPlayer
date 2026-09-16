@@ -329,7 +329,7 @@ private fun TransportButton(
 }
 
 /**
- * The *Continue listening* shelf: covers only, in the order the Listen screen has them.
+ * The *Continue listening* shelf: covers only, newest first.
  *
  * Covers and no titles. At this size a title is two words and an ellipsis, and the cover is how a
  * show is recognised anyway — the same reason the library's grid layout exists. The spoken label

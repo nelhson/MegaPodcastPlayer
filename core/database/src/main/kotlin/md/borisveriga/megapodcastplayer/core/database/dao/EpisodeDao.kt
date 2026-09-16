@@ -103,7 +103,7 @@ interface EpisodeDao {
     fun observeActiveDownloadCount(): Flow<Int>
 
     /**
-     * Episodes the user has started and not finished, across every show — *Continue listening*.
+     * Episodes the user has started and not finished, across every show — the widget's shelf.
      *
      * `position_ms > 0 AND is_played = 0` is the same question `Episode.isInProgress` asks, asked
      * in SQL because the alternative is reading every episode in the database into memory to filter
@@ -128,28 +128,6 @@ interface EpisodeDao {
         """,
     )
     fun observeInProgressWithShow(limit: Int): Flow<List<EpisodeWithShowEntity>>
-
-    /**
-     * Episodes that arrived in a refresh and have not been looked at, across every show.
-     *
-     * The same `is_new` flag the library's badge counts, read as a list rather than as a number —
-     * which is the whole difference between "three of your shows have something" and "here is what
-     * arrived". Played episodes are excluded: an episode marked new that the user has since
-     * finished is a badge that has not been cleared, not something to offer them again.
-     *
-     * @param limit how many to return; see [observeInProgressWithShow].
-     */
-    @Query(
-        """
-        SELECT e.*, p.title AS show_title, p.artwork_url AS show_artwork_url
-        FROM episodes e
-        INNER JOIN podcasts p ON p.id = e.podcast_id
-        WHERE e.is_new = 1 AND e.is_played = 0
-        ORDER BY e.published_at IS NULL, e.published_at DESC
-        LIMIT :limit
-        """,
-    )
-    fun observeNewWithShow(limit: Int): Flow<List<EpisodeWithShowEntity>>
 
     @Query("SELECT * FROM episodes WHERE id = :id")
     fun observeById(id: String): Flow<EpisodeEntity?>
@@ -273,6 +251,25 @@ interface EpisodeDao {
     )
 
     /**
+     * [updateFeedFields] for one mapped feed entry.
+     *
+     * @param episode the entry as the feed now publishes it; only its publisher-owned fields are
+     *   written.
+     */
+    suspend fun refreshFeedFields(episode: EpisodeEntity) = updateFeedFields(
+        id = episode.id,
+        title = episode.title,
+        description = episode.description,
+        audioUrl = episode.audioUrl,
+        artworkUrl = episode.artworkUrl,
+        durationMs = episode.durationMs,
+        publishedAt = episode.publishedAt,
+        sizeBytes = episode.sizeBytes,
+        chaptersUrl = episode.chaptersUrl,
+        chaptersJson = episode.chaptersJson,
+    )
+
+    /**
      * Applies a parsed feed to the database in one transaction.
      *
      * @param episodes every episode currently in the feed, already mapped to entities with
@@ -294,18 +291,7 @@ interface EpisodeDao {
         episodes.forEachIndexed { index, episode ->
             if (insertedRowIds[index] == IGNORED_ROW_ID) {
                 // Already stored: only refresh the publisher's fields.
-                updateFeedFields(
-                    id = episode.id,
-                    title = episode.title,
-                    description = episode.description,
-                    audioUrl = episode.audioUrl,
-                    artworkUrl = episode.artworkUrl,
-                    durationMs = episode.durationMs,
-                    publishedAt = episode.publishedAt,
-                    sizeBytes = episode.sizeBytes,
-                    chaptersUrl = episode.chaptersUrl,
-                    chaptersJson = episode.chaptersJson,
-                )
+                refreshFeedFields(episode)
             } else {
                 newIds += episode.id
             }
@@ -318,46 +304,75 @@ interface EpisodeDao {
     }
 
     /**
-     * Deletes every episode of one show.
+     * Deletes the given episodes.
      *
-     * The queue's foreign key cascades, so entries pointing at these episodes go with them. Only
-     * ever called as half of [replaceForPodcast] — on its own it would leave a subscribed show with
-     * nothing in it and nothing to put back.
+     * The queue's foreign key cascades, so entries pointing at these episodes go with them. Callers
+     * pass at most [SQLITE_VARIABLE_CHUNK] ids at a time; see [replaceForPodcast].
+     *
+     * @param ids the episodes to delete.
      */
-    @Query("DELETE FROM episodes WHERE podcast_id = :podcastId")
-    suspend fun deleteByPodcast(podcastId: String)
+    @Query("DELETE FROM episodes WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 
     /**
-     * Replaces one show's episodes wholesale, discarding everything stored about the old ones.
+     * Which of the given episodes the download stack is tracking in any state.
      *
-     * The opposite of [upsertFromFeed], which exists precisely so a refresh never touches
-     * `position_ms`, `is_played` or `download_state`. This throws all three away, because it serves
-     * the case where the stored list is wrong in a way no merge can correct — a publisher who
-     * re-issued their back catalogue under new GUIDs, or a playlist whose stored order no longer
-     * resembles the real one — and there a merge only leaves the wrong episodes sitting alongside
-     * the right ones.
+     * @param ids the episodes to check; at most [SQLITE_VARIABLE_CHUNK] of them.
+     * @return the subset whose `download_state` is not `NOT_DOWNLOADED`.
+     */
+    @Query("SELECT id FROM episodes WHERE id IN (:ids) AND download_state != 'NOT_DOWNLOADED'")
+    suspend fun getIdsWithDownloadStateIn(ids: List<String>): List<String>
+
+    /**
+     * Rebuilds one show's episode list from the feed, keeping what the user has for every episode
+     * the feed still lists.
      *
-     * One transaction, so the show is never left empty: either the old list or the new one is
-     * stored, never neither.
+     * Three things happen, in one transaction so the show is never seen half-rebuilt:
+     *
+     *  1. Episodes the feed no longer lists are deleted — the case no merge can express, and the
+     *     reason this exists alongside [upsertFromFeed].
+     *  2. Episodes it still lists keep `position_ms`, `is_played`, `is_new` and their download, and
+     *     only have the publisher's fields refreshed, exactly as a refresh would.
+     *  3. Episodes it lists for the first time are inserted unbadged: they arrived with a pull the
+     *     user asked for, so marking them unseen would say nothing.
+     *
+     * For a hand-ordered show the feed's order then replaces the stored one, which is the other
+     * thing a rebuild is for: a playlist whose stored order no longer resembles the real one.
+     *
+     * Rows are kept rather than deleted and re-inserted so that their queue entries, which cascade
+     * on delete, survive too.
      *
      * @param podcastId the show being rebuilt.
      * @param episodes every episode the feed now lists, already mapped to entities.
-     * @param handOrdered true for a show the user can reorder, whose positions are seeded from feed
-     *   order. Left false for an RSS show, whose screen orders by date and never reads `sort_order`.
+     * @param handOrdered true for a show the user can reorder, whose positions are reseeded from
+     *   feed order. Left false for an RSS show, whose screen orders by date and never reads
+     *   `sort_order`.
+     * @return the ids of deleted episodes that had a download in any state, so the caller can free
+     *   the audio nothing points at any more.
      */
     @Transaction
     suspend fun replaceForPodcast(
         podcastId: String,
         episodes: List<EpisodeEntity>,
         handOrdered: Boolean = false,
-    ) {
-        deleteByPodcast(podcastId)
-        // Not badged as new, for the same reason a freshly added show is not: everything arrived at
-        // once, so marking the whole list unseen would say nothing about any of it.
-        insertIgnoringExisting(episodes.map { it.copy(isNew = false) })
-        // Feed order becomes the stored order, numbered from 0. There is nothing to preserve and
-        // nothing to count down from — the hand-made order went with the rows it belonged to.
+    ): List<String> {
+        val listed = episodes.mapTo(HashSet()) { it.id }
+        // Chunked because SQLite caps the variables one statement may bind, and a long-running
+        // playlist can withdraw more episodes than that in one go.
+        val withdrawn = getIdsForPodcast(podcastId).filterNot { it in listed }
+            .chunked(SQLITE_VARIABLE_CHUNK)
+        val withdrawnDownloads = withdrawn.flatMap { getIdsWithDownloadStateIn(it) }
+        withdrawn.forEach { deleteByIds(it) }
+
+        val insertedRowIds = insertIgnoringExisting(episodes.map { it.copy(isNew = false) })
+        episodes.forEachIndexed { index, episode ->
+            if (insertedRowIds[index] == IGNORED_ROW_ID) refreshFeedFields(episode)
+        }
+
+        // Feed order becomes the stored order, numbered from 0, which also clears out the negative
+        // positions a run of refreshes leaves behind.
         if (handOrdered) reorder(episodes.map { it.id })
+        return withdrawnDownloads
     }
 
     /**
@@ -488,3 +503,11 @@ interface EpisodeDao {
 
 /** `@Insert(IGNORE)` reports a skipped row as `-1`. */
 private const val IGNORED_ROW_ID = -1L
+
+/**
+ * How many ids one `IN (:ids)` statement binds at most.
+ *
+ * SQLite builds before 3.32 — every Android release before 11 — refuse more than 999 variables in
+ * a statement; staying under that keeps the limit out of every caller's mind.
+ */
+private const val SQLITE_VARIABLE_CHUNK = 900

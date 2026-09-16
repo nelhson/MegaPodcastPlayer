@@ -83,7 +83,7 @@ internal class SkipForwardAction : ActionCallback {
 /**
  * Play one episode from the shelf.
  *
- * The same `EpisodePlayer.play` a card on the Listen screen calls, so an episode started from the
+ * The same `EpisodePlayer.play` a show's episode row calls, so an episode started from the
  * home screen resumes at its stored position and skips the show's intro on the same terms.
  *
  * The episode is carried as an action parameter rather than looked up here: the widget already

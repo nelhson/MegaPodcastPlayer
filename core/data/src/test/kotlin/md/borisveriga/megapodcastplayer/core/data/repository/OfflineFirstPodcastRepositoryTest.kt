@@ -480,8 +480,10 @@ class OfflineFirstPodcastRepositoryTest {
     }
 
     @Test
-    fun `a rebuild replaces the list and drops the progress a refresh would have kept`() = runTest {
+    fun `a rebuild drops withdrawn episodes and keeps the progress of the rest`() = runTest {
         val podcast = addPodlodkaWithProgress()
+        val withdrawnId = repository.observeEpisodes(podcast.id).first().first { it.guid == "b" }.id
+        database.episodeDao().updateDownloadState(withdrawnId, DownloadState.COMPLETED, 1L, 100f)
 
         // "b" is gone from the feed and "c" is new; a refresh would have left "b" behind forever,
         // because a merge has no way to know an episode was withdrawn.
@@ -492,16 +494,15 @@ class OfflineFirstPodcastRepositoryTest {
                 lastModified = null,
             )
 
-        assertEquals(2, repository.rebuild(podcast.id).getOrThrow())
+        assertEquals(
+            RebuildResult(episodeCount = 2, withdrawnDownloadIds = listOf(withdrawnId)),
+            repository.rebuild(podcast.id).getOrThrow(),
+        )
 
         val episodes = repository.observeEpisodes(podcast.id).first()
         assertEquals(setOf("a", "c"), episodes.mapTo(mutableSetOf()) { it.guid })
-        assertEquals(
-            "A rebuild is the one operation that is allowed to lose playback progress",
-            0L,
-            episodes.first { it.guid == "a" }.positionMs,
-        )
-        // Same rule as adding a show: everything arrived at once, so nothing is "new".
+        assertEquals(90_000L, episodes.first { it.guid == "a" }.positionMs)
+        // Same rule as adding a show: what arrived with a pull the user asked for is not "new".
         assertTrue(episodes.none { it.isNew })
     }
 

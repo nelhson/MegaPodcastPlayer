@@ -24,7 +24,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.feature.downloads.DownloadsRoute
-import md.borisveriga.megapodcastplayer.feature.listen.ListenRoute
 import md.borisveriga.megapodcastplayer.feature.moments.MomentsRoute
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetScaffold
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetState
@@ -179,7 +178,7 @@ fun MegaPodcastPlayerApp(
         ) { playerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = Route.Listen,
+                startDestination = Route.Library,
                 // The sheet is drawn over the screens rather than beside them, so the space its
                 // collapsed bar occupies has to be given back here or every list's last row would
                 // sit permanently underneath it.
@@ -189,17 +188,6 @@ fun MegaPodcastPlayerApp(
                 popEnterTransition = { popEnter() },
                 popExitTransition = { popExit() },
             ) {
-                composable<Route.Listen> {
-                    ListenRoute(
-                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
-                        onBrowseLibrary = {
-                            navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
-                        },
-                        onOpenSettings = { navController.navigate(Route.Settings) },
-                        scrollToTopSignal = reTapCount,
-                    )
-                }
-
                 composable<Route.Library> {
                     // Not LibraryRoute directly: the tab is a list *and* a show, laid out as one
                     // pane or two depending on how much of the Fold is open. See LibraryListDetail

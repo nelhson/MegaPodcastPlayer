@@ -5,7 +5,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.DownloadDone
-import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavController
@@ -25,21 +24,9 @@ import md.borisveriga.megapodcastplayer.R
 sealed interface Route {
 
     /**
-     * What to listen to now: continue, new, up next.
+     * The library of subscribed shows, and the start destination.
      *
-     * The start destination. The library was, and it is the wrong one: a library is an inventory of
-     * shows, which answers "what am I subscribed to" and not "what shall I listen to", so every
-     * session began show → scroll → tap. This screen answers the second question from facts the
-     * app already had.
-     */
-    @Serializable
-    data object Listen : Route
-
-    /**
-     * The library of subscribed shows.
-     *
-     * Still the inventory, and still the only screen that is useful before anything has been
-     * played — which is why the Listen tab's empty state leads here.
+     * The inventory, and the only screen that is useful before anything has been played.
      */
     @Serializable
     data object Library : Route
@@ -148,15 +135,7 @@ enum class TopLevelDestination(
     @param:StringRes val labelResId: Int,
     val icon: ImageVector,
 ) {
-    /**
-     * First, and the start destination: it is the answer to the question a session opens with.
-     *
-     * A fifth tab rather than shelves bolted to the top of the library, which was the alternative.
-     * Shelves would have kept four tabs and cost a scroll past them before the shows — and, worse,
-     * would have made the library two screens at once: an inventory and a recommendation surface.
-     */
-    LISTEN(Route.Listen, R.string.destination_listen, Icons.Rounded.Headphones),
-
+    /** First, and the start destination: every session begins with picking a show. */
     LIBRARY(Route.Library, R.string.destination_library, Icons.Rounded.LibraryMusic),
 
     /**
@@ -184,7 +163,6 @@ enum class TopLevelDestination(
 internal fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
     this?.hierarchy?.any { node ->
         when (destination) {
-            TopLevelDestination.LISTEN -> node.hasRoute(Route.Listen::class)
             TopLevelDestination.LIBRARY -> node.hasRoute(Route.Library::class)
             TopLevelDestination.QUEUE -> node.hasRoute(Route.Queue::class)
             TopLevelDestination.DOWNLOADS -> node.hasRoute(Route.Downloads::class)

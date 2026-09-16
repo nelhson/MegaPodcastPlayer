@@ -16,7 +16,7 @@ truth rather than a summary of it:
 
 ## Layout
 
-Twenty modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
+Nineteen modules. Sources live at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
 
 - Apps: `:app`, `:wear`.
 - Pure JVM, shared with the watch: `:core:model`, `:core:wearprotocol`. No Android types here.

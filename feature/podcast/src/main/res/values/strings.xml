@@ -29,26 +29,6 @@
     <string name="podcast_continue">Continue</string>
     <string name="podcast_continue_with_remaining">Continue · %1$s</string>
 
-    <!--
-        The confirmation, which no second tap can undo. Unlike removing a show, a rebuild leaves a
-        list much like the one before it, so a mis-tap could otherwise go unnoticed for weeks.
-    -->
-    <plurals name="podcast_rebuild_dialog_title">
-        <item quantity="one">Delete %1$d episode and reload?</item>
-        <item quantity="other">Delete %1$d episodes and reload?</item>
-    </plurals>
-    <string name="podcast_rebuild_dialog_text">The list is fetched from the feed again. Anything the feed no longer publishes will not come back.</string>
-    <!--
-        %1$d is how many episodes carry progress or downloaded audio. Shown only when there is
-        something to lose: a warning that applies to nothing is one nobody reads the next time.
-    -->
-    <plurals name="podcast_rebuild_dialog_at_stake">
-        <item quantity="one">%1$d episode loses its place and any audio saved on this device.</item>
-        <item quantity="other">%1$d episodes lose their place and any audio saved on this device.</item>
-    </plurals>
-    <string name="podcast_rebuild_confirm">Delete and reload</string>
-    <string name="podcast_cancel">Cancel</string>
-
     <!-- The show description, which is clipped until asked for in full. -->
     <string name="podcast_description_expand">Show more</string>
     <string name="podcast_description_collapse">Show less</string>

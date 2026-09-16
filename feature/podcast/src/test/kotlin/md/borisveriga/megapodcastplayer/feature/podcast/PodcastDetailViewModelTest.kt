@@ -8,6 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.data.repository.RebuildResult
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
@@ -329,7 +330,7 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
         val release = CompletableDeferred<Unit>()
         coEvery { repository.rebuild(podcast.id) } coAnswers {
             release.await()
-            Result.success(412)
+            Result.success(RebuildResult(episodeCount = 412))
         }
 
         viewModel.uiState.test {
@@ -352,13 +353,15 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
     }
 
     @Test
-    fun `a rebuild clears the downloads whose rows it just deleted`() = runTest {
+    fun `a rebuild clears only the downloads of the episodes the feed withdrew`() = runTest {
         episodes.value = listOf(
-            episode("kept", DownloadState.NOT_DOWNLOADED),
-            episode("stored", DownloadState.COMPLETED),
+            episode("kept", DownloadState.COMPLETED),
+            episode("withdrawn", DownloadState.COMPLETED),
             episode("arriving", DownloadState.DOWNLOADING),
         )
-        coEvery { repository.rebuild(podcast.id) } returns Result.success(3)
+        coEvery { repository.rebuild(podcast.id) } returns Result.success(
+            RebuildResult(episodeCount = 1, withdrawnDownloadIds = listOf("withdrawn", "arriving")),
+        )
 
         viewModel.uiState.test {
             awaitItem()
@@ -366,9 +369,9 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
             cancelAndIgnoreRemainingEvents()
         }
 
-        // Anything the download stack was tracking, not only what finished: a transfer in flight
-        // also has bytes on disk and a row that is about to stop existing.
-        coVerify { downloadRepository.removeDownload("stored") }
+        // What the repository reports, not what the screen was showing: an episode still in the
+        // feed keeps its row, so its audio still belongs to something.
+        coVerify { downloadRepository.removeDownload("withdrawn") }
         coVerify { downloadRepository.removeDownload("arriving") }
         coVerify(exactly = 0) { downloadRepository.removeDownload("kept") }
     }
@@ -401,7 +404,7 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
         val release = CompletableDeferred<Unit>()
         coEvery { repository.rebuild(podcast.id) } coAnswers {
             release.await()
-            Result.success(1)
+            Result.success(RebuildResult(episodeCount = 1))
         }
 
         viewModel.uiState.test {

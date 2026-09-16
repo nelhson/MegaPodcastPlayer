@@ -80,10 +80,10 @@ fun MegaPodcastPlayerTopAppBar(
 }
 
 // There was a `MegaPodcastPlayerLargeTopAppBar` here, a collapsing bar for "a screen whose name is
-// part of its identity". Listen and Moments were its two callers and both gave it up when NAV-7
-// settled on one bar for all five top-level destinations: a collapsing bar on two of five reads as
-// an accident rather than as emphasis, and a list you came to scroll should not open with a third
-// of the screen naming the tab you just tapped. It is removed rather than kept for the detail
+// part of its identity". Its callers gave it up when NAV-7 settled on one bar for every top-level
+// destination: a collapsing bar on some of them reads as an accident rather than as emphasis, and
+// a list you came to scroll should not open with a third of the screen naming the tab you just
+// tapped. It is removed rather than kept for the detail
 // screen that might one day earn it — the design system describes the app, and Material's
 // `LargeTopAppBar` is one import away on the day a screen does.
 

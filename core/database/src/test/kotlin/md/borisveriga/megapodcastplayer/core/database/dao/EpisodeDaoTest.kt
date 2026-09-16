@@ -464,29 +464,63 @@ class EpisodeDaoTest {
     }
 
     @Test
-    fun `replaceForPodcast throws away exactly what a refresh protects`() = runTest {
+    fun `replaceForPodcast drops withdrawn episodes and keeps what the user has on the rest`() =
+        runTest {
+            podcastDao.upsert(podcast)
+            episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+            episodeDao.setPlayed(id = "a", isPlayed = true, positionMs = 42_000L)
+            episodeDao.updateDownloadState(
+                id = "a",
+                state = DownloadState.COMPLETED,
+                downloadedBytes = 5_000L,
+                percent = 100f,
+            )
+
+            // The feed no longer lists "b" and now lists "c". A merge cannot express that; this can.
+            val withdrawn = episodeDao.replaceForPodcast(
+                podcast.id,
+                listOf(episode("a").copy(title = "Renamed"), episode("c")),
+            )
+
+            assertNull("A withdrawn episode must not survive a rebuild", episodeDao.getById("b"))
+            assertEquals(emptyList<String>(), withdrawn)
+            val kept = checkNotNull(episodeDao.getById("a"))
+            assertEquals(42_000L, kept.positionMs)
+            assertEquals(true, kept.isPlayed)
+            assertEquals(DownloadState.COMPLETED, kept.downloadState)
+            assertEquals(5_000L, kept.downloadedBytes)
+            // The publisher's fields are still refreshed, as a merge would.
+            assertEquals("Renamed", kept.title)
+            // An episode that arrives with the pull is not badged: the user asked for the list.
+            assertEquals(false, episodeDao.getById("c")?.isNew)
+        }
+
+    @Test
+    fun `replaceForPodcast reports the downloads of the episodes it drops`() = runTest {
         podcastDao.upsert(podcast)
-        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
-        episodeDao.updatePosition(id = "a", positionMs = 42_000L)
-        episodeDao.setPlayed(id = "a", isPlayed = true, positionMs = 42_000L)
-        episodeDao.updateDownloadState(
-            id = "a",
-            state = DownloadState.COMPLETED,
-            downloadedBytes = 5_000L,
-            percent = 100f,
-        )
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b"), episode("c"), episode("d")))
+        episodeDao.updateDownloadState("b", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.updateDownloadState("c", DownloadState.DOWNLOADING, 1_000L, 20f)
+        episodeDao.updateDownloadState("a", DownloadState.COMPLETED, 5_000L, 100f)
 
-        // The feed no longer lists "b" and now lists "c". A merge cannot express that; this can.
-        episodeDao.replaceForPodcast(podcast.id, listOf(episode("a"), episode("c")))
+        val withdrawn = episodeDao.replaceForPodcast(podcast.id, listOf(episode("a")))
 
-        assertNull("A withdrawn episode must not survive a rebuild", episodeDao.getById("b"))
-        val rebuilt = checkNotNull(episodeDao.getById("a"))
-        assertEquals(0L, rebuilt.positionMs)
-        assertEquals(false, rebuilt.isPlayed)
-        assertEquals(DownloadState.NOT_DOWNLOADED, rebuilt.downloadState)
-        // Nothing is badged: the whole list arrived at once, so calling any of it unseen would say
-        // nothing about any of it.
-        assertTrue(episodeDao.observeByPodcast(podcast.id).first().none { it.isNew })
+        // In any state, because a transfer in flight has bytes on disk too; never a kept episode,
+        // and never a dropped one that had nothing downloaded.
+        assertEquals(setOf("b", "c"), withdrawn.toSet())
+    }
+
+    @Test
+    fun `replaceForPodcast drops more episodes than one statement can bind`() = runTest {
+        podcastDao.upsert(podcast)
+        val many = (0 until 2_000).map { episode("e$it") }
+        episodeDao.upsertFromFeed(many)
+        many.forEach { episodeDao.updateDownloadState(it.id, DownloadState.COMPLETED, 1L, 100f) }
+
+        val withdrawn = episodeDao.replaceForPodcast(podcast.id, listOf(episode("e0")))
+
+        assertEquals(1_999, withdrawn.size)
+        assertEquals(listOf("e0"), episodeDao.observeByPodcast(podcast.id).first().map { it.id })
     }
 
     @Test
@@ -517,8 +551,9 @@ class EpisodeDaoTest {
             handOrdered = true,
         )
 
-        // A hand-made order is the third thing only a rebuild discards — which is the point of it,
-        // for a playlist whose stored order no longer resembles the one it came from.
+        // A hand-made order is the one thing a rebuild discards on the episodes it keeps — which is
+        // the point of it, for a playlist whose stored order no longer resembles the one it came
+        // from.
         val rebuilt = episodeDao.observeByPodcastOrdered(podcast.id).first()
         assertEquals(listOf("a", "b", "c"), rebuilt.map { it.id })
         // Numbered from 0 rather than counted down from the old minimum, so a rebuild also clears

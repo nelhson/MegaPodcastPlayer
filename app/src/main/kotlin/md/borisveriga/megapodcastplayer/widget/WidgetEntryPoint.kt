@@ -46,9 +46,7 @@ internal fun Context.widgetEntryPoint(): WidgetEntryPoint =
 /**
  * How many episodes the shelf under the transport may hold.
  *
- * Four, against the Listen screen's twelve, and for a different reason than screen space: a widget
- * is glanced at from a home screen, and a fifth cover is one the user would have scrolled to on the
- * Listen screen anyway. There is no scrolling here.
+ * Four: a widget is glanced at from a home screen, and there is no scrolling here.
  */
 internal const val WIDGET_SHELF_LIMIT = 4
 
