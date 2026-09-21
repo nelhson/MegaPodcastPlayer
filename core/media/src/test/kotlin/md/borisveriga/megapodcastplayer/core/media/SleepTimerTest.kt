@@ -254,6 +254,7 @@ class SleepTimerTest {
 
     @Test
     fun `the last chapter ends with the episode, so the bell is what is armed`() = runTest {
+        playing(positionMs = 2 * MINUTE_MS)
         val sleepTimer = timer(backgroundScope)
 
         sleepTimer.armEndOfChapter(chapterIndex = 7, episodeId = EPISODE, stopAtMs = null)
@@ -262,6 +263,117 @@ class SleepTimerTest {
         assertTrue(bell.armed.value)
         assertEquals(7, sleepTimer.state.value.endOfChapterIndex)
         assertFalse(sleepTimer.state.value.isEndOfEpisode)
+    }
+
+    @Test
+    fun `a bell that has rung leaves nothing armed`() = runTest {
+        playing(positionMs = 2 * MINUTE_MS)
+        val sleepTimer = timer(backgroundScope)
+
+        sleepTimer.armEndOfEpisode()
+        runCurrent()
+        // What the player's own listener does when the episode ends.
+        bell.consume()
+        runCurrent()
+        assertFalse(sleepTimer.state.value.isArmed)
+
+        sleepTimer.armEndOfChapter(chapterIndex = 7, episodeId = EPISODE, stopAtMs = null)
+        runCurrent()
+        bell.consume()
+        runCurrent()
+        assertFalse(sleepTimer.state.value.isArmed)
+    }
+
+    @Test
+    fun `another episode takes the bell back from a last-chapter timer`() = runTest {
+        val playback = playing(positionMs = 2 * MINUTE_MS)
+        val sleepTimer = timer(backgroundScope)
+        sleepTimer.armEndOfChapter(chapterIndex = 7, episodeId = EPISODE, stopAtMs = null)
+        runCurrent()
+
+        playback.value = playback.value.copy(episodeId = "another", positionMs = 0L)
+        runCurrent()
+
+        // Otherwise it would ring at the end of an episode nobody set it for.
+        assertFalse(bell.armed.value)
+        assertFalse(sleepTimer.state.value.isArmed)
+    }
+
+    @Test
+    fun `a faster speed starts the fade earlier, so that it still ends on the boundary`() = runTest {
+        val playback = playing(positionMs = 2 * MINUTE_MS)
+        playback.value = playback.value.copy(speed = 2f)
+        val sleepTimer = timer(backgroundScope)
+        sleepTimer.armEndOfChapter(chapterIndex = 3, episodeId = EPISODE, stopAtMs = 20 * MINUTE_MS)
+        runCurrent()
+
+        // Twenty seconds of episode is ten seconds of listening at 2x.
+        playback.value = playback.value.copy(positionMs = 20 * MINUTE_MS - 20_000L)
+        advanceTimeBy(FADE_MS)
+        runCurrent()
+
+        coVerify { connection.pause() }
+    }
+
+    @Test
+    fun `armed with seconds of the chapter left, the fade is cut to fit`() = runTest {
+        playing(positionMs = 20 * MINUTE_MS - 2_000L)
+        val sleepTimer = timer(backgroundScope)
+        sleepTimer.armEndOfChapter(chapterIndex = 3, episodeId = EPISODE, stopAtMs = 20 * MINUTE_MS)
+
+        advanceTimeBy(2_500L)
+        runCurrent()
+
+        // Two seconds, not ten: the pause belongs on the boundary, not nine seconds past it.
+        coVerify { connection.pause() }
+    }
+
+    @Test
+    fun `a paused player scrubbed to the end of the chapter does not spend the timer`() = runTest {
+        val playback = playing(positionMs = 2 * MINUTE_MS)
+        playback.value = playback.value.copy(isPlaying = false)
+        val sleepTimer = timer(backgroundScope)
+        sleepTimer.armEndOfChapter(chapterIndex = 3, episodeId = EPISODE, stopAtMs = 20 * MINUTE_MS)
+        runCurrent()
+
+        playback.value = playback.value.copy(positionMs = 20 * MINUTE_MS - 5_000L)
+        advanceTimeBy(FADE_MS)
+        runCurrent()
+
+        assertTrue(sleepTimer.state.value.isArmed)
+        coVerify(exactly = 0) { connection.pause() }
+    }
+
+    @Test
+    fun `skipping back out of a fade abandons it and keeps the timer`() = runTest {
+        val playback = playing(positionMs = 2 * MINUTE_MS)
+        val sleepTimer = timer(backgroundScope)
+        sleepTimer.armEndOfChapter(chapterIndex = 3, episodeId = EPISODE, stopAtMs = 20 * MINUTE_MS)
+        runCurrent()
+        playback.value = playback.value.copy(positionMs = 20 * MINUTE_MS - 10_000L)
+        advanceTimeBy(3_000L)
+
+        playback.value = playback.value.copy(positionMs = 19 * MINUTE_MS)
+        advanceTimeBy(FADE_MS)
+        runCurrent()
+
+        coVerify(exactly = 0) { connection.pause() }
+        coVerify { connection.setVolume(1f) }
+        assertEquals(3, sleepTimer.state.value.endOfChapterIndex)
+    }
+
+    @Test
+    fun `turning the timer off during the fade puts the volume back`() = runTest {
+        val sleepTimer = timer(backgroundScope)
+        sleepTimer.armAfter(MINUTE_MS)
+        // Into the fade, not through it.
+        advanceTimeBy(MINUTE_MS + 3_000L)
+
+        sleepTimer.cancel()
+        runCurrent()
+
+        coVerify(exactly = 0) { connection.pause() }
+        coVerify { connection.setVolume(1f) }
     }
 
     @Test

@@ -146,7 +146,12 @@ fun <T> MenuChip(
             onClick = { isExpanded = true },
             label = { Text(text = label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = { Icon(imageVector = icon, contentDescription = null) },
-            modifier = Modifier.semantics { contentDescription = menuDescription },
+            // The description says what the chip opens and would otherwise be spoken *instead of*
+            // the label, which is the answer. The answer is the chip's state, so it is said as one.
+            modifier = Modifier.semantics {
+                contentDescription = menuDescription
+                stateDescription = label
+            },
         )
 
         DropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {

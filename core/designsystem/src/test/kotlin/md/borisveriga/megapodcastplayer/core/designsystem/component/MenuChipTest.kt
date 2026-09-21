@@ -74,6 +74,16 @@ class MenuChipTest {
     }
 
     @Test
+    fun `the chip says its answer as well as what it opens`() {
+        setChip(selected = null)
+
+        // A content description is spoken instead of a label; the label is the answer.
+        composeTestRule
+            .onNodeWithContentDescription("Choose how long to keep playing")
+            .assert(hasState("Stop after a set time"))
+    }
+
+    @Test
     fun `nothing chosen ticks nothing`() {
         setChip(selected = null)
 
