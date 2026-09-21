@@ -333,6 +333,32 @@ class PlaybackConnection @Inject constructor(
         player.volume = volume.coerceIn(0f, FULL_VOLUME)
     }
 
+    /**
+     * Sets the *device's* media volume, which is what the phone's own volume keys move.
+     *
+     * The other half of the pair [setVolume] is one of, and the one with an audience: this is what
+     * the watch's bezel reaches. It is deliberately the system's media volume rather than the
+     * player's gain, so that turning the bezel and pressing the phone's volume key are the same
+     * act with the same result — and so that the sleep timer's fade, which owns [setVolume]
+     * outright and restores it to full afterwards, cannot quietly undo a level the user chose.
+     *
+     * Does nothing on a player that will not have its volume set — a fixed-volume output, or one
+     * built without device-volume control. The watch is told the same fact through
+     * [PlaybackState.maxVolume] and hides its control rather than offering a dead one.
+     *
+     * @param level the level to set; clamped to the device's own range, because a value outside it
+     *   throws.
+     */
+    suspend fun setDeviceVolume(level: Int) = onController { player ->
+        if (!player.isCommandAvailable(Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS)) {
+            return@onController
+        }
+        val device = player.deviceInfo
+        // No VOLUME_FLAG_SHOW_UI: the phone this is changing is in a pocket, and the system's
+        // volume panel would be drawn for nobody — on a screen that is off, over whatever is on it.
+        player.setDeviceVolume(level.coerceIn(device.minVolume, device.maxVolume), /* flags = */ 0)
+    }
+
     /** Stops playback and empties the queue. */
     suspend fun stop() = onController { player ->
         player.stop()
@@ -413,6 +439,10 @@ private fun Player.knownDurationMs(): Long? = duration.takeIf { it != C.TIME_UNS
  */
 private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
     val metadata = mediaMetadata
+    // Media3 forbids reading either of these unless the command is available, and it is absent on
+    // a player built without device-volume control. Both then stay zero, which is the same thing
+    // the player itself would report and which reads downstream as "there is no scale here".
+    val volumeReadable = isCommandAvailable(Player.COMMAND_GET_DEVICE_VOLUME)
     return PlaybackState(
         isConnected = isConnected,
         episodeId = currentMediaItem?.episodeId,
@@ -427,6 +457,8 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
         speed = playbackParameters.speed,
         queueEpisodeIds = (0 until mediaItemCount).mapNotNull { getMediaItemAt(it).episodeId },
         queueIndex = currentMediaItemIndex,
+        volume = if (volumeReadable) deviceVolume else 0,
+        maxVolume = if (volumeReadable) deviceInfo.maxVolume else 0,
         errorMessage = playerError?.message ?: errorMessage,
         // Classified here rather than at the screen, because this is the only place that has both
         // the exception and the episode it belongs to; see [playbackErrorOf] on why the second

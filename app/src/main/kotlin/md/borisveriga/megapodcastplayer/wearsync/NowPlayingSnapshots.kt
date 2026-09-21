@@ -67,6 +67,10 @@ internal fun nowPlayingSnapshot(
         skipBackMs = settings.skipBackMs,
         hasNext = playback.hasNext,
         hasPrevious = playback.queueIndex > 0,
+        // The device's media volume, not the player's gain; see PlaybackState. A phone that will
+        // not have its volume set reports a maximum of zero here, and the watch draws no control.
+        volume = playback.volume,
+        maxVolume = playback.maxVolume,
         upNext = upNext.take(MAX_QUEUE_ENTRIES).map { it.toWatchEpisode() },
         downloaded = downloaded.take(MAX_QUEUE_ENTRIES).map { it.toWatchEpisode() },
         publishedAtMs = publishedAtMs,

@@ -70,6 +70,10 @@ internal class WearCommandExecutor @Inject constructor(
 
             is WearCommand.SeekTo -> connection.seekTo(command.positionMs)
 
+            // The device's media volume, on the phone's own scale — which is why the level arrives
+            // as an index rather than a fraction, and why the phone clamps it.
+            is WearCommand.SetVolume -> connection.setDeviceVolume(command.level)
+
             is WearCommand.PlayEpisode -> episodePlayer.play(command.episodeId)
 
             // The queue and nothing else: what is playing is not interrupted, which is the whole

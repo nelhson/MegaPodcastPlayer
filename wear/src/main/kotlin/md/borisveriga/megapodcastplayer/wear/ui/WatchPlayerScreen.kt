@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.FastForward
@@ -45,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,6 +93,7 @@ import androidx.wear.compose.material3.LinearProgressIndicator
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
 import androidx.wear.compose.material3.lazy.TransformationSpec
@@ -137,6 +141,10 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onBeginScrub = viewModel::beginScrub,
         onScrubBy = viewModel::scrubBy,
         onCommitScrub = viewModel::commitScrub,
+        onBeginVolume = viewModel::beginVolume,
+        onEndVolume = viewModel::endVolume,
+        onSetVolume = viewModel::setVolume,
+        onAdjustVolumeBy = viewModel::adjustVolumeBy,
     )
 }
 
@@ -171,6 +179,10 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onBeginScrub invoked when the user takes hold of the progress bar.
  * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
  * @param onCommitScrub invoked when they settle, which is what actually seeks.
+ * @param onBeginVolume invoked when the user takes hold of the volume bar.
+ * @param onEndVolume invoked when they let go of it.
+ * @param onSetVolume invoked with an absolute level by the row's own minus and plus buttons.
+ * @param onAdjustVolumeBy invoked with a signed number of steps as the bezel turns.
  */
 @Composable
 fun WatchPlayerScreen(
@@ -189,6 +201,10 @@ fun WatchPlayerScreen(
     onBeginScrub: () -> Unit = {},
     onScrubBy: (Long) -> Unit = {},
     onCommitScrub: () -> Unit = {},
+    onBeginVolume: () -> Unit = {},
+    onEndVolume: () -> Unit = {},
+    onSetVolume: (Int) -> Unit = {},
+    onAdjustVolumeBy: (Int) -> Unit = {},
 ) {
     // A phone we cannot reach makes every control below meaningless, so the same fact replaces
     // the screen and says what to do about it.
@@ -250,6 +266,20 @@ fun WatchPlayerScreen(
                         onSkipBack = onSkipBack,
                         modifier = Modifier.scrollTransform(this, spec),
                     )
+                }
+                // Under the transport, above the sitting-down controls: volume is something a
+                // walking thumb reaches for, and it belongs beside pause rather than beside speed.
+                if (uiState.canSetVolume) {
+                    item(key = "volume", contentType = "volume") {
+                        VolumeRow(
+                            uiState = uiState,
+                            onBeginVolume = onBeginVolume,
+                            onEndVolume = onEndVolume,
+                            onSetVolume = onSetVolume,
+                            onAdjustVolumeBy = onAdjustVolumeBy,
+                            modifier = Modifier.scrollTransform(this, spec),
+                        )
+                    }
                 }
                 item(key = "secondary", contentType = "secondary") {
                     SecondaryRow(
@@ -715,6 +745,116 @@ private fun ProgressRow(
                 text = uiState.snapshot.knownDurationMs?.let(::formatPlaybackTime).orEmpty(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The phone's media volume: a bar with a step either side of it, and the bezel when it is held.
+ *
+ * Built on Wear Material3's [Slider], which is already the shape of this control — two 48 dp
+ * buttons with a bar between them, its own detent haptics, and range semantics that let TalkBack
+ * read the level without this screen announcing a bare number at it. What the slider does not have
+ * is the bezel, because rotary input goes to whoever holds focus and a slider does not ask for it.
+ *
+ * So the gesture is the scrubber's, for the reason the scrubber has it: there is one bezel and the
+ * list is already using it. Tapping the bar takes it, turning moves the volume, and tapping again —
+ * or leaving it alone — hands it back. The buttons work throughout and need no mode, which is what
+ * makes the mode safe to have: a wearer who never discovers the bezel can still change the volume.
+ *
+ * The one thing it does not copy from the scrubber is the pause before the value is sent. A seek
+ * is a jump to somewhere you cannot hear until you arrive; a volume change is audible while the
+ * finger is still moving, so every step goes out at once and the throttling happens behind it.
+ *
+ * @param uiState what to draw, including the level and whether the bar is held.
+ * @param onBeginVolume takes hold of the bar.
+ * @param onEndVolume lets go of it.
+ * @param onSetVolume sets an absolute level; what the slider's own buttons report.
+ * @param onAdjustVolumeBy moves by whole steps; what the bezel reports.
+ * @param modifier applied to the row; carries the column's scroll transformation.
+ */
+@Composable
+private fun VolumeRow(
+    uiState: WatchPlayerUiState,
+    onBeginVolume: () -> Unit,
+    onEndVolume: () -> Unit,
+    onSetVolume: (Int) -> Unit,
+    onAdjustVolumeBy: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val haptics = LocalHapticFeedback.current
+    // Rotary arrives as scroll pixels, not as detents, so the pixels are banked until they add up
+    // to a step. Kept outside composition: a turn moves the volume, and must not also recompose
+    // the row that is reading it.
+    val turned = remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(uiState.isAdjustingVolume) {
+        // Rotary events go to whatever holds focus, so the bar claims it on entering the mode.
+        // Nothing gives it back explicitly: the list reclaims it as the bar stops being focusable.
+        if (uiState.isAdjustingVolume) focusRequester.requestFocus()
+    }
+
+    val volumeLabel = stringResource(
+        if (uiState.isAdjustingVolume) R.string.watch_volume_active else R.string.watch_volume,
+    )
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                // The slider's own buttons consume their taps, so only a tap on the bar between
+                // them reaches this — which is exactly the tap that means "give me the bezel".
+                .clickable { if (uiState.isAdjustingVolume) onEndVolume() else onBeginVolume() }
+                .focusRequester(focusRequester)
+                .focusable()
+                .onRotaryScrollEvent { event ->
+                    if (!uiState.isAdjustingVolume) return@onRotaryScrollEvent false
+                    turned.floatValue += event.verticalScrollPixels
+                    val steps = (turned.floatValue / ROTARY_PIXELS_PER_VOLUME_STEP).toInt()
+                    if (steps != 0) {
+                        turned.floatValue -= steps * ROTARY_PIXELS_PER_VOLUME_STEP
+                        // Same sign as the scrubber, which turns the same bezel on the same
+                        // screen: forward is later there and louder here. Two controls that
+                        // answered one turn in opposite directions would be a coin toss.
+                        onAdjustVolumeBy(steps)
+                        // The slider buzzes for its own buttons; the bezel has to be given the
+                        // same tick by hand, or half the control would be silent to the hand.
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    }
+                    true
+                }
+                .semantics { contentDescription = volumeLabel },
+        ) {
+            Slider(
+                value = uiState.volumeLevel,
+                onValueChange = onSetVolume,
+                valueProgression = 0..uiState.snapshot.maxVolume,
+                // A phone's scale is a dozen-odd steps, and a dozen segments across a 45 mm screen
+                // reads as a pattern rather than as a level.
+                segmented = false,
+                decreaseIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.VolumeDown,
+                        contentDescription = stringResource(R.string.watch_volume_down),
+                    )
+                },
+                increaseIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                        contentDescription = stringResource(R.string.watch_volume_up),
+                    )
+                },
+            )
+        }
+        if (uiState.showsVolumeHint) {
+            Text(
+                text = stringResource(R.string.watch_volume_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             )
         }
     }
@@ -1206,3 +1346,13 @@ private val SHOW_DOT_SIZE = 6.dp
  * feels like it seeked immediately.
  */
 private const val SCRUB_COMMIT_DELAY_MS = 600L
+
+/**
+ * Scroll pixels the bezel must report before the volume moves by one of the phone's steps.
+ *
+ * Rotary hardware reports a scroll distance rather than detents, and the distance a detent is
+ * worth differs between a rotating bezel, a touch bezel and a crown. This number is the one thing
+ * on this screen that can only be settled on a wrist: too small and a flick empties the volume,
+ * too large and a deliberate turn does nothing.
+ */
+private const val ROTARY_PIXELS_PER_VOLUME_STEP = 48f

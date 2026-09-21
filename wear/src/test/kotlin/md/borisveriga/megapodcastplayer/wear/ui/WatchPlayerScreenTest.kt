@@ -8,6 +8,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -432,6 +433,16 @@ class WatchPlayerScreenTest {
         composeTestRule.onNode(isVerticalList()).performScrollToNode(hasText(text))
     }
 
+    /**
+     * The same for a control that carries no words of its own.
+     *
+     * The volume row is one: a bar and two glyphs, whose only text is what it says to TalkBack.
+     */
+    private fun scrollToControl(description: String) {
+        composeTestRule.onNode(isVerticalList())
+            .performScrollToNode(hasContentDescription(description))
+    }
+
     /** A pager: a scrollable that moves sideways. There must not be one on this screen any more. */
     private fun isHorizontalPager(): SemanticsMatcher = hasScrollToNodeAction() and
         SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
@@ -492,6 +503,130 @@ class WatchPlayerScreenTest {
             .assertIsDisplayed()
     }
 
+    // ---- Volume ---------------------------------------------------------------------------------
+
+    /** The same episode, on a phone that reported a volume scale to move along. */
+    private val playingWithVolume = playing.copy(volume = 9, maxVolume = 15)
+
+    @Test
+    fun `the volume bar sits with the transport and says how to take hold of it`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+            ),
+        )
+
+        scrollToControl("Volume. Tap to adjust")
+
+        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Quieter").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Louder").assertIsDisplayed()
+    }
+
+    /**
+     * The buttons are the half of this control that needs no mode, and the only half a wearer who
+     * never discovers the bezel will ever use. They report an absolute level, as the slider does.
+     */
+    @Test
+    fun `the quieter and louder buttons move the phone one step`() {
+        val levels = mutableListOf<Int>()
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+            ),
+            onSetVolume = { levels += it },
+        )
+
+        scrollToControl("Louder")
+        composeTestRule.onNodeWithContentDescription("Louder").performClick()
+        composeTestRule.onNodeWithContentDescription("Quieter").performClick()
+
+        assertEquals(listOf(10, 8), levels)
+    }
+
+    @Test
+    fun `tapping the bar takes hold of the bezel`() {
+        var held = 0
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+            ),
+            onBeginVolume = { held++ },
+        )
+
+        scrollToControl("Volume. Tap to adjust")
+        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performClick()
+
+        assertEquals(1, held)
+    }
+
+    @Test
+    fun `a bar being turned says so, and tapping it again lets go`() {
+        var released = 0
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+                isAdjustingVolume = true,
+            ),
+            onEndVolume = { released++ },
+        )
+
+        scrollToControl("Adjusting volume. Turn the bezel")
+        composeTestRule
+            .onNodeWithContentDescription("Adjusting volume. Turn the bezel")
+            .performClick()
+
+        assertEquals(1, released)
+    }
+
+    /** A control whose bar cannot move is worse than no control: it is one that lies. */
+    @Test
+    fun `a phone that will not have its volume set gets no volume bar`() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
+
+        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription("Louder").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the first hold of the volume bar says what the bezel does`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+                isAdjustingVolume = true,
+                showsVolumeHint = true,
+            ),
+        )
+
+        scrollTo("Turn the bezel for volume")
+
+        composeTestRule.onNodeWithText("Turn the bezel for volume").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a volume bar that has been explained before says nothing`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+                isAdjustingVolume = true,
+            ),
+        )
+
+        composeTestRule.onNodeWithText("Turn the bezel for volume").assertDoesNotExist()
+    }
+
     /** Renders the screen with no-op callbacks except the ones a test cares about. */
     private fun setScreen(
         uiState: WatchPlayerUiState,
@@ -500,6 +635,9 @@ class WatchPlayerScreenTest {
         onPlayOnPhone: (String) -> Unit = {},
         onQueueOnPhone: (String) -> Unit = {},
         onRetry: () -> Unit = {},
+        onBeginVolume: () -> Unit = {},
+        onEndVolume: () -> Unit = {},
+        onSetVolume: (Int) -> Unit = {},
     ) {
         composeTestRule.setContent {
             androidx.wear.compose.material3.MaterialTheme {
@@ -516,6 +654,9 @@ class WatchPlayerScreenTest {
                         onPlayOnPhone = onPlayOnPhone,
                         onQueueOnPhone = onQueueOnPhone,
                         onRetry = onRetry,
+                        onBeginVolume = onBeginVolume,
+                        onEndVolume = onEndVolume,
+                        onSetVolume = onSetVolume,
                     )
                 }
             }

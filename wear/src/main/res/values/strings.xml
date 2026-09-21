@@ -53,6 +53,19 @@
     <string name="watch_scrub_active">Adjusting position. Turn the bezel, then tap to confirm</string>
     <string name="watch_scrub_hint">Turn the bezel to seek</string>
 
+    <!--
+      The volume bar, in each of its modes. It says "tap to adjust" like the scrubber does, because
+      it is the same gesture on the same kind of bar; what it does not say is "tap to confirm",
+      because there is nothing to confirm — every step is already applied by the time the wearer
+      stops turning. The minus and plus buttons are labelled as actions rather than as states, and
+      with the words a person uses about sound rather than about a control.
+    -->
+    <string name="watch_volume">Volume. Tap to adjust</string>
+    <string name="watch_volume_active">Adjusting volume. Turn the bezel</string>
+    <string name="watch_volume_hint">Turn the bezel for volume</string>
+    <string name="watch_volume_down">Quieter</string>
+    <string name="watch_volume_up">Louder</string>
+
     <string name="watch_buffering">Buffering</string>
 
     <string name="watch_nothing_playing_title">Nothing playing</string>

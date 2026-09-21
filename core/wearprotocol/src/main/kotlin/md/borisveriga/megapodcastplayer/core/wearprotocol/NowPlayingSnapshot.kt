@@ -43,6 +43,13 @@ data class WatchEpisode(
  * @property skipBackMs the user's configured back jump.
  * @property hasNext whether another episode follows in the queue.
  * @property hasPrevious whether an episode precedes the current one in the queue.
+ * @property volume the phone's media volume, on its own scale — the one its volume keys move, not
+ *   the player's internal gain. Sent as an index rather than a fraction so that one turn of the
+ *   bezel is one real step of the phone's scale, which is what makes the two devices agree about
+ *   what "one step quieter" means.
+ * @property maxVolume the top of that scale, and the only thing that tells the watch there is a
+ *   scale at all: a phone whose output has a fixed volume reports `0` here, and the watch then
+ *   draws no volume control rather than a dead one. See [canSetVolume].
  * @property upNext the queue after the current episode, in play order.
  * @property downloaded episodes stored on the phone that are *not* in the queue, in the order the
  *   phone's downloads screen lists them. This is the half of "what shall I listen to" the queue
@@ -71,6 +78,8 @@ data class NowPlayingSnapshot(
     val skipBackMs: Long = PlaybackSettings.DEFAULT_SKIP_BACK_MS,
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
+    val volume: Int = 0,
+    val maxVolume: Int = 0,
     val upNext: List<WatchEpisode> = emptyList(),
     val downloaded: List<WatchEpisode> = emptyList(),
     val publishedAtMs: Long = 0L,
@@ -81,6 +90,15 @@ data class NowPlayingSnapshot(
 
     /** The duration once the phone knows it, otherwise null. */
     val knownDurationMs: Long? get() = durationMs.takeIf { it > 0L }
+
+    /**
+     * True when the phone reported a volume scale to move along.
+     *
+     * False is not "silent" but "this phone will not let its volume be set from here" — a player
+     * built without device-volume control, or an output whose volume is fixed. Both report a
+     * maximum of zero, and a control with a scale of zero is one that can only lie.
+     */
+    val canSetVolume: Boolean get() = maxVolume > 0
 
     /**
      * Where playback has reached [elapsedMs] milliseconds after this snapshot arrived.

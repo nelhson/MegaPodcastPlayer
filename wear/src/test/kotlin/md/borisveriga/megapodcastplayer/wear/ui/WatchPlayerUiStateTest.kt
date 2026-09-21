@@ -52,6 +52,112 @@ class WatchPlayerUiStateTest {
         assertEquals(30_000L, frame.position.positionMs)
     }
 
+    // ---- Volume ---------------------------------------------------------------------------------
+
+    private val playingWithVolume = playing.copy(volume = 9, maxVolume = 15)
+
+    @Test
+    fun `the level shown is the phone's until the wearer touches it`() {
+        val received = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 1_000L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 2_000L)
+
+        assertEquals(9, frame.uiState.volumeLevel)
+    }
+
+    /**
+     * The half-second between sending a level and the phone publishing it is the whole reason this
+     * hold exists: the last snapshot still describes the step the wearer turned away from.
+     */
+    @Test
+    fun `a level just set is held over the round trip`() {
+        val received = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 1_000L)
+        val sent = VolumeAdjustment(level = 12, sentAtElapsedMs = 1_500L)
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            received,
+            nowElapsedMs = 2_000L,
+            volume = sent,
+        )
+
+        assertEquals(12, frame.uiState.volumeLevel)
+    }
+
+    @Test
+    fun `the phone's own reading wins once it confirms`() {
+        val sent = VolumeAdjustment(level = 12, sentAtElapsedMs = 1_000L)
+        // Arrived after the command went out, so this is the phone answering it.
+        val received = ReceivedSnapshot(
+            playingWithVolume.copy(volume = 12),
+            receivedAtElapsedMs = 1_200L,
+        )
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            received,
+            nowElapsedMs = 1_300L,
+            volume = sent,
+        )
+
+        assertEquals(12, frame.uiState.volumeLevel)
+    }
+
+    /** A phone that never answers must not freeze the bar on a level it never applied. */
+    @Test
+    fun `a level nobody confirmed is let go of eventually`() {
+        val received = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 1_000L)
+        val sent = VolumeAdjustment(level = 12, sentAtElapsedMs = 1_500L)
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            received,
+            nowElapsedMs = 1_500L + VOLUME_HOLD_MS + 1L,
+            volume = sent,
+        )
+
+        assertEquals(9, frame.uiState.volumeLevel)
+    }
+
+    @Test
+    fun `a level the wearer is still turning to is shown before it is sent`() {
+        val received = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 1_000L)
+        val turning = VolumeAdjustment(level = 11, sentAtElapsedMs = null)
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            received,
+            nowElapsedMs = 600_000L,
+            volume = turning,
+        )
+
+        assertEquals(11, frame.uiState.volumeLevel)
+    }
+
+    @Test
+    fun `a phone with no volume scale offers no volume row`() {
+        val withScale = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 0L)
+        val without = ReceivedSnapshot(playing, receivedAtElapsedMs = 0L)
+
+        assertTrue(
+            watchPlayerFrame(PhoneLink.CONNECTED, withScale, nowElapsedMs = 0L)
+                .uiState.canSetVolume,
+        )
+        assertFalse(
+            watchPlayerFrame(PhoneLink.CONNECTED, without, nowElapsedMs = 0L)
+                .uiState.canSetVolume,
+        )
+    }
+
+    @Test
+    fun `an unreachable phone offers no volume row either`() {
+        val received = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 0L)
+
+        val frame = watchPlayerFrame(PhoneLink.DISCONNECTED, received, nowElapsedMs = 0L)
+
+        assertFalse(frame.uiState.canSetVolume)
+    }
+
     // ---- The clock, and what it is allowed to change --------------------------------------------
 
     /**

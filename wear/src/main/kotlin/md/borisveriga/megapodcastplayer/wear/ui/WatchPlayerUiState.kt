@@ -16,6 +16,18 @@ import md.borisveriga.megapodcastplayer.wear.data.ReceivedSnapshot
 internal const val SEEK_HOLD_MS = 3_000L
 
 /**
+ * How long a volume the wearer set keeps the bar where they put it.
+ *
+ * The same bargain [SEEK_HOLD_MS] strikes, and for the same reason: between sending `SetVolume`
+ * and the phone publishing the result the last snapshot still describes the old level, and showing
+ * it would walk the bar back off the step the wearer just turned onto. Shorter than the seek hold
+ * because volume is sent as it is turned rather than once at the end, so a reply is never far
+ * behind — and because a bar stuck a step out of date is a worse lie when the ears can hear the
+ * difference.
+ */
+internal const val VOLUME_HOLD_MS = 1_500L
+
+/**
  * A scrub in progress, or one just committed.
  *
  * @property positionMs where the user has dragged to.
@@ -25,6 +37,22 @@ internal const val SEEK_HOLD_MS = 3_000L
 internal data class ScrubState(
     val positionMs: Long,
     val committedAtElapsedMs: Long? = null,
+)
+
+/**
+ * A volume the wearer has set, and whether the phone has been told yet.
+ *
+ * Unlike a scrub, this is never "in progress": every step is sent, throttled rather than held
+ * back, because a volume nobody applied until the finger stopped would be a volume nobody could
+ * hear themselves choosing. What is held is the *reading* — see [VOLUME_HOLD_MS].
+ *
+ * @property level the level the wearer has turned to, on the phone's scale.
+ * @property sentAtElapsedMs the watch's elapsed-realtime clock when this level went out, or null
+ *   while it is still waiting its turn behind the throttle.
+ */
+internal data class VolumeAdjustment(
+    val level: Int,
+    val sentAtElapsedMs: Long? = null,
 )
 
 /**
@@ -44,20 +72,32 @@ internal data class ScrubState(
  *   tap did nothing instead of silently ignoring it.
  * @property isScrubbing true while the user is dragging the progress bar, which is what makes the
  *   bar grow a thumb and take rotary focus.
+ * @property isAdjustingVolume true while the volume row holds the bezel. Never true at the same
+ *   time as [isScrubbing]: rotary input has exactly one focus owner, so the two modes are
+ *   mutually exclusive by construction, and the view model is where that is enforced.
+ * @property volumeLevel the level the volume row draws, on the phone's `0..maxVolume` scale. Not
+ *   simply the snapshot's: a level the wearer has just turned to is shown at once and held over
+ *   the round trip, the way a committed scrub is.
  * @property momentSaved true for a few seconds after a moment is marked. A watch has no snackbar
  *   and the mark leaves nothing on screen, so without this the button is one the wearer presses and
  *   then presses again because they cannot tell whether the first press did anything.
  * @property showsScrubHint true while the first scrub on this watch is being explained. Taking hold
  *   of the bar is the one gesture here that leaves no trace on the screen, so the first time it is
  *   done the bar says what the bezel now does.
+ * @property showsVolumeHint the same sentence for the volume row, for the same reason. Its minus
+ *   and plus buttons are visible and explain themselves; that the bar between them can be taken
+ *   hold of and turned is the part nothing on the screen says.
  */
 data class WatchPlayerUiState(
     val link: PhoneLink = PhoneLink.CHECKING,
     val snapshot: NowPlayingSnapshot = NowPlayingSnapshot(),
     val lastCommandFailed: Boolean = false,
     val isScrubbing: Boolean = false,
+    val isAdjustingVolume: Boolean = false,
+    val volumeLevel: Int = 0,
     val momentSaved: Boolean = false,
     val showsScrubHint: Boolean = false,
+    val showsVolumeHint: Boolean = false,
 ) {
 
     /**
@@ -90,6 +130,17 @@ data class WatchPlayerUiState(
      */
     val canScrub: Boolean
         get() = showsControls && snapshot.knownDurationMs != null
+
+    /**
+     * True when the volume row is worth drawing.
+     *
+     * Needs the same reachable, loaded phone the transport needs — volume with nothing playing
+     * adjusts something nobody can hear — and a phone that reported a scale to move along. A
+     * phone that did not gets no row at all rather than one whose bar cannot move; see
+     * [NowPlayingSnapshot.canSetVolume].
+     */
+    val canSetVolume: Boolean
+        get() = showsControls && snapshot.canSetVolume
 }
 
 /**
@@ -136,8 +187,11 @@ internal data class WatchPlayerFrame(
  * @param nowElapsedMs the watch's current [android.os.SystemClock.elapsedRealtime].
  * @param lastCommandFailed whether the most recent command failed to send.
  * @param scrub a scrub in progress or recently committed, which overrides the extrapolated position.
+ * @param volume a level the wearer has just set, which overrides the phone's until it confirms.
+ * @param isAdjustingVolume whether the volume row currently holds the bezel.
  * @param momentSaved whether the mark-a-moment confirmation is up.
  * @param showsScrubHint whether the first-scrub explanation is up.
+ * @param showsVolumeHint whether the first-volume explanation is up.
  * @return the state for the pages and the position for the bar, built from one reading of the
  *   inputs so the two never disagree about which episode the position belongs to.
  */
@@ -147,15 +201,26 @@ internal fun watchPlayerFrame(
     nowElapsedMs: Long,
     lastCommandFailed: Boolean = false,
     scrub: ScrubState? = null,
+    volume: VolumeAdjustment? = null,
+    isAdjustingVolume: Boolean = false,
     momentSaved: Boolean = false,
     showsScrubHint: Boolean = false,
+    showsVolumeHint: Boolean = false,
 ): WatchPlayerFrame {
     val snapshot = received?.snapshot ?: NowPlayingSnapshot()
     val sinceArrivalMs = if (received == null) 0L else nowElapsedMs - received.receivedAtElapsedMs
 
-    val shown = scrub?.positionMs?.takeIf { scrub.stillShowing(received, nowElapsedMs) }
+    val shown = scrub?.positionMs?.takeIf {
+        stillShowing(scrub.committedAtElapsedMs, received, nowElapsedMs, SEEK_HOLD_MS)
+    }
     // The phone's position is a reading taken some time ago, so it is advanced to now.
     val positionMs = shown ?: snapshot.positionAfter(sinceArrivalMs)
+
+    // The level the wearer turned to wins until the phone confirms it, for the reason a held
+    // scrub does: the last snapshot still describes the level they turned away from.
+    val volumeLevel = volume?.level?.takeIf {
+        stillShowing(volume.sentAtElapsedMs, received, nowElapsedMs, VOLUME_HOLD_MS)
+    } ?: snapshot.volume
 
     val uiState = WatchPlayerUiState(
         link = link,
@@ -166,8 +231,11 @@ internal fun watchPlayerFrame(
         // Only an uncommitted scrub is "scrubbing": once the seek is away the user has let go, and
         // the held position is just covering the round trip.
         isScrubbing = scrub != null && scrub.committedAtElapsedMs == null,
+        isAdjustingVolume = isAdjustingVolume,
+        volumeLevel = volumeLevel.coerceIn(0, snapshot.maxVolume),
         momentSaved = momentSaved,
         showsScrubHint = showsScrubHint,
+        showsVolumeHint = showsVolumeHint,
     )
 
     return WatchPlayerFrame(
@@ -180,19 +248,32 @@ internal fun watchPlayerFrame(
 }
 
 /**
- * Whether this scrub still governs what the bar shows.
+ * Whether a value the wearer set still governs what the screen shows.
  *
- * An uncommitted scrub always does — the user's finger is on it. A committed one does until the
- * phone confirms, which is a snapshot that arrived *after* the command went out, or until
- * [SEEK_HOLD_MS] passes without one.
+ * One rule serving the scrubber and the volume row, because it answers one question: the wearer
+ * moved something, the phone has not answered yet, and until it does the screen must show what
+ * they did rather than what the phone last said.
  *
+ * A value that has not been sent always governs — the wearer is still moving it. A sent one
+ * governs until the phone confirms, which is a snapshot that arrived *after* it went out, or until
+ * [holdMs] passes without one. The bound is what keeps a phone that never answers from freezing
+ * the control for good.
+ *
+ * @param sentAtElapsedMs the watch's elapsed-realtime clock when the command went out, or null
+ *   while nothing has been sent.
  * @param received the last snapshot the watch got, or null if none.
  * @param nowElapsedMs the watch's current elapsed-realtime clock.
+ * @param holdMs how long a sent value is held before the phone's own reading is believed again.
  */
-private fun ScrubState.stillShowing(received: ReceivedSnapshot?, nowElapsedMs: Long): Boolean {
-    val committedAt = committedAtElapsedMs ?: return true
-    val confirmed = received != null && received.receivedAtElapsedMs > committedAt
-    return !confirmed && nowElapsedMs - committedAt < SEEK_HOLD_MS
+private fun stillShowing(
+    sentAtElapsedMs: Long?,
+    received: ReceivedSnapshot?,
+    nowElapsedMs: Long,
+    holdMs: Long,
+): Boolean {
+    val sentAt = sentAtElapsedMs ?: return true
+    val confirmed = received != null && received.receivedAtElapsedMs > sentAt
+    return !confirmed && nowElapsedMs - sentAt < holdMs
 }
 
 /**

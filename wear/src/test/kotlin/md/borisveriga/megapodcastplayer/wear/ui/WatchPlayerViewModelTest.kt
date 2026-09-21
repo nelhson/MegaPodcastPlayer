@@ -5,9 +5,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
@@ -23,7 +27,14 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
-/** Tests that the watch's buttons become the right commands, and that failures are surfaced. */
+/**
+ * Tests that the watch's buttons become the right commands, and that failures are surfaced.
+ *
+ * The opt-in is for the test scheduler's clock. The volume throttle is the one thing here made of
+ * time rather than of calls, and the only honest way to assert on it is to move a virtual clock
+ * past the interval — a real wait would be a slow test that still proved nothing.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
 class WatchPlayerViewModelTest {
 
     @get:Rule
@@ -42,6 +53,19 @@ class WatchPlayerViewModelTest {
         speed = 1f,
     )
 
+    private companion object {
+        /**
+         * Long enough for the volume throttle to have let a level through.
+         *
+         * The interval itself is the view model's business; this only has to be past it, and
+         * short of the hold that clears the pending level afterwards.
+         */
+        const val SETTLED_MS = 300L
+
+        /** Past the stillness after which the volume row hands the bezel back to the list. */
+        const val VOLUME_RELEASED_MS = 5_000L
+    }
+
     @Before
     fun setUp() {
         every { client.phoneLink } returns flowOf(PhoneLink.CONNECTED)
@@ -51,6 +75,7 @@ class WatchPlayerViewModelTest {
         coEvery { client.send(any()) } returns true
         // Seen already, so the scrub tests are not also asserting on a hint they are not about.
         coEvery { hints.hasSeenScrubHint() } returns true
+        coEvery { hints.hasSeenVolumeHint() } returns true
     }
 
     /** Builds the view model under test with its sources stubbed. */
@@ -206,6 +231,203 @@ class WatchPlayerViewModelTest {
             coVerify(exactly = 0) { client.send(ofType<WearCommand.SeekTo>()) }
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // ---- Volume ---------------------------------------------------------------------------------
+
+    /** The same episode, on a phone that reported a volume scale to move along. */
+    private val playingWithVolume = playing.copy(volume = 9, maxVolume = 15)
+
+    /**
+     * A bezel delivers a turn as a burst, and each step is absolute, so only the last one carries
+     * any information. Sending them all would put a Bluetooth write behind every detent for a
+     * result nobody could tell apart from this.
+     */
+    @Test
+    fun `a burst of volume steps sends only the level the wearer settled on`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        val viewModel = viewModel()
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginVolume()
+            viewModel.adjustVolumeBy(1)
+            viewModel.adjustVolumeBy(1)
+            viewModel.adjustVolumeBy(1)
+            advanceTimeBy(SETTLED_MS)
+            runCurrent()
+
+            coVerify(exactly = 1) { client.send(WearCommand.SetVolume(12)) }
+            coVerify(exactly = 0) { client.send(WearCommand.SetVolume(10)) }
+            coVerify(exactly = 0) { client.send(WearCommand.SetVolume(11)) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * Read from the settled state rather than from the next emission: taking hold of the bar and
+     * turning it are two changes, and which of them the collector sees first is not the claim.
+     */
+    @Test
+    fun `the level the bezel reaches is shown before the phone confirms it`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.beginVolume()
+        viewModel.adjustVolumeBy(-2)
+        runCurrent()
+
+        assertEquals(7, viewModel.uiState.value.volumeLevel)
+    }
+
+    @Test
+    fun `the volume is clamped to the phone's own scale`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        val viewModel = viewModel()
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginVolume()
+            viewModel.adjustVolumeBy(100)
+            advanceTimeBy(SETTLED_MS)
+            runCurrent()
+            viewModel.adjustVolumeBy(-100)
+            advanceTimeBy(SETTLED_MS)
+            runCurrent()
+
+            coVerify(exactly = 1) { client.send(WearCommand.SetVolume(15)) }
+            coVerify(exactly = 1) { client.send(WearCommand.SetVolume(0)) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** The bezel has one owner, so entering either mode has to leave the other. */
+    @Test
+    fun `taking the bezel for the volume ends a scrub, and the other way round`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.beginScrub()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isScrubbing)
+
+        viewModel.beginVolume()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isAdjustingVolume)
+        assertFalse(viewModel.uiState.value.isScrubbing)
+
+        viewModel.beginScrub()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isScrubbing)
+        assertFalse(viewModel.uiState.value.isAdjustingVolume)
+    }
+
+    /** A mode nobody leaves is a bezel that stopped scrolling, and there is no commit to leave by. */
+    @Test
+    fun `the bezel goes back to the list after a while of stillness`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        val viewModel = viewModel()
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginVolume()
+            assertTrue(awaitItem().isAdjustingVolume)
+
+            advanceTimeBy(VOLUME_RELEASED_MS)
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.isAdjustingVolume)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * A bar taken hold of and let go without a turn must not keep showing the level it was seeded
+     * with, or a volume changed on the phone afterwards would never reach the watch again.
+     */
+    @Test
+    fun `letting go without turning hands the reading back to the phone`() = runTest {
+        val snapshots = MutableStateFlow<ReceivedSnapshot?>(
+            ReceivedSnapshot(playingWithVolume, 0L),
+        )
+        every { client.snapshots } returns snapshots
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.beginVolume()
+        viewModel.endVolume()
+        snapshots.value = ReceivedSnapshot(playingWithVolume.copy(volume = 3), 0L)
+        runCurrent()
+
+        assertEquals(3, viewModel.uiState.value.volumeLevel)
+        coVerify(exactly = 0) { client.send(ofType<WearCommand.SetVolume>()) }
+    }
+
+    @Test
+    fun `a phone with no volume scale gives its bar nothing to take hold of`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+
+        viewModel.uiState.test {
+            assertFalse(awaitItem().canSetVolume)
+
+            viewModel.beginVolume()
+            viewModel.adjustVolumeBy(1)
+            advanceTimeBy(SETTLED_MS)
+            runCurrent()
+
+            coVerify(exactly = 0) { client.send(ofType<WearCommand.SetVolume>()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a volume that could not be delivered says so`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        coEvery { client.send(ofType<WearCommand.SetVolume>()) } returns false
+        val viewModel = viewModel()
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.beginVolume()
+            viewModel.adjustVolumeBy(1)
+            advanceTimeBy(SETTLED_MS)
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.lastCommandFailed)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the first time the volume bar is held it says what the bezel does`() = runTest {
+        coEvery { hints.hasSeenVolumeHint() } returns false
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingWithVolume, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.beginVolume()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.showsVolumeHint)
+        coVerify(exactly = 1) { hints.markVolumeHintSeen() }
+    }
+
+    /**
+     * Keeps the screen state hot, so that it can be read directly rather than awaited.
+     *
+     * [WatchPlayerViewModel.uiState] shares while subscribed, and a test that only calls methods
+     * on the view model is not a subscriber — its value would sit at the initial one forever.
+     */
+    private fun TestScope.keepStateLive(viewModel: WatchPlayerViewModel) {
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        runCurrent()
     }
 
     @Test

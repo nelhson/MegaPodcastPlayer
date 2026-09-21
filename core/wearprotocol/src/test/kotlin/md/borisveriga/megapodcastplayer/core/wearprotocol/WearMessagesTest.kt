@@ -29,9 +29,22 @@ class WearMessagesTest {
     fun `commands with arguments survive a round trip`() {
         val seek = WearCommand.SeekTo(positionMs = 42_000L)
         val play = WearCommand.PlayEpisode(episodeId = "podcast-1:guid-9")
+        val volume = WearCommand.SetVolume(level = 9)
 
         assertEquals(seek, WearMessages.decodeCommand(WearMessages.encodeCommand(seek)))
         assertEquals(play, WearMessages.decodeCommand(WearMessages.encodeCommand(play)))
+        assertEquals(volume, WearMessages.decodeCommand(WearMessages.encodeCommand(volume)))
+    }
+
+    /**
+     * Zero is a level like any other, and the one a relative protocol would be most likely to lose
+     * track of. It has to survive the encoding as itself rather than as an absent field.
+     */
+    @Test
+    fun `silence is a volume like any other`() {
+        val silent = WearCommand.SetVolume(level = 0)
+
+        assertEquals(silent, WearMessages.decodeCommand(WearMessages.encodeCommand(silent)))
     }
 
     @Test
@@ -45,6 +58,8 @@ class WearMessagesTest {
             durationMs = 2_000L,
             speed = 1.5f,
             hasNext = true,
+            volume = 9,
+            maxVolume = 15,
             upNext = listOf(WatchEpisode(id = "ep-2", title = "Two", showTitle = "The Show")),
             publishedAtMs = 12345L,
         )
