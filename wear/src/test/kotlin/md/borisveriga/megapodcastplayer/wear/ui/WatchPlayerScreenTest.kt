@@ -1,5 +1,7 @@
 package md.borisveriga.megapodcastplayer.wear.ui
 
+import android.content.Context
+import android.provider.Settings
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WatchEpisode
@@ -338,6 +341,13 @@ class WatchPlayerScreenTest {
      * The section exists so the wrist can reach something that is not already queued. It comes
      * after the queue, because most raises of the wrist are about what is playing and only a few
      * are about changing what comes next.
+     *
+     * Walked in two steps, comparing a pair that is on screen together each time, for the reason
+     * `the queue sits right under the moment button` gives: a lazy column composes only what is
+     * near the viewport, and the two headers are far enough apart on a 192 dp screen that the
+     * first is gone by the time the second arrives. Chaining them through the queue's own row —
+     * header, then its row, then the next header — says the same thing about the order and says it
+     * about one more boundary.
      */
     @Test
     fun `what is downloaded on the phone is listed under the queue`() {
@@ -348,12 +358,21 @@ class WatchPlayerScreenTest {
             ),
         )
 
-        scrollTo("Downloaded on phone")
+        scrollTo("The one about antennas")
         val queue = composeTestRule.onNodeWithText("Phone queue").getUnclippedBoundsInRoot()
+        val queued = composeTestRule
+            .onNodeWithText("The one about antennas")
+            .getUnclippedBoundsInRoot()
+        assertTrue("queue header above the episode it queues", queue.bottom <= queued.top)
+
+        scrollTo("Downloaded on phone")
+        val queuedAgain = composeTestRule
+            .onNodeWithText("The one about antennas")
+            .getUnclippedBoundsInRoot()
         val downloads = composeTestRule
             .onNodeWithText("Downloaded on phone")
             .getUnclippedBoundsInRoot()
-        assertTrue("downloads header below the queue header", queue.bottom <= downloads.top)
+        assertTrue("downloads header below the queue", queuedAgain.bottom <= downloads.top)
 
         scrollTo("The one about capacitors")
         composeTestRule.onNodeWithText("The one about capacitors").assertIsDisplayed()
@@ -420,6 +439,27 @@ class WatchPlayerScreenTest {
     /** The column: the one scrollable on the screen, and it moves up and down. */
     private fun isVerticalList(): SemanticsMatcher = hasScrollToNodeAction() and
         SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+
+    /**
+     * The reduce-motion setting is read once by the screen and handed down, rather than read by the
+     * waveform inside the header — which is a list item, so reading it there registered and
+     * unregistered a `ContentObserver` every time the header scrolled past. This checks the part
+     * of that a test can see: with animations removed the header still draws, words and all.
+     */
+    @Test
+    fun `a watch with animations turned off still gets its header`() {
+        Settings.Global.putFloat(
+            ApplicationProvider.getApplicationContext<Context>().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            0f,
+        )
+
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
+
+        composeTestRule.onNodeWithText("The one about batteries").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Radio Hardware").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
+    }
 
     @Test
     fun theFirstScrubSaysWhatTheBezelDoes() {
