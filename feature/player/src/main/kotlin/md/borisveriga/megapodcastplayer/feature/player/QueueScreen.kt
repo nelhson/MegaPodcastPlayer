@@ -203,7 +203,11 @@ fun QueueScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        if (drag.order.isEmpty()) {
+        // The whole queue, not just what is up next: queueing into a player that had nothing
+        // loaded makes that episode the player's current item, so it arrives as "now playing" with
+        // an empty "up next" behind it. Asking `upNext` alone would then answer "nothing queued"
+        // to the episode the user had just queued.
+        if (uiState.queue.isEmpty()) {
             EmptyState(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 title = stringResource(R.string.queue_empty_title),

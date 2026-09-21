@@ -177,6 +177,30 @@ class QueueScreenTest {
         composeRule.onNodeWithText("Nothing queued").assertIsDisplayed()
     }
 
+    /**
+     * The bug this guards: queueing an episode while the player held nothing — a swipe on a
+     * downloaded row with nothing playing — makes that episode the player's *current* item, so
+     * "up next" is empty behind it. The screen used to read that as an empty queue and say
+     * "Nothing queued" about the episode the user had just queued.
+     */
+    @Test
+    fun `the only queued episode is shown even when it is the one loaded`() {
+        setContent(
+            uiState = PlayerUiState(
+                playback = PlaybackState(
+                    isConnected = true,
+                    episodeId = "a",
+                    queueEpisodeIds = listOf("a"),
+                    queueIndex = 0,
+                ),
+                queue = listOf(playable("a")),
+            ),
+        )
+
+        composeRule.onNodeWithText("Nothing queued").assertDoesNotExist()
+        composeRule.onNodeWithText("Episode a", useUnmergedTree = true).assertIsDisplayed()
+    }
+
     @Test
     fun `tapping a queued episode plays it`() {
         var played: String? = null
