@@ -673,6 +673,7 @@ private fun SleepTimerButton(
     val description = when {
         remaining != null -> stringResource(R.string.player_sleep_armed, remaining)
         sleep.isEndOfEpisode -> stringResource(R.string.player_sleep_armed_end_of_episode)
+        sleep.endOfChapterIndex != null -> stringResource(R.string.player_sleep_armed_end_of_chapter)
         else -> stringResource(R.string.player_sleep_arm)
     }
 

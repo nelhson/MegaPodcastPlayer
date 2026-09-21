@@ -39,6 +39,15 @@ import md.borisveriga.megapodcastplayer.core.model.chapters.nextStartAfter
 import md.borisveriga.megapodcastplayer.core.model.chapters.previousStartBefore
 
 /**
+ * One chapter the sleep timer can be told to stop at the end of.
+ *
+ * @property index where the chapter sits in the episode's list, which is what identifies it: two
+ *   chapters called "Ad break" are still two chapters.
+ * @property title what the publisher called it.
+ */
+data class SleepChapterOption(val index: Int, val title: String)
+
+/**
  * State rendered by the mini player, the now-playing screen and the queue.
  *
  * @property playback what the player is doing right now.
@@ -113,18 +122,22 @@ data class PlayerUiState(
     val momentCount: Int get() = moments.size
 
     /**
-     * How much of the current chapter is left, or null when there is no chapter to end.
+     * The chapters the sleep timer can stop at the end of: the one playing and every one after it.
      *
-     * The sleep timer's *end of chapter* option, computed here rather than in the timer: the timer
-     * counts milliseconds and knows nothing about chapters, and the view model is the only place
-     * that has both the chapters and the playhead.
+     * Not the ones already played, because "stop at the end of a chapter that has ended" has no
+     * meaning that is not a surprise. A playhead before the first chapter — a list that opens at
+     * something other than zero — is offered all of them, since every one is still to come. Empty
+     * when the episode has no chapters, which is what keeps the option off the sheet.
+     *
+     * Computed here rather than in the timer, which knows nothing about chapters: the view model
+     * is the only place that has both them and the playhead.
      */
-    val chapterRemainingMs: Long?
+    val sleepChapterOptions: List<SleepChapterOption>
         get() {
-            val chapters = chapters.takeIf { it.isNotEmpty() } ?: return null
-            val position = playback.positionMs
-            val nextStart = chapters.nextStartAfter(position) ?: playback.knownDurationMs
-            return nextStart?.minus(position)?.takeIf { it > 0L }
+            val from = chapters.indexOfCurrent(playback.positionMs).coerceAtLeast(0)
+            return chapters.drop(from).mapIndexed { offset, chapter ->
+                SleepChapterOption(index = from + offset, title = chapter.title)
+            }
         }
 
     /** True when there is nothing to show — the mini player should not be on screen at all. */
@@ -683,6 +696,27 @@ class PlayerViewModel @Inject constructor(
     /** Stops playback — and rings — when the episode playing finishes. */
     fun armSleepAtEndOfEpisode() {
         sleepTimer.armEndOfEpisode()
+    }
+
+    /**
+     * Stops playback at the end of a chosen chapter of the episode playing, fading out first.
+     *
+     * Where the chapter ends is where the next one starts. The last chapter has no next one and
+     * ends with the episode, which the timer is told by being given no position at all.
+     *
+     * @param index the chapter, as [SleepChapterOption.index] named it. Ignored when it names no
+     *   chapter or nothing is loaded — a tap that raced the episode changing under the sheet.
+     */
+    fun armSleepAtEndOfChapter(index: Int) {
+        val state = uiState.value
+        val episodeId = state.playback.episodeId ?: return
+        if (index !in state.chapters.indices) return
+
+        sleepTimer.armEndOfChapter(
+            chapterIndex = index,
+            episodeId = episodeId,
+            stopAtMs = state.chapters.getOrNull(index + 1)?.startMs,
+        )
     }
 
     /**
