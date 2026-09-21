@@ -14,8 +14,10 @@ import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -114,11 +116,49 @@ class EpisodePlayerTest {
     @Test
     fun `queueing writes to the durable queue as well as the player`() = runTest {
         coEvery { playbackRepository.playableEpisode("a") } returns playable("a")
+        coEvery { connection.addToQueue(playable("a")) } returns QueueAddResult.ADDED
 
-        assertTrue(episodePlayer.addToQueue("a"))
+        assertEquals(QueueAddResult.ADDED, episodePlayer.addToQueue("a"))
 
         coVerify { connection.addToQueue(playable("a")) }
         coVerify { playbackRepository.enqueue("a") }
+    }
+
+    /** What the player did is what the user will see, so it is what the caller is told. */
+    @Test
+    fun `queueing an episode left behind the one playing reports the move`() = runTest {
+        coEvery { playbackRepository.playableEpisode("a") } returns playable("a")
+        coEvery { connection.addToQueue(playable("a")) } returns QueueAddResult.MOVED_TO_END
+
+        assertEquals(QueueAddResult.MOVED_TO_END, episodePlayer.addToQueue("a"))
+    }
+
+    /** The durable queue is the whole point of the double write: the intent must not vanish. */
+    @Test
+    fun `queueing with the player unreachable still writes the queue, and counts as added`() = runTest {
+        coEvery { playbackRepository.playableEpisode("a") } returns playable("a")
+        coEvery { connection.addToQueue(playable("a")) } returns QueueAddResult.UNREACHABLE
+
+        assertEquals(QueueAddResult.ADDED, episodePlayer.addToQueue("a"))
+
+        coVerify { playbackRepository.enqueue("a") }
+    }
+
+    @Test
+    fun `an episode the player refuses is not written to the queue either`() = runTest {
+        coEvery { playbackRepository.playableEpisode("a") } returns playable("a")
+        coEvery { connection.addToQueue(playable("a")) } returns QueueAddResult.UNPLAYABLE
+
+        assertEquals(QueueAddResult.UNPLAYABLE, episodePlayer.addToQueue("a"))
+
+        coVerify(exactly = 0) { playbackRepository.enqueue(any()) }
+    }
+
+    @Test
+    fun `queueing an episode that is no longer stored is refused`() = runTest {
+        coEvery { playbackRepository.playableEpisode("gone") } returns null
+
+        assertEquals(QueueAddResult.UNPLAYABLE, episodePlayer.addToQueue("gone"))
     }
 
     @Test

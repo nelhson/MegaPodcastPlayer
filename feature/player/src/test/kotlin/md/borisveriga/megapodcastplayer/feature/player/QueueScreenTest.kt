@@ -71,6 +71,7 @@ class QueueScreenTest {
         playback = PlaybackState(
             isConnected = true,
             episodeId = "a",
+            positionMs = STARTED_MS,
             queueEpisodeIds = listOf("a", "b", "c"),
             queueIndex = 0,
         ),
@@ -199,6 +200,10 @@ class QueueScreenTest {
 
         composeRule.onNodeWithText("Nothing queued").assertDoesNotExist()
         composeRule.onNodeWithText("Episode a", useUnmergedTree = true).assertIsDisplayed()
+        // Never started, so it is a queued row and not "Now playing" — and a queue with a row in it
+        // can be cleared.
+        composeRule.onNodeWithText("Now playing", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Clear queue").assertIsDisplayed()
     }
 
     @Test
@@ -370,3 +375,6 @@ class QueueScreenTest {
         assertTrue(opened)
     }
 }
+
+/** A position that says "this episode has been started": the queue lists an unstarted one as a row. */
+private const val STARTED_MS = 1_000L

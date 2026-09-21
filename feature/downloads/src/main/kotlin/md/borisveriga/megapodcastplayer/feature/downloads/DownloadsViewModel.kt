@@ -18,6 +18,7 @@ import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
@@ -112,6 +113,23 @@ sealed interface DownloadsMessage {
      * @property title the episode's title.
      */
     data class Queued(val title: String) : DownloadsMessage
+
+    /**
+     * The episode was already waiting in the queue, so nothing changed.
+     *
+     * Said rather than answered with [Queued]: "added" about a queue that looks exactly as it did
+     * reads as the app having lost the episode.
+     *
+     * @property title the episode's title.
+     */
+    data class AlreadyQueued(val title: String) : DownloadsMessage
+
+    /**
+     * The episode is the one playing, so there is nothing to queue.
+     *
+     * @property title the episode's title.
+     */
+    data class AlreadyPlaying(val title: String) : DownloadsMessage
 
     /**
      * An episode could not be played.
@@ -322,10 +340,17 @@ class DownloadsViewModel @Inject constructor(
     fun addToQueue(episodeId: String) {
         val title = titleOf(episodeId) ?: return
         viewModelScope.launch {
-            transientState.value = if (episodePlayer.addToQueue(episodeId)) {
-                DownloadsMessage.Queued(title)
-            } else {
-                DownloadsMessage.EpisodeUnavailable
+            transientState.value = when (episodePlayer.addToQueue(episodeId)) {
+                // A move to the end is an add to anyone looking at the queue: the episode was not
+                // listed, and now it is.
+                QueueAddResult.ADDED, QueueAddResult.MOVED_TO_END -> DownloadsMessage.Queued(title)
+
+                QueueAddResult.ALREADY_QUEUED -> DownloadsMessage.AlreadyQueued(title)
+
+                QueueAddResult.ALREADY_PLAYING -> DownloadsMessage.AlreadyPlaying(title)
+
+                QueueAddResult.UNPLAYABLE, QueueAddResult.UNREACHABLE ->
+                    DownloadsMessage.EpisodeUnavailable
             }
         }
     }

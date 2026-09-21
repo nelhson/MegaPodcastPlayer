@@ -105,7 +105,9 @@ abstract class PlayerViewModelFixture {
         downloadState: DownloadState = DownloadState.NOT_DOWNLOADED,
         downloadPercent: Float = 0f,
     ) {
-        playbackState.value = PlaybackState(episodeId = id)
+        // Started: a loaded episode at zero is one that was queued and never played, which the
+        // queue lists as a row rather than as what is playing.
+        playbackState.value = PlaybackState(episodeId = id, positionMs = 1_000L)
         currentEpisode.value = episode(id, downloadState = downloadState, downloadPercent = downloadPercent)
     }
 

@@ -103,6 +103,9 @@
     <string name="downloads_message_removed">Deleted \"%1$s\" from this device</string>
     <!-- The queue is another tab, so the button needs a word here or nothing visibly happens. -->
     <string name="downloads_message_queued">Added \"%1$s\" to the queue</string>
+    <!-- Nothing changed, and saying "added" about a queue that looks the same reads as a loss. -->
+    <string name="downloads_message_already_queued">\"%1$s\" is already in the queue</string>
+    <string name="downloads_message_already_playing">\"%1$s\" is already playing</string>
     <!-- A retry may sit waiting, so the confirmation says which of the two happened. -->
     <string name="downloads_message_retry_queued">Downloading \"%1$s\" again</string>
     <string name="downloads_message_retry_queued_wifi">\"%1$s\" will download on Wi-Fi</string>

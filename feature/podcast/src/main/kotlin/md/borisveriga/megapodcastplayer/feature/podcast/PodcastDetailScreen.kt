@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.Resources
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -1385,6 +1386,8 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
     is PodcastDetailMessage.Queued ->
         resources.getString(R.string.podcast_message_queued, title)
 
+    is PodcastDetailMessage.AlreadyQueued -> resources.getString(wording, title)
+
     is PodcastDetailMessage.PlayedChanged -> resources.getString(
         if (isPlayed) {
             R.string.podcast_message_marked_played
@@ -1537,3 +1540,11 @@ internal fun PodcastDetailScreenInPanePreview() {
         )
     }
 }
+
+/** Which sentence says it: the episode is playing, or it is waiting to. */
+private val PodcastDetailMessage.AlreadyQueued.wording: Int
+    @StringRes get() = if (isPlaying) {
+        R.string.podcast_message_already_playing
+    } else {
+        R.string.podcast_message_already_queued
+    }

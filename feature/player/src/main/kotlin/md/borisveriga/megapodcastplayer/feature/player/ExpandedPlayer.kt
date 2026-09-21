@@ -392,7 +392,7 @@ private fun PlayerControls(
     // Drawn at zero too. The link used to vanish with the queue, which meant the player never
     // mentioned that a queue existed to the one user who most needed telling: the one who has not
     // put anything in it.
-    UpNextLink(count = uiState.upNext.size, onClick = onOpenQueue)
+    UpNextLink(count = uiState.followingCount, onClick = onOpenQueue)
 }
 
 /**

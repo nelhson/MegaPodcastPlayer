@@ -858,6 +858,12 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
 
     is DownloadsMessage.Queued -> resources.getString(R.string.downloads_message_queued, title)
 
+    is DownloadsMessage.AlreadyQueued ->
+        resources.getString(R.string.downloads_message_already_queued, title)
+
+    is DownloadsMessage.AlreadyPlaying ->
+        resources.getString(R.string.downloads_message_already_playing, title)
+
     is DownloadsMessage.DownloadingNow ->
         resources.getString(R.string.downloads_message_downloading_now, title)
 

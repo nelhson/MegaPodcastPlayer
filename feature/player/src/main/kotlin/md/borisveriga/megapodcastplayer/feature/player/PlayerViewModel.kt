@@ -174,16 +174,59 @@ data class PlayerUiState(
      * everywhere else in the app. Matched by [currentEpisodeId] rather than taken from the head of
      * the queue, because the head is only the current episode while the two are in step — and they
      * are not for as long as it takes a `MediaController` to bind.
+     *
+     * Null as well while that entry [isCurrentUnstarted]: it is then a row in [upNext], and drawing
+     * it twice would be the queue claiming two episodes where it holds one.
      */
     val nowPlaying: PlayableEpisode?
-        get() = queue.firstOrNull { it.episode.id == currentEpisodeId }
+        get() = loadedEntry.takeUnless { isCurrentUnstarted }
 
-    /** The queue entries after the one playing, which is what "Up next" lists. */
+    /**
+     * The queue entries waiting to play, which is what the queue screen lists and edits.
+     *
+     * Everything after the loaded episode — and the loaded episode itself while it
+     * [isCurrentUnstarted]. Entries *before* it are left out on purpose: they have been played past,
+     * and queueing one of them again moves it to the end rather than listing it here.
+     */
     val upNext: List<PlayableEpisode>
+        get() = queue.drop(if (isCurrentUnstarted) loadedIndex else loadedIndex + 1)
+
+    /**
+     * How many episodes follow the loaded one, which is what the player's "up next" link counts.
+     *
+     * Not `upNext.size`: the player is showing the loaded episode, started or not, and counting it
+     * as "next" there would be counting the thing on screen as coming after itself.
+     */
+    val followingCount: Int get() = (queue.size - (loadedIndex + 1)).coerceAtLeast(0)
+
+    /**
+     * Whether the loaded episode has never been played at all.
+     *
+     * Queueing into a player that holds nothing makes that episode the player's current item —
+     * there is no other place for a first item to go — so it arrives "loaded" without anyone having
+     * asked to hear it. To the user it is an episode they queued, and the queue has to list it as
+     * one: removable, counted in the time remaining, cleared by *Clear queue*. The moment it is
+     * started it is what is playing, and becomes the header like any other.
+     *
+     * Both positions are asked, because each is blind where the other sees: the player's is zero
+     * until a controller binds, and the stored one is up to five seconds behind a playing episode.
+     * And only the player's own word counts for *which* episode: while [currentEpisodeId] is the
+     * stored fallback the player has said nothing yet, and a row drawn on that guess would appear
+     * and vanish again as the controller binds.
+     */
+    val isCurrentUnstarted: Boolean
         get() {
-            val currentIndex = queue.indexOfFirst { it.episode.id == currentEpisodeId }
-            return if (currentIndex >= 0) queue.drop(currentIndex + 1) else queue
+            val loaded = loadedEntry ?: return false
+            if (playback.episodeId == null) return false
+            return !playback.isPlaying && playback.positionMs == 0L && loaded.episode.positionMs == 0L
         }
+
+    /** Where [currentEpisodeId] sits in [queue], or -1 when it is not queued. */
+    private val loadedIndex: Int
+        get() = queue.indexOfFirst { it.episode.id == currentEpisodeId }
+
+    /** The queue entry for [currentEpisodeId], or null. */
+    private val loadedEntry: PlayableEpisode? get() = queue.getOrNull(loadedIndex)
 }
 
 /**

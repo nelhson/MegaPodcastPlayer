@@ -30,6 +30,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
+import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -196,6 +197,17 @@ sealed interface PodcastDetailMessage {
      * @property title the episode's title.
      */
     data class Queued(val title: String) : PodcastDetailMessage
+
+    /**
+     * The episode was already in the queue — waiting, or playing — so nothing changed.
+     *
+     * Said rather than answered with [Queued]: "added" about a queue that looks exactly as it did
+     * reads as the app having lost the episode.
+     *
+     * @property title the episode's title.
+     * @property isPlaying true when it is the episode playing rather than one waiting behind it.
+     */
+    data class AlreadyQueued(val title: String, val isPlaying: Boolean) : PodcastDetailMessage
 
     /**
      * An episode was queued for download.
@@ -725,10 +737,19 @@ class PodcastDetailViewModel @Inject constructor(
         val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
         viewModelScope.launch {
             transientState.value = transientState.value.copy(
-                message = if (episodePlayer.addToQueue(episodeId)) {
-                    PodcastDetailMessage.Queued(episode.title)
-                } else {
-                    PodcastDetailMessage.EpisodeUnavailable
+                message = when (episodePlayer.addToQueue(episodeId)) {
+                    // A move to the end is an add to anyone looking at the queue.
+                    QueueAddResult.ADDED, QueueAddResult.MOVED_TO_END ->
+                        PodcastDetailMessage.Queued(episode.title)
+
+                    QueueAddResult.ALREADY_QUEUED ->
+                        PodcastDetailMessage.AlreadyQueued(episode.title, isPlaying = false)
+
+                    QueueAddResult.ALREADY_PLAYING ->
+                        PodcastDetailMessage.AlreadyQueued(episode.title, isPlaying = true)
+
+                    QueueAddResult.UNPLAYABLE, QueueAddResult.UNREACHABLE ->
+                        PodcastDetailMessage.EpisodeUnavailable
                 },
             )
         }

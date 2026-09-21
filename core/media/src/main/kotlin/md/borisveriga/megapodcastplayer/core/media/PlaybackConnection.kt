@@ -175,12 +175,20 @@ class PlaybackConnection @Inject constructor(
         player.playWhenReady = playWhenReady
     }
 
-    /** Appends [episode] to the end of the queue without disturbing what is playing. */
-    suspend fun addToQueue(episode: PlayableEpisode) = onController { player ->
-        if (player.indexOfEpisode(episode.episode.id) != null) return@onController
-        player.addMediaItem(episode.toMediaItemOrNull() ?: return@onController)
-        // A queue added to while the player is empty should be ready to play on the first tap.
-        if (player.mediaItemCount == 1) player.prepare()
+    /**
+     * Appends [episode] to the end of the queue without disturbing what is playing.
+     *
+     * An episode already queued *behind* the one playing is moved to the end instead: nothing lists
+     * it there, so leaving it would make this a command that reports success and changes nothing.
+     *
+     * @return what was done; [QueueAddResult.UNREACHABLE] when the service could not be reached.
+     */
+    suspend fun addToQueue(episode: PlayableEpisode): QueueAddResult {
+        var result = QueueAddResult.UNREACHABLE
+        onController { player ->
+            result = player.enqueueEpisode(episode.episode.id, episode::toMediaItemOrNull)
+        }
+        return result
     }
 
     /**

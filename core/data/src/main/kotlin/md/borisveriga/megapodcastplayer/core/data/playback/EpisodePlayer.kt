@@ -10,6 +10,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsReposit
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
+import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.Episode
 
 /**
@@ -151,12 +152,28 @@ class EpisodePlayer @Inject constructor(
         return true
     }
 
-    /** Appends an episode to the end of the queue; see [playNext] on the double write. */
-    suspend fun addToQueue(episodeId: String): Boolean {
-        val episode = playbackRepository.playableEpisode(episodeId) ?: return false
-        connection.addToQueue(episode)
+    /**
+     * Appends an episode to the end of the queue; see [playNext] on the double write.
+     *
+     * The answer is what the *player* did, because that is what the user will see: an episode left
+     * behind the one playing is moved to the end, and one already waiting or already playing is
+     * reported as such rather than as "queued" — which it was, to a list that did not change.
+     *
+     * @param episodeId the episode to queue.
+     * @return what was done. [QueueAddResult.UNPLAYABLE] also covers an episode that is not stored,
+     *   there being nothing a caller would do differently; an unreachable player is reported as
+     *   [QueueAddResult.ADDED], because the durable queue took the episode and the player is
+     *   rebuilt from it.
+     */
+    suspend fun addToQueue(episodeId: String): QueueAddResult {
+        val episode = playbackRepository.playableEpisode(episodeId)
+            ?: return QueueAddResult.UNPLAYABLE
+        val result = connection.addToQueue(episode)
+        // Not written for an episode the player refused: the queue would hold a row that can never
+        // play, until the next timeline change silently took it out again.
+        if (result == QueueAddResult.UNPLAYABLE) return result
         playbackRepository.enqueue(episodeId)
-        return true
+        return if (result == QueueAddResult.UNREACHABLE) QueueAddResult.ADDED else result
     }
 
     /**

@@ -219,6 +219,9 @@
 
     <!-- Snackbar after adding to the end of the queue; %1$s is the episode title. -->
     <string name="podcast_message_queued">\"%1$s\" added to the queue</string>
+    <!-- Nothing changed, and saying "added" about a queue that looks the same reads as a loss. -->
+    <string name="podcast_message_already_queued">\"%1$s\" is already in the queue</string>
+    <string name="podcast_message_already_playing">\"%1$s\" is already playing</string>
 
     <!-- What the system share sheet is titled when an episode is shared out of the app. -->
     <string name="episode_share_title">Share episode</string>

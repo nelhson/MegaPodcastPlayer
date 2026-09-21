@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -395,7 +396,7 @@ class DownloadsViewModelTest {
     @Test
     fun `queueing a download adds it to the queue and confirms it by name`() = runTest {
         downloads.value = listOf(download("a"))
-        coEvery { episodePlayer.addToQueue("a") } returns true
+        coEvery { episodePlayer.addToQueue("a") } returns QueueAddResult.ADDED
 
         viewModel.uiState.test {
             awaitItem()
@@ -415,7 +416,7 @@ class DownloadsViewModelTest {
         downloads.value = listOf(
             download("busy", downloadState = DownloadState.DOWNLOADING, downloadPercent = 40f),
         )
-        coEvery { episodePlayer.addToQueue("busy") } returns true
+        coEvery { episodePlayer.addToQueue("busy") } returns QueueAddResult.ADDED
 
         viewModel.uiState.test {
             awaitItem()
@@ -434,7 +435,7 @@ class DownloadsViewModelTest {
     fun `queueing an episode that has gone is reported rather than claimed`() = runTest {
         downloads.value = listOf(download("a"))
         // The show was removed between the row rendering and the tap landing.
-        coEvery { episodePlayer.addToQueue("a") } returns false
+        coEvery { episodePlayer.addToQueue("a") } returns QueueAddResult.UNPLAYABLE
 
         viewModel.uiState.test {
             awaitItem()
@@ -442,6 +443,53 @@ class DownloadsViewModelTest {
             viewModel.addToQueue("a")
 
             assertEquals(DownloadsMessage.EpisodeUnavailable, awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** Behind the playing episode nothing lists it, so bringing it back is an add to the user. */
+    @Test
+    fun `queueing a download the queue had left behind is confirmed as added`() = runTest {
+        downloads.value = listOf(download("a"))
+        coEvery { episodePlayer.addToQueue("a") } returns QueueAddResult.MOVED_TO_END
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.addToQueue("a")
+
+            assertEquals(DownloadsMessage.Queued("Episode a"), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** "Added" about a queue that looks exactly as it did reads as the app losing the episode. */
+    @Test
+    fun `queueing a download that is already waiting says so instead of added`() = runTest {
+        downloads.value = listOf(download("a"))
+        coEvery { episodePlayer.addToQueue("a") } returns QueueAddResult.ALREADY_QUEUED
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.addToQueue("a")
+
+            assertEquals(DownloadsMessage.AlreadyQueued("Episode a"), awaitItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `queueing the download that is playing says it is playing`() = runTest {
+        downloads.value = listOf(download("a"))
+        coEvery { episodePlayer.addToQueue("a") } returns QueueAddResult.ALREADY_PLAYING
+
+        viewModel.uiState.test {
+            awaitItem()
+
+            viewModel.addToQueue("a")
+
+            assertEquals(DownloadsMessage.AlreadyPlaying("Episode a"), awaitItem().message)
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -50,7 +50,7 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
 
     @Test
     fun `up next excludes the episode that is playing`() = runTest {
-        playbackState.value = PlaybackState(episodeId = "b")
+        playbackState.value = PlaybackState(episodeId = "b", positionMs = 1_000L)
         queue.value = listOf(playable("a"), playable("b"), playable("c"))
 
         viewModel.uiState.test {
@@ -90,12 +90,56 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
     fun `the player's own episode wins over the stored one`() = runTest {
         // The stored id is only a fallback: it lags a transition by a write, and following it once
         // the player has answered would hide the wrong row.
-        playbackState.value = PlaybackState(episodeId = "b")
+        playbackState.value = PlaybackState(episodeId = "b", positionMs = 1_000L)
         lastPlayedEpisodeId.value = "a"
         queue.value = listOf(playable("a"), playable("b"), playable("c"))
 
         viewModel.uiState.test {
             assertEquals(listOf("c"), awaitItem().upNext.map { it.episode.id })
+        }
+    }
+
+    /**
+     * Queueing into an empty player makes that episode the player's current item. Nobody asked to
+     * hear it yet, so it is a queued episode like any other — and used to be listed nowhere.
+     */
+    @Test
+    fun `an episode queued into an empty player is a row, not what is playing`() = runTest {
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a")
+        queue.value = listOf(playable("a"), playable("b"))
+
+        viewModel.uiState.test {
+            val state = awaitItem()
+            assertEquals(listOf("a", "b"), state.upNext.map { it.episode.id })
+            assertEquals(null, state.nowPlaying)
+            // The player is showing "a", so only "b" comes after what it shows.
+            assertEquals(1, state.followingCount)
+        }
+    }
+
+    @Test
+    fun `starting that episode makes it what is playing, and takes it out of up next`() = runTest {
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a", isPlaying = true)
+        queue.value = listOf(playable("a"), playable("b"))
+
+        viewModel.uiState.test {
+            val state = awaitItem()
+            assertEquals("a", state.nowPlaying?.episode?.id)
+            assertEquals(listOf("b"), state.upNext.map { it.episode.id })
+        }
+    }
+
+    /** The stored position sees what the player cannot: an episode paused earlier and reloaded. */
+    @Test
+    fun `a loaded episode with a stored position was started, whatever the player says`() = runTest {
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a")
+        queue.value = listOf(
+            playable("a").let { it.copy(episode = it.episode.copy(positionMs = 42_000L)) },
+            playable("b"),
+        )
+
+        viewModel.uiState.test {
+            assertEquals(listOf("b"), awaitItem().upNext.map { it.episode.id })
         }
     }
 
@@ -113,7 +157,7 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
     @Test
     fun `up next is the whole queue when nothing in it is playing`() = runTest {
         // The user started an episode straight from a show, so the queue is untouched by it.
-        playbackState.value = PlaybackState(episodeId = "elsewhere")
+        playbackState.value = PlaybackState(episodeId = "elsewhere", positionMs = 1_000L)
         queue.value = listOf(playable("a"), playable("b"))
 
         viewModel.uiState.test {
@@ -192,7 +236,7 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
 
     @Test
     fun `marking the current episode played also takes it out of the queue`() = runTest {
-        playbackState.value = PlaybackState(episodeId = "a")
+        playbackState.value = PlaybackState(episodeId = "a", positionMs = 1_000L)
 
         viewModel.uiState.test {
             awaitItem()

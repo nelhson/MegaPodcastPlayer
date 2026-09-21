@@ -31,6 +31,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
         // user never asked for.
         playbackState.value = PlaybackState(
             episodeId = "b",
+            positionMs = STARTED_MS,
             queueEpisodeIds = listOf("a", "b", "c", "d"),
             queueIndex = 1,
         )
@@ -52,6 +53,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
         // whatever now sits at that index. There is no safe interpretation, so nothing happens.
         playbackState.value = PlaybackState(
             episodeId = "b",
+            positionMs = STARTED_MS,
             queueEpisodeIds = listOf("a", "b", "c"),
             queueIndex = 1,
         )
@@ -71,6 +73,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
     fun `a reorder off the end of the list does nothing`() = runTest {
         playbackState.value = PlaybackState(
             episodeId = "b",
+            positionMs = STARTED_MS,
             queueEpisodeIds = listOf("a", "b", "c"),
             queueIndex = 1,
         )
@@ -90,6 +93,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
     fun `dropping an episode back where it started does nothing`() = runTest {
         playbackState.value = PlaybackState(
             episodeId = "a",
+            positionMs = STARTED_MS,
             queueEpisodeIds = listOf("a", "b", "c"),
             queueIndex = 0,
         )
@@ -196,7 +200,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
         viewModel.uiState.test {
             awaitItem()
 
-            playbackState.value = PlaybackState(episodeId = "a")
+            playbackState.value = PlaybackState(episodeId = "a", positionMs = STARTED_MS)
             currentEpisode.value = null
 
             assertEquals(null, expectMostRecentItem().download)
@@ -530,3 +534,6 @@ class PlayerQueueTest : PlayerViewModelFixture() {
         }
     }
 }
+
+/** A position that says "this episode has been started": the queue lists an unstarted one as a row. */
+private const val STARTED_MS = 1_000L
