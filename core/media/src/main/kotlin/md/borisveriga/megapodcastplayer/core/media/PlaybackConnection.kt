@@ -377,9 +377,8 @@ class PlaybackConnection @Inject constructor(
         // listens for the system's own volume broadcast — so the watch is told the result the
         // same way it is told when the phone's keys are pressed.
         val outcome = suspendRunCatching { audioManager.applyMediaVolume(level) }
-        val refusal = outcome.exceptionOrNull()
-            ?: IllegalStateException("the device's volume is fixed").takeIf { outcome.getOrNull() == false }
-            ?: return
+        if (outcome.getOrNull() == true) return
+        val refusal = outcome.exceptionOrNull() ?: IllegalStateException("the device's volume is fixed")
         // Whoever asked is on a watch, looking at a bar that slid back for no reason it can give.
         // Said once per process: the bezel asks several times a second, and the answer is the same.
         if (volumeRefusalReported.compareAndSet(false, true)) {

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -702,10 +704,13 @@ private fun SleepTimerButton(
     }
 
     Column(
-        modifier = modifier.semantics(mergeDescendants = true) {
-            contentDescription = description
-            role = Role.Button
-        },
+        modifier = modifier
+            // As wide as the glyph's own touch target and no wider, whatever the label says.
+            .width(SLEEP_BUTTON_WIDTH)
+            .semantics(mergeDescendants = true) {
+                contentDescription = description
+                role = Role.Button
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         IconButton(onClick = onClick) {
@@ -729,10 +734,20 @@ private fun SleepTimerButton(
                 text = remaining,
                 style = MegaPodcastPlayerTheme.type.numeric,
                 color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false,
+                // "1 h 3 min" is wider than the button, and at a large font much wider. Measured
+                // without a bound and centred, it spills evenly either side *under* the row —
+                // every neighbour is one touch target tall and the label starts below that — so
+                // the button keeps its width and its neighbours keep their places.
+                modifier = Modifier.wrapContentWidth(unbounded = true),
             )
         }
     }
 }
+
+/** The sleep timer button's width: one touch target, which is what its glyph already takes. */
+private val SLEEP_BUTTON_WIDTH = 48.dp
 
 /**
  * The button that saves a moment, with a count of the ones already in this episode.

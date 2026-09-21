@@ -797,10 +797,18 @@ private fun VolumeRow(
     val dragged = remember { mutableFloatStateOf(0f) }
     var rowWidthPx by remember { mutableIntStateOf(0) }
 
-    // Dragging the full width of the row covers the phone's whole scale, which is what the bar
-    // suggests and what the scrubber above it already does with an episode.
+    // Dragging the length of the bar covers the phone's whole scale, so the fill follows the
+    // finger — which is what the bar suggests and what the scrubber above it already does with an
+    // episode. The bar is the row less the button at either end of it.
     val maxVolume = uiState.snapshot.maxVolume
-    val dragPixelsPerStep: Float = if (maxVolume > 0) rowWidthPx.toFloat() / maxVolume else 0f
+    val buttonsPx = with(LocalDensity.current) { (SLIDER_BUTTON_WIDTH * 2).toPx() }
+    val barWidthPx = (rowWidthPx - buttonsPx).coerceAtLeast(0f)
+    val dragPixelsPerStep: Float = if (maxVolume > 0) barWidthPx / maxVolume else 0f
+
+    // Whether a move by [steps] changes anything. At an end stop it does not, and a tick for a
+    // step that was not taken is the hand being told something that did not happen.
+    val level = uiState.volumeLevel
+    val moves = { steps: Int -> (level + steps).coerceIn(0, maxVolume) != level }
 
     LaunchedEffect(uiState.isAdjustingVolume) {
         // Rotary events go to whatever holds focus, so the bar claims it on entering the mode.
@@ -835,7 +843,9 @@ private fun VolumeRow(
                         onAdjustVolumeBy(banked.steps)
                         // The slider buzzes for its own buttons; the bezel has to be given the
                         // same tick by hand, or half the control would be silent to the hand.
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        if (moves(banked.steps)) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
                     }
                     true
                 }
@@ -853,7 +863,9 @@ private fun VolumeRow(
                         dragged.floatValue = banked.remainderPx
                         if (banked.steps != 0) {
                             onAdjustVolumeBy(banked.steps)
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            if (moves(banked.steps)) {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            }
                         }
                     },
                     orientation = Orientation.Horizontal,
@@ -1392,3 +1404,10 @@ private const val SCRUB_COMMIT_DELAY_MS = 600L
  * too large and a deliberate turn does nothing.
  */
 private const val ROTARY_PIXELS_PER_VOLUME_STEP = 48f
+
+/**
+ * The width of each of the Wear slider's two buttons, which the volume row's drag scale leaves out.
+ *
+ * The slider does not publish it; it is the touch target its buttons are built to.
+ */
+private val SLIDER_BUTTON_WIDTH = 48.dp

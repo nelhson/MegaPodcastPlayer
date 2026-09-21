@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -238,16 +240,7 @@ fun LibraryScreen(
     }
 
     Scaffold(
-        modifier = modifier
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
-            // Somewhere for focus to land that is not the filter field. When a screen is given
-            // focus — on arriving at this tab, on coming back to it — it goes to the first thing
-            // that will take it, and in touch mode a text field is the only thing here that will:
-            // buttons decline. A focused field opens the keyboard, so the library opened with half
-            // of itself covered by a keyboard nobody asked for. The screen itself comes before
-            // the field, takes the focus, and shows nothing for it; the field still takes it on
-            // a tap, which is the only time the keyboard is wanted.
-            .focusable(),
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.library_title),
@@ -383,7 +376,26 @@ private fun LibraryControls(
 ) {
     Column {
         if (isNarrowable) {
-            FilterField(query = filter.query, onQueryChange = onQueryChange)
+            // Somewhere for focus to land that is not the field below. When a screen is given
+            // focus — on arriving at this tab, on coming back to it — it goes to the first thing
+            // that will take it, and in touch mode a text field is the only thing here that will:
+            // buttons decline. A focused field opens the keyboard, so the library opened with half
+            // of itself covered by a keyboard nobody asked for. This comes first, takes the focus
+            // and shows nothing for it; the field still takes it on a tap, which is the only time
+            // the keyboard is wanted. A leaf with its semantics cleared, not the screen itself:
+            // a focusable screen is one unlabelled stop TalkBack would read the whole page from.
+            //
+            // In a box with the field rather than above it, so that it costs the layout nothing:
+            // it sits in the corner of the field's own padding.
+            Box {
+                Spacer(
+                    modifier = Modifier
+                        .size(FOCUS_SINK_SIZE)
+                        .clearAndSetSemantics {}
+                        .focusable(),
+                )
+                FilterField(query = filter.query, onQueryChange = onQueryChange)
+            }
         }
 
         Row(
@@ -1192,3 +1204,6 @@ private fun previewEntry(id: String, title: String, newEpisodeCount: Int) = Podc
     downloadedCount = 2,
     unplayedCount = 37,
 )
+
+/** The size of the library's focus sink: something, because a node of no size is offered no focus. */
+private val FOCUS_SINK_SIZE = 1.dp

@@ -90,7 +90,13 @@ internal class WearCommandExecutor @Inject constructor(
         // The state flow would eventually carry the change to the watch on its own, but only once
         // the player has finished reacting. Publishing here closes the gap between the tap and the
         // button changing shape, which on a watch is the difference between working and broken.
-        publisher.publishCurrent()
+        //
+        // Except for the volume, where publishing here would say the wrong thing. The level is set
+        // through the system's audio service and comes back to the player as a broadcast, so a
+        // reading taken now is still the old one — and written *after* the state flow's own
+        // publish of the new level, it would be the last word the watch hears. The watch holds
+        // the level it set until the phone says that level, and the state flow is what says it.
+        if (command !is WearCommand.SetVolume) publisher.publishCurrent()
     }
 
     /**

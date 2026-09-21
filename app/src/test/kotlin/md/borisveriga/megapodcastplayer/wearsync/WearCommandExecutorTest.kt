@@ -79,6 +79,25 @@ class WearCommandExecutorTest {
         coVerify(exactly = 0) { connection.setVolume(any()) }
     }
 
+    /**
+     * The one command not followed by a publish. The new level comes back to the player as a
+     * broadcast, so a reading taken at once is the old one — and published after the state
+     * flow's own, it would be the last thing the watch heard.
+     */
+    @Test
+    fun `a volume command leaves the publishing to the state flow`() = runTest {
+        executor.execute(WearCommand.SetVolume(level = 9))
+
+        coVerify(exactly = 0) { publisher.publishCurrent() }
+    }
+
+    @Test
+    fun `any other command publishes its outcome at once`() = runTest {
+        executor.execute(WearCommand.TogglePlayPause)
+
+        coVerify(exactly = 1) { publisher.publishCurrent() }
+    }
+
     @Test
     fun `cycling the speed both stores and applies the new rate`() = runTest {
         executor.execute(WearCommand.CycleSpeed)
