@@ -12,7 +12,6 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -329,45 +328,45 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
     }
 
     @Test
-    fun `end of chapter is however much of the current chapter is left`() = runTest {
-        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(
-            chapters = listOf(
-                Chapter(startMs = 0L, title = "Intro"),
-                Chapter(startMs = 600_000L, title = "The interview"),
-            ),
-        )
+    fun `the sleep timer offers the chapter playing and the ones after it`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(chapters = THREE_CHAPTERS)
 
         viewModel.uiState.test {
             awaitItem()
             playbackState.value = PlaybackState(
                 episodeId = "a",
-                positionMs = 120_000L,
+                positionMs = 700_000L,
                 durationMs = 1_800_000L,
             )
             currentEpisode.value = episode("a")
 
-            // Eight minutes to the next chapter, not thirty to the end of the episode.
-            assertEquals(480_000L, expectMostRecentItem().chapterRemainingMs)
+            // Not the intro: "stop at the end of a chapter that has ended" means nothing.
+            assertEquals(
+                listOf(
+                    SleepChapterOption(index = 1, title = "The interview"),
+                    SleepChapterOption(index = 2, title = "Listener mail"),
+                ),
+                expectMostRecentItem().sleepChapterOptions,
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `the last chapter runs to the end of the episode`() = runTest {
+    fun `a playhead before the first chapter is offered all of them`() = runTest {
         coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(
-            chapters = listOf(Chapter(startMs = 0L, title = "The whole thing")),
+            chapters = listOf(Chapter(startMs = 30_000L, title = "After the cold open")),
         )
 
         viewModel.uiState.test {
             awaitItem()
-            playbackState.value = PlaybackState(
-                episodeId = "a",
-                positionMs = 120_000L,
-                durationMs = 1_800_000L,
-            )
+            playbackState.value = PlaybackState(episodeId = "a", positionMs = 5_000L)
             currentEpisode.value = episode("a")
 
-            assertEquals(1_680_000L, expectMostRecentItem().chapterRemainingMs)
+            assertEquals(
+                listOf(SleepChapterOption(index = 0, title = "After the cold open")),
+                expectMostRecentItem().sleepChapterOptions,
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -379,8 +378,70 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
             playing("a")
             expectMostRecentItem()
 
-            assertNull(viewModel.uiState.value.chapterRemainingMs)
+            assertTrue(viewModel.uiState.value.sleepChapterOptions.isEmpty())
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `a chosen chapter ends where the next one starts`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(chapters = THREE_CHAPTERS)
+
+        viewModel.uiState.test {
+            awaitItem()
+            playbackState.value = PlaybackState(episodeId = "a", positionMs = 120_000L)
+            currentEpisode.value = episode("a")
+            expectMostRecentItem()
+
+            viewModel.armSleepAtEndOfChapter(1)
+
+            verify {
+                sleepTimer.armEndOfChapter(chapterIndex = 1, episodeId = "a", stopAtMs = 1_200_000L)
+            }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the last chapter ends with the episode, which is no position at all`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(chapters = THREE_CHAPTERS)
+
+        viewModel.uiState.test {
+            awaitItem()
+            playbackState.value = PlaybackState(episodeId = "a", positionMs = 120_000L)
+            currentEpisode.value = episode("a")
+            expectMostRecentItem()
+
+            viewModel.armSleepAtEndOfChapter(2)
+
+            verify { sleepTimer.armEndOfChapter(chapterIndex = 2, episodeId = "a", stopAtMs = null) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a chapter the episode does not have arms nothing`() = runTest {
+        coEvery { chapterResolver.chaptersFor(any()) } returns EpisodeChapters(chapters = THREE_CHAPTERS)
+
+        viewModel.uiState.test {
+            awaitItem()
+            playbackState.value = PlaybackState(episodeId = "a", positionMs = 120_000L)
+            currentEpisode.value = episode("a")
+            expectMostRecentItem()
+
+            viewModel.armSleepAtEndOfChapter(9)
+
+            verify(exactly = 0) { sleepTimer.armEndOfChapter(any(), any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    private companion object {
+        /** An episode in three parts: ten minutes, ten minutes, and the rest. */
+        val THREE_CHAPTERS = listOf(
+            Chapter(startMs = 0L, title = "Intro"),
+            Chapter(startMs = 600_000L, title = "The interview"),
+            Chapter(startMs = 1_200_000L, title = "Listener mail"),
+        )
     }
 }

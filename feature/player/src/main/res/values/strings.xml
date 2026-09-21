@@ -141,22 +141,39 @@
 
       It absorbed the end-of-episode bell, which is now one of its options rather than a second
       control beside it: two "stop later" buttons on a transport row was one too many. The button's
-      two content descriptions are chosen by whether a timer is running, and the running one says
-      how long is left — a control that differs only by colour tells a TalkBack user nothing.
+      content descriptions are chosen by what the timer is doing, and a counted-down one says how
+      long is left — a control that differs only by colour tells a TalkBack user nothing. The
+      end-of-chapter one says "a chapter" rather than which: the button is told what the timer is
+      doing, not what the chapters are called, and the sheet it opens names the one chosen.
     -->
     <string name="player_sleep_arm">Sleep timer</string>
     <!-- %1$s is an already-formatted remaining time, e.g. "18 min". -->
     <string name="player_sleep_armed">Sleep timer, %1$s left; tap to change it</string>
     <string name="player_sleep_armed_end_of_episode">Sleep timer set to the end of this episode; tap to change it</string>
+    <string name="player_sleep_armed_end_of_chapter">Sleep timer set to the end of a chapter; tap to change it</string>
 
     <string name="sleep_title">Sleep timer</string>
     <string name="sleep_description">Playback fades out and pauses. Shake the phone to add fifteen minutes.</string>
-    <plurals name="sleep_minutes">
-        <item quantity="one">%1$d minute</item>
-        <item quantity="other">%1$d minutes</item>
-    </plurals>
+    <!--
+      The lengths of time are a menu under one chip, fifteen minutes to four hours, captioned by the
+      shared duration formatter ("1 h 30 min"). They were four chips in a row, and the fourth did
+      not fit. The chip says what it offers until a countdown is running and how long is left once
+      one is; its description supplies the verb either label lacks.
+    -->
+    <string name="sleep_after">Stop after a set time</string>
+    <!-- %1$s is an already-formatted remaining time, e.g. "18 min". -->
+    <string name="sleep_after_running">%1$s left</string>
+    <string name="sleep_after_menu">Choose how long to keep playing</string>
     <string name="sleep_end_of_episode">End of episode</string>
+    <!--
+      "End of chapter" alone means the chapter playing, which is the common case and stays one tap.
+      The chip beside it names the chapter that tap would stop after, and opens the ones still to
+      come. A chapter is captioned by its number as well as its title (%1$d, then %2$s) because
+      titles repeat — every "Ad break" is a different place to stop — and some are blank.
+    -->
     <string name="sleep_end_of_chapter">End of chapter</string>
+    <string name="sleep_chapter_option">%1$d. %2$s</string>
+    <string name="sleep_chapter_menu">Choose the chapter to stop after</string>
     <string name="sleep_cancel">Turn the timer off</string>
     <string name="sleep_shake_hint">Still awake? Shake the phone to add fifteen minutes.</string>
 

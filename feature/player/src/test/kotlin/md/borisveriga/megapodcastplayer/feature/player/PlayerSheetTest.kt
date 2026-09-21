@@ -290,6 +290,18 @@ class PlayerSheetTest {
     }
 
     @Test
+    fun `expanded, the end-of-chapter timer says so rather than showing a number`() {
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(sleep = SleepTimerState(endOfChapterIndex = 2)),
+        )
+
+        composeRule
+            .onNodeWithContentDescription("Sleep timer set to the end of a chapter; tap to change it")
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun `expanded, tapping the sleep timer reports it`() {
         var taps = 0
         setContent(PlayerSheetValue.Expanded, onOpenSleepTimer = { taps++ })

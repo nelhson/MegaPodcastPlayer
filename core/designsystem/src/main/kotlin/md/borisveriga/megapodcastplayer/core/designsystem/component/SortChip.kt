@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -21,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import md.borisveriga.megapodcastplayer.core.designsystem.R
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
@@ -91,6 +93,50 @@ fun <T> SortMenuChip(
     optionLabel: @Composable (T) -> String,
     modifier: Modifier = Modifier,
 ) {
+    MenuChip(
+        label = label,
+        icon = Icons.Rounded.SwapVert,
+        options = options,
+        selected = selected,
+        onSelect = onSelect,
+        menuDescription = menuDescription,
+        optionLabel = optionLabel,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Chooses one of several things from a menu hung under a chip.
+ *
+ * What [SortMenuChip] is made of, for the choices that are not an order: the same chip, the same
+ * ticked row and the same spoken state, so a menu chip is one control wherever it turns up. Two
+ * things are the caller's here that a sort fixes: the glyph, and whether anything is chosen at all
+ * — a sleep timer that is off has no row to tick, and ticking the nearest one would be a lie.
+ *
+ * The label is held to one line. A chip names its answer, and an answer that is somebody else's
+ * text (a chapter title) is as long as its author liked; a chip that wraps grows tall and pushes
+ * its neighbours about, which is the bug this control was generalised to fix.
+ *
+ * @param label what the chip says: the current answer, or what it offers when there is none.
+ * @param icon the glyph beside it; decorative, because [label] and [menuDescription] say the rest.
+ * @param options everything on offer, in the order it should be listed.
+ * @param selected which of [options] is applied, or null when none is.
+ * @param onSelect invoked with the chosen option. The menu closes itself first.
+ * @param menuDescription what the chip opens, e.g. "Sort shows". Supplies the verb the label lacks.
+ * @param optionLabel the caption for one option.
+ * @param modifier layout modifier.
+ */
+@Composable
+fun <T> MenuChip(
+    label: String,
+    icon: ImageVector,
+    options: List<T>,
+    selected: T?,
+    onSelect: (T) -> Unit,
+    menuDescription: String,
+    optionLabel: @Composable (T) -> String,
+    modifier: Modifier = Modifier,
+) {
     // Local to the control: an open menu is not state any screen or view model has an opinion
     // about, and one that survived a fold would reopen over a list the user had moved on from.
     var isExpanded by remember { mutableStateOf(false) }
@@ -98,10 +144,8 @@ fun <T> SortMenuChip(
     Box(modifier = modifier) {
         AssistChip(
             onClick = { isExpanded = true },
-            label = { Text(text = label) },
-            leadingIcon = {
-                Icon(imageVector = Icons.Rounded.SwapVert, contentDescription = null)
-            },
+            label = { Text(text = label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(imageVector = icon, contentDescription = null) },
             modifier = Modifier.semantics { contentDescription = menuDescription },
         )
 
@@ -159,6 +203,22 @@ internal fun SortMenuChipPreview() {
             selected = "Recently updated",
             onSelect = {},
             menuDescription = "Sort shows",
+            optionLabel = { it },
+        )
+    }
+}
+
+@ThemePreviews
+@Composable
+internal fun MenuChipPreview() {
+    MegaPodcastPlayerTheme {
+        MenuChip(
+            label = "Stop after a set time",
+            icon = Icons.Rounded.Timer,
+            options = listOf("15 min", "30 min", "45 min"),
+            selected = null,
+            onSelect = {},
+            menuDescription = "Choose how long to keep playing",
             optionLabel = { it },
         )
     }

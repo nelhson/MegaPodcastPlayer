@@ -14,6 +14,7 @@ import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerWidePreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenEmptyPreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
+import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -71,6 +72,15 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun queueEmpty() = capture("queue-empty") { QueueScreenEmptyPreview() }
+
+    /**
+     * The sleep timer's options, with a chapter title far too long for its chip.
+     *
+     * The large-font variant is the one that matters: this layout once had a chip that did not fit
+     * and wrapped until it stood twice the height of its neighbours.
+     */
+    @Test
+    fun sleepTimerOptions() = capture("sleep-timer-options") { SleepTimerOptionsPreview() }
 
     companion object {
         @JvmStatic

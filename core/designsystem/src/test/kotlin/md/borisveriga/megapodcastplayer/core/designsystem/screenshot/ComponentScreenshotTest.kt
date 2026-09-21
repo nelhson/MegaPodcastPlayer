@@ -10,6 +10,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyStatePr
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRowPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingStatePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerTopAppBarPreview
+import md.borisveriga.megapodcastplayer.core.designsystem.component.MenuChipPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButtonPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtworkHeroPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtworkPreview
@@ -118,6 +119,9 @@ class ComponentScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun sortMenuChip() = capture("sort-menu-chip") { SortMenuChipPreview() }
+
+    @Test
+    fun menuChip() = capture("menu-chip") { MenuChipPreview() }
 
     @Test
     fun settingsSwitchRow() = capture("settings-switch-row") { SettingsSwitchRowPreview() }

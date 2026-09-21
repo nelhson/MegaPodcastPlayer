@@ -149,9 +149,10 @@ fun PlayerSheetScaffold(
     if (sleepTimerOpen) {
         SleepTimerSheet(
             state = uiState.sleep,
-            chapterRemainingMs = uiState.chapterRemainingMs,
+            chapterOptions = uiState.sleepChapterOptions,
             onArmAfter = viewModel::armSleepTimer,
             onArmEndOfEpisode = viewModel::armSleepAtEndOfEpisode,
+            onArmEndOfChapter = viewModel::armSleepAtEndOfChapter,
             onCancel = viewModel::cancelSleepTimer,
             onDismiss = { sleepTimerOpen = false },
         )
