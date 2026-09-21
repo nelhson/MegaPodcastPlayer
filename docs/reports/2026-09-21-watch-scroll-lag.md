@@ -25,25 +25,26 @@ rare. The `uiState`/`position` split holds. Nothing on that axis was left to win
 and could not reuse a row composition at all.** Reading Wear Compose foundation 1.6.2:
 
 - `ScalingLazyListScope` takes a key and *nothing else*. There is no `contentType`, so every item on
-  the screen shared one reuse pool typed `null`: a scrolled-away queue row's composition was offered
-  to a downloaded-row slot, mismatched, and was thrown away. Reuse never once succeeded here.
+  the screen shared one reuse pool typed `null`, so a scrolled-away queue row's composition could be
+  offered to a downloaded-row slot, mismatch, and be thrown away. That pool still reused correctly
+  while scrolling *within* a section, where the slot leaving and the slot arriving are the same
+  shape; what it could not do is tell the two row types apart at the boundary between them.
 - Every item is wrapped in an extra `Box` whose `graphicsLayer` block runs each frame and does
   `state.layoutInfo.internalVisibleItemInfo()` followed by `fastFirstOrNull { it.index == index }` —
   a scan of the visible items, per item, per frame — before setting scale, alpha and a translation.
 
-**2. Two binder calls into the system server, on the main thread, mid-scroll.**
+**2. Three trips to the system server, on the main thread, mid-scroll.**
 `rememberReduceMotion()` was called inside `Waveform`, which lives inside `NowPlayingHeader`, which
 was a list `item {}`. Scrolling the header out of view ran `unregisterContentObserver`; scrolling it
-back ran `Settings.Global.getFloat` *and* `registerContentObserver`, during composition, on a scroll
-frame. It is a per-screen reading that was being taken per visibility toggle.
-
-**3. The waveform competed with the scroll for frames.** An infinite transition asks for a frame
-every frame for as long as it runs. The last report gave the canvas its own layer so the frame only
-repaints the bars — but the frame is still requested, and while the phone plays it was requested
-throughout every swipe, on the one item most likely to be halfway off the screen at the time.
+back ran `Settings.Global.getFloat` in the `remember` initialiser — during composition — and then
+`registerContentObserver` as the `DisposableEffect` was applied. It is a per-screen reading that was
+being taken per visibility toggle.
 
 Smaller: the header rebuilt a `Brush.verticalGradient` on each composition (a brush is a shader's
 cache key) and stacked a `clip` node under the `background` that draws through it.
+
+A third candidate — the waveform's infinite transition asking for a frame every frame during a
+swipe — was tried and rejected; see below.
 
 ## What changed
 
@@ -54,20 +55,46 @@ cache key) and stacked a `clip` node under the `background` that draws through i
   `listHeader`, and one apiece for the fixed controls — so rows of a shape hand their composition on
   to the next row of that shape.
 - **One `scrollTransform` modifier** applies the spec to every item: `transformedHeight` plus a
-  `graphicsLayer` calling `applyContentTransformation`. Deliberately not the Material `transformation`
-  parameter that `Button` and `ListHeader` accept — that transforms a surface's container and its
-  content on separate curves, and half this column (the transport rows, the waveform header) is not
-  a surface. One curve for everything is what the screen looked like before.
+  `graphicsLayer` calling `applyContainerTransformation` — the half that carries the scale and the
+  recentring translation, which must match the slot `transformedHeight` reserves. Deliberately not
+  the Material `transformation` parameter that `Button` and `ListHeader` accept, because half this
+  column (the transport rows, the waveform header) is not a surface, and a column where only some
+  items taper reads as a bug.
 - **The reduce-motion setting is read once, above the list**, and handed to the header.
-- **The waveform stops while the column is scrolling.** `scrolling` reaches it as a lambda and is
-  called inside `Waveform`, so a scroll starting or stopping recomposes seven bars and nothing else.
-  Two recompositions per swipe in exchange for sixty animation frames a second.
 - **The header's brush is remembered**, and the shape goes to `background(brush, shape)` rather than
   to a `clip` node above it.
 - Every private composable on the screen now takes a `modifier`, which is how the transformation
   reaches it and is what they should have taken anyway.
 
 Metrics re-run afterwards: all 18 composables still `restartable skippable`.
+
+## Two things this got wrong first, and an independent review caught
+
+Both were merged in #7 and fixed immediately after in #8. They are recorded here rather than
+quietly corrected, because each is a trap the next person to touch this file can fall into.
+
+**`scrollTransform` applied the wrong half of the spec.** `ResponsiveTransformationSpecImpl` splits
+the work: `applyContentTransformation` sets `compositingStrategy` and `alpha` and *nothing else*,
+while `applyContainerTransformation` is what sets `scaleX`, `scaleY` and the recentring
+`translationY = -height * (1 - scale) / 2`. Meanwhile `getTransformedHeight` has already shrunk the
+item's layout slot to `scale * height`. Pairing the shrunken slot with the content transformation
+gives an item that reserves less space and still draws at full size without recentring — which is
+not a smaller item but a full-size one overlapping its neighbour, with the taper gone entirely. The
+screen would have opened with rows crowding into each other at both edges of the round display.
+
+**The waveform pause was not a pause.** `moving = false` is the *stopped* shape — every bar at
+`WAVEFORM_REST` — so stopping the transition during a scroll made the bars announce "nothing is
+playing" through every flick, contradicting the one thing the header's own KDoc says the waveform is
+for. The transition also sat in a different composition group, so it restarted at phase zero and
+jumped the wave along the row when the finger lifted. And the frames it bought back were a redraw of
+an 18 dp canvas that already has its own layer, against a scroll producing a frame per vsync
+regardless. Reverted; the waveform runs throughout.
+
+**Why nothing caught either.** Both are visual, and `:wear` is the only Compose module in this repo
+with no Roborazzi goldens — `configureWearCompose` never called `configureScreenshotTests()`. Layout
+bounds cannot catch them either: `transformedHeight` moves the layout slot identically in the broken
+and the fixed version, and the whole difference lives in the `graphicsLayer`. A golden of this
+screen is the only mechanical guard, and it is the first thing on the deferred list below.
 
 ## Tests
 
@@ -89,15 +116,17 @@ Same caveat as last time, same reason: the watch (`SM_L715F`) dropped to `offlin
 debugging partway through and would not come back with `adb reconnect`. Nothing here has been felt
 on the wrist. The check, once it is reachable: install both sides from the same build, play
 something, and scroll the column repeatedly — no hitch as the drag begins, no rhythmic hitch while
-the waveform would have been running, and the queue and downloaded sections scroll at the same cost
-as the controls above them. Then confirm the waveform resumes when the finger lifts.
+an episode plays, and the queue and downloaded sections scroll at the same cost as the controls
+above them. Look hardest at the top and bottom edges of the round screen: rows should taper and fade
+as they leave, and must not crowd into or overlap each other. That is the failure mode #7 shipped
+and #8 fixes, and it is the one nothing in the module can check.
 
 `dumpsys gfxinfo md.borisveriga.megapodcastplayer framestats` around a scripted `input swipe` loop
 would turn that into numbers, and is worth doing before anyone reaches for the next item below.
 
 ## The ceiling nobody has raised yet
 
-`wear-debug.apk` is 79 MB and contains **no** `assets/dexopt/baseline.prof` — only the
+`wear-debug.apk` is 76 MB (79,659,224 bytes) and contains **no** `assets/dexopt/baseline.prof` — only the
 profileinstaller version marker. There is no `androidx.baselineprofile` plugin and no benchmark
 module in the repo, and `.claude/project-profile.md` records that the watch is only ever installed
 as a debug build. All of Compose's scroll, layout and draw paths are running interpreted on a watch
@@ -108,6 +137,8 @@ smaller half of the problem. A baseline profile is the larger half, and it is st
 
 ## Still deferred
 
-A baseline profile; Compose stability configuration for `:core:wearprotocol` types; `@Immutable` on
+Roborazzi goldens for `:wear` — `configureWearCompose` needs `configureScreenshotTests()` and the
+two roborazzi dependencies, which is all that stands between this module and the suite every other
+Compose module already has; a baseline profile; Compose stability configuration for `:core:wearprotocol` types; `@Immutable` on
 the state; raising `QUEUE_BUTTON_SIZE` to the 48 dp touch-target floor via
 `Modifier.touchTargetAwareSize`, which is unrelated to scrolling but was noticed in the same file.

@@ -201,9 +201,10 @@ fun WatchPlayerScreen(
     val spec = rememberTransformationSpec()
 
     // Read here rather than where it is used, which is the waveform inside the header. The header
-    // is a list item, so reading it there meant registering and unregistering a ContentObserver —
-    // two binder calls into the system server, on the main thread, during composition — every time
-    // the header scrolled out of view and back. Once per screen is what it was always worth.
+    // is a list item, so reading it there meant a `Settings.Global` read while composing and a
+    // ContentObserver registered and unregistered as the effect was applied and disposed — three
+    // trips to the system server, on the main thread, every time the header scrolled out of view
+    // and back. It is one reading per screen, and this is where a screen's readings belong.
     val reduceMotion = rememberReduceMotion()
 
     // A scrolling list rather than a fixed layout even for the controls alone, because at 200 %
@@ -228,7 +229,6 @@ fun WatchPlayerScreen(
                     NowPlayingHeader(
                         uiState = uiState,
                         reduceMotion = reduceMotion,
-                        scrolling = listState::isScrollInProgress,
                         modifier = Modifier.scrollTransform(this, spec),
                     )
                 }
@@ -299,9 +299,16 @@ fun WatchPlayerScreen(
  * — to find out where that item had reached. Here the item is simply told.
  *
  * Used in place of the Material `transformation` parameter that [Button] and [ListHeader] accept,
- * because that one transforms a surface's container and its content on separate curves, and half
- * the things in this column — the transport rows, the waveform header — are not surfaces at all.
- * One curve for everything is both simpler and what the screen looked like before.
+ * because half the things in this column — the transport rows, the waveform header — are not
+ * surfaces at all, and a column where only some items taper reads as a bug.
+ *
+ * It must be the *container* transformation and not the content one. The spec splits the two:
+ * `applyContentTransformation` sets alpha alone, while the scale and the recentring `translationY`
+ * live in `applyContainerTransformation` — and [transformedHeight] has already shrunk the item's
+ * layout slot to `scale * height` by the time either runs. Pairing the shrunken slot with content
+ * that still draws full size and never recentres is not a smaller item; it is a full-size item
+ * overlapping its neighbour by the difference, with the taper gone. That was the first version of
+ * this function, and nothing in the module caught it.
  *
  * @param scope the item's own scope, which is where its scroll progress comes from.
  * @param spec how progress becomes height, scale and alpha; see [rememberTransformationSpec].
@@ -310,7 +317,7 @@ private fun Modifier.scrollTransform(
     scope: TransformingLazyColumnItemScope,
     spec: TransformationSpec,
 ): Modifier = transformedHeight(scope, spec)
-    .graphicsLayer { with(scope) { with(spec) { applyContentTransformation(scrollProgress) } } }
+    .graphicsLayer { with(scope) { with(spec) { applyContainerTransformation(scrollProgress) } } }
 
 /**
  * The phone's queue, at the bottom of the column.
@@ -322,8 +329,10 @@ private fun Modifier.scrollTransform(
  * Every row also carries a content type. Rows of the same type can hand their composition on to
  * the next row of that type as the list scrolls, instead of each one being built from nothing; a
  * queue row and a downloaded row are differently shaped, so they say so and keep to their own
- * pools. `ScalingLazyColumn` had no way to express this at all — its scope takes a key and nothing
- * else — which is why reuse never once succeeded on this screen before.
+ * pools. `ScalingLazyColumn` had no way to express this — its scope takes a key and nothing else —
+ * so every item shared one pool typed `null`. That still reused correctly while scrolling *within*
+ * a section, where the slot leaving and the slot arriving are the same shape; what it could not do
+ * is tell a queue row from a downloaded row at the boundary between them.
  *
  * @param uiState what to draw.
  * @param spec the column's scroll transformation, applied to each row.
@@ -415,15 +424,12 @@ private fun TransformingLazyColumnScope.phoneDownloads(
  * @param uiState what to draw.
  * @param reduceMotion whether the wearer has asked for no animations; read once above the list
  *   rather than here, for the reason given where it is read.
- * @param scrolling whether the column is moving under the finger, handed down as a lambda so that
- *   only the waveform is recomposed when it starts and stops.
  * @param modifier applied to the header; carries the column's scroll transformation.
  */
 @Composable
 private fun NowPlayingHeader(
     uiState: WatchPlayerUiState,
     reduceMotion: Boolean,
-    scrolling: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val accent = showAccent(uiState.snapshot.showTitle)
@@ -450,11 +456,7 @@ private fun NowPlayingHeader(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Waveform(
-            accent = accent,
-            moving = uiState.snapshot.isPlaying && !reduceMotion,
-            scrolling = scrolling,
-        )
+        Waveform(accent = accent, moving = uiState.snapshot.isPlaying && !reduceMotion)
 
         Spacer(modifier = Modifier.height(6.dp))
 
@@ -489,33 +491,25 @@ private fun NowPlayingHeader(
  * neighbour, which is what makes the shape move along the row instead of pulsing in unison. Seven
  * separate animations would look much the same and cost seven times as much on a wrist.
  *
- * It also stops while the list is being scrolled. An infinite transition asks for a frame every
- * frame for as long as it runs, so a waveform left going during a scroll is a second thing
- * competing for each one — and it is decoration, on the one item most likely to be halfway off the
- * screen at the time. Two recompositions per swipe buys back sixty animation frames a second.
+ * It deliberately keeps running while the column is scrolled. Stopping it there was tried and
+ * reverted: `moving = false` is not a pause but the *stopped* shape — every bar drops to
+ * [WAVEFORM_REST] — so the bars would have announced "nothing is playing" through every flick of
+ * the wrist, and the transition, being a different composition group, restarted at phase zero
+ * afterwards and jumped the wave along the row. The frames it would have saved are a redraw of an
+ * 18 dp canvas that already has its own layer, against a scroll that is producing a frame per vsync
+ * regardless. Not a trade worth a lie.
  *
  * @param accent the show's colour, from [showAccent].
  * @param moving whether the phone is playing and the wearer has not asked for stillness; when it is
  *   false the bars sit at [WAVEFORM_REST].
- * @param scrolling whether the column is moving. Called here rather than read by the caller so that
- *   a scroll starting or stopping recomposes these bars and nothing else on the screen.
  * @param modifier applied to the band the bars are drawn in.
  */
 @Composable
-private fun Waveform(
-    accent: Color,
-    moving: Boolean,
-    scrolling: () -> Boolean,
-    modifier: Modifier = Modifier,
-) {
+private fun Waveform(accent: Color, moving: Boolean, modifier: Modifier = Modifier) {
     // Kept as State and unwrapped inside the draw lambda below, not here: a value read during
     // composition would recompose this function on every animation frame, where a draw-phase read
     // only repaints. On a watch that difference is battery.
-    // A wearer who has turned animations off gets the bars at rest. Whether the phone is playing is
-    // said by the transport button, which is where it always was; the waveform only ever repeated it.
-    val animate = moving && !scrolling()
-
-    val phase: State<Float>? = if (animate) {
+    val phase: State<Float>? = if (moving) {
         rememberInfiniteTransition(label = "waveform").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
