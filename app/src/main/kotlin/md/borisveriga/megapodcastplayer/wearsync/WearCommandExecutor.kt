@@ -72,6 +72,11 @@ internal class WearCommandExecutor @Inject constructor(
 
             is WearCommand.PlayEpisode -> episodePlayer.play(command.episodeId)
 
+            // The queue and nothing else: what is playing is not interrupted, which is the whole
+            // difference between this and PlayEpisode. The watch sees the result in the next
+            // snapshot, where the episode has moved from the downloaded list into the queue.
+            is WearCommand.QueueEpisode -> playbackRepository.enqueue(command.episodeId)
+
             // Answered by the publish below, which every command does anyway.
             WearCommand.RequestState -> Unit
 

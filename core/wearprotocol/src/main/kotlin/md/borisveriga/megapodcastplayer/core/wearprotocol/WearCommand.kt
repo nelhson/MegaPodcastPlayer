@@ -75,11 +75,27 @@ sealed interface WearCommand {
     /**
      * Plays a queued episode from the top of the watch's "up next" list.
      *
-     * @property episodeId the episode to play, as sent in [QueuedEpisode.id].
+     * @property episodeId the episode to play, as sent in [WatchEpisode.id].
      */
     @Serializable
     @SerialName("play_episode")
     data class PlayEpisode(val episodeId: String) : WearCommand
+
+    /**
+     * Puts an episode at the end of the phone's queue, without interrupting what is playing.
+     *
+     * The other half of what the wrist is for: [PlayEpisode] is "this one instead", and this is
+     * "this one after". Sent from the downloaded list, where starting an episode over the one in
+     * your ears is rarely what was meant.
+     *
+     * Enqueuing the same episode twice is harmless — the phone's queue holds an episode once — which
+     * is what makes it safe as a message the Data Layer will never de-duplicate.
+     *
+     * @property episodeId the episode to queue, as sent in [WatchEpisode.id].
+     */
+    @Serializable
+    @SerialName("queue_episode")
+    data class QueueEpisode(val episodeId: String) : WearCommand
 
     /**
      * Marks the moment the wearer just heard.

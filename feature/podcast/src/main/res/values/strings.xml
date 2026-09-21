@@ -224,8 +224,9 @@
     <string name="episode_share_title">Share episode</string>
 
     <!--
-        The counts line under a show's title. The same two facts, in the same order and with the
-        same separator, as the library row's own line: one show described one way.
+        The counts line under a show's title, in the same words as the library row's own line: one
+        show described one way. How many episodes are on the device is not part of it — the header
+        draws the downloaded mark and a number beside this line, as the row does.
     -->
     <plurals name="podcast_episode_count">
         <item quantity="one">%1$d episode</item>
@@ -236,12 +237,6 @@
         <item quantity="one">%1$d video</item>
         <item quantity="other">%1$d videos</item>
     </plurals>
-    <plurals name="podcast_downloaded_count">
-        <item quantity="one">%1$d downloaded</item>
-        <item quantity="other">%1$d downloaded</item>
-    </plurals>
-    <!-- Joins the two parts of that line (%1$s and %2$s), so a translator can re-punctuate it. -->
-    <string name="podcast_counts_combined">%1$s · %2$s</string>
 
     <!-- Handing the show itself to somebody: the two menu entries that change nothing. -->
     <string name="podcast_share_show">Share show</string>

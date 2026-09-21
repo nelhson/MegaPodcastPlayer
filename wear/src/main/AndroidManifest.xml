@@ -94,24 +94,6 @@
         </service>
 
         <!--
-          The now-playing tile. The permission is the system's own: only the tile host may bind
-          this, which is why it can be exported without being reachable by any other app.
-        -->
-        <service
-            android:name=".tile.NowPlayingTileService"
-            android:exported="true"
-            android:icon="@drawable/ic_ongoing_playing"
-            android:label="@string/watch_tile_label"
-            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
-            <intent-filter>
-                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
-            </intent-filter>
-            <meta-data
-                android:name="androidx.wear.tiles.PREVIEW"
-                android:resource="@drawable/ic_ongoing_playing" />
-        </service>
-
-        <!--
           The watch-face complication. UPDATE_PERIOD_SECONDS is zero on purpose: a periodic refresh
           would wake this up to redraw something that had not changed, and every change it *could*
           draw arrives as a data item, which NowPlayingChipService turns into a push.

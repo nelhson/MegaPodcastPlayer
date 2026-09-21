@@ -84,14 +84,10 @@
         <item quantity="other">%1$d unplayed</item>
     </plurals>
 
-    <plurals name="library_downloaded_count">
-        <item quantity="one">%1$d downloaded</item>
-        <item quantity="other">%1$d downloaded</item>
-    </plurals>
-
     <!--
-        Joins two parts of the counts line (%1$s and %2$s). Applied more than once for a row that
-        has all three of episodes, unplayed and downloaded to report.
+        Joins two parts of the counts line (%1$s and %2$s). How many episodes are on the device is
+        not among them: the row draws that as the downloaded mark and a number, in front of this
+        line.
     -->
     <string name="library_counts_combined">%1$s · %2$s</string>
 

@@ -279,11 +279,22 @@ class WatchPlayerViewModel @Inject constructor(
     }
 
     /**
-     * Plays a queued episode on the phone.
+     * Plays an episode on the phone, in place of whatever is playing.
      *
-     * @param episodeId the episode, as it arrived in the snapshot's queue.
+     * @param episodeId the episode, as it arrived in the snapshot's queue or downloaded list.
      */
     fun playOnPhone(episodeId: String) = send(WearCommand.PlayEpisode(episodeId))
+
+    /**
+     * Puts a downloaded episode at the end of the phone's queue, leaving playback alone.
+     *
+     * Nothing is confirmed here. The phone republishes after every command, and the episode leaving
+     * the downloaded list for the queue a moment later is the confirmation — a truer one than a
+     * label this could have shown, because it is the phone's own state saying so.
+     *
+     * @param episodeId the episode, as it arrived in the snapshot's downloaded list.
+     */
+    fun queueOnPhone(episodeId: String) = send(WearCommand.QueueEpisode(episodeId))
 
     /** Asks the phone to republish its state, for the pull-to-retry on the disconnected screen. */
     fun retry() = send(WearCommand.RequestState)

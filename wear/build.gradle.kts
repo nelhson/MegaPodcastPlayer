@@ -30,14 +30,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.hilt.navigation.compose)
 
-    // The watch-face surfaces: a tile beside the face, and a complication on it. Both render the
-    // same data item the app reads, so neither needs the phone to be awake to draw itself.
-    implementation(libs.androidx.wear.tiles)
-    implementation(libs.androidx.wear.protolayout)
-    implementation(libs.androidx.wear.protolayout.expression)
+    // The one surface outside the app: a complication on the watch face. It renders the same data
+    // item the app reads, so it does not need the phone to be awake to draw itself. There was a
+    // tile here too; the watch is one screen now, and the tile was a second, smaller copy of it.
     implementation(libs.androidx.wear.watchface.complications.data.source)
-    // `CallbackToFutureAdapter`, which bridges the tile's coroutines to the futures it must return.
-    implementation(libs.androidx.concurrent.futures)
     // Unused by the watch: it draws no remote imagery at all — the now-playing header is a generated
     // waveform in the show's own colour. Kept because dropping it shifts the resolved Kotlin stdlib
     // version and would require regenerating gradle/verification-metadata.xml; that cleanup belongs

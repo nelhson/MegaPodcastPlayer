@@ -19,6 +19,20 @@
     -->
     <string name="watch_phone_queue">Phone queue</string>
 
+    <!--
+      Section header for what is downloaded on the phone but not queued. "On phone" rather than
+      "Downloaded", because on a watch the question the section answers is where the audio is, and
+      the watch holds none of it.
+    -->
+    <string name="watch_phone_downloads">Downloaded on phone</string>
+
+    <!--
+      The queue button beside a downloaded episode. %1$s is the episode title: a screen reader
+      reaches this button having already left the row beside it, so the label has to say what it
+      would queue.
+    -->
+    <string name="watch_queue_episode">Add %1$s to the queue</string>
+
     <string name="watch_play">Play</string>
     <string name="watch_pause">Pause</string>
     <string name="watch_previous_episode">Previous episode</string>
@@ -55,16 +69,6 @@
     <string name="watch_link_disconnected_description">Bring your phone closer, or turn Bluetooth back on.</string>
 
     <string name="watch_retry">Retry</string>
-
-    <!--
-      The tile, one swipe from the watch face. Its skip labels are deliberately unnumbered: the tile
-      is built before the phone's configured interval is known, and a button that said "30" while
-      the phone jumps 45 would be a small lie pressed daily.
-    -->
-    <string name="watch_tile_label">Now playing</string>
-    <string name="watch_tile_idle_body">Start an episode on your phone.</string>
-    <string name="watch_tile_skip_back">Skip back</string>
-    <string name="watch_tile_skip_forward">Skip ahead</string>
 
     <!--
       The complication, on the watch face itself. It gets about four characters, so `empty` is a

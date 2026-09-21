@@ -39,35 +39,49 @@ class ShowRowTest {
                 ShowRow(
                     title = "Podlodka Podcast",
                     author = "Egor Tolstoy",
-                    metadata = "412 episodes · 2 downloaded",
+                    metadata = "412 episodes · 37 unplayed",
                 )
             }
         }
 
         composeTestRule.onNodeWithText("Podlodka Podcast").assertIsDisplayed()
         composeTestRule.onNodeWithText("Egor Tolstoy").assertIsDisplayed()
-        composeTestRule.onNodeWithText("412 episodes · 2 downloaded").assertIsDisplayed()
+        composeTestRule.onNodeWithText("412 episodes · 37 unplayed").assertIsDisplayed()
     }
 
     /**
-     * The counts line already says "2 downloaded", so the mark beside it is decoration and has to
-     * stay silent: the alternative is TalkBack reading the same fact twice in one breath. Same
-     * reasoning as the library's new-episode badge, which is muted for the same reason.
+     * The mark and the number replaced the words "2 downloaded" in the counts line, so the mark is
+     * no longer decoration: it is the only thing saying the fact, and it has to say it in words a
+     * screen reader can use. "Downloaded, 2" would read as an ordinal, so the group carries one
+     * label instead.
      */
     @Test
-    fun `marks a show with stored episodes without announcing it twice`() {
+    fun `counts a show's stored episodes as a mark, and announces it as words`() {
         composeTestRule.setContent {
             MegaPodcastPlayerTheme {
                 ShowRow(
                     title = "Podlodka Podcast",
-                    metadata = "412 episodes · 2 downloaded",
-                    isDownloaded = true,
+                    metadata = "412 episodes",
+                    downloadedCount = 2,
                 )
             }
         }
 
-        composeTestRule.onNodeWithText("412 episodes · 2 downloaded").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription("Downloaded").assertDoesNotExist()
+        // The digit itself is drawn but silent — it is inside the group that sets one label — so
+        // what is asserted here is the label. The glyph and the number are the goldens' business.
+        composeTestRule.onNodeWithContentDescription("2 downloaded").assertExists()
+    }
+
+    /** Nothing stored draws nothing: a "0" beside the mark is a fact nobody asked for. */
+    @Test
+    fun `leaves a show with nothing stored unmarked`() {
+        composeTestRule.setContent {
+            MegaPodcastPlayerTheme {
+                ShowRow(title = "Podlodka Podcast", metadata = "412 episodes")
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("0 downloaded").assertDoesNotExist()
     }
 
     @Test

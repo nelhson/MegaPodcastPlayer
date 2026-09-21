@@ -15,7 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
-import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
+import md.borisveriga.megapodcastplayer.core.wearprotocol.WatchEpisode
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,13 +54,19 @@ class WatchPlayerScreenTest {
         upNext = listOf(
             // A different show from the one playing, so the assertions below cannot match the queue
             // row when they mean the header.
-            QueuedEpisode(id = "ep-2", title = "The one about antennas", showTitle = "Signal Path"),
+            WatchEpisode(id = "ep-2", title = "The one about antennas", showTitle = "Signal Path"),
         ),
+    )
+
+    /** Two downloaded episodes the phone is offering, neither of them in the queue. */
+    private val downloaded = listOf(
+        WatchEpisode(id = "dl-1", title = "The one about capacitors", showTitle = "Radio Hardware"),
+        WatchEpisode(id = "dl-2", title = "The one about resistors", showTitle = "Radio Hardware"),
     )
 
     /** A queue long enough to push anything below it off a 45 mm screen. */
     private val longQueue = List(12) { index ->
-        QueuedEpisode(id = "ep-$index", title = "Queued episode $index", showTitle = "Signal Path")
+        WatchEpisode(id = "ep-$index", title = "Queued episode $index", showTitle = "Signal Path")
     }
 
     @Test
@@ -145,7 +151,7 @@ class WatchPlayerScreenTest {
     }
 
     @Test
-    fun tappingAQueuedEpisodePlaysIt() {
+    fun tappingAWatchEpisodePlaysIt() {
         var played: String? = null
         setScreen(
             uiState = WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing),
@@ -326,6 +332,82 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithText("Phone queue").assertIsDisplayed()
     }
 
+    // ---- Downloaded on the phone ----------------------------------------------------------------
+
+    /**
+     * The section exists so the wrist can reach something that is not already queued. It comes
+     * after the queue, because most raises of the wrist are about what is playing and only a few
+     * are about changing what comes next.
+     */
+    @Test
+    fun `what is downloaded on the phone is listed under the queue`() {
+        setScreen(
+            WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing.copy(downloaded = downloaded),
+            ),
+        )
+
+        scrollTo("Downloaded on phone")
+        val queue = composeTestRule.onNodeWithText("Phone queue").getUnclippedBoundsInRoot()
+        val downloads = composeTestRule
+            .onNodeWithText("Downloaded on phone")
+            .getUnclippedBoundsInRoot()
+        assertTrue("downloads header below the queue header", queue.bottom <= downloads.top)
+
+        scrollTo("The one about capacitors")
+        composeTestRule.onNodeWithText("The one about capacitors").assertIsDisplayed()
+    }
+
+    /** Nothing downloaded means no heading either: an empty section is a row of wasted screen. */
+    @Test
+    fun `a phone with nothing downloaded shows no such section`() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
+
+        composeTestRule.onNodeWithText("Downloaded on phone").assertDoesNotExist()
+    }
+
+    /** The button beside a downloaded episode, which is the point of the section. */
+    @Test
+    fun `the queue button asks the phone to queue that episode`() {
+        var queued: String? = null
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing.copy(downloaded = downloaded),
+            ),
+            onQueueOnPhone = { queued = it },
+        )
+
+        scrollTo("The one about capacitors")
+        composeTestRule
+            .onNodeWithContentDescription("Add The one about capacitors to the queue")
+            .performClick()
+
+        assertEquals("dl-1", queued)
+    }
+
+    /** The row itself still plays, as the queue's rows do; the button is the second action. */
+    @Test
+    fun `tapping a downloaded episode plays it instead of queueing it`() {
+        var played: String? = null
+        var queued: String? = null
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playing.copy(downloaded = downloaded),
+            ),
+            onPlayOnPhone = { played = it },
+            onQueueOnPhone = { queued = it },
+        )
+
+        scrollTo("The one about resistors")
+        composeTestRule.onNodeWithText("The one about resistors").performClick()
+
+        assertEquals("dl-2", played)
+        assertEquals(null, queued)
+    }
+
     /** Scrolls the column until the node holding [text] is on screen. */
     private fun scrollTo(text: String) {
         composeTestRule.onNode(isVerticalList()).performScrollToNode(hasText(text))
@@ -376,6 +458,7 @@ class WatchPlayerScreenTest {
         position: () -> PlaybackPosition = { PlaybackPosition() },
         onTogglePlayPause: () -> Unit = {},
         onPlayOnPhone: (String) -> Unit = {},
+        onQueueOnPhone: (String) -> Unit = {},
         onRetry: () -> Unit = {},
     ) {
         composeTestRule.setContent {
@@ -391,6 +474,7 @@ class WatchPlayerScreenTest {
                         onSkipToPrevious = {},
                         onCycleSpeed = {},
                         onPlayOnPhone = onPlayOnPhone,
+                        onQueueOnPhone = onQueueOnPhone,
                         onRetry = onRetry,
                     )
                 }

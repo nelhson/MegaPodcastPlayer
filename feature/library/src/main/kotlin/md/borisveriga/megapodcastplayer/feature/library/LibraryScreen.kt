@@ -557,7 +557,7 @@ private fun ShowGrid(
                     author = entry.podcast.author,
                     source = entry.podcast.source,
                     badgeCount = entry.newEpisodeCount,
-                    isDownloaded = entry.downloadedCount > 0,
+                    downloadedCount = entry.downloadedCount,
                     stateDescription = entry.newEpisodeDescription(resources),
                     isSelected = entry.podcast.id == selectedPodcastId,
                     onClick = { onPodcastClick(entry.podcast.id) },
@@ -769,7 +769,7 @@ private fun ShowListRow(
             author = entry.podcast.author,
             metadata = entry.countsLine(resources),
             artworkUrl = entry.podcast.artworkUrl,
-            isDownloaded = entry.downloadedCount > 0,
+            downloadedCount = entry.downloadedCount,
             source = entry.podcast.source,
             stateDescription = entry.newEpisodeDescription(resources),
             isSelected = isSelected,
@@ -900,7 +900,11 @@ private fun AddButton(onSearchClick: () -> Unit) {
 }
 
 /**
- * The counts line under a show: how many episodes there are, and how many are on the device.
+ * The counts line under a show: how many episodes there are, and how many were never started.
+ *
+ * How many are on the device is no longer among them. It is the one count that is also a glyph —
+ * the row draws the mark and the number in front of this line — and writing it out as well made it
+ * three clauses long to say what the mark says at a glance.
  *
  * @param resources for the plurals.
  * @return the metadata line.
@@ -929,15 +933,6 @@ private fun PodcastWithCounts.countsLine(resources: Resources): String {
                     R.plurals.library_unplayed_count,
                     unplayedCount,
                     unplayedCount,
-                ),
-            )
-        }
-        if (downloadedCount > 0) {
-            add(
-                resources.getQuantityString(
-                    R.plurals.library_downloaded_count,
-                    downloadedCount,
-                    downloadedCount,
                 ),
             )
         }

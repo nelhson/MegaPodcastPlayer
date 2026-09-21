@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.wearsync
 
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
+import md.borisveriga.megapodcastplayer.core.wearprotocol.WatchEpisode
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,22 @@ class NowPlayingPublisherTest {
         val candidate = fast.copy(positionMs = 20_000L)
 
         assertFalse(shouldPublish(previous, candidate, nowMs = 6_000L))
+    }
+
+    /**
+     * The downloaded list is part of what "substantively changed" means, the same as the queue: an
+     * episode finishing its download is news the wrist is waiting for. It moves rarely, so it costs
+     * nothing to treat it this way.
+     */
+    @Test
+    fun `a change to the downloaded list is published`() {
+        val previous = PublishedSnapshot(playing, atMs = 1_000L)
+        val candidate = playing.copy(
+            positionMs = 15_000L,
+            downloaded = listOf(WatchEpisode(id = "dl-1", title = "One", showTitle = "Show")),
+        )
+
+        assertTrue(shouldPublish(previous, candidate, nowMs = 6_000L))
     }
 
     @Test
