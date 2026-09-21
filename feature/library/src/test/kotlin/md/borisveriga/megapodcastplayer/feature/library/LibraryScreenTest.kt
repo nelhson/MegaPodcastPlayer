@@ -1,12 +1,17 @@
 package md.borisveriga.megapodcastplayer.feature.library
 
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
@@ -64,6 +69,9 @@ class LibraryScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    /** The screen's focus manager, captured by [setScreen] for the tests that move focus. */
+    private var focusManager: FocusManager? = null
+
     private fun entry(
         id: String,
         title: String,
@@ -112,6 +120,7 @@ class LibraryScreenTest {
         selectedPodcastId: String? = null,
     ) {
         composeRule.setContent {
+            focusManager = LocalFocusManager.current
             MegaPodcastPlayerTheme {
                 LibraryScreen(
                     uiState = LibraryUiState(
@@ -144,6 +153,30 @@ class LibraryScreenTest {
     /** A library long enough for the narrowing controls to be drawn. */
     private fun longLibrary(size: Int = 10) =
         List(size) { index -> entry("p$index", "Show $index") }
+
+    /**
+     * Arriving at the tab hands the screen focus, and focus goes to the first thing that will
+     * have it. That used to be the filter field — the only thing here that takes focus in touch
+     * mode — and a focused field opens the keyboard over a library nobody had asked to search.
+     */
+    @Test
+    fun `focus arriving at the screen does not land in the filter field`() {
+        setScreen(layout = LibraryLayout.LIST, podcasts = longLibrary())
+
+        composeRule.runOnIdle { checkNotNull(focusManager).moveFocus(FocusDirection.Enter) }
+
+        composeRule.onNodeWithText("Find a show").assertIsNotFocused()
+    }
+
+    /** The other half: the field is still there to be used, and a tap is how. */
+    @Test
+    fun `tapping the filter field focuses it`() {
+        setScreen(layout = LibraryLayout.LIST, podcasts = longLibrary())
+
+        composeRule.onNodeWithText("Find a show").performClick()
+
+        composeRule.onNodeWithText("Find a show").assertIsFocused()
+    }
 
     /**
      * The bar is what says which of the three tabs the user is on, so it has to survive the

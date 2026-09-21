@@ -2,6 +2,7 @@ package md.borisveriga.megapodcastplayer.core.media
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioManager
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -12,6 +13,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -31,6 +33,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
@@ -47,12 +50,22 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * @property context application context, used to bind to the service.
  * @property scope application-wide scope; the state flow outlives any one screen so that switching
  *   between the mini player and the full player does not reconnect the controller.
+ * @property crashReporter where a command that was dropped without anyone being told is recorded.
  */
 @Singleton
 class PlaybackConnection @Inject constructor(
     @ApplicationContext private val context: Context,
     @ApplicationScope private val scope: CoroutineScope,
+    private val crashReporter: CrashReporter,
 ) {
+
+    /** The system's audio service, which is what [setDeviceVolume] sets the media volume through. */
+    private val audioManager: AudioManager by lazy {
+        context.getSystemService(AudioManager::class.java)
+    }
+
+    /** Whether a refused device volume has been reported yet; see [setDeviceVolume]. */
+    private val volumeRefusalReported = AtomicBoolean(false)
 
     /** Guards lazy creation of [controller] against two screens connecting at once. */
     private val connectionLock = Mutex()
@@ -350,21 +363,28 @@ class PlaybackConnection @Inject constructor(
      * act with the same result — and so that the sleep timer's fade, which owns [setVolume]
      * outright and restores it to full afterwards, cannot quietly undo a level the user chose.
      *
-     * Does nothing on a player that will not have its volume set — a fixed-volume output, or one
-     * built without device-volume control. The watch is told the same fact through
-     * [PlaybackState.maxVolume] and hides its control rather than offering a dead one.
+     * Does nothing on a device whose volume is fixed, and records that it did nothing; see
+     * [applyMediaVolume].
      *
-     * @param level the level to set; clamped to the device's own range, because a value outside it
-     *   throws.
+     * @param level the level to set; clamped to the media stream's own range.
      */
-    suspend fun setDeviceVolume(level: Int) = onController { player ->
-        if (!player.isCommandAvailable(Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS)) {
-            return@onController
+    suspend fun setDeviceVolume(level: Int) {
+        // Through the system's audio service rather than through the controller. Media3 offers
+        // the same thing as a player command, and on the way from the controller through the
+        // session and the forwarding player to ExoPlayer it went missing: the watch's level
+        // arrived here, the command was sent, and the audio service never heard of it. This is
+        // the call that path ends in, made directly. The player still *reads* the volume — it
+        // listens for the system's own volume broadcast — so the watch is told the result the
+        // same way it is told when the phone's keys are pressed.
+        val outcome = suspendRunCatching { audioManager.applyMediaVolume(level) }
+        val refusal = outcome.exceptionOrNull()
+            ?: IllegalStateException("the device's volume is fixed").takeIf { outcome.getOrNull() == false }
+            ?: return
+        // Whoever asked is on a watch, looking at a bar that slid back for no reason it can give.
+        // Said once per process: the bezel asks several times a second, and the answer is the same.
+        if (volumeRefusalReported.compareAndSet(false, true)) {
+            crashReporter.recordNonFatal("device volume refused", refusal)
         }
-        val device = player.deviceInfo
-        // No VOLUME_FLAG_SHOW_UI: the phone this is changing is in a pocket, and the system's
-        // volume panel would be drawn for nobody — on a screen that is off, over whatever is on it.
-        player.setDeviceVolume(level.coerceIn(device.minVolume, device.maxVolume), /* flags = */ 0)
     }
 
     /** Stops playback and empties the queue. */
@@ -439,6 +459,24 @@ private fun Player.indexOfEpisode(episodeId: String): Int? =
 
 /** The media duration once the player knows it, otherwise null. */
 private fun Player.knownDurationMs(): Long? = duration.takeIf { it != C.TIME_UNSET && it > 0L }
+
+/**
+ * Sets the media stream's volume, if this device will have it set.
+ *
+ * Apart from [PlaybackConnection.setDeviceVolume] so that the clamp and the refusal can be tested
+ * without a connection.
+ *
+ * @param level the level to set, clamped to the stream's own range.
+ * @return false on a device whose volume is fixed — a TV, a car — where nothing was done.
+ */
+internal fun AudioManager.applyMediaVolume(level: Int): Boolean {
+    if (isVolumeFixed) return false
+    val range = getStreamMinVolume(AudioManager.STREAM_MUSIC)..getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    // No FLAG_SHOW_UI: the phone this is changing is in a pocket, and the system's volume panel
+    // would be drawn for nobody — on a screen that is off, over whatever is on it.
+    setStreamVolume(AudioManager.STREAM_MUSIC, level.coerceIn(range), /* flags = */ 0)
+    return true
+}
 
 /**
  * Flattens the controller's current state into a [PlaybackState].

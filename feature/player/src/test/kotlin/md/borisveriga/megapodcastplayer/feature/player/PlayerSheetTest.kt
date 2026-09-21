@@ -15,6 +15,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.SleepTimerState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -104,7 +105,7 @@ class PlayerSheetTest {
         composeRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Skip ahead 30 seconds").assertIsDisplayed()
         // Both directions, not just one: replaying a sentence used to need the sheet opened.
-        composeRule.onNodeWithContentDescription("Skip back 10 seconds").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Skip back 30 seconds").assertIsDisplayed()
         // The full player's controls are not merely hidden; they are not composed at all.
         composeRule.onNodeWithContentDescription("Playback position").assertDoesNotExist()
     }
@@ -275,8 +276,12 @@ class PlayerSheetTest {
             .assertIsDisplayed()
     }
 
+    /**
+     * The stop is a place in the episode, but what is wanted is still how long that is. The
+     * fixture is twenty minutes into an episode of an hour and twenty-three and three quarters.
+     */
     @Test
-    fun `expanded, the end-of-episode timer says so rather than showing a number`() {
+    fun `expanded, the end-of-episode timer says so, and how far off that is`() {
         setContent(
             PlayerSheetValue.Expanded,
             uiState = playing.copy(sleep = SleepTimerState(isEndOfEpisode = true)),
@@ -284,20 +289,48 @@ class PlayerSheetTest {
 
         composeRule
             .onNodeWithContentDescription(
-                "Sleep timer set to the end of this episode; tap to change it",
+                "Sleep timer set to the end of this episode, 1 h 3 min left; tap to change it",
             )
             .assertIsDisplayed()
+        composeRule.onNodeWithText("1 h 3 min", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
-    fun `expanded, the end-of-chapter timer says so rather than showing a number`() {
+    fun `expanded, the end-of-chapter timer says so, and how far off that is`() {
         setContent(
             PlayerSheetValue.Expanded,
-            uiState = playing.copy(sleep = SleepTimerState(endOfChapterIndex = 2)),
+            uiState = playing.copy(
+                sleep = SleepTimerState(endOfChapterIndex = 0),
+                chapters = listOf(
+                    Chapter(startMs = 0L, title = "Intro"),
+                    Chapter(startMs = 3_000_000L, title = "The interview"),
+                ),
+            ),
         )
 
         composeRule
-            .onNodeWithContentDescription("Sleep timer set to the end of a chapter; tap to change it")
+            .onNodeWithContentDescription(
+                "Sleep timer set to the end of a chapter, 30 min left; tap to change it",
+            )
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("30 min", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    /** No length, no number: the button says what it is set to and leaves it there. */
+    @Test
+    fun `expanded, a stop that cannot be placed shows no number`() {
+        setContent(
+            PlayerSheetValue.Expanded,
+            uiState = playing.copy(
+                playback = playing.playback.copy(durationMs = 0L),
+                sleep = SleepTimerState(isEndOfEpisode = true),
+            ),
+        )
+
+        composeRule
+            .onNodeWithContentDescription(
+                "Sleep timer set to the end of this episode; tap to change it",
+            )
             .assertIsDisplayed()
     }
 

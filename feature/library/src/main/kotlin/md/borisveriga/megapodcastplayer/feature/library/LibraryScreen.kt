@@ -2,6 +2,7 @@ package md.borisveriga.megapodcastplayer.feature.library
 
 import android.content.res.Resources
 import androidx.annotation.StringRes
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -237,7 +238,16 @@ fun LibraryScreen(
     }
 
     Scaffold(
-        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = modifier
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            // Somewhere for focus to land that is not the filter field. When a screen is given
+            // focus — on arriving at this tab, on coming back to it — it goes to the first thing
+            // that will take it, and in touch mode a text field is the only thing here that will:
+            // buttons decline. A focused field opens the keyboard, so the library opened with half
+            // of itself covered by a keyboard nobody asked for. The screen itself comes before
+            // the field, takes the focus, and shows nothing for it; the field still takes it on
+            // a tap, which is the only time the keyboard is wanted.
+            .focusable(),
         topBar = {
             MegaPodcastPlayerTopAppBar(
                 title = stringResource(R.string.library_title),

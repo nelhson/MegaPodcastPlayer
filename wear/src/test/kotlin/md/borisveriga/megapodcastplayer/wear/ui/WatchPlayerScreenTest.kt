@@ -16,6 +16,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
@@ -548,6 +550,60 @@ class WatchPlayerScreenTest {
         assertEquals(listOf(10, 8), levels)
     }
 
+    /**
+     * The bar looks like something a finger can move, so a finger has to be able to move it. The
+     * slider underneath is two buttons and a picture; the drag is this screen's own.
+     */
+    @Test
+    fun `dragging a finger along the bar moves the volume by steps`() {
+        val steps = mutableListOf<Int>()
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+            ),
+            onAdjustVolumeBy = { steps += it },
+        )
+
+        scrollToControl("Volume. Tap to adjust")
+        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performTouchInput {
+            swipe(start = centerLeft, end = center)
+        }
+
+        // Half the row is about half the scale. The exact count is the touch slop's business; what
+        // matters is that it went the right way and by more than a step.
+        assertTrue("expected louder, got $steps", steps.sum() > 1)
+
+        steps.clear()
+        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performTouchInput {
+            swipe(start = center, end = centerLeft)
+        }
+
+        assertTrue("expected quieter, got $steps", steps.sum() < -1)
+    }
+
+    /** A drag is not a tap: it must not also take the bezel away from the list. */
+    @Test
+    fun `dragging the bar does not take hold of the bezel`() {
+        var held = 0
+        setScreen(
+            uiState = WatchPlayerUiState(
+                link = PhoneLink.CONNECTED,
+                snapshot = playingWithVolume,
+                volumeLevel = 9,
+            ),
+            onBeginVolume = { held++ },
+        )
+
+        scrollToControl("Volume. Tap to adjust")
+        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performTouchInput {
+            swipe(start = centerLeft, end = center)
+        }
+
+        assertEquals(0, held)
+    }
+
     @Test
     fun `tapping the bar takes hold of the bezel`() {
         var held = 0
@@ -638,6 +694,7 @@ class WatchPlayerScreenTest {
         onBeginVolume: () -> Unit = {},
         onEndVolume: () -> Unit = {},
         onSetVolume: (Int) -> Unit = {},
+        onAdjustVolumeBy: (Int) -> Unit = {},
     ) {
         composeTestRule.setContent {
             androidx.wear.compose.material3.MaterialTheme {
@@ -657,6 +714,7 @@ class WatchPlayerScreenTest {
                         onBeginVolume = onBeginVolume,
                         onEndVolume = onEndVolume,
                         onSetVolume = onSetVolume,
+                        onAdjustVolumeBy = onAdjustVolumeBy,
                     )
                 }
             }

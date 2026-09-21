@@ -182,7 +182,8 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onBeginVolume invoked when the user takes hold of the volume bar.
  * @param onEndVolume invoked when they let go of it.
  * @param onSetVolume invoked with an absolute level by the row's own minus and plus buttons.
- * @param onAdjustVolumeBy invoked with a signed number of steps as the bezel turns.
+ * @param onAdjustVolumeBy invoked with a signed number of steps as the bezel turns, or as a
+ *   finger is dragged along the volume bar.
  */
 @Composable
 fun WatchPlayerScreen(
@@ -756,7 +757,9 @@ private fun ProgressRow(
  * Built on Wear Material3's [Slider], which is already the shape of this control — two 48 dp
  * buttons with a bar between them, its own detent haptics, and range semantics that let TalkBack
  * read the level without this screen announcing a bare number at it. What the slider does not have
- * is the bezel, because rotary input goes to whoever holds focus and a slider does not ask for it.
+ * is the bezel, because rotary input goes to whoever holds focus and a slider does not ask for it
+ * — nor a drag: its bar is drawn, not held, so the finger's movement along it is added here too,
+ * on the scale the bar suggests. See [bankVolumeSteps] for how either distance becomes steps.
  *
  * So the gesture is the scrubber's, for the reason the scrubber has it: there is one bezel and the
  * list is already using it. Tapping the bar takes it, turning moves the volume, and tapping again —
@@ -771,7 +774,7 @@ private fun ProgressRow(
  * @param onBeginVolume takes hold of the bar.
  * @param onEndVolume lets go of it.
  * @param onSetVolume sets an absolute level; what the slider's own buttons report.
- * @param onAdjustVolumeBy moves by whole steps; what the bezel reports.
+ * @param onAdjustVolumeBy moves by whole steps; what the bezel and a drag along the bar report.
  * @param modifier applied to the row; carries the column's scroll transformation.
  */
 @Composable
@@ -789,6 +792,15 @@ private fun VolumeRow(
     // to a step. Kept outside composition: a turn moves the volume, and must not also recompose
     // the row that is reading it.
     val turned = remember { mutableFloatStateOf(0f) }
+    // The same bank for a finger, kept apart from the bezel's because the two are worth different
+    // distances per step and a remainder from one means nothing to the other.
+    val dragged = remember { mutableFloatStateOf(0f) }
+    var rowWidthPx by remember { mutableIntStateOf(0) }
+
+    // Dragging the full width of the row covers the phone's whole scale, which is what the bar
+    // suggests and what the scrubber above it already does with an episode.
+    val maxVolume = uiState.snapshot.maxVolume
+    val dragPixelsPerStep: Float = if (maxVolume > 0) rowWidthPx.toFloat() / maxVolume else 0f
 
     LaunchedEffect(uiState.isAdjustingVolume) {
         // Rotary events go to whatever holds focus, so the bar claims it on entering the mode.
@@ -811,20 +823,44 @@ private fun VolumeRow(
                 .focusable()
                 .onRotaryScrollEvent { event ->
                     if (!uiState.isAdjustingVolume) return@onRotaryScrollEvent false
-                    turned.floatValue += event.verticalScrollPixels
-                    val steps = (turned.floatValue / ROTARY_PIXELS_PER_VOLUME_STEP).toInt()
-                    if (steps != 0) {
-                        turned.floatValue -= steps * ROTARY_PIXELS_PER_VOLUME_STEP
+                    val banked = bankVolumeSteps(
+                        bankedPx = turned.floatValue + event.verticalScrollPixels,
+                        pixelsPerStep = ROTARY_PIXELS_PER_VOLUME_STEP,
+                    )
+                    turned.floatValue = banked.remainderPx
+                    if (banked.steps != 0) {
                         // Same sign as the scrubber, which turns the same bezel on the same
                         // screen: forward is later there and louder here. Two controls that
                         // answered one turn in opposite directions would be a coin toss.
-                        onAdjustVolumeBy(steps)
+                        onAdjustVolumeBy(banked.steps)
                         // The slider buzzes for its own buttons; the bezel has to be given the
                         // same tick by hand, or half the control would be silent to the hand.
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                     }
                     true
                 }
+                .onSizeChanged { rowWidthPx = it.width }
+                // The slider draws a bar and does not let a finger move it: it is two buttons and
+                // a picture. A bar that looks draggable and is not reads as broken, so the drag is
+                // added here. It needs no mode — a finger on the bar is not competing with the
+                // list for the bezel — and so it does not take hold of it.
+                .draggable(
+                    state = rememberDraggableState { delta ->
+                        val banked = bankVolumeSteps(
+                            bankedPx = dragged.floatValue + delta,
+                            pixelsPerStep = dragPixelsPerStep,
+                        )
+                        dragged.floatValue = banked.remainderPx
+                        if (banked.steps != 0) {
+                            onAdjustVolumeBy(banked.steps)
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                    },
+                    orientation = Orientation.Horizontal,
+                    // A new drag starts from nothing: what the last one left over was distance
+                    // along a gesture that has ended.
+                    onDragStarted = { dragged.floatValue = 0f },
+                )
                 .semantics { contentDescription = volumeLabel },
         ) {
             Slider(

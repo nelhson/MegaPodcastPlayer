@@ -48,8 +48,6 @@
     <string name="queue_clear">Clear queue</string>
     <string name="queue_empty_title">Nothing queued</string>
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>
-    <!-- An empty state with nowhere to go is a dead end; this leads to the shows. -->
-    <string name="queue_empty_action">Browse your shows</string>
 
     <!--
         Reordering is a drag and the two edits are a swipe, and a screen reader can do neither, so
@@ -151,6 +149,12 @@
     <string name="player_sleep_armed">Sleep timer, %1$s left; tap to change it</string>
     <string name="player_sleep_armed_end_of_episode">Sleep timer set to the end of this episode; tap to change it</string>
     <string name="player_sleep_armed_end_of_chapter">Sleep timer set to the end of a chapter; tap to change it</string>
+    <!--
+      The same two with the time the button now shows under them, %1$s as above. The ones without
+      it stay for an episode whose length is not known yet, where there is no time to give.
+    -->
+    <string name="player_sleep_armed_end_of_episode_in">Sleep timer set to the end of this episode, %1$s left; tap to change it</string>
+    <string name="player_sleep_armed_end_of_chapter_in">Sleep timer set to the end of a chapter, %1$s left; tap to change it</string>
 
     <string name="sleep_title">Sleep timer</string>
     <string name="sleep_description">Playback fades out and pauses. Shake the phone to add fifteen minutes.</string>

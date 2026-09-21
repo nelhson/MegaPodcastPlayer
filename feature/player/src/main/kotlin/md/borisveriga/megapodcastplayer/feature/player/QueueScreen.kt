@@ -70,8 +70,6 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 /**
  * The play queue.
  *
- * @param onBrowseLibrary opens the library, which is where episodes are queued from; the empty
- *   state's only action, because "nothing queued" with nowhere to go is a dead end.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
  *   back at the top (NAV-4).
@@ -80,7 +78,6 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  */
 @Composable
 fun QueueRoute(
-    onBrowseLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
@@ -96,7 +93,6 @@ fun QueueRoute(
         onClear = viewModel::clearQueue,
         onUndo = viewModel::undoQueueChange,
         onMessageShown = viewModel::onQueueMessageShown,
-        onBrowseLibrary = onBrowseLibrary,
         onOpenSettings = onOpenSettings,
         scrollToTopSignal = scrollToTopSignal,
         modifier = modifier,
@@ -121,7 +117,6 @@ fun QueueRoute(
  * @param onClear empties the queue of everything after the episode playing.
  * @param onUndo reverses whichever of the two the snackbar is currently offering back.
  * @param onMessageShown called once a snackbar message has been displayed.
- * @param onBrowseLibrary opens the library from the empty state.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
  *   back at the top (NAV-4).
@@ -137,7 +132,6 @@ fun QueueScreen(
     onClear: () -> Unit,
     onUndo: () -> Unit,
     onMessageShown: () -> Unit,
-    onBrowseLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
@@ -212,10 +206,8 @@ fun QueueScreen(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 title = stringResource(R.string.queue_empty_title),
                 description = stringResource(R.string.queue_empty_description),
-                // An empty state with nothing to press is a dead end, and this one is reached by
-                // tapping a tab rather than by running out of something.
-                actionLabel = stringResource(R.string.queue_empty_action),
-                onAction = onBrowseLibrary,
+                // No button: the tabs are one tap away at the bottom of this same screen, and a
+                // button that only presses one of them for you is a second way to do one thing.
                 modifier = Modifier.padding(padding),
             )
             return@Scaffold
@@ -456,7 +448,6 @@ internal fun QueueScreenPreview() {
             onClear = {},
             onUndo = {},
             onMessageShown = {},
-            onBrowseLibrary = {},
             onOpenSettings = {},
             scrollToTopSignal = 0,
         )
@@ -475,7 +466,6 @@ internal fun QueueScreenEmptyPreview() {
             onClear = {},
             onUndo = {},
             onMessageShown = {},
-            onBrowseLibrary = {},
             onOpenSettings = {},
             scrollToTopSignal = 0,
         )
