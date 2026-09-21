@@ -75,10 +75,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope
 import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.FilledIconButton
@@ -91,6 +92,9 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import androidx.wear.compose.material3.lazy.TransformationSpec
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -193,7 +197,14 @@ fun WatchPlayerScreen(
         return
     }
 
-    val listState = rememberScalingLazyListState()
+    val listState = rememberTransformingLazyColumnState()
+    val spec = rememberTransformationSpec()
+
+    // Read here rather than where it is used, which is the waveform inside the header. The header
+    // is a list item, so reading it there meant registering and unregistering a ContentObserver —
+    // two binder calls into the system server, on the main thread, during composition — every time
+    // the header scrolled out of view and back. Once per screen is what it was always worth.
+    val reduceMotion = rememberReduceMotion()
 
     // A scrolling list rather than a fixed layout even for the controls alone, because at 200 %
     // font scale five items do not fit a round screen and the alternative to scrolling is clipping.
@@ -201,52 +212,76 @@ fun WatchPlayerScreen(
         scrollState = listState,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 24.dp),
     ) { contentPadding ->
-        ScalingLazyColumn(
+        TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
             if (uiState.lastCommandFailed) {
-                item { CommandFailedNote() }
+                item(key = "failed", contentType = "note") {
+                    CommandFailedNote(modifier = Modifier.scrollTransform(this, spec))
+                }
             }
 
             if (uiState.showsControls) {
-                item { NowPlayingHeader(uiState) }
-                item {
+                item(key = "header", contentType = "header") {
+                    NowPlayingHeader(
+                        uiState = uiState,
+                        reduceMotion = reduceMotion,
+                        scrolling = listState::isScrollInProgress,
+                        modifier = Modifier.scrollTransform(this, spec),
+                    )
+                }
+                item(key = "progress", contentType = "progress") {
                     ProgressRow(
                         uiState = uiState,
                         position = position,
                         onBeginScrub = onBeginScrub,
                         onScrubBy = onScrubBy,
                         onCommitScrub = onCommitScrub,
+                        modifier = Modifier.scrollTransform(this, spec),
                     )
                 }
-                item {
+                item(key = "transport", contentType = "transport") {
                     TransportRow(
                         uiState = uiState,
                         onTogglePlayPause = onTogglePlayPause,
                         onSkipForward = onSkipForward,
                         onSkipBack = onSkipBack,
+                        modifier = Modifier.scrollTransform(this, spec),
                     )
                 }
-                item {
+                item(key = "secondary", contentType = "secondary") {
                     SecondaryRow(
                         uiState = uiState,
                         onSkipToPrevious = onSkipToPrevious,
                         onSkipToNext = onSkipToNext,
                         onCycleSpeed = onCycleSpeed,
+                        modifier = Modifier.scrollTransform(this, spec),
                     )
                 }
-                item { MarkMomentRow(saved = uiState.momentSaved, onClick = onMarkMoment) }
+                item(key = "moment", contentType = "moment") {
+                    MarkMomentRow(
+                        saved = uiState.momentSaved,
+                        onClick = onMarkMoment,
+                        modifier = Modifier.scrollTransform(this, spec),
+                    )
+                }
             } else {
                 // Nothing to control means no controls: the sentence explaining the missing
                 // transport sits above the episodes it tells the wearer to pick from.
-                item { NothingPlaying(hasQueue = uiState.snapshot.upNext.isNotEmpty()) }
+                item(key = "idle", contentType = "idle") {
+                    NothingPlaying(
+                        hasQueue = uiState.snapshot.upNext.isNotEmpty(),
+                        modifier = Modifier.scrollTransform(this, spec),
+                    )
+                }
             }
 
-            phoneQueue(uiState = uiState, onPlayOnPhone = onPlayOnPhone)
+            phoneQueue(uiState = uiState, spec = spec, onPlayOnPhone = onPlayOnPhone)
             phoneDownloads(
                 uiState = uiState,
+                spec = spec,
                 onPlayOnPhone = onPlayOnPhone,
                 onQueueOnPhone = onQueueOnPhone,
             )
@@ -255,24 +290,67 @@ fun WatchPlayerScreen(
 }
 
 /**
+ * Applies the column's scroll transformation to one item.
+ *
+ * [TransformingLazyColumn] hands each item its own scroll progress, and this is what turns that
+ * progress into the shrinking and fading that makes a list look right on a round screen. The
+ * previous `ScalingLazyColumn` did the same thing by wrapping every item in a `Box` whose
+ * `graphicsLayer` block scanned the list's visible items — by index, once per item, once per frame
+ * — to find out where that item had reached. Here the item is simply told.
+ *
+ * Used in place of the Material `transformation` parameter that [Button] and [ListHeader] accept,
+ * because that one transforms a surface's container and its content on separate curves, and half
+ * the things in this column — the transport rows, the waveform header — are not surfaces at all.
+ * One curve for everything is both simpler and what the screen looked like before.
+ *
+ * @param scope the item's own scope, which is where its scroll progress comes from.
+ * @param spec how progress becomes height, scale and alpha; see [rememberTransformationSpec].
+ */
+private fun Modifier.scrollTransform(
+    scope: TransformingLazyColumnItemScope,
+    spec: TransformationSpec,
+): Modifier = transformedHeight(scope, spec)
+    .graphicsLayer { with(scope) { with(spec) { applyContentTransformation(scrollProgress) } } }
+
+/**
  * The phone's queue, at the bottom of the column.
  *
  * The header names the list rather than the action its rows perform: on a screen this small the
  * header is the only thing that says *whose* episodes these are. Every row is keyed, so that a
  * queue that changes moves the rows around the change rather than rebuilding them.
  *
+ * Every row also carries a content type. Rows of the same type can hand their composition on to
+ * the next row of that type as the list scrolls, instead of each one being built from nothing; a
+ * queue row and a downloaded row are differently shaped, so they say so and keep to their own
+ * pools. `ScalingLazyColumn` had no way to express this at all — its scope takes a key and nothing
+ * else — which is why reuse never once succeeded on this screen before.
+ *
  * @param uiState what to draw.
+ * @param spec the column's scroll transformation, applied to each row.
  * @param onPlayOnPhone invoked with the episode id when a queued episode is tapped.
  */
-private fun ScalingLazyListScope.phoneQueue(
+private fun TransformingLazyColumnScope.phoneQueue(
     uiState: WatchPlayerUiState,
+    spec: TransformationSpec,
     onPlayOnPhone: (String) -> Unit,
 ) {
     if (uiState.snapshot.upNext.isEmpty()) return
 
-    item { ListHeader { Text(text = stringResource(R.string.watch_phone_queue)) } }
-    items(uiState.snapshot.upNext, key = { "queue:${it.id}" }) { episode ->
-        QueueRow(episode = episode, onClick = { onPlayOnPhone(episode.id) })
+    item(key = "queue-header", contentType = "listHeader") {
+        ListHeader(modifier = Modifier.scrollTransform(this, spec)) {
+            Text(text = stringResource(R.string.watch_phone_queue))
+        }
+    }
+    items(
+        uiState.snapshot.upNext,
+        key = { "queue:${it.id}" },
+        contentType = { "queueRow" },
+    ) { episode ->
+        QueueRow(
+            episode = episode,
+            onClick = { onPlayOnPhone(episode.id) },
+            modifier = Modifier.scrollTransform(this, spec),
+        )
     }
 }
 
@@ -292,22 +370,33 @@ private fun ScalingLazyListScope.phoneQueue(
  * rows do, and the button adds to the queue.
  *
  * @param uiState what to draw.
+ * @param spec the column's scroll transformation, applied to each row.
  * @param onPlayOnPhone invoked with the episode id when a row is tapped.
  * @param onQueueOnPhone invoked with the episode id when a row's queue button is tapped.
  */
-private fun ScalingLazyListScope.phoneDownloads(
+private fun TransformingLazyColumnScope.phoneDownloads(
     uiState: WatchPlayerUiState,
+    spec: TransformationSpec,
     onPlayOnPhone: (String) -> Unit,
     onQueueOnPhone: (String) -> Unit,
 ) {
     if (uiState.snapshot.downloaded.isEmpty()) return
 
-    item { ListHeader { Text(text = stringResource(R.string.watch_phone_downloads)) } }
-    items(uiState.snapshot.downloaded, key = { "downloaded:${it.id}" }) { episode ->
+    item(key = "downloads-header", contentType = "listHeader") {
+        ListHeader(modifier = Modifier.scrollTransform(this, spec)) {
+            Text(text = stringResource(R.string.watch_phone_downloads))
+        }
+    }
+    items(
+        uiState.snapshot.downloaded,
+        key = { "downloaded:${it.id}" },
+        contentType = { "downloadedRow" },
+    ) { episode ->
         DownloadedRow(
             episode = episode,
             onClick = { onPlayOnPhone(episode.id) },
             onQueue = { onQueueOnPhone(episode.id) },
+            modifier = Modifier.scrollTransform(this, spec),
         )
     }
 }
@@ -322,30 +411,50 @@ private fun ScalingLazyListScope.phoneDownloads(
  *
  * The waveform answers the other glance-level question, "is it actually playing", by moving only
  * when it is. That reaches the eye before the transport button's glyph does.
+ *
+ * @param uiState what to draw.
+ * @param reduceMotion whether the wearer has asked for no animations; read once above the list
+ *   rather than here, for the reason given where it is read.
+ * @param scrolling whether the column is moving under the finger, handed down as a lambda so that
+ *   only the waveform is recomposed when it starts and stops.
+ * @param modifier applied to the header; carries the column's scroll transformation.
  */
 @Composable
-private fun NowPlayingHeader(uiState: WatchPlayerUiState) {
+private fun NowPlayingHeader(
+    uiState: WatchPlayerUiState,
+    reduceMotion: Boolean,
+    scrolling: () -> Boolean,
+    modifier: Modifier = Modifier,
+) {
     val accent = showAccent(uiState.snapshot.showTitle)
+    // Remembered rather than rebuilt each composition: a brush is a shader's cache key, and a new
+    // instance every time is a new shader every time.
+    val wash = remember(accent) {
+        // Fading out at the bottom rather than ending on an edge: the progress bar sits directly
+        // below, and a hard band across a round screen would cut the layout in half.
+        Brush.verticalGradient(
+            listOf(
+                accent.copy(alpha = WASH_TOP_ALPHA),
+                accent.copy(alpha = WASH_FADE_ALPHA),
+                Color.Transparent,
+            ),
+        )
+    }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            // Fading out at the bottom rather than ending on an edge: the progress bar sits directly
-            // below, and a hard band across a round screen would cut the layout in half.
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        accent.copy(alpha = WASH_TOP_ALPHA),
-                        accent.copy(alpha = WASH_FADE_ALPHA),
-                        Color.Transparent,
-                    ),
-                ),
-            )
+            // The shape goes to `background` rather than to a `clip` above it: one node that draws
+            // the wash within the shape, instead of a clip node the wash is then drawn through.
+            .background(brush = wash, shape = MaterialTheme.shapes.large)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Waveform(accent = accent, moving = uiState.snapshot.isPlaying)
+        Waveform(
+            accent = accent,
+            moving = uiState.snapshot.isPlaying && !reduceMotion,
+            scrolling = scrolling,
+        )
 
         Spacer(modifier = Modifier.height(6.dp))
 
@@ -380,18 +489,31 @@ private fun NowPlayingHeader(uiState: WatchPlayerUiState) {
  * neighbour, which is what makes the shape move along the row instead of pulsing in unison. Seven
  * separate animations would look much the same and cost seven times as much on a wrist.
  *
+ * It also stops while the list is being scrolled. An infinite transition asks for a frame every
+ * frame for as long as it runs, so a waveform left going during a scroll is a second thing
+ * competing for each one — and it is decoration, on the one item most likely to be halfway off the
+ * screen at the time. Two recompositions per swipe buys back sixty animation frames a second.
+ *
  * @param accent the show's colour, from [showAccent].
- * @param moving whether the phone is playing; when it is not, the bars sit at [WAVEFORM_REST].
+ * @param moving whether the phone is playing and the wearer has not asked for stillness; when it is
+ *   false the bars sit at [WAVEFORM_REST].
+ * @param scrolling whether the column is moving. Called here rather than read by the caller so that
+ *   a scroll starting or stopping recomposes these bars and nothing else on the screen.
  * @param modifier applied to the band the bars are drawn in.
  */
 @Composable
-private fun Waveform(accent: Color, moving: Boolean, modifier: Modifier = Modifier) {
+private fun Waveform(
+    accent: Color,
+    moving: Boolean,
+    scrolling: () -> Boolean,
+    modifier: Modifier = Modifier,
+) {
     // Kept as State and unwrapped inside the draw lambda below, not here: a value read during
     // composition would recompose this function on every animation frame, where a draw-phase read
     // only repaints. On a watch that difference is battery.
     // A wearer who has turned animations off gets the bars at rest. Whether the phone is playing is
     // said by the transport button, which is where it always was; the waveform only ever repeated it.
-    val animate = moving && !rememberReduceMotion()
+    val animate = moving && !scrolling()
 
     val phase: State<Float>? = if (animate) {
         rememberInfiniteTransition(label = "waveform").animateFloat(
@@ -485,6 +607,7 @@ private fun ShowDot(accent: Color, modifier: Modifier = Modifier) {
  * @param onBeginScrub takes hold of the bar.
  * @param onScrubBy moves it by a signed offset in milliseconds.
  * @param onCommitScrub seeks to where it was left.
+ * @param modifier applied to the row; carries the column's scroll transformation.
  */
 @Composable
 private fun ProgressRow(
@@ -493,6 +616,7 @@ private fun ProgressRow(
     onBeginScrub: () -> Unit,
     onScrubBy: (Long) -> Unit,
     onCommitScrub: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val durationMs = uiState.snapshot.knownDurationMs
     var barWidthPx by remember { mutableIntStateOf(0) }
@@ -532,7 +656,7 @@ private fun ProgressRow(
         if (uiState.isScrubbing) R.string.watch_scrub_active else R.string.watch_scrub,
     )
 
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+    Column(modifier = modifier.fillMaxWidth().padding(top = 4.dp)) {
         // The bar and its thumb share one box so the thumb can be placed by the same fraction the
         // bar fills, rather than by a second copy of the arithmetic.
         Box(
@@ -657,19 +781,28 @@ private fun ScrubThumb(progress: () -> Float, trackWidthPx: Int) {
     )
 }
 
-/** Skip back, play/pause, skip forward — the three buttons that get used while walking. */
+/**
+ * Skip back, play/pause, skip forward — the three buttons that get used while walking.
+ *
+ * @param uiState what is playing.
+ * @param onTogglePlayPause invoked by the centre button.
+ * @param onSkipForward invoked by the skip-ahead button.
+ * @param onSkipBack invoked by the skip-back button.
+ * @param modifier applied to the row; carries the column's scroll transformation.
+ */
 @Composable
 private fun TransportRow(
     uiState: WatchPlayerUiState,
     onTogglePlayPause: () -> Unit,
     onSkipForward: () -> Unit,
     onSkipBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // Resolved here rather than inside the semantics lambda below, which is not composable.
     val bufferingLabel = stringResource(R.string.watch_buffering)
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -725,6 +858,7 @@ private fun TransportRow(
  * @param onSkipToPrevious invoked by the previous-episode button.
  * @param onSkipToNext invoked by the next-episode button.
  * @param onCycleSpeed invoked by the speed button.
+ * @param modifier applied to the row; carries the column's scroll transformation.
  */
 @Composable
 private fun SecondaryRow(
@@ -732,9 +866,10 @@ private fun SecondaryRow(
     onSkipToPrevious: () -> Unit,
     onSkipToNext: () -> Unit,
     onCycleSpeed: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -771,9 +906,10 @@ private fun SecondaryRow(
  *
  * @param saved true while the confirmation is showing.
  * @param onClick marks a moment at the playhead.
+ * @param modifier applied to the button; carries the column's scroll transformation.
  */
 @Composable
-private fun MarkMomentRow(saved: Boolean, onClick: () -> Unit) {
+private fun MarkMomentRow(saved: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
     // Keyed on the confirmation rather than fired from the click, because the two are not the same
     // event: a mark that could neither be delivered nor queued sets nothing, and a wrist that
@@ -784,7 +920,7 @@ private fun MarkMomentRow(saved: Boolean, onClick: () -> Unit) {
 
     Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         icon = {
             Icon(
                 imageVector = if (saved) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkAdd,
@@ -806,12 +942,16 @@ private fun MarkMomentRow(saved: Boolean, onClick: () -> Unit) {
  *
  * Carries the show's colour as a dot, the same one the header uses, so a queue holding three shows
  * can be told apart without reading it.
+ *
+ * @param episode the episode.
+ * @param onClick asks the phone to play it.
+ * @param modifier applied to the row; carries the column's scroll transformation.
  */
 @Composable
-private fun QueueRow(episode: WatchEpisode, onClick: () -> Unit) {
+private fun QueueRow(episode: WatchEpisode, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         icon = { ShowDot(accent = showAccent(episode.showTitle)) },
         label = { Text(text = episode.title, maxLines = 2) },
         secondaryLabel = { Text(text = episode.showTitle, maxLines = 1) },
@@ -829,11 +969,17 @@ private fun QueueRow(episode: WatchEpisode, onClick: () -> Unit) {
  * @param episode the episode.
  * @param onClick plays it on the phone, interrupting what is playing.
  * @param onQueue puts it at the end of the phone's queue instead.
+ * @param modifier applied to the row; carries the column's scroll transformation.
  */
 @Composable
-private fun DownloadedRow(episode: WatchEpisode, onClick: () -> Unit, onQueue: () -> Unit) {
+private fun DownloadedRow(
+    episode: WatchEpisode,
+    onClick: () -> Unit,
+    onQueue: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -858,11 +1004,16 @@ private fun DownloadedRow(episode: WatchEpisode, onClick: () -> Unit, onQueue: (
     }
 }
 
-/** Shown when the phone is reachable but has nothing loaded. */
+/**
+ * Shown when the phone is reachable but has nothing loaded.
+ *
+ * @param hasQueue whether there is a queue below to point the wearer at.
+ * @param modifier applied to the column; carries the list's scroll transformation.
+ */
 @Composable
-private fun NothingPlaying(hasQueue: Boolean) {
+private fun NothingPlaying(hasQueue: Boolean, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -885,15 +1036,19 @@ private fun NothingPlaying(hasQueue: Boolean) {
     }
 }
 
-/** Shown after a command that could not be delivered. */
+/**
+ * Shown after a command that could not be delivered.
+ *
+ * @param modifier applied to the note; carries the column's scroll transformation.
+ */
 @Composable
-private fun CommandFailedNote() {
+private fun CommandFailedNote(modifier: Modifier = Modifier) {
     Text(
         text = stringResource(R.string.watch_command_failed),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.error,
         textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
     )
 }
 
