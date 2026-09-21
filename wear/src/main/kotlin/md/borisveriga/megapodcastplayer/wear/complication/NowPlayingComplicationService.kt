@@ -24,9 +24,9 @@ import md.borisveriga.megapodcastplayer.wear.data.extrapolatedPositionMs
 /**
  * What the phone is playing, as a complication on the watch face itself.
  *
- * The tile is one swipe away; this is none. It cannot take a command — a complication is a readout,
- * and its single tap is spoken for by "open the app" — so it answers the two questions worth
- * answering without any interaction at all: what is playing, and how much of it is left.
+ * The app is a tap away; this is not even that. It cannot take a command — a complication is a
+ * readout, and its single tap is spoken for by "open the app" — so it answers the two questions
+ * worth answering without any interaction at all: what is playing, and how much of it is left.
  *
  * It reads the cached data item like every other surface here, so the face stays correct with the
  * phone asleep. Updates are pushed by
@@ -87,7 +87,7 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
         val icon = MonochromaticImage.Builder(
             Icon.createWithResource(
                 this,
-                if (copy.isPlaying) R.drawable.ic_tile_play else R.drawable.ic_tile_pause,
+                if (copy.isPlaying) R.drawable.ic_complication_play else R.drawable.ic_complication_pause,
             ),
         ).build()
 

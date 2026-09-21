@@ -452,11 +452,11 @@ class PodcastDetailScreenTest {
 
     /**
      * The two facts the library's row has carried since it was written, on the page that is
-     * actually about the show. Downloaded is named only when there is something downloaded: a
-     * "0 downloaded" is a fact nobody asked for.
+     * actually about the show. The copies are a mark and a number rather than words, and it is the
+     * mark that carries the announcement — the line beside it no longer says "1 downloaded".
      */
     @Test
-    fun `the header counts the episodes, and the copies`() {
+    fun `the header counts the episodes, and marks the copies`() {
         setScreen(
             listOf(
                 episode("a", downloadState = DownloadState.COMPLETED),
@@ -465,14 +465,17 @@ class PodcastDetailScreenTest {
             ),
         )
 
-        composeRule.onNodeWithText("3 episodes · 1 downloaded").assertExists()
+        composeRule.onNodeWithText("3 episodes").assertExists()
+        composeRule.onNodeWithContentDescription("1 downloaded").assertExists()
     }
 
+    /** No mark at all rather than a "0": a fact nobody asked for. */
     @Test
     fun `a show with nothing downloaded says only how many episodes it has`() {
         setScreen(listOf(episode("a"), episode("b")))
 
         composeRule.onNodeWithText("2 episodes").assertExists()
+        composeRule.onNodeWithContentDescription("0 downloaded").assertDoesNotExist()
     }
 
     /** A playlist has videos, which is what the user called them when they added it. */

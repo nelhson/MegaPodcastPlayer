@@ -180,7 +180,7 @@ class LibraryScreenTest {
         setScreen(layout = LibraryLayout.LIST, onLayoutChange = { requested = it })
 
         // The list layout carries what the grid cannot: the counts line.
-        composeRule.onNodeWithText("412 episodes · 2 downloaded").assertIsDisplayed()
+        composeRule.onNodeWithText("412 episodes").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Show as grid").performClick()
 
         assertEquals(LibraryLayout.GRID, requested)
@@ -200,7 +200,9 @@ class LibraryScreenTest {
             ),
         )
 
-        composeRule.onNodeWithText("412 episodes · 37 unplayed · 2 downloaded").assertIsDisplayed()
+        composeRule.onNodeWithText("412 episodes · 37 unplayed").assertIsDisplayed()
+        // The third count is a mark with a number rather than words; it announces itself.
+        composeRule.onNodeWithContentDescription("2 downloaded").assertExists()
         // The badge's own number is the new one, and it is announced in those words.
         composeRule.onNodeWithText("Podlodka Podcast")
             .assertStateDescription("3 new episodes")

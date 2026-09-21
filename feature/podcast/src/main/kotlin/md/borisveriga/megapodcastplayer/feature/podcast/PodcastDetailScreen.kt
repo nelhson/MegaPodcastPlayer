@@ -85,6 +85,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadButton
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedCount
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
@@ -474,6 +475,9 @@ fun PodcastDetailScreen(
                                 // The whole list too, for the same reason: the line says what the
                                 // show holds, not what the chips are showing of it.
                                 counts = uiState.episodes.countsLine(podcast.source, resources),
+                                downloadedCount = uiState.episodes.count {
+                                    it.downloadState == DownloadState.COMPLETED
+                                },
                                 onPlay = onEpisodePlay,
                             )
                         }
@@ -730,9 +734,12 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
  *
  * @param podcast the show.
  * @param action what the one button does, or null for a show with no episodes yet.
- * @param counts how many episodes there are and how many are on the device, already assembled;
- *   null for a show with none. The library's row has carried this line since it was written and
- *   the page *about* the show did not, which is the wrong way round (SHOW-7).
+ * @param counts how many episodes there are, already assembled; null for a show with none. The
+ *   library's row has carried this line since it was written and the page *about* the show did not,
+ *   which is the wrong way round (SHOW-7).
+ * @param downloadedCount how many of them are on the device, drawn as the mark and a number beside
+ *   [counts] rather than spelled out in it — the same shape the library's row wears, so one show is
+ *   not described in two vocabularies. Zero draws nothing.
  * @param onPlay plays the episode the action names.
  * @param modifier layout modifier.
  */
@@ -741,6 +748,7 @@ private fun PodcastHeader(
     podcast: Podcast,
     action: HeaderAction?,
     counts: String?,
+    downloadedCount: Int,
     onPlay: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -815,11 +823,23 @@ private fun PodcastHeader(
             }
 
             if (counts != null) {
-                Text(
-                    text = counts,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
+                ) {
+                    Text(
+                        text = counts,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // After the episode count here rather than in front of it as the library's row
+                    // has it: this line is centred under the title, and a glyph leading a centred
+                    // line pushes the number it belongs to off the axis the rest of the header
+                    // hangs on.
+                    if (downloadedCount > 0) {
+                        DownloadedCount(count = downloadedCount)
+                    }
+                }
             }
 
             action?.let { headerAction ->
@@ -1236,11 +1256,12 @@ private fun HeaderAction.label(): String = when (this) {
 }
 
 /**
- * The counts line under a show's title: how many episodes there are, and how many are here.
+ * The counts line under a show's title: how many episodes there are.
  *
- * The same two facts the library's row carries, in the same order and with the same separator, so
- * that the page and the row do not describe one show in two vocabularies. Assembled from the
- * episodes rather than from a stored count, because this screen already holds the list.
+ * The same fact the library's row carries and in the same words, so that the page and the row do not
+ * describe one show in two vocabularies. How many are on the device is not written out here either —
+ * both places draw the mark and a number for it instead. Assembled from the episodes rather than
+ * from a stored count, because this screen already holds the list.
  *
  * @param source decides the noun; a playlist has videos, and that is what the user called them
  *   when they added it.
@@ -1250,7 +1271,7 @@ private fun HeaderAction.label(): String = when (this) {
  */
 private fun List<Episode>.countsLine(source: PodcastSource, resources: Resources): String? {
     if (isEmpty()) return null
-    val episodes = resources.getQuantityString(
+    return resources.getQuantityString(
         if (source == PodcastSource.YOUTUBE) {
             R.plurals.podcast_video_count
         } else {
@@ -1258,13 +1279,6 @@ private fun List<Episode>.countsLine(source: PodcastSource, resources: Resources
         },
         size,
         size,
-    )
-    val downloaded = count { it.downloadState == DownloadState.COMPLETED }
-    if (downloaded == 0) return episodes
-    return resources.getString(
-        R.string.podcast_counts_combined,
-        episodes,
-        resources.getQuantityString(R.plurals.podcast_downloaded_count, downloaded, downloaded),
     )
 }
 

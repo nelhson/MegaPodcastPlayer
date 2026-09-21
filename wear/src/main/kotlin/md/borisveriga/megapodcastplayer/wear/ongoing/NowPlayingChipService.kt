@@ -20,9 +20,9 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearPaths
  * It deliberately holds no state. Every decision is made from the snapshot in hand; see
  * [shouldShowChip].
  *
- * It is also what keeps the tile and the complication current: both are drawn on demand by the
- * system and neither can notice a data item on its own, so this pushes them an update whenever one
- * lands. See [refreshWatchFaceSurfaces].
+ * It is also what keeps the watch-face complication current: it is drawn on demand by the system and
+ * cannot notice a data item on its own, so this pushes it an update whenever one lands. See
+ * [refreshWatchFaceSurfaces].
  */
 class NowPlayingChipService : WearableListenerService() {
 
@@ -42,7 +42,7 @@ class NowPlayingChipService : WearableListenerService() {
 
         notifications.update(snapshotFrom(latest))
         // The chip is not the only thing outside the app that draws this snapshot; see
-        // refreshWatchFaceSurfaces for why the other two have to be told rather than noticing.
+        // refreshWatchFaceSurfaces for why the complication has to be told rather than noticing.
         refreshWatchFaceSurfaces(this)
     }
 

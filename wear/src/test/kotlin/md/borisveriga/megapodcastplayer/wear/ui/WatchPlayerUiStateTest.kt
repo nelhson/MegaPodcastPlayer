@@ -1,7 +1,7 @@
 package md.borisveriga.megapodcastplayer.wear.ui
 
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
-import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
+import md.borisveriga.megapodcastplayer.core.wearprotocol.WatchEpisode
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 import md.borisveriga.megapodcastplayer.wear.data.ReceivedSnapshot
 import org.junit.Assert.assertEquals
@@ -112,7 +112,7 @@ class WatchPlayerUiStateTest {
     @Test
     fun `an idle phone with a queue is not the empty state`() {
         val idleWithQueue = NowPlayingSnapshot(
-            upNext = listOf(QueuedEpisode(id = "ep-2", title = "Two", showTitle = "Show")),
+            upNext = listOf(WatchEpisode(id = "ep-2", title = "Two", showTitle = "Show")),
         )
         val received = ReceivedSnapshot(idleWithQueue, receivedAtElapsedMs = 0L)
 

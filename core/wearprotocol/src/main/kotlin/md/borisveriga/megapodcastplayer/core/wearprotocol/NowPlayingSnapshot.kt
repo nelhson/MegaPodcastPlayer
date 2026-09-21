@@ -4,18 +4,20 @@ import kotlinx.serialization.Serializable
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 
 /**
- * One entry of the queue as the watch sees it.
+ * One episode as the watch sees it, whether it is in the queue or merely stored on the phone.
  *
- * Only what a 45 mm screen can show is sent: no description, no audio URL, no download state. The
- * watch never plays anything itself, so [id] exists solely to be echoed back in
- * [WearCommand.PlayEpisode].
+ * Only what a 45 mm screen can show is sent: no description, no audio URL, no position. The watch
+ * never plays anything itself, so [id] exists solely to be echoed back in [WearCommand.PlayEpisode]
+ * or [WearCommand.QueueEpisode]. One type for both lists because the rows differ in what they *do*,
+ * not in what they know — and a second data class with the same three fields would be a second place
+ * to keep them the same.
  *
- * @property id the episode id, echoed back when the user taps the row.
+ * @property id the episode id, echoed back when the user acts on the row.
  * @property title the episode title.
  * @property showTitle the owning podcast's title.
  */
 @Serializable
-data class QueuedEpisode(
+data class WatchEpisode(
     val id: String,
     val title: String,
     val showTitle: String,
@@ -42,6 +44,11 @@ data class QueuedEpisode(
  * @property hasNext whether another episode follows in the queue.
  * @property hasPrevious whether an episode precedes the current one in the queue.
  * @property upNext the queue after the current episode, in play order.
+ * @property downloaded episodes stored on the phone that are *not* in the queue, in the order the
+ *   phone's downloads screen lists them. This is the half of "what shall I listen to" the queue
+ *   cannot answer: the wrist is where someone stands at the door deciding, and until this the only
+ *   episodes they could reach were the ones they had already queued on the phone. Anything already
+ *   queued is left out — it is one row above under its own heading, where tapping it plays it.
  * @property publishedAtMs the phone's wall clock when it published, in epoch milliseconds.
  *   Its first job is to make every publish unique, which matters because the Data Layer silently
  *   drops a data item whose bytes are unchanged. The watch app's screen does not time anything with
@@ -64,7 +71,8 @@ data class NowPlayingSnapshot(
     val skipBackMs: Long = PlaybackSettings.DEFAULT_SKIP_BACK_MS,
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
-    val upNext: List<QueuedEpisode> = emptyList(),
+    val upNext: List<WatchEpisode> = emptyList(),
+    val downloaded: List<WatchEpisode> = emptyList(),
     val publishedAtMs: Long = 0L,
 ) {
 

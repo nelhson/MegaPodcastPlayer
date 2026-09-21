@@ -40,11 +40,12 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastSource
  * @param title the show's name.
  * @param modifier layout modifier.
  * @param author the publisher, shown beside the source badge.
- * @param metadata the detail line, e.g. `412 episodes · 2 downloaded`. Set in tabular figures, so
- *   counts line up down the list.
+ * @param metadata the detail line, e.g. `412 episodes · 37 unplayed`. Set in tabular figures, so
+ *   counts line up down the list. It no longer carries the downloaded count; see [downloadedCount].
  * @param artworkUrl cover art; null renders the themed placeholder.
- * @param isDownloaded whether any episode of the show is on the device; marks the row so the
- *   library can be read down for what will play without a connection.
+ * @param downloadedCount how many of the show's episodes are on the device; drawn as the mark and
+ *   the number in front of [metadata], so the library can be read down for what will play without a
+ *   connection. Zero draws nothing.
  * @param source draws the badge that marks where the show came from; null draws none.
  * @param stateDescription what TalkBack announces about the row beyond its text, e.g. "3 new
  *   episodes". Null when the row has no state worth naming.
@@ -65,7 +66,7 @@ fun ShowRow(
     author: String? = null,
     metadata: String? = null,
     artworkUrl: String? = null,
-    isDownloaded: Boolean = false,
+    downloadedCount: Int = 0,
     source: PodcastSource? = null,
     stateDescription: String? = null,
     isSelected: Boolean = false,
@@ -149,17 +150,16 @@ fun ShowRow(
                     }
                 }
             }
-            if (metadata != null || isDownloaded) {
+            if (metadata != null || downloadedCount > 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
                 ) {
                     // Leading the counts rather than marking the title: on a show the fact is
                     // about how many of its episodes are stored, which is what this line says.
-                    // No description — the line it sits on already spells out "2 downloaded",
-                    // and a second reading of the same fact is noise.
-                    if (isDownloaded) {
-                        DownloadedMark()
+                    // It carries its own announcement now that the words are gone from [metadata].
+                    if (downloadedCount > 0) {
+                        DownloadedCount(count = downloadedCount)
                     }
                     if (metadata != null) {
                         Text(
@@ -189,7 +189,8 @@ internal fun ShowRowPreview() {
         ShowRow(
             title = "Podlodka Podcast",
             author = "Egor Tolstoy",
-            metadata = "412 episodes · 2 downloaded",
+            metadata = "412 episodes · 37 unplayed",
+            downloadedCount = 2,
             source = PodcastSource.RSS,
             stateDescription = "3 new episodes",
             onClick = {},
@@ -205,7 +206,8 @@ internal fun ShowRowSelectedPreview() {
         ShowRow(
             title = "Podlodka Podcast",
             author = "Egor Tolstoy",
-            metadata = "412 episodes · 2 downloaded",
+            metadata = "412 episodes · 37 unplayed",
+            downloadedCount = 2,
             source = PodcastSource.RSS,
             stateDescription = "3 new episodes",
             isSelected = true,

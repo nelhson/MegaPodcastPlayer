@@ -1,7 +1,7 @@
 # MegaPodcastPlayer
 
 Personal, sideloaded podcast player for Android (`:app`) with a Wear OS companion (`:wear`) that is
-a remote control, a tile and a watch-face complication. The watch plays nothing itself.
+one screen of remote control, plus a watch-face complication. The watch plays nothing itself.
 Kotlin, Jetpack Compose, Hilt, Room, Media3. Application ID `md.borisveriga.megapodcastplayer`.
 
 This file is deliberately short. The conventions are enforced by code, so read the source of

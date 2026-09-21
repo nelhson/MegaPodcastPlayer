@@ -36,6 +36,15 @@
     <!-- The mark on a row that is already stored. Not a control, so it names the fact, not an action. -->
     <string name="designsystem_downloaded">Downloaded</string>
 
+    <!--
+        What the mark plus a number says out loud, where a show's line shows the glyph and the count
+        instead of spelling it out. Never used for zero: nothing is drawn then.
+    -->
+    <plurals name="designsystem_downloaded_count">
+        <item quantity="one">%1$d downloaded</item>
+        <item quantity="other">%1$d downloaded</item>
+    </plurals>
+
     <!-- The app bar's back arrow. Overridable, but this is the right answer nearly everywhere. -->
     <string name="designsystem_back">Back</string>
     <!-- The gear, on every top-level bar; see SettingsAction. -->

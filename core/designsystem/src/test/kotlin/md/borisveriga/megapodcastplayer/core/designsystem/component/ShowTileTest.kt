@@ -57,18 +57,19 @@ class ShowTileTest {
     }
 
     /**
-     * Spoken, unlike the row's mark: a tile has no counts line under it, so nothing else on it
-     * says whether the show can be played away from a connection.
+     * A tile has no counts line under it, so the mark and its number are the only thing on it that
+     * says whether the show can be played away from a connection — and the only thing that says how
+     * much of it can.
      */
     @Test
-    fun `marks a show with stored episodes, and says so`() {
+    fun `counts a show's stored episodes in the cover's corner, and says so`() {
         composeTestRule.setContent {
             MegaPodcastPlayerTheme {
-                ShowTile(title = "Podlodka Podcast", isDownloaded = true, onClick = {})
+                ShowTile(title = "Podlodka Podcast", downloadedCount = 2, onClick = {})
             }
         }
 
-        composeTestRule.onNodeWithContentDescription("Downloaded").assertExists()
+        composeTestRule.onNodeWithContentDescription("2 downloaded").assertExists()
     }
 
     @Test
@@ -79,7 +80,7 @@ class ShowTileTest {
             }
         }
 
-        composeTestRule.onNodeWithContentDescription("Downloaded").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription("0 downloaded").assertDoesNotExist()
     }
 
     @Test

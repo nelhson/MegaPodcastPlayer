@@ -92,6 +92,19 @@ class WearCommandExecutorTest {
         coVerify(exactly = 1) { episodePlayer.play("ep-7") }
     }
 
+    /**
+     * The other half of what a wrist can do with an episode, and the half that leaves the ears
+     * alone: queueing must not touch the player at all.
+     */
+    @Test
+    fun `queueing a downloaded episode enqueues it without disturbing playback`() = runTest {
+        executor.execute(WearCommand.QueueEpisode(episodeId = "ep-7"))
+
+        coVerify(exactly = 1) { playbackRepository.enqueue("ep-7") }
+        coVerify(exactly = 0) { episodePlayer.play(any()) }
+        coVerify(exactly = 0) { connection.togglePlayPause() }
+    }
+
     @Test
     fun `a state request touches the player only to publish`() = runTest {
         executor.execute(WearCommand.RequestState)

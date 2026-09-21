@@ -2,7 +2,7 @@
 
 ## Identity
 
-- **What it is:** personal, sideloaded offline-first podcast player (`:app`) with a Wear OS companion (`:wear`) that is a remote control, tile and complication — the watch plays nothing itself.
+- **What it is:** personal, sideloaded offline-first podcast player (`:app`) with a Wear OS companion (`:wear`) that is one screen of remote control plus a watch-face complication — the watch plays nothing itself.
 - **Application ID(s):** `md.borisveriga.megapodcastplayer` for both `:app` and `:wear` (debug suffix: none, deliberately — ever). Namespaces differ (`…megapodcastplayer` / `…megapodcastplayer.wear`).
 - **Modules:** apps `:app`, `:wear`; pure JVM `:core:model`, `:core:wearprotocol`; Android `:core:{common,database,datastore,network,youtube,media,data,designsystem}`; test fixtures `:core:testing`; features `:feature:{library,downloads,search,podcast,player,moments,settings}`. Sources at `<module>/src/main/kotlin/md/borisveriga/megapodcastplayer/…`.
 - **Conventions live in:** `CLAUDE.md`, `build-logic/convention/`, `config/detekt/detekt.yml`, `gradle/libs.versions.toml`, `docs/` (`REFACTORING_PLAN.md`, `RELEASE_SIGNING.md`, `DEPENDENCY_VERIFICATION.md`, `CRASH_REPORTING.md`, `SCREENSHOT_TESTS.md`, `COPY_RULES.md`).

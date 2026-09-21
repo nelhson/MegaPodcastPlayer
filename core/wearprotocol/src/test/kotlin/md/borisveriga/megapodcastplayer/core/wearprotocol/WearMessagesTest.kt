@@ -45,7 +45,7 @@ class WearMessagesTest {
             durationMs = 2_000L,
             speed = 1.5f,
             hasNext = true,
-            upNext = listOf(QueuedEpisode(id = "ep-2", title = "Two", showTitle = "The Show")),
+            upNext = listOf(WatchEpisode(id = "ep-2", title = "Two", showTitle = "The Show")),
             publishedAtMs = 12345L,
         )
 

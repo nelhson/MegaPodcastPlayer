@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.wearprotocol.NowPlayingSnapshot
@@ -80,6 +81,7 @@ internal fun shouldPublish(
  *
  * @property connection the phone's player.
  * @property playbackRepository the durable queue and the user's playback preferences.
+ * @property downloadRepository what is stored on the device, which the watch offers to queue.
  * @property dataClient the Data Layer.
  * @property clock the phone's wall clock, injected so the publish decision can be tested.
  * @property scope application scope: playback outlives every screen, and so must this.
@@ -88,6 +90,7 @@ internal fun shouldPublish(
 internal class NowPlayingPublisher @Inject constructor(
     private val connection: PlaybackConnection,
     private val playbackRepository: PlaybackRepository,
+    private val downloadRepository: DownloadRepository,
     private val dataClient: DataClient,
     private val clock: Clock,
     @ApplicationScope private val scope: CoroutineScope,
@@ -119,8 +122,9 @@ internal class NowPlayingPublisher @Inject constructor(
                 connection.playbackState,
                 playbackRepository.observePlaybackSettings(),
                 playbackRepository.observeQueue(),
-            ) { playback, settings, queue ->
-                nowPlayingSnapshot(playback, settings, queue, clock.millis())
+                downloadRepository.observeDownloads(),
+            ) { playback, settings, queue, downloads ->
+                nowPlayingSnapshot(playback, settings, queue, downloads, clock.millis())
             }.collect { snapshot ->
                 if (shouldPublish(lastPublished, snapshot, clock.millis())) publish(snapshot)
             }
@@ -139,6 +143,7 @@ internal class NowPlayingPublisher @Inject constructor(
             playback = connection.currentState(),
             settings = playbackRepository.observePlaybackSettings().first(),
             queue = playbackRepository.observeQueue().first(),
+            downloads = downloadRepository.observeDownloads().first(),
             publishedAtMs = clock.millis(),
         )
         publish(snapshot)

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.FastForward
@@ -98,7 +99,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
-import md.borisveriga.megapodcastplayer.core.wearprotocol.QueuedEpisode
+import md.borisveriga.megapodcastplayer.core.wearprotocol.WatchEpisode
 import md.borisveriga.megapodcastplayer.wear.R
 import md.borisveriga.megapodcastplayer.wear.data.PhoneLink
 
@@ -127,6 +128,7 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onCycleSpeed = viewModel::cycleSpeed,
         onMarkMoment = viewModel::markMoment,
         onPlayOnPhone = viewModel::playOnPhone,
+        onQueueOnPhone = viewModel::queueOnPhone,
         onRetry = viewModel::retry,
         onBeginScrub = viewModel::beginScrub,
         onScrubBy = viewModel::scrubBy,
@@ -140,11 +142,13 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * Stateless so it can be previewed and screenshot-tested without a phone at the other end.
  *
  * One column, top to bottom: what is playing, its scrubber, the transport, the sitting-down
- * controls, the moment button, and then the phone's queue. The transport is the one thing here that
- * has to be under the thumb within a second of raising the wrist, and it is: the queue is the only
- * part whose length the phone decides, and it is the last thing in the column, so however long it
- * grows nothing above it moves. The screen was once split into two pages to keep a growing list
- * from pushing pause off the bottom; putting the list last does the same with nothing to swipe.
+ * controls, the moment button, the phone's queue, and then what is downloaded on the phone. The
+ * transport is the one thing here that has to be under the thumb within a second of raising the
+ * wrist, and it is: the two lists are the only parts whose length the phone decides, and they are
+ * last in the column, so however long they grow nothing above them moves. The screen was once split
+ * into two pages to keep a growing list from pushing pause off the bottom; putting the lists last
+ * does the same with nothing to swipe. This is the whole app — there is no second screen, and the
+ * tile that used to be a smaller copy of this one is gone.
  *
  * @param uiState what to draw.
  * @param onTogglePlayPause invoked by the centre transport button.
@@ -154,7 +158,8 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onSkipToPrevious invoked by the previous-episode button.
  * @param onCycleSpeed invoked by the speed button.
  * @param onMarkMoment invoked by the mark-a-moment button.
- * @param onPlayOnPhone invoked with the episode id when a queued episode is tapped.
+ * @param onPlayOnPhone invoked with the episode id when an episode row is tapped.
+ * @param onQueueOnPhone invoked with the episode id by a downloaded row's queue button.
  * @param onRetry invoked when the user retries a failed connection.
  * @param position where playback has reached, read only by the bar and only when it draws. A
  *   lambda rather than a value so that the clock, which moves this once a second, is not a reason
@@ -173,6 +178,7 @@ fun WatchPlayerScreen(
     onSkipToPrevious: () -> Unit,
     onCycleSpeed: () -> Unit,
     onPlayOnPhone: (String) -> Unit,
+    onQueueOnPhone: (String) -> Unit,
     onRetry: () -> Unit,
     position: () -> PlaybackPosition = { PlaybackPosition() },
     onMarkMoment: () -> Unit = {},
@@ -239,6 +245,11 @@ fun WatchPlayerScreen(
             }
 
             phoneQueue(uiState = uiState, onPlayOnPhone = onPlayOnPhone)
+            phoneDownloads(
+                uiState = uiState,
+                onPlayOnPhone = onPlayOnPhone,
+                onQueueOnPhone = onQueueOnPhone,
+            )
         }
     }
 }
@@ -262,6 +273,42 @@ private fun ScalingLazyListScope.phoneQueue(
     item { ListHeader { Text(text = stringResource(R.string.watch_phone_queue)) } }
     items(uiState.snapshot.upNext, key = { "queue:${it.id}" }) { episode ->
         QueueRow(episode = episode, onClick = { onPlayOnPhone(episode.id) })
+    }
+}
+
+/**
+ * What is downloaded on the phone but not queued, under the queue.
+ *
+ * The queue above it is what the wearer already decided to listen to; this is everything else they
+ * could, and it is the only part of a library that reaching the wrist makes any sense of — an
+ * episode that is not on the phone's disk cannot be started from a wrist out of Bluetooth range
+ * anyway. Under the queue rather than above it because it is the rarer errand: most raises of the
+ * wrist are about what is playing, some are about what is next, and only a few are about changing
+ * what is next.
+ *
+ * Each row carries two actions, which is one more than anything else on this screen. That is the
+ * point of the section: playing a downloaded episode *now* means stopping what is in your ears, and
+ * the usual answer — "after this one" — had nowhere to live. The row itself plays, as the queue's
+ * rows do, and the button adds to the queue.
+ *
+ * @param uiState what to draw.
+ * @param onPlayOnPhone invoked with the episode id when a row is tapped.
+ * @param onQueueOnPhone invoked with the episode id when a row's queue button is tapped.
+ */
+private fun ScalingLazyListScope.phoneDownloads(
+    uiState: WatchPlayerUiState,
+    onPlayOnPhone: (String) -> Unit,
+    onQueueOnPhone: (String) -> Unit,
+) {
+    if (uiState.snapshot.downloaded.isEmpty()) return
+
+    item { ListHeader { Text(text = stringResource(R.string.watch_phone_downloads)) } }
+    items(uiState.snapshot.downloaded, key = { "downloaded:${it.id}" }) { episode ->
+        DownloadedRow(
+            episode = episode,
+            onClick = { onPlayOnPhone(episode.id) },
+            onQueue = { onQueueOnPhone(episode.id) },
+        )
     }
 }
 
@@ -761,7 +808,7 @@ private fun MarkMomentRow(saved: Boolean, onClick: () -> Unit) {
  * can be told apart without reading it.
  */
 @Composable
-private fun QueueRow(episode: QueuedEpisode, onClick: () -> Unit) {
+private fun QueueRow(episode: WatchEpisode, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -769,6 +816,46 @@ private fun QueueRow(episode: QueuedEpisode, onClick: () -> Unit) {
         label = { Text(text = episode.title, maxLines = 2) },
         secondaryLabel = { Text(text = episode.showTitle, maxLines = 1) },
     )
+}
+
+/**
+ * One downloaded episode: a button that plays it, and a button that queues it.
+ *
+ * Two targets side by side rather than one row with a hidden second action, because a watch has no
+ * swipe to spare — the system's own back gesture owns the horizontal — and no long press anyone
+ * discovers. The queue button is kept to the minimum comfortable target and the episode takes the
+ * rest of the width, so the larger, more likely action is also the easier one to hit while walking.
+ *
+ * @param episode the episode.
+ * @param onClick plays it on the phone, interrupting what is playing.
+ * @param onQueue puts it at the end of the phone's queue instead.
+ */
+@Composable
+private fun DownloadedRow(episode: WatchEpisode, onClick: () -> Unit, onQueue: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.weight(1f),
+            icon = { ShowDot(accent = showAccent(episode.showTitle)) },
+            label = { Text(text = episode.title, maxLines = 2) },
+            secondaryLabel = { Text(text = episode.showTitle, maxLines = 1) },
+        )
+        FilledTonalIconButton(
+            onClick = onQueue,
+            modifier = Modifier.size(QUEUE_BUTTON_SIZE),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                // Names the episode, because a screen reader arrives at this button having left the
+                // row beside it: "Add to queue" alone would not say what is being queued.
+                contentDescription = stringResource(R.string.watch_queue_episode, episode.title),
+            )
+        }
+    }
 }
 
 /** Shown when the phone is reachable but has nothing loaded. */
@@ -909,6 +996,9 @@ private fun skipContentDescription(skipMs: Long, forward: Boolean): String {
         seconds,
     )
 }
+
+/** The queue button beside a downloaded episode: the minimum target worth aiming at on a wrist. */
+private val QUEUE_BUTTON_SIZE = 44.dp
 
 /** The play button is deliberately larger than its neighbours: it is the one pressed blind. */
 private val PLAY_BUTTON_SIZE = 60.dp
