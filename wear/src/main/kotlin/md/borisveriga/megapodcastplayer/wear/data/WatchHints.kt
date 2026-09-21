@@ -14,11 +14,16 @@ import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 /**
  * The things the watch has already explained once and need not explain again.
  *
- * There is one of them, and there is unlikely ever to be many: a wrist has no room for a tour, and
- * a hint that comes back is worse than one that never appeared. This exists because the one gesture
- * on the watch that is not visible — tapping the progress bar to take hold of it, then turning the
- * bezel — cannot be discovered by looking at the screen, and a sentence the first time is the whole
- * of the fix.
+ * There are two of them, and there is unlikely ever to be many: a wrist has no room for a tour, and
+ * a hint that comes back is worse than one that never appeared. This exists because the gestures on
+ * the watch that are not visible — tapping the progress bar to take hold of it and turning the
+ * bezel, and the same on the volume bar — cannot be discovered by looking at the screen, and a
+ * sentence the first time is the whole of the fix.
+ *
+ * Two markers rather than one, because they are two discoveries: someone who has learnt the bezel
+ * on the scrubber has learnt that *that bar* can be taken hold of, not that the volume bar below
+ * it can be too. The cost of being wrong about that is one sentence either way, and the cheaper
+ * mistake is showing it twice.
  *
  * A marker file rather than a preferences store: this module holds a handful of facts and no
  * storage dependency, and one boolean does not earn the first one. The file's *existence* is the value, so
@@ -35,6 +40,8 @@ class WatchHints @Inject constructor(
 ) {
 
     private val scrubHintFile: File get() = File(context.filesDir, SCRUB_HINT_FILE)
+
+    private val volumeHintFile: File get() = File(context.filesDir, VOLUME_HINT_FILE)
 
     /**
      * Whether the wearer has already been told how to scrub.
@@ -57,8 +64,25 @@ class WatchHints @Inject constructor(
         }
     }
 
+    /**
+     * Whether the wearer has already been told what the bezel does to the volume bar.
+     *
+     * @return true when the hint has been shown before and must not be shown again.
+     */
+    suspend fun hasSeenVolumeHint(): Boolean = withContext(ioDispatcher) {
+        volumeHintFile.exists()
+    }
+
+    /** Records that the volume hint has now been shown; a failed write is harmless, see above. */
+    suspend fun markVolumeHintSeen() {
+        withContext(ioDispatcher) {
+            suspendRunCatching { volumeHintFile.createNewFile() }
+        }
+    }
+
     private companion object {
-        /** Named for what it records, since the file's presence is the whole of its content. */
+        /** Named for what they record, since a file's presence is the whole of its content. */
         const val SCRUB_HINT_FILE = "scrub-hint-seen"
+        const val VOLUME_HINT_FILE = "volume-hint-seen"
     }
 }

@@ -26,7 +26,9 @@ class WatchHintsTest {
 
     @Before
     fun forgetEverything() {
-        RuntimeEnvironment.getApplication().filesDir.resolve("scrub-hint-seen").delete()
+        val filesDir = RuntimeEnvironment.getApplication().filesDir
+        filesDir.resolve("scrub-hint-seen").delete()
+        filesDir.resolve("volume-hint-seen").delete()
     }
 
     private fun hints() = WatchHints(
@@ -56,6 +58,30 @@ class WatchHintsTest {
         hints.markScrubHintSeen()
 
         assertTrue(hints.hasSeenScrubHint())
+    }
+
+    /**
+     * The two hints are two discoveries and two markers. Learning the bezel on the scrubber does
+     * not teach that the volume bar can be taken hold of too, so showing one must not silence the
+     * other.
+     */
+    @Test
+    fun `learning to scrub does not count as learning the volume bar`() = runTest {
+        val hints = hints()
+
+        hints.markScrubHintSeen()
+
+        assertFalse(hints.hasSeenVolumeHint())
+    }
+
+    @Test
+    fun `the volume hint is remembered once it has been shown`() = runTest {
+        val hints = hints()
+
+        hints.markVolumeHintSeen()
+
+        assertTrue(hints.hasSeenVolumeHint())
+        assertFalse(hints.hasSeenScrubHint())
     }
 
     @Test

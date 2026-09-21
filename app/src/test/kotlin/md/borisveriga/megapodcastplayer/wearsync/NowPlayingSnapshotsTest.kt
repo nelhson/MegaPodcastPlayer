@@ -49,6 +49,35 @@ class NowPlayingSnapshotsTest {
         assertTrue(snapshot.isIdle)
     }
 
+    /** The watch's volume control is this scale arriving; without the maximum it draws nothing. */
+    @Test
+    fun `the snapshot carries the phone's media volume and its scale`() {
+        val snapshot = nowPlayingSnapshot(
+            playback = PlaybackState(episodeId = "ep-2", volume = 9, maxVolume = 15),
+            settings = settings,
+            queue = queue,
+            downloads = emptyList(),
+            publishedAtMs = 0L,
+        )
+
+        assertEquals(9, snapshot.volume)
+        assertEquals(15, snapshot.maxVolume)
+        assertTrue(snapshot.canSetVolume)
+    }
+
+    @Test
+    fun `a phone that will not have its volume set sends no scale`() {
+        val snapshot = nowPlayingSnapshot(
+            playback = PlaybackState(episodeId = "ep-2"),
+            settings = settings,
+            queue = queue,
+            downloads = emptyList(),
+            publishedAtMs = 0L,
+        )
+
+        assertFalse(snapshot.canSetVolume)
+    }
+
     @Test
     fun `an episode playing that is not in the durable queue still lists the queue`() {
         val snapshot = nowPlayingSnapshot(

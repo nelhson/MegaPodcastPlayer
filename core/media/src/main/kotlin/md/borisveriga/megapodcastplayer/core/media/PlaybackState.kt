@@ -24,6 +24,13 @@ package md.borisveriga.megapodcastplayer.core.media
  * @property queueEpisodeIds every episode in the player's queue, in play order, including the
  *   currently loaded one.
  * @property queueIndex index of [episodeId] within [queueEpisodeIds].
+ * @property volume the *device's* media volume, as an index on its own scale — what the phone's
+ *   volume keys move, and what [PlaybackConnection.setDeviceVolume] sets. Not to be confused with
+ *   the player's internal gain, which [PlaybackConnection.setVolume] scales for the sleep timer's
+ *   fade and which nothing else may touch.
+ * @property maxVolume the top of that scale, or `0` when the player will not let its device volume
+ *   be read or set at all — a fixed-volume output, or a player built without volume control. A
+ *   maximum of zero means there is no scale, not that the phone is silent.
  * @property errorMessage the player's own words for a failure, or the message of a command that
  *   could not be delivered. Shown only alongside [PlaybackError.UNKNOWN], where there is nothing
  *   better to say; for every other case the screen has a sentence of its own.
@@ -44,6 +51,8 @@ data class PlaybackState(
     val speed: Float = 1f,
     val queueEpisodeIds: List<String> = emptyList(),
     val queueIndex: Int = 0,
+    val volume: Int = 0,
+    val maxVolume: Int = 0,
     val errorMessage: String? = null,
     val error: PlaybackError? = null,
 ) {

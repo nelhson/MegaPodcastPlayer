@@ -73,6 +73,24 @@ class NowPlayingSnapshotTest {
     }
 
     @Test
+    fun `a phone with no volume scale offers no volume control`() {
+        assertFalse(playing.canSetVolume)
+        assertTrue(playing.copy(maxVolume = 15).canSetVolume)
+    }
+
+    /**
+     * Volume is not a timing field, so a turn of the bezel has to read as a substantive change —
+     * which is what earns the publish that tells the watch its own guess was right.
+     */
+    @Test
+    fun `a change of volume is a change worth publishing`() {
+        val louder = playing.copy(volume = 9, maxVolume = 15)
+        val quieter = louder.copy(volume = 8)
+
+        assertNotEquals(louder.withoutTiming(), quieter.withoutTiming())
+    }
+
+    @Test
     fun `snapshots differing only in position and publish time compare equal without timing`() {
         val later = playing.copy(positionMs = 12_345L, publishedAtMs = 999L)
 

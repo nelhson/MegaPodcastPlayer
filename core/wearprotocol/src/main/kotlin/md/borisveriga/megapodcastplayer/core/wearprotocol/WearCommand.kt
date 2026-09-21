@@ -73,6 +73,23 @@ sealed interface WearCommand {
     data class SeekTo(val positionMs: Long) : WearCommand
 
     /**
+     * Sets the phone's media volume.
+     *
+     * Absolute rather than "one step quieter", for three reasons. It is idempotent, so a wrist
+     * turning fast may drop every intermediate value and send only the last one — which matters on
+     * a path the Data Layer never de-duplicates and never reorders for you. The scale it is
+     * expressed in is the phone's own, sent in [NowPlayingSnapshot.maxVolume], so the watch is
+     * spared inventing one; that is the same doctrine as [SkipForward], where the amount stays on
+     * the phone. And an absolute value cannot accumulate error: a lost relative step would leave
+     * the two devices disagreeing about the level forever.
+     *
+     * @property level the level to set, on the phone's `0..maxVolume` scale; clamped by the phone.
+     */
+    @Serializable
+    @SerialName("set_volume")
+    data class SetVolume(val level: Int) : WearCommand
+
+    /**
      * Plays a queued episode from the top of the watch's "up next" list.
      *
      * @property episodeId the episode to play, as sent in [WatchEpisode.id].

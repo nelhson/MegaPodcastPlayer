@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,20 +47,39 @@ class WatchPlayerViewModel @Inject constructor(
     /** Where the user has dragged the progress bar, or null when they are not touching it. */
     private val scrub = MutableStateFlow<ScrubState?>(null)
 
+    /** The level the wearer has turned to, or null when the phone's own reading is the truth. */
+    private val volume = MutableStateFlow<VolumeAdjustment?>(null)
+
+    /** True while the volume row holds the bezel; see [WatchPlayerUiState.isAdjustingVolume]. */
+    private val volumeEngaged = MutableStateFlow(false)
+
+    /** The throttled send of [volume], and the timer that lets go of the bezel; see [setVolume]. */
+    private var volumeSendJob: Job? = null
+    private var volumeReleaseJob: Job? = null
+
+    /** When the last `SetVolume` went out, which is what the throttle measures against. */
+    private var lastVolumeSentAtElapsedMs = 0L
+
     /** True for a few seconds after a moment is marked; see [WatchPlayerUiState.momentSaved]. */
     private val momentSaved = MutableStateFlow(false)
 
     /** True while the first scrub of this watch's life is being explained; see [WatchHints]. */
     private val scrubHintVisible = MutableStateFlow(false)
 
+    /** The same, for the first time the volume bar is taken hold of. */
+    private val volumeHintVisible = MutableStateFlow(false)
+
     /**
-     * The two things the screen says over the top of what is playing.
+     * The things the screen says over the top of what is playing.
      *
      * Grouped for the reason [phone] is grouped: `combine` gives typed lambdas only up to five
-     * sources, and these two are the same kind of thing — a sentence the screen shows for a moment
+     * sources, and these are the same kind of thing — a sentence the screen shows for a moment
      * and then takes away.
      */
-    private val cues = combine(momentSaved, scrubHintVisible, ::Cues)
+    private val cues = combine(momentSaved, scrubHintVisible, volumeHintVisible, ::Cues)
+
+    /** The volume the wearer is setting, and whether the bezel is theirs to set it with. */
+    private val volumeState = combine(volume, volumeEngaged, ::VolumeMode)
 
     /**
      * What the phone is doing, and when it said so.
@@ -85,15 +105,19 @@ class WatchPlayerViewModel @Inject constructor(
         lastCommandFailed,
         scrub,
         cues,
-    ) { phone, failed, scrubState, cues ->
+        volumeState,
+    ) { phone, failed, scrubState, cues, volume ->
         watchPlayerFrame(
             link = phone.link,
             received = phone.received,
             nowElapsedMs = phone.nowElapsedMs,
             lastCommandFailed = failed,
             scrub = scrubState,
+            volume = volume.adjustment,
+            isAdjustingVolume = volume.engaged,
             momentSaved = cues.momentSaved,
             showsScrubHint = cues.scrubHint,
+            showsVolumeHint = cues.volumeHint,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -178,8 +202,147 @@ class WatchPlayerViewModel @Inject constructor(
      */
     fun beginScrub() {
         if (!frame.value.uiState.canScrub) return
+        // The bezel has one owner. Taking it for the scrubber gives it up for the volume row,
+        // which would otherwise keep its focus and swallow the turns meant for the position.
+        releaseVolume()
         scrub.value = ScrubState(positionMs = frame.value.position.positionMs)
         explainScrubbingOnce()
+    }
+
+    /**
+     * Takes hold of the volume bar, so that the bezel changes the volume rather than scrolling.
+     *
+     * The other half of the exclusion [beginScrub] enforces: a scrub in progress is abandoned
+     * rather than left holding a focus it no longer has.
+     */
+    fun beginVolume() {
+        if (!frame.value.uiState.canSetVolume) return
+        scrub.value = null
+        scrubHintVisible.value = false
+        volumeEngaged.value = true
+        // Seeded from what the row is showing, so the bar does not jump the instant it is touched.
+        volume.value = VolumeAdjustment(level = frame.value.uiState.volumeLevel, sentAtElapsedMs = null)
+        explainVolumeOnce()
+        restartVolumeRelease()
+    }
+
+    /** Lets go of the volume bar, handing the bezel back to the list. */
+    fun endVolume() = releaseVolume()
+
+    /**
+     * Moves the volume by whole steps of the phone's own scale.
+     *
+     * A step is a step the phone has: the bezel's detents and the phone's volume keys then agree
+     * about how much quieter "one quieter" is. Called by the row's minus and plus buttons as well
+     * as by the bezel, which is why it does not require the bar to be held.
+     *
+     * @param steps how many steps to move; negative is quieter.
+     */
+    fun adjustVolumeBy(steps: Int) {
+        // Counted from the pending level rather than from the screen's. A bezel delivers its turns
+        // as a burst on one thread, while [frame] is a combine that catches up a dispatch later —
+        // so two steps read from the screen would both start at the same place and one of them
+        // would be lost. The pending level is set synchronously by the step before it.
+        val current = volume.value?.level ?: frame.value.uiState.volumeLevel
+        setVolume(current + steps)
+    }
+
+    /**
+     * Sets an absolute volume level, clamped to the phone's scale.
+     *
+     * The level is shown at once and sent on a throttle — never a debounce. Someone turning the
+     * bezel is listening for the change while they turn, so a level that waited for them to stop
+     * would be a control that felt broken until they let go. `SetVolume` carries an absolute
+     * level, so the values the throttle drops cost nothing: the last one to arrive is the whole
+     * truth.
+     *
+     * @param level the level to set, on the phone's `0..maxVolume` scale.
+     */
+    fun setVolume(level: Int) {
+        val maxVolume = frame.value.uiState.snapshot.maxVolume
+        if (maxVolume <= 0) return
+
+        val target = level.coerceIn(0, maxVolume)
+        // A turn that changes nothing — the bezel at an end stop, or a button pressed twice at
+        // zero — is not worth a message. The phone is already there.
+        if (target == (volume.value?.level ?: frame.value.uiState.volumeLevel)) return
+
+        volume.value = VolumeAdjustment(level = target, sentAtElapsedMs = null)
+        restartVolumeRelease()
+        scheduleVolumeSend(target)
+    }
+
+    /**
+     * Sends [level] now if the throttle allows, otherwise when it next does.
+     *
+     * One pending send at a time, replaced rather than queued: a wrist mid-turn produces a level
+     * every few milliseconds and only the newest one means anything. The trailing send is what
+     * guarantees the level the wearer settled on always reaches the phone, which is the case
+     * `sample` would not cover even if it were not `@FlowPreview`.
+     */
+    private fun scheduleVolumeSend(level: Int) {
+        volumeSendJob?.cancel()
+        volumeSendJob = viewModelScope.launch {
+            val sinceLastSend = SystemClock.elapsedRealtime() - lastVolumeSentAtElapsedMs
+            val wait = VOLUME_SEND_INTERVAL_MS - sinceLastSend
+            if (wait > 0L) delay(wait)
+
+            val sentAt = SystemClock.elapsedRealtime()
+            lastVolumeSentAtElapsedMs = sentAt
+            // Stamped before the reply can arrive, so the held reading covers the whole round trip.
+            val sent = VolumeAdjustment(level = level, sentAtElapsedMs = sentAt)
+            volume.value = sent
+            lastCommandFailed.value = !client.send(WearCommand.SetVolume(level))
+
+            // Let go once the hold is over, so that a volume changed on the phone afterwards is
+            // shown rather than argued with. A later step cancels this job along with its send,
+            // which is what keeps a turn in progress from being cleared out from under itself.
+            delay(VOLUME_HOLD_MS)
+            volume.compareAndSet(expect = sent, update = null)
+        }
+    }
+
+    /**
+     * Restarts the wait after which the bezel goes back to the list.
+     *
+     * A mode nobody leaves is a scroll that stopped working, and unlike the scrubber there is no
+     * commit here to leave it by: every step is already applied. So stillness ends it.
+     */
+    private fun restartVolumeRelease() {
+        volumeReleaseJob?.cancel()
+        volumeReleaseJob = viewModelScope.launch {
+            delay(VOLUME_RELEASE_MS)
+            volumeEngaged.value = false
+        }
+    }
+
+    /**
+     * Leaves volume mode and stops the timer that would have left it.
+     *
+     * A level that was never sent is dropped with the mode. That is the bar taken hold of and let
+     * go without a turn: keeping its seeded level would pin the row to a reading of its own, and
+     * the phone's volume — moved by its own keys, by another app, by anything — would stop
+     * reaching it. A level that *was* sent is left alone; its own hold is what lets go of it, and
+     * only once the phone has had its say.
+     */
+    private fun releaseVolume() {
+        volumeReleaseJob?.cancel()
+        volumeEngaged.value = false
+        volumeHintVisible.value = false
+        if (volume.value?.sentAtElapsedMs == null) volume.value = null
+    }
+
+    /**
+     * Says what the bezel now does, the first time the volume bar is taken hold of on this watch.
+     *
+     * Marked seen as it is shown, for the reason [explainScrubbingOnce] gives.
+     */
+    private fun explainVolumeOnce() {
+        viewModelScope.launch {
+            if (hints.hasSeenVolumeHint()) return@launch
+            volumeHintVisible.value = true
+            hints.markVolumeHintSeen()
+        }
     }
 
     /**
@@ -329,10 +492,24 @@ class WatchPlayerViewModel @Inject constructor(
      *
      * @property momentSaved true while the mark-a-moment confirmation is up.
      * @property scrubHint true while the first-scrub explanation is up.
+     * @property volumeHint true while the first-volume explanation is up.
      */
     private data class Cues(
         val momentSaved: Boolean,
         val scrubHint: Boolean,
+        val volumeHint: Boolean,
+    )
+
+    /**
+     * The volume half of the screen state.
+     *
+     * @property adjustment the level the wearer turned to, or null when the phone's own reading
+     *   is what the row should show.
+     * @property engaged whether the row currently owns the bezel.
+     */
+    private data class VolumeMode(
+        val adjustment: VolumeAdjustment?,
+        val engaged: Boolean,
     )
 
     private companion object {
@@ -344,6 +521,23 @@ class WatchPlayerViewModel @Inject constructor(
 
         /** How long the "moment saved" confirmation stays on the screen. */
         const val MOMENT_CONFIRM_MS = 3_000L
+
+        /**
+         * The shortest gap between two `SetVolume` messages.
+         *
+         * Short enough that a turn of the bezel is heard while it is still turning, long enough
+         * that a fast turn does not put a Bluetooth write behind every detent. The level is
+         * absolute, so the values this drops are values nobody needed.
+         */
+        const val VOLUME_SEND_INTERVAL_MS = 150L
+
+        /**
+         * How long the volume row keeps the bezel after the last turn.
+         *
+         * Long enough to think between two turns, short enough that a wrist dropped mid-adjustment
+         * is scrolling again by the time it is raised.
+         */
+        const val VOLUME_RELEASE_MS = 4_000L
 
         /**
          * Emits the watch's elapsed-realtime clock once a second.

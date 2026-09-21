@@ -144,6 +144,13 @@ class PlaybackService : MediaSessionService() {
             )
             // Pause rather than blare out of the phone speaker when headphones are unplugged.
             .setHandleAudioBecomingNoisy(true)
+            // Off by default, and off means the player builds no StreamVolumeManager at all: the
+            // device-volume commands are then absent from `availableCommands`, `deviceVolume`
+            // reads zero and `deviceInfo.maxVolume` reads zero. The watch's volume control is
+            // exactly that scale arriving over the Data Layer, so without this line it draws
+            // nothing and nothing explains why. The stream it moves is the one the audio
+            // attributes above choose, which is the music stream.
+            .setDeviceVolumeControlEnabled(true)
             // Streaming needs the radio to stay up while the screen is off.
             .setWakeMode(C.WAKE_MODE_NETWORK)
             // These are what the *notification's* skip buttons actually seek by; the glyphs beside

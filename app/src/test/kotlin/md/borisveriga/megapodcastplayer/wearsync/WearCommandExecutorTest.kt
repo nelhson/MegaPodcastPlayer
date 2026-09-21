@@ -67,6 +67,18 @@ class WearCommandExecutorTest {
         coVerify(exactly = 1) { connection.skipToPrevious() }
     }
 
+    /**
+     * The level arrives as an absolute index on the phone's own scale, and reaches the *device's*
+     * volume rather than the player gain the sleep timer owns.
+     */
+    @Test
+    fun `volume from the watch reaches the device volume`() = runTest {
+        executor.execute(WearCommand.SetVolume(level = 9))
+
+        coVerify(exactly = 1) { connection.setDeviceVolume(9) }
+        coVerify(exactly = 0) { connection.setVolume(any()) }
+    }
+
     @Test
     fun `cycling the speed both stores and applies the new rate`() = runTest {
         executor.execute(WearCommand.CycleSpeed)
