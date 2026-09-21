@@ -103,6 +103,42 @@ class WatchPlayerUiStateTest {
         assertEquals(12, frame.uiState.volumeLevel)
     }
 
+    /**
+     * The snap-back. The phone publishes for many reasons, and a snapshot sent for another one —
+     * the position drifting, the reply to the step before — arrives after the send still carrying
+     * the old level. Arriving is not answering.
+     */
+    @Test
+    fun `a snapshot that still carries the old level does not take the bar back`() {
+        val sent = VolumeAdjustment(level = 12, sentAtElapsedMs = 1_000L)
+        val stale = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 1_200L)
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            stale,
+            nowElapsedMs = 1_300L,
+            volume = sent,
+        )
+
+        assertEquals(12, frame.uiState.volumeLevel)
+    }
+
+    /** A phone that refused the level, or clamped it, still gets the last word. */
+    @Test
+    fun `a level the phone never reaches is let go of after the hold`() {
+        val sent = VolumeAdjustment(level = 12, sentAtElapsedMs = 1_000L)
+        val refused = ReceivedSnapshot(playingWithVolume, receivedAtElapsedMs = 1_200L)
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            refused,
+            nowElapsedMs = 1_000L + VOLUME_HOLD_MS + 1L,
+            volume = sent,
+        )
+
+        assertEquals(9, frame.uiState.volumeLevel)
+    }
+
     /** A phone that never answers must not freeze the bar on a level it never applied. */
     @Test
     fun `a level nobody confirmed is let go of eventually`() {

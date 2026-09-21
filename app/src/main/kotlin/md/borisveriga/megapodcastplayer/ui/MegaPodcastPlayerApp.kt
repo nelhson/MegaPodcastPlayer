@@ -259,9 +259,6 @@ fun MegaPodcastPlayerApp(
 
                 composable<Route.Queue> {
                     QueueRoute(
-                        onBrowseLibrary = {
-                            navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
-                        },
                         onOpenSettings = { navController.navigate(Route.Settings) },
                         scrollToTopSignal = reTapCount,
                     )

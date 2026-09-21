@@ -121,7 +121,7 @@ class CollapsedPlayerTest {
 
         // Three controls, not one. Replaying a sentence used to need the whole sheet opened.
         composeRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Skip back 10 seconds").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Skip back 30 seconds").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Skip ahead 30 seconds").assertIsDisplayed()
     }
 

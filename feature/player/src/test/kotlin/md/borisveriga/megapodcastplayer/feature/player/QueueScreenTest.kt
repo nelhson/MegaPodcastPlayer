@@ -86,7 +86,6 @@ class QueueScreenTest {
         onClear: () -> Unit = {},
         onUndo: () -> Unit = {},
         onMessageShown: () -> Unit = {},
-        onBrowseLibrary: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
         scrollToTopSignal: Int = 0,
     ) {
@@ -102,7 +101,6 @@ class QueueScreenTest {
                     onMessageShown = onMessageShown,
                     onOpenSettings = onOpenSettings,
                     scrollToTopSignal = scrollToTopSignal,
-                    onBrowseLibrary = onBrowseLibrary,
                 )
             }
         }

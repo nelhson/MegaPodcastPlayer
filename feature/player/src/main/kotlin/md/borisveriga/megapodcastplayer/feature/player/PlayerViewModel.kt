@@ -140,6 +140,37 @@ data class PlayerUiState(
             }
         }
 
+    /**
+     * How long until the sleep timer stops playback, in time on the clock, or null when it is off.
+     *
+     * A countdown says so itself. The other two stops are places in the episode rather than times
+     * — the end of a chapter, the end of the episode — and the timer deliberately keeps no time
+     * for them, because how long it takes to get there depends on a speed the listener may yet
+     * change. The screen can still say, since it is redrawn as the playhead moves: the distance
+     * left, at the speed playing now. Someone lying in the dark wants "twelve minutes", not "the
+     * end of chapter four".
+     *
+     * Computed here for the reason [sleepChapterOptions] is: only the view model has the
+     * chapters, the playhead and the timer together. Null as well when the stop cannot be placed
+     * — a last chapter or an episode whose duration is not known yet.
+     */
+    val sleepRemainingMs: Long?
+        get() {
+            val chapterIndex = sleep.endOfChapterIndex
+            val stopAtMs = when {
+                sleep.remainingMs != null -> return sleep.remainingMs
+
+                // Where a chapter ends is where the next one starts; the last ends with the episode.
+                chapterIndex != null -> chapters.getOrNull(chapterIndex + 1)?.startMs ?: playback.durationMs
+
+                sleep.isEndOfEpisode -> playback.durationMs
+
+                else -> 0L
+            }
+            val speed = playback.speed.takeIf { it > 0f } ?: 1f
+            return ((stopAtMs - playback.positionMs) / speed).toLong().takeIf { stopAtMs > 0L && it > 0L }
+        }
+
     /** True when there is nothing to show — the mini player should not be on screen at all. */
     val isIdle: Boolean get() = playback.isIdle
 

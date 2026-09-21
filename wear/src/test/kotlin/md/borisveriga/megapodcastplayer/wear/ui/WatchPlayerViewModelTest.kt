@@ -64,6 +64,9 @@ class WatchPlayerViewModelTest {
 
         /** Past the stillness after which the volume row hands the bezel back to the list. */
         const val VOLUME_RELEASED_MS = 5_000L
+
+        /** An arrival time after any send these tests make, whatever the clock under them reads. */
+        const val LATER_MS = 1_000_000_000L
     }
 
     @Before
@@ -280,6 +283,38 @@ class WatchPlayerViewModelTest {
         runCurrent()
 
         assertEquals(7, viewModel.uiState.value.volumeLevel)
+    }
+
+    /**
+     * The snap-back, end to end. The other tests here hand the view model one snapshot and stop,
+     * which is how this got through: the phone publishes for reasons of its own, and what it
+     * publishes between a send and its answer still carries the level the wearer turned away from.
+     */
+    @Test
+    fun `a stale snapshot after a send does not take the bar back`() = runTest {
+        val snapshots = MutableStateFlow<ReceivedSnapshot?>(ReceivedSnapshot(playingWithVolume, 0L))
+        every { client.snapshots } returns snapshots
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.setVolume(12)
+        advanceTimeBy(SETTLED_MS)
+        runCurrent()
+        // Far in the future rather than "a little later", so that it counts as arriving after the
+        // send whatever the clock under this test reads.
+        snapshots.value = ReceivedSnapshot(playingWithVolume, LATER_MS)
+        runCurrent()
+
+        assertEquals(12, viewModel.uiState.value.volumeLevel)
+
+        // And the answer, when it comes, is believed: the phone went one further on its own keys.
+        snapshots.value = ReceivedSnapshot(playingWithVolume.copy(volume = 12), LATER_MS + 1L)
+        runCurrent()
+        snapshots.value = ReceivedSnapshot(playingWithVolume.copy(volume = 13), LATER_MS + 2L)
+        advanceTimeBy(VOLUME_RELEASED_MS)
+        runCurrent()
+
+        assertEquals(13, viewModel.uiState.value.volumeLevel)
     }
 
     @Test

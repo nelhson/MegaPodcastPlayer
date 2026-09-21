@@ -217,9 +217,14 @@ internal fun watchPlayerFrame(
     val positionMs = shown ?: snapshot.positionAfter(sinceArrivalMs)
 
     // The level the wearer turned to wins until the phone confirms it, for the reason a held
-    // scrub does: the last snapshot still describes the level they turned away from.
-    val volumeLevel = volume?.level?.takeIf {
-        stillShowing(volume.sentAtElapsedMs, received, nowElapsedMs, VOLUME_HOLD_MS)
+    // scrub does: the last snapshot still describes the level they turned away from. Confirmed
+    // means the phone *says that level*, not merely that it said something since: a snapshot sent
+    // for any other reason — the position drifting, the reply to the step before this one — lands
+    // after the send too, still carrying the old level, and believing it walks the bar back.
+    val volumeLevel = volume?.level?.takeIf { level ->
+        stillShowing(volume.sentAtElapsedMs, received, nowElapsedMs, VOLUME_HOLD_MS) {
+            it.snapshot.volume == level
+        }
     } ?: snapshot.volume
 
     val uiState = WatchPlayerUiState(
@@ -255,24 +260,29 @@ internal fun watchPlayerFrame(
  * they did rather than what the phone last said.
  *
  * A value that has not been sent always governs — the wearer is still moving it. A sent one
- * governs until the phone confirms, which is a snapshot that arrived *after* it went out, or until
- * [holdMs] passes without one. The bound is what keeps a phone that never answers from freezing
- * the control for good.
+ * governs until the phone confirms, which is a snapshot that arrived *after* it went out and that
+ * [confirms] accepts, or until [holdMs] passes without one. The bound is what keeps a phone that
+ * never answers — or answers with something else, because it refused or clamped the value — from
+ * freezing the control for good.
  *
  * @param sentAtElapsedMs the watch's elapsed-realtime clock when the command went out, or null
  *   while nothing has been sent.
  * @param received the last snapshot the watch got, or null if none.
  * @param nowElapsedMs the watch's current elapsed-realtime clock.
  * @param holdMs how long a sent value is held before the phone's own reading is believed again.
+ * @param confirms whether a snapshot that arrived after the send is the answer to it. Arrival
+ *   alone is enough for a seek, whose result is a position that can never be matched exactly; a
+ *   volume is an exact level, so its caller asks for that level.
  */
 private fun stillShowing(
     sentAtElapsedMs: Long?,
     received: ReceivedSnapshot?,
     nowElapsedMs: Long,
     holdMs: Long,
+    confirms: (ReceivedSnapshot) -> Boolean = { true },
 ): Boolean {
     val sentAt = sentAtElapsedMs ?: return true
-    val confirmed = received != null && received.receivedAtElapsedMs > sentAt
+    val confirmed = received != null && received.receivedAtElapsedMs > sentAt && confirms(received)
     return !confirmed && nowElapsedMs - sentAt < holdMs
 }
 

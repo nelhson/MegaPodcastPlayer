@@ -600,7 +600,10 @@ private fun SecondaryActions(
             MegaPodcastPlayerTheme.spacing.sm,
             Alignment.CenterHorizontally,
         ),
-        verticalAlignment = Alignment.CenterVertically,
+        // By their tops, not their centres: the sleep timer grows a line of text under its glyph
+        // when it is armed, and a row centred on that would lift its glyph above its neighbours'.
+        // Every control here is one touch target tall, so their tops are one line.
+        verticalAlignment = Alignment.Top,
     ) {
         // The rate is its own label, which is why this is a text button and not a glyph. Its
         // spoken form has to say more, though: a button announced as "1.5x" is a fact, and this
@@ -633,7 +636,11 @@ private fun SecondaryActions(
             }
         }
 
-        SleepTimerButton(sleep = uiState.sleep, onClick = onOpenSleepTimer)
+        SleepTimerButton(
+            sleep = uiState.sleep,
+            remainingMs = uiState.sleepRemainingMs,
+            onClick = onOpenSleepTimer,
+        )
 
         MarkMomentButton(
             count = uiState.momentCount,
@@ -659,30 +666,47 @@ private fun SecondaryActions(
  * the fact someone lying in the dark actually wants, and it is the difference between a control
  * that is on and one that is on for another eighteen minutes.
  *
+ * The number sits under the glyph rather than beside it, so that arming the timer does not push
+ * the buttons either side of it outwards — and it is there for every kind of stop, not only the
+ * countdown: the end of a chapter is a place, but what is wanted is still how long that is.
+ *
  * @param sleep what the timer is doing.
+ * @param remainingMs how long until it stops, on the clock; see [PlayerUiState.sleepRemainingMs].
  * @param onClick opens the sheet.
  * @param modifier layout modifier.
  */
 @Composable
 private fun SleepTimerButton(
     sleep: SleepTimerState,
+    remainingMs: Long?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val remaining = formatDuration(LocalResources.current, sleep.remainingMs)
+    val remaining = formatDuration(LocalResources.current, remainingMs)
+    // What kind of stop it is comes before how far off it is: the number under the glyph looks the
+    // same for all three, so the words are the only place the difference is said.
     val description = when {
-        remaining != null -> stringResource(R.string.player_sleep_armed, remaining)
+        sleep.isEndOfEpisode && remaining != null ->
+            stringResource(R.string.player_sleep_armed_end_of_episode_in, remaining)
+
         sleep.isEndOfEpisode -> stringResource(R.string.player_sleep_armed_end_of_episode)
+
+        sleep.endOfChapterIndex != null && remaining != null ->
+            stringResource(R.string.player_sleep_armed_end_of_chapter_in, remaining)
+
         sleep.endOfChapterIndex != null -> stringResource(R.string.player_sleep_armed_end_of_chapter)
+
+        remaining != null -> stringResource(R.string.player_sleep_armed, remaining)
+
         else -> stringResource(R.string.player_sleep_arm)
     }
 
-    Row(
+    Column(
         modifier = modifier.semantics(mergeDescendants = true) {
             contentDescription = description
             role = Role.Button
         },
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         IconButton(onClick = onClick) {
             Icon(
@@ -705,7 +729,6 @@ private fun SleepTimerButton(
                 text = remaining,
                 style = MegaPodcastPlayerTheme.type.numeric,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(end = MegaPodcastPlayerTheme.spacing.xs),
             )
         }
     }
