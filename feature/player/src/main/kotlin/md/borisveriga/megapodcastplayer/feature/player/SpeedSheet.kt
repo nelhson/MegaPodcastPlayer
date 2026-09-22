@@ -15,10 +15,11 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -134,22 +135,12 @@ fun SpeedSheet(
                     PresetChip(
                         speed = preset,
                         selected = draft.isSame(preset),
+                        isDefault = preset.isSame(PlaybackSettings.DEFAULT_SPEED),
                         onClick = {
                             draft = preset
                             onCommit(preset)
                         },
                     )
-                }
-            }
-
-            if (!draft.isSame(PlaybackSettings.DEFAULT_SPEED)) {
-                TextButton(
-                    onClick = {
-                        draft = PlaybackSettings.DEFAULT_SPEED
-                        onCommit(PlaybackSettings.DEFAULT_SPEED)
-                    },
-                ) {
-                    Text(text = stringResource(R.string.speed_reset))
                 }
             }
         }
@@ -218,12 +209,20 @@ private fun NudgeRow(speed: Float, onNudge: (Float) -> Unit) {
  * state being shown. A rate reached with the slider ticks whichever preset it landed on, so the
  * chips stay a description of the current speed rather than a memory of the last tap.
  *
+ * The default rate is the one chip in a different colour. It used to be a "Back to normal speed"
+ * button under the row, which said the same thing as the 1× chip beside it and appeared and
+ * disappeared as the slider crossed 1×. The colour says it once, in both states, without moving
+ * anything; TalkBack is told in words instead, since a tint is not a label.
+ *
  * @param speed the preset's rate.
  * @param selected whether it is the rate currently set.
+ * @param isDefault whether it is the rate the app ships with.
  * @param onClick applies it.
  */
 @Composable
-private fun PresetChip(speed: Float, selected: Boolean, onClick: () -> Unit) {
+private fun PresetChip(speed: Float, selected: Boolean, isDefault: Boolean, onClick: () -> Unit) {
+    // Read outside the semantics block: that lambda runs outside composition.
+    val defaultLabel = stringResource(R.string.speed_default)
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -232,6 +231,25 @@ private fun PresetChip(speed: Float, selected: Boolean, onClick: () -> Unit) {
             { Icon(imageVector = Icons.Rounded.Check, contentDescription = null) }
         } else {
             null
+        },
+        // The tertiary palette, which nothing else on this sheet uses, so the one chip reads as
+        // "different", not as "on". Its own selected state still has to be visibly the selected
+        // one, so that is the full tertiary rather than the container.
+        colors = if (isDefault) {
+            FilterChipDefaults.filterChipColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                selectedContainerColor = MaterialTheme.colorScheme.tertiary,
+                selectedLabelColor = MaterialTheme.colorScheme.onTertiary,
+                selectedLeadingIconColor = MaterialTheme.colorScheme.onTertiary,
+            )
+        } else {
+            FilterChipDefaults.filterChipColors()
+        },
+        modifier = if (isDefault) {
+            Modifier.semantics { contentDescription = defaultLabel }
+        } else {
+            Modifier
         },
     )
 }

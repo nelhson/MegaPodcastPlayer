@@ -199,7 +199,8 @@
     <string name="speed_slider">Playback speed</string>
     <string name="speed_slower">Slower</string>
     <string name="speed_faster">Faster</string>
-    <string name="speed_reset">Back to normal speed</string>
+    <!-- Spoken for the 1x chip, which is only visually marked as the default. -->
+    <string name="speed_default">Normal speed</string>
 
     <!--
       Moments: the timestamped bookmarks saved from the player.
