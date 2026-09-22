@@ -528,11 +528,7 @@ private fun TransportControls(
         }
 
         IconButton(onClick = onSkipBack) {
-            Icon(
-                imageVector = skipBackIcon(settings.skipBackMs),
-                contentDescription = skipContentDescription(settings.skipBackMs, forward = false),
-                modifier = Modifier.size(SkipGlyphSize),
-            )
+            SkipGlyph(skipMs = settings.skipBackMs, forward = false, size = SkipGlyphSize)
         }
 
         // The morphing control, at its hero size. Buffering no longer swaps the glyph for a
@@ -547,11 +543,7 @@ private fun TransportControls(
         )
 
         IconButton(onClick = onSkipForward) {
-            Icon(
-                imageVector = skipForwardIcon(settings.skipForwardMs),
-                contentDescription = skipContentDescription(settings.skipForwardMs, forward = true),
-                modifier = Modifier.size(SkipGlyphSize),
-            )
+            SkipGlyph(skipMs = settings.skipForwardMs, forward = true, size = SkipGlyphSize)
         }
 
         IconButton(onClick = onSkipToNext) {

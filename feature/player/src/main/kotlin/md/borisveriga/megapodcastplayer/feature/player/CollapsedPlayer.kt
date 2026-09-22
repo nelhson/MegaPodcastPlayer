@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -104,10 +103,7 @@ fun CollapsedPlayer(
             }
 
             IconButton(onClick = onSkipBack) {
-                Icon(
-                    imageVector = skipBackIcon(settings.skipBackMs),
-                    contentDescription = skipContentDescription(settings.skipBackMs, forward = false),
-                )
+                SkipGlyph(skipMs = settings.skipBackMs, forward = false)
             }
 
             // The signature control rather than a stock `IconButton`: the same morph the expanded
@@ -120,10 +116,7 @@ fun CollapsedPlayer(
             )
 
             IconButton(onClick = onSkipForward) {
-                Icon(
-                    imageVector = skipForwardIcon(settings.skipForwardMs),
-                    contentDescription = skipContentDescription(settings.skipForwardMs, forward = true),
-                )
+                SkipGlyph(skipMs = settings.skipForwardMs, forward = true)
             }
         }
     }
