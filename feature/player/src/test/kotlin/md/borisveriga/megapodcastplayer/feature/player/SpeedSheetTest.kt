@@ -1,6 +1,5 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -98,8 +97,9 @@ class SpeedSheetTest {
     fun `the default chip is the way back to normal speed`() {
         showSheet(speed = 2.5f)
 
-        // The chip is marked as the default by colour, which a screen reader cannot see, so it
-        // also carries the words; and being the only chip with any, they find it.
+        // The chip is marked as the default by a tint and a glyph, neither of which a screen
+        // reader can see, so it also carries the words; and being the only chip with any, they
+        // find it.
         composeRule.onNodeWithContentDescription(DEFAULT).performClick()
 
         assertEquals(listOf(1f), committed)
@@ -111,7 +111,20 @@ class SpeedSheetTest {
         showSheet(speed = 1f)
 
         composeRule.onAllNodesWithContentDescription(DEFAULT).assertCountEquals(1)
-        composeRule.onNodeWithContentDescription(DEFAULT).assert(hasText("1x"))
+    }
+
+    /**
+     * The description has to name the rate itself.
+     *
+     * A content description on a chip replaces the label rather than joining it, so a bare "Normal
+     * speed" would leave the middle of the scale as the one rate TalkBack never says. Asserting
+     * the `Text` instead would prove nothing: it survives in the semantics tree either way.
+     */
+    @Test
+    fun `the default chip still says which rate it is`() {
+        showSheet(speed = 2.5f)
+
+        composeRule.onNodeWithContentDescription("1x, normal speed").assertIsDisplayed()
     }
 
     /**
@@ -148,7 +161,7 @@ class SpeedSheetTest {
         /** Rates are floats built by arithmetic; comparing them exactly would be luck. */
         const val TOLERANCE = 0.001f
 
-        /** What the 1× chip says to a screen reader, since its colour says it to everyone else. */
-        const val DEFAULT = "Normal speed"
+        /** What the 1× chip says to a screen reader, since its mark says it to everyone else. */
+        const val DEFAULT = "1x, normal speed"
     }
 }

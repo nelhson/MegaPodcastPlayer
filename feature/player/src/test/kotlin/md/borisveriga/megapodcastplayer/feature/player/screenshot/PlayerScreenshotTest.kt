@@ -15,6 +15,7 @@ import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerWidePreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenEmptyPreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
 import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
+import md.borisveriga.megapodcastplayer.feature.player.SpeedControlsPreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -81,6 +82,16 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
      */
     @Test
     fun sleepTimerOptions() = capture("sleep-timer-options") { SleepTimerOptionsPreview() }
+
+    /**
+     * The speed controls at 2×, where the default chip and the selected chip are different chips.
+     *
+     * What this guards is that the 1× chip stays told apart from the selected one by something
+     * other than hue — the two fills are near enough the same lightness that a change to either
+     * marking is invisible to every other check in the suite.
+     */
+    @Test
+    fun speedControls() = capture("speed-controls") { SpeedControlsPreview() }
 
     companion object {
         @JvmStatic

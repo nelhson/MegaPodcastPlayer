@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -39,6 +40,7 @@ import kotlin.math.roundToInt
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 
 /**
@@ -69,7 +71,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * @param onDismiss closes the sheet.
  * @param modifier layout modifier.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpeedSheet(
     speed: Float,
@@ -78,6 +80,30 @@ fun SpeedSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    MegaPodcastPlayerBottomSheet(
+        onDismiss = onDismiss,
+        modifier = modifier,
+        title = stringResource(R.string.speed_title),
+        subtitle = stringResource(R.string.speed_description),
+    ) {
+        SpeedControls(speed = speed, onPreview = onPreview, onCommit = onCommit)
+    }
+}
+
+/**
+ * The sheet's contents, without the sheet.
+ *
+ * Its own composable so that a preview — and therefore a golden — can hold it: the three ways in
+ * are a layout that has to survive 200 % text, and the default chip's marking is a thing only an
+ * image can check.
+ *
+ * @param speed the rate currently playing, which seeds the controls.
+ * @param onPreview applies a rate to the player without remembering it.
+ * @param onCommit applies a rate and remembers it.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SpeedControls(speed: Float, onPreview: (Float) -> Unit, onCommit: (Float) -> Unit) {
     // Seeded once rather than followed: while the sheet is open the finger is the source of truth,
     // and the player's own reported rate arrives a frame or two behind the drag that caused it.
     var draft by remember { mutableFloatStateOf(speed.coerceIn(PlaybackSettings.SPEED_RANGE)) }
@@ -85,63 +111,56 @@ fun SpeedSheet(
     // lookup is not available.
     val sliderLabel = stringResource(R.string.speed_slider)
 
-    MegaPodcastPlayerBottomSheet(
-        onDismiss = onDismiss,
-        modifier = modifier,
-        title = stringResource(R.string.speed_title),
-        subtitle = stringResource(R.string.speed_description),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal)
+            .padding(bottom = MegaPodcastPlayerTheme.spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
     ) {
-        Column(
+        NudgeRow(
+            speed = draft,
+            onNudge = { delta ->
+                draft = (draft + delta).snapToStep()
+                onCommit(draft)
+            },
+        )
+
+        Slider(
+            value = draft,
+            onValueChange = { requested ->
+                draft = requested.snapToStep()
+                onPreview(draft)
+            },
+            // The preference is written once, when the finger leaves the track. What was heard
+            // during the drag was already the real rate; this only makes it survive a restart.
+            onValueChangeFinished = { onCommit(draft) },
+            valueRange = PlaybackSettings.SPEED_RANGE,
+            // Continuous rather than stepped: fifty tick marks across a phone's width is a
+            // pattern, not a scale. The snapping happens in the handler instead.
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal)
-                .padding(bottom = MegaPodcastPlayerTheme.spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
+                .semantics {
+                    contentDescription = sliderLabel
+                    stateDescription = formatSpeed(draft)
+                },
+        )
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
         ) {
-            NudgeRow(
-                speed = draft,
-                onNudge = { delta ->
-                    draft = (draft + delta).snapToStep()
-                    onCommit(draft)
-                },
-            )
-
-            Slider(
-                value = draft,
-                onValueChange = { requested ->
-                    draft = requested.snapToStep()
-                    onPreview(draft)
-                },
-                // The preference is written once, when the finger leaves the track. What was heard
-                // during the drag was already the real rate; this only makes it survive a restart.
-                onValueChangeFinished = { onCommit(draft) },
-                valueRange = PlaybackSettings.SPEED_RANGE,
-                // Continuous rather than stepped: fifty tick marks across a phone's width is a
-                // pattern, not a scale. The snapping happens in the handler instead.
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        contentDescription = sliderLabel
-                        stateDescription = formatSpeed(draft)
+            PlaybackSettings.SPEED_STEPS.forEach { preset ->
+                PresetChip(
+                    speed = preset,
+                    selected = draft.isSame(preset),
+                    isDefault = preset.isSame(PlaybackSettings.DEFAULT_SPEED),
+                    onClick = {
+                        draft = preset
+                        onCommit(preset)
                     },
-            )
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
-            ) {
-                PlaybackSettings.SPEED_STEPS.forEach { preset ->
-                    PresetChip(
-                        speed = preset,
-                        selected = draft.isSame(preset),
-                        isDefault = preset.isSame(PlaybackSettings.DEFAULT_SPEED),
-                        onClick = {
-                            draft = preset
-                            onCommit(preset)
-                        },
-                    )
-                }
+                )
             }
         }
     }
@@ -209,10 +228,15 @@ private fun NudgeRow(speed: Float, onNudge: (Float) -> Unit) {
  * state being shown. A rate reached with the slider ticks whichever preset it landed on, so the
  * chips stay a description of the current speed rather than a memory of the last tap.
  *
- * The default rate is the one chip in a different colour. It used to be a "Back to normal speed"
- * button under the row, which said the same thing as the 1× chip beside it and appeared and
- * disappeared as the slider crossed 1×. The colour says it once, in both states, without moving
- * anything; TalkBack is told in words instead, since a tint is not a label.
+ * The default rate is the one chip marked as such. It used to be a "Back to normal speed" button
+ * under the row, which said the same thing as the 1× chip beside it and appeared and disappeared as
+ * the slider crossed 1×. The mark says it once, in both states, without moving anything.
+ *
+ * It is said three times over because each says it to someone the others miss. The tertiary palette,
+ * which nothing else on this sheet uses, reads as "a different kind of thing" — but a pale teal and
+ * the pale olive of a *selected* chip are the same lightness, so on a greyscale screen or to a
+ * red-green-deficient eye that mark is not there at all. Hence the glyph, which is a shape:
+ * "restore", the verb the removed button had. And hence the words for TalkBack, which sees neither.
  *
  * @param speed the preset's rate.
  * @param selected whether it is the rate currently set.
@@ -221,24 +245,37 @@ private fun NudgeRow(speed: Float, onNudge: (Float) -> Unit) {
  */
 @Composable
 private fun PresetChip(speed: Float, selected: Boolean, isDefault: Boolean, onClick: () -> Unit) {
-    // Read outside the semantics block: that lambda runs outside composition.
-    val defaultLabel = stringResource(R.string.speed_default)
+    // Read outside the semantics block: that lambda runs outside composition. Only the chip that
+    // uses it looks it up.
+    val defaultLabel = if (isDefault) {
+        stringResource(R.string.speed_default, formatSpeed(speed))
+    } else {
+        null
+    }
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(text = formatSpeed(speed)) },
-        leadingIcon = if (selected) {
-            { Icon(imageVector = Icons.Rounded.Check, contentDescription = null) }
-        } else {
-            null
+        // Selected wins the slot when both apply: which rate is on is the sheet's whole subject,
+        // and the default chip keeps a glyph either way, so its width does not change under a tap.
+        leadingIcon = when {
+            selected -> {
+                { Icon(imageVector = Icons.Rounded.Check, contentDescription = null) }
+            }
+
+            isDefault -> {
+                { Icon(imageVector = Icons.Rounded.Restore, contentDescription = null) }
+            }
+
+            else -> null
         },
-        // The tertiary palette, which nothing else on this sheet uses, so the one chip reads as
-        // "different", not as "on". Its own selected state still has to be visibly the selected
-        // one, so that is the full tertiary rather than the container.
+        // Its own selected state still has to be visibly the selected one, so that is the full
+        // tertiary rather than the container.
         colors = if (isDefault) {
             FilterChipDefaults.filterChipColors(
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                 labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 selectedContainerColor = MaterialTheme.colorScheme.tertiary,
                 selectedLabelColor = MaterialTheme.colorScheme.onTertiary,
                 selectedLeadingIconColor = MaterialTheme.colorScheme.onTertiary,
@@ -246,7 +283,10 @@ private fun PresetChip(speed: Float, selected: Boolean, isDefault: Boolean, onCl
         } else {
             FilterChipDefaults.filterChipColors()
         },
-        modifier = if (isDefault) {
+        // The description replaces the label rather than joining it, which is why the string
+        // carries the rate as well. "Selected" is a state, not a name, so the chip's own
+        // selectable semantics still announce it.
+        modifier = if (defaultLabel != null) {
             Modifier.semantics { contentDescription = defaultLabel }
         } else {
             Modifier
@@ -283,3 +323,19 @@ private const val SPEED_NUDGE = 0.05f
 private val SPEED_READOUT_SIZE = 32.sp
 private val SPEED_READOUT_LINE_HEIGHT = 40.sp
 private val SPEED_READOUT_MIN_WIDTH = 96.dp
+
+/**
+ * The controls at 2×, which is the state worth an image.
+ *
+ * Not at 1×: with the default rate selected, the default chip and the selected chip are the same
+ * chip and nothing is being distinguished. At 2× they are two chips side by side, which is exactly
+ * the confusion the glyph exists to prevent, and the golden is where a future change to either
+ * marking would show up.
+ */
+@ThemePreviews
+@Composable
+internal fun SpeedControlsPreview() {
+    MegaPodcastPlayerTheme {
+        SpeedControls(speed = 2f, onPreview = {}, onCommit = {})
+    }
+}
