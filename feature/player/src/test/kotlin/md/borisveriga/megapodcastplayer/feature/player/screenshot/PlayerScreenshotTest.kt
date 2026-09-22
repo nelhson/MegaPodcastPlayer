@@ -14,6 +14,7 @@ import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerWidePreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenEmptyPreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
+import md.borisveriga.megapodcastplayer.feature.player.SkipGlyphsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SpeedControlsPreview
 import org.junit.Rule
@@ -92,6 +93,16 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
      */
     @Test
     fun speedControls() = capture("speed-controls") { SpeedControlsPreview() }
+
+    /**
+     * Every skip interval the settings screen offers, both ways round.
+     *
+     * The numeral is drawn into the arc rather than baked into a vector, so this is the only check
+     * that it lands inside it — at 60 as well as at 5, and at 200 % text, where a numeral that took
+     * its size from the text scale would burst the glyph holding it.
+     */
+    @Test
+    fun skipGlyphs() = capture("skip-glyphs") { SkipGlyphsPreview() }
 
     companion object {
         @JvmStatic

@@ -31,16 +31,9 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.BookmarkAdded
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.FastRewind
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.Forward30
-import androidx.compose.material.icons.rounded.Forward5
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
-import androidx.compose.material.icons.rounded.Replay30
-import androidx.compose.material.icons.rounded.Replay5
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.runtime.Composable
@@ -55,6 +48,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -63,7 +57,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.layout.onSizeChanged
@@ -74,6 +67,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -989,10 +983,7 @@ private fun TransportRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FilledTonalIconButton(onClick = onSkipBack) {
-            Icon(
-                imageVector = skipBackIcon(uiState.snapshot.skipBackMs),
-                contentDescription = skipContentDescription(uiState.snapshot.skipBackMs, forward = false),
-            )
+            SkipGlyph(skipMs = uiState.snapshot.skipBackMs, forward = false)
         }
 
         Box(contentAlignment = Alignment.Center) {
@@ -1024,10 +1015,7 @@ private fun TransportRow(
         }
 
         FilledTonalIconButton(onClick = onSkipForward) {
-            Icon(
-                imageVector = skipForwardIcon(uiState.snapshot.skipForwardMs),
-                contentDescription = skipContentDescription(uiState.snapshot.skipForwardMs, forward = true),
-            )
+            SkipGlyph(skipMs = uiState.snapshot.skipForwardMs, forward = true)
         }
     }
 }
@@ -1288,31 +1276,51 @@ private fun LinkProblemScreen(link: PhoneLink, onRetry: () -> Unit) {
 }
 
 /**
- * Picks the skip-ahead glyph matching the interval configured on the phone.
+ * A skip button's glyph: the circular arrow, with the number of seconds inside it.
  *
- * Material only ships numbered icons for 5, 10 and 30 seconds. Showing "30" on a button that jumps
- * 45 is a small lie the user notices the first time they press it, so anything else falls back to
- * the unnumbered glyph. Deliberately the same rule as the phone's player, so the two agree.
+ * The watch's own copy of the phone's `SkipGlyph`, for the reason every duplicated thing in this
+ * file is duplicated — `:wear` sees `:core:wearprotocol` and `:core:common` and nothing else, and a
+ * Wear-sized dependency on the phone's design system would be the larger mistake.
  *
- * @param skipMs the configured distance.
+ * Drawn rather than picked, and the reason matters here more than on the phone: Material ships
+ * numbered icons for 5, 10 and 30 seconds only, and the phone offers 15, 45 and 60 as well. Those
+ * used to fall back to two stacked triangles — the universal glyph for *previous track* — on a
+ * screen the size of a watch face, where a misread button is pressed before it is read.
+ *
+ * @param skipMs the distance configured on the phone.
+ * @param forward true for the skip-ahead button, which mirrors the arc.
+ * @param modifier layout modifier.
  */
-private fun skipForwardIcon(skipMs: Long): ImageVector = when (skipMs) {
-    5_000L -> Icons.Rounded.Forward5
-    10_000L -> Icons.Rounded.Forward10
-    30_000L -> Icons.Rounded.Forward30
-    else -> Icons.Rounded.FastForward
-}
+@Composable
+private fun SkipGlyph(skipMs: Long, forward: Boolean, modifier: Modifier = Modifier) {
+    val seconds = (skipMs / MILLIS_PER_SECOND).coerceAtLeast(1L).toInt()
+    val description = skipContentDescription(skipMs, forward)
+    val numeralSize = with(LocalDensity.current) { (SKIP_GLYPH_SIZE * SKIP_NUMERAL_FRACTION).toSp() }
 
-/**
- * Picks the skip-back glyph matching the interval configured on the phone; see [skipForwardIcon].
- *
- * @param skipMs the configured distance.
- */
-private fun skipBackIcon(skipMs: Long): ImageVector = when (skipMs) {
-    5_000L -> Icons.Rounded.Replay5
-    10_000L -> Icons.Rounded.Replay10
-    30_000L -> Icons.Rounded.Replay30
-    else -> Icons.Rounded.FastRewind
+    Box(
+        // One node, one description: the arc and the digits are two halves of a single glyph.
+        modifier = modifier
+            .size(SKIP_GLYPH_SIZE)
+            .clearAndSetSemantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Replay,
+            contentDescription = null,
+            // Mirrored on the x axis, which turns the anticlockwise arc clockwise.
+            modifier = Modifier
+                .size(SKIP_GLYPH_SIZE)
+                .scale(scaleX = if (forward) -1f else 1f, scaleY = 1f),
+        )
+        Text(
+            text = seconds.toString(),
+            fontSize = numeralSize,
+            lineHeight = numeralSize,
+            fontWeight = FontWeight.Bold,
+            // The arc opens at the top, so the digits sit just below the centre.
+            modifier = Modifier.padding(top = SKIP_GLYPH_SIZE * SKIP_NUMERAL_DROP),
+        )
+    }
 }
 
 /**
@@ -1326,7 +1334,7 @@ private fun skipBackIcon(skipMs: Long): ImageVector = when (skipMs) {
  */
 @Composable
 private fun skipContentDescription(skipMs: Long, forward: Boolean): String {
-    val seconds = (skipMs / 1_000L).coerceAtLeast(1L).toInt()
+    val seconds = (skipMs / MILLIS_PER_SECOND).coerceAtLeast(1L).toInt()
     return pluralStringResource(
         id = if (forward) R.plurals.watch_skip_forward else R.plurals.watch_skip_back,
         count = seconds,
@@ -1336,6 +1344,17 @@ private fun skipContentDescription(skipMs: Long, forward: Boolean): String {
 
 /** The queue button beside a downloaded episode: the minimum target worth aiming at on a wrist. */
 private val QUEUE_BUTTON_SIZE = 44.dp
+
+/** The side of a skip glyph, matching what a Wear `IconButton` gave the icon it used to hold. */
+private val SKIP_GLYPH_SIZE = 24.dp
+
+/** The numeral's height as a fraction of the glyph, measured off Material's own `Replay30`. */
+private const val SKIP_NUMERAL_FRACTION = 0.38f
+
+/** How far below centre the numeral sits, as a fraction of the glyph. */
+private const val SKIP_NUMERAL_DROP = 0.08f
+
+private const val MILLIS_PER_SECOND = 1_000L
 
 /** The play button is deliberately larger than its neighbours: it is the one pressed blind. */
 private val PLAY_BUTTON_SIZE = 60.dp
