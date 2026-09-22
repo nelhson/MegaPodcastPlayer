@@ -1,11 +1,13 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -92,21 +94,37 @@ class SpeedSheetTest {
     }
 
     @Test
-    fun `back to normal is not offered at normal speed`() {
-        showSheet(speed = 1f)
-
-        composeRule.onNodeWithText(RESET).assertDoesNotExist()
-    }
-
-    @Test
-    fun `back to normal returns to one`() {
+    fun `the default chip is the way back to normal speed`() {
         showSheet(speed = 2.5f)
 
-        composeRule.onNodeWithText(RESET).performClick()
+        // The chip is marked as the default by a tint and a glyph, neither of which a screen
+        // reader can see, so it also carries the words; and being the only chip with any, they
+        // find it.
+        composeRule.onNodeWithContentDescription(DEFAULT).performClick()
 
         assertEquals(listOf(1f), committed)
         composeRule.readout("1x").assertIsDisplayed()
-        composeRule.onNodeWithText(RESET).assertDoesNotExist()
+    }
+
+    @Test
+    fun `only the default chip is called normal speed`() {
+        showSheet(speed = 1f)
+
+        composeRule.onAllNodesWithContentDescription(DEFAULT).assertCountEquals(1)
+    }
+
+    /**
+     * The description has to name the rate itself.
+     *
+     * A content description on a chip replaces the label rather than joining it, so a bare "Normal
+     * speed" would leave the middle of the scale as the one rate TalkBack never says. Asserting
+     * the `Text` instead would prove nothing: it survives in the semantics tree either way.
+     */
+    @Test
+    fun `the default chip still says which rate it is`() {
+        showSheet(speed = 2.5f)
+
+        composeRule.onNodeWithContentDescription("1x, normal speed").assertIsDisplayed()
     }
 
     /**
@@ -143,7 +161,7 @@ class SpeedSheetTest {
         /** Rates are floats built by arithmetic; comparing them exactly would be luck. */
         const val TOLERANCE = 0.001f
 
-        /** The label of the way back to 1×, which appears only when the rate is not 1×. */
-        const val RESET = "Back to normal speed"
+        /** What the 1× chip says to a screen reader, since its mark says it to everyone else. */
+        const val DEFAULT = "1x, normal speed"
     }
 }

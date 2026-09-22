@@ -199,7 +199,13 @@
     <string name="speed_slider">Playback speed</string>
     <string name="speed_slower">Slower</string>
     <string name="speed_faster">Faster</string>
-    <string name="speed_reset">Back to normal speed</string>
+    <!--
+        Spoken for the 1x chip, which is marked as the default by a tint and a glyph a screen
+        reader cannot see. It restates the rate because a content description replaces the label
+        it sits on rather than adding to it: without "%1$s" here, the one chip whose rate is not
+        spoken would be the one in the middle of the scale.
+    -->
+    <string name="speed_default">%1$s, normal speed</string>
 
     <!--
       Moments: the timestamped bookmarks saved from the player.
