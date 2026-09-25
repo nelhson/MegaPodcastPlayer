@@ -19,8 +19,9 @@
 
     <!--
         Dismissing the bar. The gesture is a pull downwards on the collapsed player; this is its
-        spoken twin, offered as a custom action so a screen reader can do the same thing. It says
-        what happens rather than "close", because playback stops as well as the bar disappearing.
+        spoken twin, offered as a custom action so a screen reader can do the same thing, and the
+        label of the close button in the expanded player's top-left corner. It says what happens
+        rather than "close", because playback stops as well as the bar disappearing.
     -->
     <string name="player_dismiss">Stop playing and hide the player</string>
     <!-- Snackbar after the gesture. The queue it emptied is offered back. -->
