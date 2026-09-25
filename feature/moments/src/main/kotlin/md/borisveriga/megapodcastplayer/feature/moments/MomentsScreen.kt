@@ -1,7 +1,5 @@
 package md.borisveriga.megapodcastplayer.feature.moments
 
-import android.content.Context
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -24,11 +22,9 @@ import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.EditNote
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,6 +37,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -55,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -90,15 +86,14 @@ import md.borisveriga.megapodcastplayer.core.model.MomentShow
 import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
 import md.borisveriga.megapodcastplayer.core.model.MomentsFilter
 import md.borisveriga.megapodcastplayer.core.model.groupedByShow
-import md.borisveriga.megapodcastplayer.core.model.momentShareText
 import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
 
 /**
  * The moments screen, wired to its view model.
  *
- * The document picker and the share sheet are launched from here rather than from [MomentsScreen]:
- * both need an activity result registry or a context, and neither exists under
- * `createComposeRule`, which is what the stateless screen is tested with.
+ * The document picker is launched from here rather than from [MomentsScreen]: it needs an
+ * activity result registry, and none exists under `createComposeRule`, which is what the stateless
+ * screen is tested with.
  *
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
@@ -114,18 +109,14 @@ fun MomentsRoute(
     viewModel: MomentsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(EXPORT_MIME_TYPE),
     ) { uri -> uri?.let(viewModel::exportTo) }
 
-    val shareChooserTitle = stringResource(R.string.moments_share_chooser)
-
     MomentsScreen(
         uiState = uiState,
         onPlay = viewModel::play,
-        onShare = { moment -> context.shareMoment(moment, shareChooserTitle) },
         onEdit = viewModel::edit,
         onDelete = viewModel::delete,
         onExport = { exportLauncher.launch(viewModel.suggestedFileName()) },
@@ -156,7 +147,6 @@ fun MomentsRoute(
  *
  * @param uiState what to render.
  * @param onPlay plays the episode a moment is in, a few seconds before the mark.
- * @param onShare hands one moment to the share sheet.
  * @param onEdit opens a moment's note.
  * @param onDelete removes a moment.
  * @param onExport writes every moment to a document.
@@ -177,7 +167,6 @@ fun MomentsRoute(
 fun MomentsScreen(
     uiState: MomentsUiState,
     onPlay: (MomentWithEpisode) -> Unit,
-    onShare: (MomentWithEpisode) -> Unit,
     onEdit: (MomentWithEpisode) -> Unit,
     onDelete: (MomentWithEpisode) -> Unit,
     onExport: () -> Unit,
@@ -211,6 +200,10 @@ fun MomentsScreen(
             } else {
                 null
             },
+            // Explicit, because Material's default for a snackbar with an action is Indefinite: the
+            // undo would sit there until something else replaced it. Short, as the queue's is — the
+            // row is already gone, and a long snackbar would sit over the next swipe.
+            duration = SnackbarDuration.Short,
         )
         if (result == SnackbarResult.ActionPerformed) onUndoDelete() else onMessageShown()
     }
@@ -272,7 +265,6 @@ fun MomentsScreen(
                         moments = uiState.moments,
                         groups = uiState.groups,
                         onPlay = onPlay,
-                        onShare = onShare,
                         onEdit = onEdit,
                         onDelete = onDelete,
                     )
@@ -474,14 +466,13 @@ private fun GroupByShowChip(isSelected: Boolean, onSelectedChange: (Boolean) -> 
  * The list itself, flat or under show headings.
  *
  * Keyed by row id so that deleting one animates the rest rather than rebuilding the list, and so
- * the open overflow menu belongs to the moment it was opened on even as rows above it disappear.
+ * a half-open swipe belongs to the moment it was opened on even as rows above it disappear.
  * The headings are keyed by feed URL for the same reason.
  *
  * @param listState the scroll position, hoisted so a re-tap on the tab can reset it (NAV-4).
  * @param moments what to draw when the list is flat, newest first.
  * @param groups the same moments under headings; empty unless grouping is on.
  * @param onPlay plays a moment.
- * @param onShare shares one.
  * @param onEdit opens one's note.
  * @param onDelete removes one.
  * @param modifier layout modifier.
@@ -492,7 +483,6 @@ private fun MomentList(
     moments: List<MomentWithEpisode>,
     groups: List<MomentGroup>,
     onPlay: (MomentWithEpisode) -> Unit,
-    onShare: (MomentWithEpisode) -> Unit,
     onEdit: (MomentWithEpisode) -> Unit,
     onDelete: (MomentWithEpisode) -> Unit,
     modifier: Modifier = Modifier,
@@ -503,7 +493,6 @@ private fun MomentList(
                 MomentRow(
                     entry = entry,
                     onPlay = { onPlay(entry) },
-                    onShare = { onShare(entry) },
                     onEdit = { onEdit(entry) },
                     onDelete = { onDelete(entry) },
                 )
@@ -518,7 +507,6 @@ private fun MomentList(
                     MomentRow(
                         entry = entry,
                         onPlay = { onPlay(entry) },
-                        onShare = { onShare(entry) },
                         onEdit = { onEdit(entry) },
                         onDelete = { onDelete(entry) },
                     )
@@ -537,19 +525,17 @@ private fun MomentList(
  * only ever "that spot in that episode". Which is why the episode title moves to the line above
  * rather than disappearing — the row must still say what it is about.
  *
- * **The swipe reveals two buttons and commits nothing.** Every other swipe row in this app has a
- * full-swipe action — queue, download, remove — and this one deliberately does not: the thing on
- * the other side of a committed swipe here would be deleting the only piece of writing in this app
- * that is the user's own, and a gesture that destroys it on a fast pull is exactly the gesture not
- * to have. Both buttons need a tap after the pull.
+ * **A long swipe deletes, as it removes a row from the queue.** A short pull opens the row onto two
+ * buttons, Delete beside the row and Edit note at the edge, each needing a tap. Deleting the one
+ * piece of writing in this app that is the user's own on a fast pull is safe only because the
+ * snackbar offers it back, and [MomentsViewModel.delete] carries the whole row so that the undo has
+ * something to rebuild from.
  *
- * The overflow stays, carrying all three actions including the two the swipe offers. A gesture is
- * not discoverable and the menu is; a user who has never swiped a row here should still be able to
- * find everything, and the duplication costs nothing but two entries.
+ * There is no overflow menu: the swipe is the row's only control besides the tap that plays it, and
+ * a screen reader — which can see no gesture — is given both actions as custom actions instead.
  *
  * @param entry the moment and its episode.
  * @param onPlay plays it.
- * @param onShare shares it.
  * @param onEdit opens its note.
  * @param onDelete removes it.
  * @param modifier layout modifier.
@@ -558,37 +544,32 @@ private fun MomentList(
 private fun MomentRow(
     entry: MomentWithEpisode,
     onPlay: () -> Unit,
-    onShare: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val editAction = SwipeAction(
-        icon = Icons.Rounded.EditNote,
-        label = stringResource(R.string.moments_action_note),
-        // The primary palette: this is the row being used rather than the row leaving, and MOM-2
-        // exists because writing the note took three taps through a menu.
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        onClick = onEdit,
-    )
     val deleteAction = SwipeAction(
         icon = Icons.Rounded.Delete,
         label = stringResource(R.string.moments_action_delete),
+        // The error palette, as the downloads screen's delete: the row is leaving.
         containerColor = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         onClick = onDelete,
     )
+    val editAction = SwipeAction(
+        icon = Icons.Rounded.EditNote,
+        label = stringResource(R.string.moments_action_note),
+        // The primary palette: this is the row being used rather than the row leaving, and it has
+        // to read as the opposite of the delete button beside it.
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        onClick = onEdit,
+    )
+    // Delete first: it is the action the long pull commits, and the one drawn nearest the row.
+    val actions = listOf(deleteAction, editAction)
 
-    SwipeActionsRow(actions = listOf(editAction, deleteAction), modifier = modifier) {
-        MomentRowContent(
-            entry = entry,
-            actions = listOf(editAction, deleteAction),
-            onPlay = onPlay,
-            onShare = onShare,
-            onEdit = onEdit,
-            onDelete = onDelete,
-        )
+    SwipeActionsRow(actions = actions, fullSwipeAction = deleteAction, modifier = modifier) {
+        MomentRowContent(entry = entry, actions = actions, onPlay = onPlay)
     }
 }
 
@@ -599,9 +580,6 @@ private fun MomentRow(
  * @param actions what the swipe offers, so a screen reader — which can see no gesture — is given
  *   the same two things as custom actions on the row's merged node.
  * @param onPlay plays it.
- * @param onShare shares it.
- * @param onEdit opens its note.
- * @param onDelete removes it.
  * @param modifier layout modifier.
  */
 @Composable
@@ -609,9 +587,6 @@ private fun MomentRowContent(
     entry: MomentWithEpisode,
     actions: List<SwipeAction>,
     onPlay: () -> Unit,
-    onShare: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val timecode = formatPosition(entry.moment.positionMs)
@@ -647,9 +622,6 @@ private fun MomentRowContent(
         leadingContent = {
             PodcastArtwork(url = entry.showArtworkUrl, size = ArtworkSize.Row)
         },
-        trailingContent = {
-            MomentMenu(onShare = onShare, onEdit = onEdit, onDelete = onDelete)
-        },
         modifier = modifier
             .clickable(
                 role = Role.Button,
@@ -657,90 +629,10 @@ private fun MomentRowContent(
                 onClick = onPlay,
             )
             // On the row itself, whose `clickable` has already merged its children into one node:
-            // that merged node is where a screen reader looks for what the row can do, and it can
-            // see neither the swipe nor the menu inside it.
+            // that merged node is where a screen reader looks for what the row can do, and it
+            // cannot see the swipe around it.
             .semantics { customActions = swipeActions },
     )
-}
-
-/**
- * The per-row overflow: share, edit the note, delete.
- *
- * A menu rather than three buttons on every row. Sharing is the action this feature exists for but
- * it is still not the *common* one — playing the moment back is — and three trailing controls would
- * leave a two-line row with more chrome than content.
- *
- * @param onShare shares the moment.
- * @param onEdit opens its note.
- * @param onDelete removes it.
- * @param modifier layout modifier.
- */
-@Composable
-private fun MomentMenu(
-    onShare: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier) {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                imageVector = Icons.Rounded.MoreVert,
-                contentDescription = stringResource(R.string.moments_row_actions),
-            )
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.moments_action_share)) },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Rounded.Share, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onShare()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.moments_action_note)) },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Rounded.EditNote, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onEdit()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.moments_action_delete)) },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Rounded.Delete, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onDelete()
-                },
-            )
-        }
-    }
-}
-
-/**
- * Hands one moment to whatever the user shares things with.
- *
- * `createChooser` rather than the bare intent so the system sheet always appears: a default set for
- * "send text" would otherwise fire the same app every time without asking.
- *
- * @param moment the moment to share.
- * @param chooserTitle the sheet's heading.
- */
-private fun Context.shareMoment(moment: MomentWithEpisode, chooserTitle: String) {
-    val send = Intent(Intent.ACTION_SEND).apply {
-        type = SHARE_MIME_TYPE
-        putExtra(Intent.EXTRA_TEXT, momentShareText(moment))
-    }
-    startActivity(Intent.createChooser(send, chooserTitle))
 }
 
 /**
@@ -763,9 +655,6 @@ private fun MomentsMessage.textResId(): Int = when (this) {
  * goes by.
  */
 private const val EXPORT_MIME_TYPE = "text/markdown"
-
-/** A shared moment is plain text: it has to paste into a chat window as readily as into a note. */
-private const val SHARE_MIME_TYPE = "text/plain"
 
 /**
  * A saved moment, for the previews below.
@@ -829,7 +718,6 @@ internal fun MomentsScreenPreview() {
                 isLoading = false,
             ),
             onPlay = {},
-            onShare = {},
             onEdit = {},
             onDelete = {},
             onExport = {},
@@ -865,7 +753,6 @@ internal fun MomentsScreenGroupedPreview() {
                 isLoading = false,
             ),
             onPlay = {},
-            onShare = {},
             onEdit = {},
             onDelete = {},
             onExport = {},
@@ -889,7 +776,6 @@ internal fun MomentsScreenEmptyPreview() {
         MomentsScreen(
             uiState = MomentsUiState(isLoading = false),
             onPlay = {},
-            onShare = {},
             onEdit = {},
             onDelete = {},
             onExport = {},
