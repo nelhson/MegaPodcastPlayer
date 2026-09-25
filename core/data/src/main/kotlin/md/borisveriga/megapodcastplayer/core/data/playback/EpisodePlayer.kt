@@ -262,13 +262,17 @@ class EpisodePlayer @Inject constructor(
      * Stops playback and empties the queue — what dismissing the player bar and the queue screen's
      * *Clear queue* both do.
      *
-     * The durable queue is not cleared here. It does not need to be: clearing the player's timeline
-     * makes the service's own listener mirror the empty queue into storage, which is the same path
-     * every other edit takes. Writing it twice would only risk the two disagreeing about order if
-     * the service were unreachable and the player edit dropped.
+     * The durable queue is emptied here as well as by the service's own listener, which mirrors the
+     * player's timeline into storage. The listener alone is not enough: it only writes when the
+     * timeline *changes*, and the queue screen can offer *Clear queue* while the player holds
+     * nothing — the service was stopped and the process kept, or the controller has not bound yet.
+     * Clearing an empty player changes no timeline, so without this write the screen would announce
+     * a cleared queue and go on listing every episode in it. Both writes are "empty", so they cannot
+     * disagree about order.
      */
     suspend fun dismiss() {
         connection.stop()
+        playbackRepository.reorderQueue(emptyList())
     }
 
     /**

@@ -2,6 +2,7 @@ package md.borisveriga.megapodcastplayer.core.data.playback
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
@@ -298,6 +299,21 @@ class EpisodePlayerTest {
 
         coVerify { connection.removeFromQueue("a") }
         coVerify { playbackRepository.dequeue("a") }
+    }
+
+    /**
+     * The queue screen lists the stored queue, and can offer to clear it while the player holds
+     * nothing. Stopping an empty player changes no timeline, so the service's listener writes
+     * nothing — the stored queue has to be emptied here or it outlives the clear.
+     */
+    @Test
+    fun `dismissing stops the player and empties the stored queue`() = runTest {
+        episodePlayer.dismiss()
+
+        coVerifyOrder {
+            connection.stop()
+            playbackRepository.reorderQueue(emptyList())
+        }
     }
 
     @Test

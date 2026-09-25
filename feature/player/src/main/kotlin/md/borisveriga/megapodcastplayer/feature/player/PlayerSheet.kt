@@ -514,6 +514,11 @@ fun PlayerSheet(
 
                         SheetHeader(
                             onClose = onDismiss,
+                            // Only once fully open. The header is composed from the first pixel of
+                            // travel but stays transparent until the bar has faded, and a close
+                            // button that took taps while invisible would stop playback for a tap
+                            // meant for the bar's artwork corner mid-transition.
+                            closeEnabled = progress == 1f,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .graphicsLayer { alpha = expandedAlpha(progress) }
@@ -632,11 +637,13 @@ private fun TravellingArtwork(
  * so it does not read as "go back" on a surface that has nowhere to go back to.
  *
  * @param onClose stops playback and puts the player away.
+ * @param closeEnabled whether the close button takes taps; false while the sheet is part-open.
  * @param modifier layout modifier, carrying the drag gesture.
  */
 @Composable
 private fun SheetHeader(
     onClose: () -> Unit,
+    closeEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -647,6 +654,7 @@ private fun SheetHeader(
     ) {
         IconButton(
             onClick = onClose,
+            enabled = closeEnabled,
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .padding(start = MegaPodcastPlayerTheme.spacing.xs),
