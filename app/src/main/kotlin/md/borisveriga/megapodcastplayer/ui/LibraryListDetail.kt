@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.feature.library.LibraryRoute
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailRoute
+import md.borisveriga.megapodcastplayer.navigation.ReturnToListOnReTapEffect
 import md.borisveriga.megapodcastplayer.navigation.Route
 import md.borisveriga.megapodcastplayer.navigation.clearDetailPane
 import md.borisveriga.megapodcastplayer.navigation.openPodcastId
@@ -49,8 +50,8 @@ import md.borisveriga.megapodcastplayer.navigation.rememberDetailPaneGraph
  *
  * @param onSearchClick opens the add-a-show screen; on the outer graph, over both panes.
  * @param onOpenSettings opens settings, likewise.
- * @param scrollToTopSignal how many times the Library tab has been re-tapped; handed to the list
- *   pane, which is the one that scrolls (NAV-4).
+ * @param scrollToTopSignal how many times the Library tab has been re-tapped. With a show filling
+ *   the screen it closes the show; otherwise it is handed to the list pane, which scrolls (NAV-4).
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the shell
  *   can expand the sheet.
  * @param modifier layout modifier.
@@ -83,6 +84,14 @@ fun LibraryListDetail(
     // nothing beside it.
     val areBothPanesVisible = isListPaneVisible &&
         paneNavigator.scaffoldValue[ListDetailPaneScaffoldRole.Detail] == PaneAdaptedValue.Expanded
+
+    // A re-tap of Library over a full-screen show goes back to the library, as the back gesture
+    // does — the navigator's own back, so the show is left loaded exactly as that gesture leaves it.
+    ReturnToListOnReTapEffect(
+        signal = scrollToTopSignal,
+        isListPaneVisible = isListPaneVisible,
+        onReturnToList = { paneNavigator.navigateBack() },
+    )
 
     // Built here, outside the panes, rather than by the pane's own `NavHost`. On a folded phone the
     // detail pane is not composed until it is shown, so the row tapped in the list reaches a
