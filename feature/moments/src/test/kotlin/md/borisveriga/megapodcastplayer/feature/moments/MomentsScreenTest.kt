@@ -75,6 +75,8 @@ class MomentsScreenTest {
         onGroupByShowChange: (Boolean) -> Unit = {},
         onOpenSettings: () -> Unit = {},
         scrollToTopSignal: Int = 0,
+        onUndoDelete: () -> Unit = {},
+        onMessageShown: () -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -89,8 +91,8 @@ class MomentsScreenTest {
                     onGroupByShowChange = onGroupByShowChange,
                     onSaveNote = {},
                     onCancelEdit = {},
-                    onUndoDelete = {},
-                    onMessageShown = {},
+                    onUndoDelete = onUndoDelete,
+                    onMessageShown = onMessageShown,
                     onOpenSettings = onOpenSettings,
                     scrollToTopSignal = scrollToTopSignal,
                 )
@@ -171,35 +173,17 @@ class MomentsScreenTest {
     }
 
     /**
-     * A snackbar with an action defaults to staying up forever; this one has to go away by itself.
+     * A snackbar with an action defaults to staying up forever; this one has to go away by itself,
+     * and soon, because it sits over the next row the thumb would swipe.
      */
     @Test
     fun `the deleted snackbar dismisses itself`() {
         var shown = false
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent {
-            MegaPodcastPlayerTheme {
-                MomentsScreen(
-                    uiState = MomentsUiState(
-                        isLoading = false,
-                        message = MomentsMessage.Deleted(entry(1L)),
-                    ),
-                    onPlay = {},
-                    onEdit = {},
-                    onDelete = {},
-                    onExport = {},
-                    onQueryChange = {},
-                    onShowChange = {},
-                    onGroupByShowChange = {},
-                    onSaveNote = {},
-                    onCancelEdit = {},
-                    onUndoDelete = {},
-                    onMessageShown = { shown = true },
-                    onOpenSettings = {},
-                    scrollToTopSignal = 0,
-                )
-            }
-        }
+        setContent(
+            MomentsUiState(isLoading = false, message = MomentsMessage.Deleted(entry(1L))),
+            onMessageShown = { shown = true },
+        )
 
         composeRule.mainClock.advanceTimeBy(SNACKBAR_WAIT_MS)
         composeRule.onNodeWithText("Moment deleted").assertIsDisplayed()
@@ -413,5 +397,8 @@ class MomentsScreenTest {
 /** Long enough for the snackbar to have appeared, and short of any duration dismissing it. */
 private const val SNACKBAR_WAIT_MS = 1_000L
 
-/** Past a Short snackbar's four seconds, and well short of forever. */
-private const val SNACKBAR_GONE_MS = 10_000L
+/**
+ * Past a Short snackbar's four seconds and short of a Long one's ten, so the test fails if the
+ * duration is Long as well as if it is Indefinite.
+ */
+private const val SNACKBAR_GONE_MS = 5_000L

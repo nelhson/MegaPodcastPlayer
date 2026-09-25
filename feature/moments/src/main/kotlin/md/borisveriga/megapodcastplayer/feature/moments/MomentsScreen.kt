@@ -525,10 +525,11 @@ private fun MomentList(
  * only ever "that spot in that episode". Which is why the episode title moves to the line above
  * rather than disappearing — the row must still say what it is about.
  *
- * **A long swipe deletes, as it removes a row from the queue.** A short pull reveals Delete and then
- * Edit note, each needing a tap. Deleting the one piece of writing in this app that is the user's
- * own on a fast pull is safe only because the snackbar offers it back, and [MomentsViewModel.delete]
- * carries the whole row so that the undo has something to rebuild from.
+ * **A long swipe deletes, as it removes a row from the queue.** A short pull opens the row onto two
+ * buttons, Delete beside the row and Edit note at the edge, each needing a tap. Deleting the one
+ * piece of writing in this app that is the user's own on a fast pull is safe only because the
+ * snackbar offers it back, and [MomentsViewModel.delete] carries the whole row so that the undo has
+ * something to rebuild from.
  *
  * There is no overflow menu: the swipe is the row's only control besides the tap that plays it, and
  * a screen reader — which can see no gesture — is given both actions as custom actions instead.
