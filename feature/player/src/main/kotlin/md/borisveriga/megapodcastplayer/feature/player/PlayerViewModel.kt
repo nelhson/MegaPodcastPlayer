@@ -312,7 +312,7 @@ sealed interface QueueMessage {
     data class Removed(val episodeTitle: String) : QueueMessage
 
     /**
-     * The whole "up next" list was emptied at once.
+     * The whole queue was emptied at once, the episode playing included.
      *
      * Carries the count rather than a title: naming one of eleven episodes would be arbitrary, and
      * the number is the fact worth confirming — it is the difference between clearing a queue of
@@ -603,35 +603,39 @@ class PlayerViewModel @Inject constructor(
 
         viewModelScope.launch {
             episodePlayer.removeFromQueue(episodeId)
-            pendingUndo = QueueUndo(episodeIds = listOf(episodeId), orderedIds = orderedIds)
+            pendingUndo = QueueUndo.Removed(episodeIds = listOf(episodeId), orderedIds = orderedIds)
             messageState.value = QueueMessage.Removed(entry.episode.title)
         }
     }
 
     /**
-     * Empties the queue of everything after the episode playing.
+     * Empties the whole queue, the episode playing included, and stops playback.
      *
-     * The episode loaded is left alone: this is *Clear queue*, not *Stop*, and the two have
-     * separate controls because they are separate decisions — the player's own dismiss is the one
-     * that stops playback.
+     * *Clear queue* used to leave the loaded episode behind, which left a queue the user had just
+     * cleared still holding one entry and still playing it. Clearing now means what it says: the
+     * player ends up with nothing loaded, and the screen shows the empty state. It is the same act
+     * as dismissing the player — [EpisodePlayer.dismiss] does both — and differs only in which
+     * snackbar offers it back: this one belongs to the queue screen and counts what left.
      *
      * Offered back rather than confirmed first, which is this app's rule for anything reversible:
      * clearing eleven episodes is undone by one tap on the snackbar, and a dialog in front of the
-     * button would tax the ten times it was meant.
+     * button would tax the ten times it was meant. The undo puts the queue back paused, at the
+     * position it was cleared at.
      */
     fun clearQueue() {
         val state = uiState.value
-        val upNextIds = state.upNext.map { it.episode.id }
-        if (upNextIds.isEmpty()) return
+        if (state.queue.isEmpty()) return
 
-        // The whole queue, including the episode playing: it is the arrangement the removed
-        // entries have to be inserted back into, and their indices are relative to it.
-        val orderedIds = state.queue.map { it.episode.id }
+        val undo = QueueUndo.Cleared(
+            orderedIds = state.queue.map { it.episode.id },
+            startEpisodeId = state.currentEpisodeId,
+            positionMs = state.playback.positionMs,
+        )
 
         viewModelScope.launch {
-            episodePlayer.clearFromQueue(upNextIds)
-            pendingUndo = QueueUndo(episodeIds = upNextIds, orderedIds = orderedIds)
-            messageState.value = QueueMessage.Cleared(upNextIds.size)
+            episodePlayer.dismiss()
+            pendingUndo = undo
+            messageState.value = QueueMessage.Cleared(undo.orderedIds.size)
         }
     }
 
@@ -646,7 +650,18 @@ class PlayerViewModel @Inject constructor(
         pendingUndo = null
         messageState.value = null
 
-        viewModelScope.launch { episodePlayer.restoreAllToQueue(undo.episodeIds, undo.orderedIds) }
+        viewModelScope.launch {
+            when (undo) {
+                is QueueUndo.Removed ->
+                    episodePlayer.restoreAllToQueue(undo.episodeIds, undo.orderedIds)
+
+                is QueueUndo.Cleared -> episodePlayer.restoreDismissed(
+                    orderedIds = undo.orderedIds,
+                    startEpisodeId = undo.startEpisodeId,
+                    positionMs = undo.positionMs,
+                )
+            }
+        }
     }
 
     /** Clears the current [PlayerUiState.message] once its snackbar has been shown. */
@@ -885,17 +900,36 @@ class PlayerViewModel @Inject constructor(
     /**
      * Everything needed to reverse one queue gesture.
      *
-     * A list rather than a single id, because one gesture can now remove eleven episodes: a swipe
-     * puts one in it, *Clear queue* puts the whole of "up next" in it, and both are undone the same
-     * way.
-     *
-     * @property episodeIds the episodes that left the queue, in queue order.
-     * @property orderedIds the queue as it stood before they did, which is where they go back.
+     * Two shapes, because the two gestures take away different things. A swipe takes episodes out
+     * of a queue that carries on, so they are inserted back into it. *Clear queue* takes the queue
+     * itself, and the player with it, so the whole arrangement is set back up.
      */
-    private data class QueueUndo(
-        val episodeIds: List<String>,
-        val orderedIds: List<String>,
-    )
+    private sealed interface QueueUndo {
+
+        /**
+         * Episodes taken out of a queue that is still there.
+         *
+         * @property episodeIds the episodes that left the queue, in queue order.
+         * @property orderedIds the queue as it stood before they did, which is where they go back.
+         */
+        data class Removed(
+            val episodeIds: List<String>,
+            val orderedIds: List<String>,
+        ) : QueueUndo
+
+        /**
+         * The whole queue, emptied and stopped.
+         *
+         * @property orderedIds the queue as it stood, first to play first.
+         * @property startEpisodeId the episode that was loaded, which is where the player resumes.
+         * @property positionMs how far into it playback had reached.
+         */
+        data class Cleared(
+            val orderedIds: List<String>,
+            val startEpisodeId: String?,
+            val positionMs: Long,
+        ) : QueueUndo
+    }
 
     /**
      * Everything needed to reverse a dismissal.

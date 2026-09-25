@@ -44,7 +44,7 @@
         saying nothing at all about the episode the queue is a queue behind.
     -->
     <string name="queue_now_playing">Now playing</string>
-    <!-- Empties everything after the episode playing; that episode keeps playing. -->
+    <!-- Empties the whole queue, the episode playing included, and stops playback. -->
     <string name="queue_clear">Clear queue</string>
     <string name="queue_empty_title">Nothing queued</string>
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>

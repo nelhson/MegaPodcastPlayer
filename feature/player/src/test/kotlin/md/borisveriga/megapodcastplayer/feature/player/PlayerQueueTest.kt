@@ -468,7 +468,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
     }
 
     @Test
-    fun `clearing the queue empties what is next and leaves what is playing`() = runTest {
+    fun `clearing the queue empties all of it, the episode playing included`() = runTest {
         viewModel.uiState.test {
             awaitItem()
             playing("a")
@@ -477,15 +477,20 @@ class PlayerQueueTest : PlayerViewModelFixture() {
 
             viewModel.clearQueue()
 
-            // "b" and "c" only: this is Clear queue, not Stop, and the two are separate decisions.
-            coVerify { episodePlayer.clearFromQueue(listOf("b", "c")) }
-            assertEquals(QueueMessage.Cleared(2), expectMostRecentItem().message)
+            // Stopped and emptied, not just pruned: a queue left holding the episode playing is a
+            // queue the user cleared that is still there.
+            coVerify { episodePlayer.dismiss() }
+            coVerify(exactly = 0) { episodePlayer.removeFromQueue(any()) }
+            val state = expectMostRecentItem()
+            assertEquals(QueueMessage.Cleared(3), state.message)
+            // The queue screen's own snackbar, not the player bar's: one message for one gesture.
+            assertFalse(state.dismissed)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `clearing an already-empty queue does nothing`() = runTest {
+    fun `a queue of only the episode playing can still be cleared`() = runTest {
         viewModel.uiState.test {
             awaitItem()
             playing("a")
@@ -494,28 +499,72 @@ class PlayerQueueTest : PlayerViewModelFixture() {
 
             viewModel.clearQueue()
 
-            coVerify(exactly = 0) { episodePlayer.clearFromQueue(any()) }
+            coVerify { episodePlayer.dismiss() }
+            assertEquals(QueueMessage.Cleared(1), expectMostRecentItem().message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `clearing an already-empty queue does nothing`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+            playbackState.value = PlaybackState(episodeId = null)
+            queue.value = emptyList()
+
+            viewModel.clearQueue()
+
+            coVerify(exactly = 0) { episodePlayer.dismiss() }
             assertEquals(null, viewModel.uiState.value.message)
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `a cleared queue is offered back whole, in the order it was in`() = runTest {
+    fun `a cleared queue is offered back whole, paused where it stopped`() = runTest {
         viewModel.uiState.test {
             awaitItem()
-            playing("a")
+            playbackState.value = PlaybackState(episodeId = "b", positionMs = 90_000L)
+            currentEpisode.value = episode("b")
             queue.value = listOf(playable("a"), playable("b"), playable("c"))
             expectMostRecentItem()
 
             viewModel.clearQueue()
             viewModel.undoQueueChange()
 
-            // The whole arrangement, including the episode playing: it is what the removed entries
-            // are inserted back into, and their positions are relative to it.
+            // The arrangement, the episode that was loaded and the second it was at: the undo of
+            // clearing everything is putting everything back, not only what was waiting.
             coVerify {
-                episodePlayer.restoreAllToQueue(listOf("b", "c"), listOf("a", "b", "c"))
+                episodePlayer.restoreDismissed(
+                    orderedIds = listOf("a", "b", "c"),
+                    startEpisodeId = "b",
+                    positionMs = 90_000L,
+                )
             }
+            coVerify(exactly = 0) { episodePlayer.restoreAllToQueue(any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the clear undo is spent once, and does not survive its snackbar`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+            playing("a")
+            queue.value = listOf(playable("a"))
+            expectMostRecentItem()
+
+            viewModel.clearQueue()
+            viewModel.undoQueueChange()
+            viewModel.undoQueueChange()
+
+            coVerify(exactly = 1) { episodePlayer.restoreDismissed(any(), any(), any()) }
+
+            viewModel.clearQueue()
+            viewModel.onQueueMessageShown()
+            viewModel.undoQueueChange()
+
+            coVerify(exactly = 1) { episodePlayer.restoreDismissed(any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
