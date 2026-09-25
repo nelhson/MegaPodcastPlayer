@@ -149,14 +149,33 @@ class PlayerSheetTest {
     }
 
     /**
-     * A chevron in the top-left corner did what the grabber, a downward drag and the back gesture
-     * already do, from the spot a back arrow lives in — on a surface with nowhere to go back to.
+     * The top-left button closes the player outright rather than collapsing it: collapsing already
+     * has the grabber, a drag and the back gesture, and stopping from the full player used to take
+     * two steps.
      */
     @Test
-    fun `the expanded sheet offers no close button`() {
-        setContent(PlayerSheetValue.Expanded)
+    fun `expanded, the top-left button stops and hides the player`() {
+        var dismissed = false
+        setContent(PlayerSheetValue.Expanded, onDismiss = { dismissed = true })
 
-        composeRule.onNodeWithContentDescription("Close the player").assertDoesNotExist()
+        val close = composeRule.onNodeWithContentDescription("Stop playing and hide the player")
+        val bounds = close.getBoundsInRoot()
+        val root = composeRule.onRoot().getBoundsInRoot()
+        // Top-left: in the leading half, and in the header strip above the artwork.
+        assertTrue(bounds.right < root.right / 2)
+        assertTrue(bounds.bottom < root.bottom / 4)
+
+        close.performClick()
+
+        assertTrue(dismissed)
+    }
+
+    @Test
+    fun `collapsed, the bar draws no close button of its own`() {
+        setContent(PlayerSheetValue.Collapsed)
+
+        // The bar is dismissed by pulling it down; a button there would crowd its transport.
+        composeRule.onNodeWithContentDescription("Stop playing and hide the player").assertDoesNotExist()
     }
 
     /**

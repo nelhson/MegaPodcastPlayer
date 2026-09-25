@@ -226,24 +226,7 @@ class EpisodePlayer @Inject constructor(
     }
 
     /**
-     * Takes a run of episodes out of the queue in one go — what *Clear queue* does.
-     *
-     * Deliberately takes the ids rather than "everything after the current one". The queue screen
-     * is the only caller and it already knows which entries it is showing; asking the player for
-     * that set again would be asking a second source of truth the same question, and the two
-     * disagree for as long as it takes a `MediaController` to bind.
-     *
-     * The episode playing is not in the list the queue screen shows, so it is never cleared: the
-     * button empties what is *waiting*, and stopping what is playing is the player's own dismiss.
-     *
-     * @param episodeIds the entries to remove, in queue order.
-     */
-    suspend fun clearFromQueue(episodeIds: List<String>) {
-        episodeIds.forEach { removeFromQueue(it) }
-    }
-
-    /**
-     * Puts back a run of episodes [clearFromQueue] removed — its undo.
+     * Puts back a run of episodes taken out of the queue — the undo of a swipe.
      *
      * Restored oldest-position-first, because [restoreToQueue] inserts each one at its index in
      * [orderedIds] and an index is only correct once everything before it is already back.
@@ -276,19 +259,25 @@ class EpisodePlayer @Inject constructor(
     }
 
     /**
-     * Stops playback and empties the queue — what dismissing the player bar does.
+     * Stops playback and empties the queue — what dismissing the player bar and the queue screen's
+     * *Clear queue* both do.
      *
-     * The durable queue is not cleared here. It does not need to be: clearing the player's timeline
-     * makes the service's own listener mirror the empty queue into storage, which is the same path
-     * every other edit takes. Writing it twice would only risk the two disagreeing about order if
-     * the service were unreachable and the player edit dropped.
+     * The durable queue is emptied here as well as by the service's own listener, which mirrors the
+     * player's timeline into storage. The listener alone is not enough: it only writes when the
+     * timeline *changes*, and the queue screen can offer *Clear queue* while the player holds
+     * nothing — the service was stopped and the process kept, or the controller has not bound yet.
+     * Clearing an empty player changes no timeline, so without this write the screen would announce
+     * a cleared queue and go on listing every episode in it. Both writes are "empty", so they cannot
+     * disagree about order.
      */
     suspend fun dismiss() {
         connection.stop()
+        playbackRepository.reorderQueue(emptyList())
     }
 
     /**
-     * Puts back a queue that [dismiss] emptied — the undo of dismissing the player.
+     * Puts back a queue that [dismiss] emptied — the undo of dismissing the player or clearing the
+     * queue.
      *
      * Takes the whole arrangement rather than an index for the same reason [restoreToQueue] does:
      * it is the only description of the queue that survives it having been thrown away. Episodes

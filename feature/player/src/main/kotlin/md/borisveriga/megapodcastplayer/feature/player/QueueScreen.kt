@@ -114,7 +114,7 @@ fun QueueRoute(
  * @param onMove applies a completed drag, as positions within [PlayerUiState.upNext]. Called once
  *   on release rather than on every frame of the drag: one gesture is one edit, and a stream of
  *   them would make the player and the database renegotiate the order dozens of times.
- * @param onClear empties the queue of everything after the episode playing.
+ * @param onClear empties the whole queue, the episode playing included, and stops playback.
  * @param onUndo reverses whichever of the two the snackbar is currently offering back.
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
@@ -184,7 +184,9 @@ fun QueueScreen(
                 scrollBehavior = scrollBehavior,
                 actions = {
                     SettingsAction(onClick = onOpenSettings)
-                    if (uiState.upNext.isNotEmpty()) {
+                    // Whenever anything is queued, not just when something waits: clearing takes
+                    // the episode playing too, so a queue of one is still a queue to clear.
+                    if (uiState.queue.isNotEmpty()) {
                         IconButton(onClick = onClear) {
                             Icon(
                                 imageVector = Icons.Rounded.PlaylistRemove,

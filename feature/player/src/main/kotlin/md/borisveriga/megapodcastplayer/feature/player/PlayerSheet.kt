@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -288,7 +292,8 @@ fun PlayerSheetScaffold(
  * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
  * @param onDismiss stops playback and puts the player away; what a downward pull on the collapsed
- *   bar commits to, and what the bar's spoken action does.
+ *   bar commits to, what the bar's spoken action does, and what the expanded sheet's close button
+ *   presses.
  * @param modifier layout modifier; must be given the space the sheet may grow into.
  */
 @Composable
@@ -508,6 +513,12 @@ fun PlayerSheet(
                         )
 
                         SheetHeader(
+                            onClose = onDismiss,
+                            // Only once fully open. The header is composed from the first pixel of
+                            // travel but stays transparent until the bar has faded, and a close
+                            // button that took taps while invisible would stop playback for a tap
+                            // meant for the bar's artwork corner mid-transition.
+                            closeEnabled = progress == 1f,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .graphicsLayer { alpha = expandedAlpha(progress) }
@@ -613,20 +624,26 @@ private fun TravellingArtwork(
 }
 
 /**
- * The expanded player's grab strip: the grabber, and the drag target it advertises.
+ * The expanded player's grab strip: the grabber, the drag target it advertises, and a close button.
  *
  * Carries no title. The show's name is already under the artwork a few dp below, and repeating it
  * here would be the second of two labels a screen reader has to walk past to reach the controls.
  *
- * Carries no collapse button either. A chevron in the top-left corner was a second, smaller way to
- * do what the grabber, a downward drag anywhere on this strip and the back gesture all already do,
- * and it sat where a back arrow sits — which reads as "go back" on a surface that has nowhere to go
- * back to. The whole strip is the drag target, and the grabber is drawn large enough to say so.
+ * The button in the top-left corner is not a collapse chevron — the grabber, a downward drag on
+ * this strip and the back gesture already take the sheet down to the bar. It closes the player
+ * outright: playback stops, the queue empties and the bar goes too, which from the full player
+ * used to take collapsing first and then pulling the bar away. The next episode played brings the
+ * bar back, and the snackbar offers the queue back in the meantime. A cross rather than an arrow,
+ * so it does not read as "go back" on a surface that has nowhere to go back to.
  *
+ * @param onClose stops playback and puts the player away.
+ * @param closeEnabled whether the close button takes taps; false while the sheet is part-open.
  * @param modifier layout modifier, carrying the drag gesture.
  */
 @Composable
 private fun SheetHeader(
+    onClose: () -> Unit,
+    closeEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -635,6 +652,20 @@ private fun SheetHeader(
             .height(expandedHeaderHeight),
         contentAlignment = Alignment.TopCenter,
     ) {
+        IconButton(
+            onClick = onClose,
+            enabled = closeEnabled,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = MegaPodcastPlayerTheme.spacing.xs),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                // Says what happens rather than "close": playback stops as well.
+                contentDescription = stringResource(R.string.player_dismiss),
+            )
+        }
+
         Box(
             // The pill is inset from the very top rather than tucked under it: a grabber pressed
             // against the status bar looks like an artefact of the cutout, not a handle.

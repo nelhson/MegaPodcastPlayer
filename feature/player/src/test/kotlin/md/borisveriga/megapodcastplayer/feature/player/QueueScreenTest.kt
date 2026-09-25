@@ -204,6 +204,31 @@ class QueueScreenTest {
         composeRule.onNodeWithContentDescription("Clear queue").assertIsDisplayed()
     }
 
+    /**
+     * Clearing takes the episode playing as well, so a queue whose only entry is playing still
+     * has something to clear. The button used to hide itself once "up next" was empty.
+     */
+    @Test
+    fun `clear is offered while only the episode playing is queued`() {
+        var cleared = false
+        setContent(
+            uiState = playingFirst.copy(queue = listOf(playable("a"))),
+            onClear = { cleared = true },
+        )
+
+        composeRule.onNodeWithText("Now playing", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Clear queue").performClick()
+
+        assertTrue(cleared)
+    }
+
+    @Test
+    fun `an empty queue offers nothing to clear`() {
+        setContent(uiState = PlayerUiState())
+
+        composeRule.onNodeWithContentDescription("Clear queue").assertDoesNotExist()
+    }
+
     @Test
     fun `tapping a queued episode plays it`() {
         var played: String? = null

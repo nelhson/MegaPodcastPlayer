@@ -19,8 +19,9 @@
 
     <!--
         Dismissing the bar. The gesture is a pull downwards on the collapsed player; this is its
-        spoken twin, offered as a custom action so a screen reader can do the same thing. It says
-        what happens rather than "close", because playback stops as well as the bar disappearing.
+        spoken twin, offered as a custom action so a screen reader can do the same thing, and the
+        label of the close button in the expanded player's top-left corner. It says what happens
+        rather than "close", because playback stops as well as the bar disappearing.
     -->
     <string name="player_dismiss">Stop playing and hide the player</string>
     <!-- Snackbar after the gesture. The queue it emptied is offered back. -->
@@ -44,7 +45,7 @@
         saying nothing at all about the episode the queue is a queue behind.
     -->
     <string name="queue_now_playing">Now playing</string>
-    <!-- Empties everything after the episode playing; that episode keeps playing. -->
+    <!-- Empties the whole queue, the episode playing included, and stops playback. -->
     <string name="queue_clear">Clear queue</string>
     <string name="queue_empty_title">Nothing queued</string>
     <string name="queue_empty_description">Add episodes to the queue and they will line up here, ready to play one after another.</string>
