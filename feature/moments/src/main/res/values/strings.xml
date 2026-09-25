@@ -20,12 +20,8 @@
     <!-- What tapping a row does; %1$s is the timecode playback starts at. -->
     <string name="moments_row_play">Play from %1$s</string>
 
-    <string name="moments_row_actions">More for this moment</string>
-    <string name="moments_action_share">Share</string>
     <string name="moments_action_note">Edit note</string>
     <string name="moments_action_delete">Delete</string>
-
-    <string name="moments_share_chooser">Share this moment</string>
 
     <string name="moments_note_title">Note on this moment</string>
     <string name="moments_note_hint">What was said?</string>

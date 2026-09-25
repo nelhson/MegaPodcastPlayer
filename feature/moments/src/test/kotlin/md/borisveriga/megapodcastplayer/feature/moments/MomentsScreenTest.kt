@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.moments
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -66,7 +67,6 @@ class MomentsScreenTest {
     private fun setContent(
         uiState: MomentsUiState,
         onPlay: (MomentWithEpisode) -> Unit = {},
-        onShare: (MomentWithEpisode) -> Unit = {},
         onEdit: (MomentWithEpisode) -> Unit = {},
         onDelete: (MomentWithEpisode) -> Unit = {},
         onExport: () -> Unit = {},
@@ -81,7 +81,6 @@ class MomentsScreenTest {
                 MomentsScreen(
                     uiState = uiState,
                     onPlay = onPlay,
-                    onShare = onShare,
                     onEdit = onEdit,
                     onDelete = onDelete,
                     onExport = onExport,
@@ -140,31 +139,87 @@ class MomentsScreenTest {
     }
 
     @Test
-    fun `sharing is reached from the row's own menu`() {
-        var shared: MomentWithEpisode? = null
-        setContent(
-            MomentsUiState(isLoading = false, moments = listOf(entry(1L))),
-            onShare = { shared = it },
-        )
+    fun `a row has no share action and no overflow menu`() {
+        setContent(MomentsUiState(isLoading = false, moments = listOf(entry(1L))))
 
-        composeRule.onNodeWithContentDescription("More for this moment").performClick()
-        composeRule.onNodeWithText("Share").performClick()
-
-        assertEquals(1L, shared?.moment?.id)
+        composeRule.onNodeWithContentDescription("More for this moment").assertDoesNotExist()
+        composeRule.onNodeWithText("Episode 1").assert(hasCustomAction("Share").not())
     }
 
     @Test
-    fun `deleting is reached the same way`() {
+    fun `deleting is reached from the row's actions`() {
         var deleted: MomentWithEpisode? = null
         setContent(
             MomentsUiState(isLoading = false, moments = listOf(entry(1L))),
             onDelete = { deleted = it },
         )
 
-        composeRule.onNodeWithContentDescription("More for this moment").performClick()
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithText("Episode 1").performCustomAction("Delete")
 
         assertEquals(1L, deleted?.moment?.id)
+    }
+
+    /** Delete comes first: it is the long pull's action, and the button nearest the row. */
+    @Test
+    fun `delete is offered before editing`() {
+        setContent(MomentsUiState(isLoading = false, moments = listOf(entry(1L))))
+
+        val labels = composeRule.onNodeWithText("Episode 1").fetchSemanticsNode()
+            .config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label }
+
+        assertEquals(listOf("Delete", "Edit note"), labels)
+    }
+
+    /**
+     * A snackbar with an action defaults to staying up forever; this one has to go away by itself.
+     */
+    @Test
+    fun `the deleted snackbar dismisses itself`() {
+        var shown = false
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            MegaPodcastPlayerTheme {
+                MomentsScreen(
+                    uiState = MomentsUiState(
+                        isLoading = false,
+                        message = MomentsMessage.Deleted(entry(1L)),
+                    ),
+                    onPlay = {},
+                    onEdit = {},
+                    onDelete = {},
+                    onExport = {},
+                    onQueryChange = {},
+                    onShowChange = {},
+                    onGroupByShowChange = {},
+                    onSaveNote = {},
+                    onCancelEdit = {},
+                    onUndoDelete = {},
+                    onMessageShown = { shown = true },
+                    onOpenSettings = {},
+                    scrollToTopSignal = 0,
+                )
+            }
+        }
+
+        composeRule.mainClock.advanceTimeBy(SNACKBAR_WAIT_MS)
+        composeRule.onNodeWithText("Moment deleted").assertIsDisplayed()
+        composeRule.onNodeWithText("Undo").assertIsDisplayed()
+
+        composeRule.mainClock.advanceTimeBy(SNACKBAR_GONE_MS)
+
+        assertTrue(shown)
+    }
+
+    /**
+     * Invokes the custom accessibility action with this label on the node.
+     *
+     * @param label the action, as a screen reader would announce it.
+     */
+    private fun SemanticsNodeInteraction.performCustomAction(label: String) {
+        val action = fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions)
+            .orEmpty()
+            .single { it.label == label }
+        composeRule.runOnIdle { action.action() }
     }
 
     @Test
@@ -309,7 +364,7 @@ class MomentsScreenTest {
      * menu; for TalkBack it took the same three, and this is the shorter path for both.
      */
     @Test
-    fun `the row offers editing and deleting without opening the menu`() {
+    fun `the row offers editing and deleting to a screen reader`() {
         setContent(
             MomentsUiState(isLoading = false, moments = listOf(entry(1L)), savedCount = 1),
         )
@@ -354,3 +409,9 @@ class MomentsScreenTest {
  * goes idle — the test times out after a minute without ever asserting anything. What the dialog
  * does with an existing note is covered by `MomentsViewModelTest`, which needs no composition.
  */
+
+/** Long enough for the snackbar to have appeared, and short of any duration dismissing it. */
+private const val SNACKBAR_WAIT_MS = 1_000L
+
+/** Past a Short snackbar's four seconds, and well short of forever. */
+private const val SNACKBAR_GONE_MS = 10_000L
