@@ -54,13 +54,15 @@
     <string name="watch_scrub_hint">Turn the bezel to seek</string>
 
     <!--
-      The volume bar, in each of its modes. It says "tap to adjust" like the scrubber does, because
-      it is the same gesture on the same kind of bar; what it does not say is "tap to confirm",
-      because there is nothing to confirm — every step is already applied by the time the wearer
-      stops turning. The minus and plus buttons are labelled as actions rather than as states, and
-      with the words a person uses about sound rather than about a control.
+      The volume bar, which takes the title's place while it is open. The toggle is named for what
+      pressing it brings up, so the same button reads "Volume" going in and "Show title" coming
+      out. The bar says the bezel is now its own; what it does not say is "tap to confirm", because
+      there is nothing to confirm — every step is already applied by the time the wearer stops
+      turning. The minus and plus buttons are labelled as actions rather than as states, and with
+      the words a person uses about sound rather than about a control.
     -->
-    <string name="watch_volume">Volume. Tap to adjust</string>
+    <string name="watch_volume_show">Volume</string>
+    <string name="watch_volume_hide">Show title</string>
     <string name="watch_volume_active">Adjusting volume. Turn the bezel</string>
     <string name="watch_volume_hint">Turn the bezel for volume</string>
     <string name="watch_volume_down">Quieter</string>
@@ -103,8 +105,8 @@
     <string name="watch_ongoing_status">Playing on your phone</string>
 
     <!--
-        Marking a moment. The button's own label is the confirmation: a watch has no snackbar, and
-        a press that changed nothing on screen is a press the wearer repeats.
+        Marking a moment. The button's own glyph is the confirmation, and these are what TalkBack
+        says for it: a watch has no snackbar, and a press that changed nothing is a press repeated.
     -->
     <string name="watch_moment_mark">Save moment</string>
     <string name="watch_moment_saved">Saved</string>
