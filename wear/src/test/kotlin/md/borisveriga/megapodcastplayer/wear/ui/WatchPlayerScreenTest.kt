@@ -316,6 +316,7 @@ class WatchPlayerScreenTest {
         assertTrue("queue header below the speed row", speedAgain.top < queue.top)
     }
 
+    /** The button is small and in a corner now, so this pins that it still does its one job. */
     @Test
     fun `the moment button marks a moment`() {
         var marked = 0
@@ -338,6 +339,10 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithContentDescription("Save moment").assertDoesNotExist()
     }
 
+    /**
+     * With nothing playing there are no controls, but the queue is still the phone's and still
+     * worth reaching: the sentence explaining the empty transport sits above it.
+     */
     @Test
     fun `an idle phone still lists its queue`() {
         setScreen(
@@ -555,6 +560,7 @@ class WatchPlayerScreenTest {
         composeTestRule.onNodeWithContentDescription(ADJUSTING_VOLUME).assertDoesNotExist()
     }
 
+    /** The toggle is the only way into the bar, now that the bar is not always on screen. */
     @Test
     fun `the volume button opens the bar`() {
         var held = 0

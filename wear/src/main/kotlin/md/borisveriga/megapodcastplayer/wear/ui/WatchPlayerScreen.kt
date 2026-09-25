@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -188,9 +189,9 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onBeginScrub invoked when the user takes hold of the progress bar.
  * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
  * @param onCommitScrub invoked when they settle, which is what actually seeks.
- * @param onBeginVolume invoked when the user takes hold of the volume bar.
- * @param onEndVolume invoked when they let go of it.
- * @param onSetVolume invoked with an absolute level by the row's own minus and plus buttons.
+ * @param onBeginVolume invoked when the volume button opens the bar in the title's place.
+ * @param onEndVolume invoked when the same button puts the title back.
+ * @param onSetVolume invoked with an absolute level by the bar's own minus and plus buttons.
  * @param onAdjustVolumeBy invoked with a signed number of steps as the bezel turns, or as a
  *   finger is dragged along the volume bar.
  */
@@ -226,10 +227,10 @@ fun WatchPlayerScreen(
     val listState = rememberTransformingLazyColumnState()
     val spec = rememberTransformationSpec()
 
-    // Read here rather than where it is used, which is the waveform inside the header. The header
-    // is a list item, so reading it there meant a `Settings.Global` read while composing and a
+    // Read here rather than where it is used, which is the top block and the progress bar. Both
+    // are list items, so reading it there meant a `Settings.Global` read while composing and a
     // ContentObserver registered and unregistered as the effect was applied and disposed — three
-    // trips to the system server, on the main thread, every time the header scrolled out of view
+    // trips to the system server, on the main thread, every time one scrolled out of view
     // and back. It is one reading per screen, and this is where a screen's readings belong.
     val reduceMotion = rememberReduceMotion()
 
@@ -324,7 +325,7 @@ fun WatchPlayerScreen(
  * — to find out where that item had reached. Here the item is simply told.
  *
  * Used in place of the Material `transformation` parameter that [Button] and [ListHeader] accept,
- * because half the things in this column — the transport rows, the waveform header — are not
+ * because half the things in this column — the transport rows, the top block — are not
  * surfaces at all, and a column where only some items taper reads as a bug.
  *
  * It must be the *container* transformation and not the content one. The spec splits the two:
@@ -445,10 +446,12 @@ private fun TransformingLazyColumnScope.phoneDownloads(
  * while [WatchPlayerUiState.isAdjustingVolume] is true, so the view model's own release timer is
  * what brings the title back: a turn-and-forget leaves the screen as it found it.
  *
- * There is no cover art and no animation here on purpose. The art answered "which show is this"
- * badly — third-party imagery behind a title needs a scrim heavy enough that little of the picture
- * survives — and a colour answers it at the same glance for nothing; see [showAccent]. Whether the
- * phone is playing is said by the progress bar's glint, where the eye already goes for "how far".
+ * There is no cover art and no decorative animation here on purpose; what moves — the fade between
+ * title and bar, the moment button's confirmation — each says something. The art answered "which
+ * show is this" badly — third-party imagery behind a title needs a scrim heavy enough that little
+ * of the picture survives — and a colour answers it at the same glance for nothing; see
+ * [showAccent]. Whether the phone is playing is said by the progress bar's glint, where the eye
+ * already goes for "how far".
  *
  * @param uiState what to draw.
  * @param reduceMotion whether the wearer has asked for no animations; read once above the list.
@@ -485,10 +488,53 @@ private fun NowPlayingTop(
         )
     }
     val volumeOpen = uiState.isAdjustingVolume && uiState.canSetVolume
+    val focusRequester = remember { FocusRequester() }
+    val haptics = LocalHapticFeedback.current
+    // Rotary arrives as scroll pixels, not as detents, so the pixels are banked until they add up
+    // to a step. Kept outside composition: a turn moves the volume, and must not also recompose
+    // the block that is reading it.
+    val turned = remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(volumeOpen) {
+        if (!volumeOpen) return@LaunchedEffect
+        // A new hold starts from nothing: what the last one left over was a turn that has ended.
+        turned.floatValue = 0f
+        // Rotary events go to whatever holds focus, so opening the bar claims it.
+        focusRequester.requestFocus()
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // The bezel's volume handler is on this block rather than on the bar, and that is what
+            // gives the bezel back to the list. The bar leaves composition when it closes, and a
+            // focused node that leaves takes the screen's focus with it: nothing would be focused,
+            // and every turn after that would go nowhere. This block stays, keeps the focus, and
+            // passes each turn up to the list while the bar is shut — as the scrubber does.
+            .focusRequester(focusRequester)
+            .focusable()
+            .onRotaryScrollEvent { event ->
+                // Also false through the bar's fade-out, so a turn after closing moves the list and
+                // not the volume the wearer has just put away.
+                if (!volumeOpen) return@onRotaryScrollEvent false
+                val banked = bankVolumeSteps(
+                    bankedPx = turned.floatValue + event.verticalScrollPixels,
+                    pixelsPerStep = ROTARY_PIXELS_PER_VOLUME_STEP,
+                )
+                turned.floatValue = banked.remainderPx
+                if (banked.steps != 0) {
+                    // Same sign as the scrubber, which turns the same bezel on the same screen:
+                    // forward is later there and louder here. Two controls that answered one turn
+                    // in opposite directions would be a coin toss.
+                    onAdjustVolumeBy(banked.steps)
+                    // The slider buzzes for its own buttons; the bezel has to be given the same
+                    // tick by hand, or half the control would be silent to the hand.
+                    if (uiState.volumeWouldMove(banked.steps)) {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    }
+                }
+                true
+            }
             // The shape goes to `background` rather than to a `clip` above it: one node that draws
             // the wash within the shape, instead of a clip node the wash is then drawn through.
             .background(brush = wash, shape = MaterialTheme.shapes.large)
@@ -538,7 +584,9 @@ private fun NowPlayingTop(
             targetState = volumeOpen,
             transitionSpec = {
                 if (reduceMotion) {
-                    EnterTransition.None togetherWith ExitTransition.None
+                    // `using null` as well: the default size transform would still slide the
+                    // transport up and down as the slot changes height.
+                    EnterTransition.None togetherWith ExitTransition.None using null
                 } else {
                     fadeIn() togetherWith fadeOut()
                 }
@@ -591,11 +639,21 @@ private fun MomentIconButton(
 ) {
     val haptics = LocalHapticFeedback.current
     val pop = remember { Animatable(1f) }
+    // Whether the confirmation showing now has already been buzzed for. Starts as `saved`: the
+    // button is in a list item, and scrolling away and back within the confirmation's few seconds
+    // composes it afresh with `saved` already true — the same save shown again, which must not
+    // buzz and pop a second time. Cleared when the confirmation ends, so the next save does.
+    var acknowledged by remember { mutableStateOf(saved) }
     // Keyed on the confirmation rather than fired from the click, because the two are not the same
     // event: a mark that could neither be delivered nor queued sets nothing, and a wrist that
     // buzzed anyway would have said the moment was kept when it was not.
     LaunchedEffect(saved) {
-        if (!saved) return@LaunchedEffect
+        if (!saved) {
+            acknowledged = false
+            return@LaunchedEffect
+        }
+        if (acknowledged) return@LaunchedEffect
+        acknowledged = true
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         if (!reduceMotion) {
             pop.animateTo(MOMENT_POP_SCALE, animationSpec = tween(MOMENT_POP_MS))
@@ -854,10 +912,10 @@ private fun ProgressRow(
  * — nor a drag: its bar is drawn, not held, so the finger's movement along it is added here too,
  * on the scale the bar suggests. See [bankVolumeSteps] for how either distance becomes steps.
  *
- * It is composed only while the volume is open, and opening it is what holds the bezel — so the
- * focus is claimed the moment the panel appears, and the wearer who pressed the volume toggle can
- * turn straight away. There is no tap-to-hold on the bar any more: the toggle is that tap, and the
- * toggle, or a few still seconds, is the way out. The buttons and the drag need neither, which is
+ * It is composed only while the volume is open, and opening it is what holds the bezel — but the
+ * bezel's handler lives on [NowPlayingTop], which stays composed, rather than here; see there for
+ * why. There is no tap-to-hold on the bar any more: the toggle is that tap, and the toggle, or a
+ * few still seconds, is the way out. The buttons and the drag need neither, which is
  * what keeps the bar usable for a wearer who never discovers the bezel.
  *
  * The one thing it does not copy from the scrubber is the pause before the value is sent. A seek
@@ -866,7 +924,7 @@ private fun ProgressRow(
  *
  * @param uiState what to draw, including the level.
  * @param onSetVolume sets an absolute level; what the slider's own buttons report.
- * @param onAdjustVolumeBy moves by whole steps; what the bezel and a drag along the bar report.
+ * @param onAdjustVolumeBy moves by whole steps; what a drag along the bar reports.
  * @param modifier applied to the panel.
  */
 @Composable
@@ -876,14 +934,10 @@ private fun VolumePanel(
     onAdjustVolumeBy: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val focusRequester = remember { FocusRequester() }
     val haptics = LocalHapticFeedback.current
-    // Rotary arrives as scroll pixels, not as detents, so the pixels are banked until they add up
-    // to a step. Kept outside composition: a turn moves the volume, and must not also recompose
-    // the row that is reading it.
-    val turned = remember { mutableFloatStateOf(0f) }
-    // The same bank for a finger, kept apart from the bezel's because the two are worth different
-    // distances per step and a remainder from one means nothing to the other.
+    // A finger's distance is banked until it adds up to a step, apart from the bezel's bank in
+    // [NowPlayingTop]: the two are worth different distances per step, and a remainder from one
+    // means nothing to the other.
     val dragged = remember { mutableFloatStateOf(0f) }
     var rowWidthPx by remember { mutableIntStateOf(0) }
 
@@ -895,44 +949,12 @@ private fun VolumePanel(
     val barWidthPx = (rowWidthPx - buttonsPx).coerceAtLeast(0f)
     val dragPixelsPerStep: Float = if (maxVolume > 0) barWidthPx / maxVolume else 0f
 
-    // Whether a move by [steps] changes anything. At an end stop it does not, and a tick for a
-    // step that was not taken is the hand being told something that did not happen.
-    val level = uiState.volumeLevel
-    val moves = { steps: Int -> (level + steps).coerceIn(0, maxVolume) != level }
-
-    LaunchedEffect(Unit) {
-        // Rotary events go to whatever holds focus, so the panel claims it as it appears. Nothing
-        // gives it back explicitly: the list reclaims it as the panel leaves composition.
-        focusRequester.requestFocus()
-    }
-
     val volumeLabel = stringResource(R.string.watch_volume_active)
 
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(focusRequester)
-                .focusable()
-                .onRotaryScrollEvent { event ->
-                    val banked = bankVolumeSteps(
-                        bankedPx = turned.floatValue + event.verticalScrollPixels,
-                        pixelsPerStep = ROTARY_PIXELS_PER_VOLUME_STEP,
-                    )
-                    turned.floatValue = banked.remainderPx
-                    if (banked.steps != 0) {
-                        // Same sign as the scrubber, which turns the same bezel on the same
-                        // screen: forward is later there and louder here. Two controls that
-                        // answered one turn in opposite directions would be a coin toss.
-                        onAdjustVolumeBy(banked.steps)
-                        // The slider buzzes for its own buttons; the bezel has to be given the
-                        // same tick by hand, or half the control would be silent to the hand.
-                        if (moves(banked.steps)) {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        }
-                    }
-                    true
-                }
                 .onSizeChanged { rowWidthPx = it.width }
                 // The slider draws a bar and does not let a finger move it: it is two buttons and
                 // a picture. A bar that looks draggable and is not reads as broken, so the drag is
@@ -946,7 +968,7 @@ private fun VolumePanel(
                         dragged.floatValue = banked.remainderPx
                         if (banked.steps != 0) {
                             onAdjustVolumeBy(banked.steps)
-                            if (moves(banked.steps)) {
+                            if (uiState.volumeWouldMove(banked.steps)) {
                                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             }
                         }
@@ -1484,7 +1506,7 @@ private val GLINT_WIDTH = 28.dp
 /** One trip of the glint along the fill. Slow enough to read as breathing rather than flickering. */
 private const val GLINT_PERIOD_MS = 1_800
 
-/** The glint's strength at its brightest, over the bar's accent fill. */
+/** The glint's strength at its brightest, over the bar's fill. */
 private const val GLINT_ALPHA = 0.5f
 
 /** How far the moment button swells when a save is confirmed, and how long each half of it takes. */
