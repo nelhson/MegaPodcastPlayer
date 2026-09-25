@@ -17,9 +17,9 @@ import md.borisveriga.megapodcastplayer.core.model.format.positionSeconds
  * that has never had MegaPodcastPlayer installed still leads back to the audio — and so a user
  * starting from an empty library can re-add every show it names.
  *
- * Two shapes, one vocabulary. [momentShareText] is one moment handed to whatever the share sheet
- * offers; [momentsMarkdown] is the whole collection as a document. Both are built here, in a pure
- * module, so they can be tested without a device.
+ * [momentsMarkdown] is the whole collection as a document, and the share texts below give an episode
+ * or a show the same vocabulary. All are built here, in a pure module, so they can be tested without
+ * a device.
  *
  * The literals below are document content rather than interface text, which is why they are not in
  * a `strings.xml`: `:core:model` has no resources, and a Markdown heading that changed with the
@@ -98,30 +98,9 @@ fun episodeLink(audioUrl: String): String? {
 }
 
 /**
- * One moment, as a message.
- *
- * Written to be read by a person in a chat window rather than parsed: the note first, because that
- * is the reason the moment exists, then what it is a moment *of*, then the link. A moment with no
- * note leads with the episode instead, so the message never opens on a blank line.
- *
- * @param moment the moment and its episode.
- * @return the text to share.
- */
-fun momentShareText(moment: MomentWithEpisode): String = buildString {
-    moment.moment.note?.takeIf { it.isNotBlank() }?.let { note ->
-        appendLine(note.trim())
-        appendLine()
-    }
-    appendLine(moment.showTitle + " — " + moment.episodeTitle)
-    appendLine("at " + formatTimecode(moment.moment.positionMs))
-    moment.link?.let { appendLine(it) }
-}.trimEnd()
-
-/**
  * One episode, as a message.
  *
- * The same shape as [momentShareText] with the note left out, because it is the same job: say what
- * this is, then give the reader a way to hear it. The link is [momentLink] at position zero — an
+ * Say what this is, then give the reader a way to hear it. The link is [momentLink] at position zero — an
  * episode shared from the sheet is being recommended from the beginning, not from where the sender
  * happens to have got to.
  *
