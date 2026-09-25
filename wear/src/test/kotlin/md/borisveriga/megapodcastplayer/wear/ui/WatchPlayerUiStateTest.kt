@@ -380,4 +380,18 @@ class WatchPlayerUiStateTest {
         assertTrue(uiState.momentSaved)
         assertTrue(uiState.showsScrubHint)
     }
+
+    /**
+     * A tick is only given for a step that was taken, so at either end of the scale a turn further
+     * that way has to report no movement, and a turn back has to report one.
+     */
+    @Test
+    fun `the volume moves unless it is at the end it would move towards`() {
+        val snapshot = playing.copy(volume = 0, maxVolume = 15)
+
+        assertTrue(WatchPlayerUiState(snapshot = snapshot, volumeLevel = 9).volumeWouldMove(1))
+        assertFalse(WatchPlayerUiState(snapshot = snapshot, volumeLevel = 15).volumeWouldMove(1))
+        assertTrue(WatchPlayerUiState(snapshot = snapshot, volumeLevel = 15).volumeWouldMove(-2))
+        assertFalse(WatchPlayerUiState(snapshot = snapshot, volumeLevel = 0).volumeWouldMove(-1))
+    }
 }

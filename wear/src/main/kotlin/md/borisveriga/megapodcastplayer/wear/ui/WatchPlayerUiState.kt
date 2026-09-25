@@ -84,9 +84,9 @@ internal data class VolumeAdjustment(
  * @property showsScrubHint true while the first scrub on this watch is being explained. Taking hold
  *   of the bar is the one gesture here that leaves no trace on the screen, so the first time it is
  *   done the bar says what the bezel now does.
- * @property showsVolumeHint the same sentence for the volume row, for the same reason. Its minus
- *   and plus buttons are visible and explain themselves; that the bar between them can be taken
- *   hold of and turned is the part nothing on the screen says.
+ * @property showsVolumeHint the same sentence for the volume bar, for the same reason. Its minus
+ *   and plus buttons are visible and explain themselves; that the bezel moves it once the volume
+ *   button has opened it is the part nothing on the screen says.
  */
 data class WatchPlayerUiState(
     val link: PhoneLink = PhoneLink.CHECKING,
@@ -141,6 +141,19 @@ data class WatchPlayerUiState(
      */
     val canSetVolume: Boolean
         get() = showsControls && snapshot.canSetVolume
+
+    /**
+     * Whether moving the volume by [steps] would change it.
+     *
+     * At an end stop it would not, and a haptic tick for a step that was not taken is the hand
+     * being told something that did not happen. Shared by the bezel and the finger, which tick on
+     * the same rule.
+     *
+     * @param steps signed whole steps; positive is louder.
+     * @return false when the level is already at the end it would move towards.
+     */
+    fun volumeWouldMove(steps: Int): Boolean =
+        (volumeLevel + steps).coerceIn(0, snapshot.maxVolume) != volumeLevel
 }
 
 /**

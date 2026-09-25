@@ -8,7 +8,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -142,8 +141,8 @@ class WatchPlayerScreenTest {
     }
 
     /**
-     * The secondary controls sit below the fold on a watch, so this is really a test that the list
-     * scrolls — the failure mode being controls composed but permanently out of reach.
+     * The sitting-down controls sit at the bottom edge of a watch, so this is really a test that the
+     * list scrolls — the failure mode being controls composed but permanently out of reach.
      */
     @Test
     fun theSpeedAndEpisodeControlsAreReachableByScrolling() {
@@ -216,9 +215,8 @@ class WatchPlayerScreenTest {
     }
 
     /**
-     * The header draws a waveform and a colour where cover art used to be, and both are decorative.
-     * The words are what has to survive: a phone that sends no show title must not cost the episode
-     * its own line, and TalkBack must not be handed a bar chart to read out.
+     * The header draws a colour where cover art used to be, and it is decorative. The words are what
+     * has to survive: a phone that sends no show title must not cost the episode its own line.
      */
     @Test
     fun theHeaderShowsTheEpisodeWithNoShowTitleToDecorateItWith() {
@@ -287,29 +285,63 @@ class WatchPlayerScreenTest {
     }
 
     /**
-     * The order the column is read in. The moment button is the last control, and the queue starts
-     * directly under it — not above the transport, and not on a page of its own.
+     * The order the column is read in: the moment button up top with the episode, then the bar, the
+     * transport, and previous, speed and next — and the queue directly under them, not above the
+     * transport and not on a page of its own.
      */
     @Test
-    fun `the queue sits right under the moment button`() {
+    fun `the controls read top to bottom and the queue follows them`() {
         setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
 
-        // Two scrolls, because a lazy column only composes what is near the viewport and the three
-        // items do not all fit a 192 dp screen at once; each pair is compared while both exist.
-        scrollTo("Save moment")
+        val moment = composeTestRule.onNodeWithContentDescription("Save moment").getUnclippedBoundsInRoot()
+        val bar = composeTestRule
+            .onNodeWithContentDescription("Playback position. Tap to adjust")
+            .getUnclippedBoundsInRoot()
+        val pause = composeTestRule.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
+        assertTrue("moment button above the progress bar", moment.bottom <= bar.top)
+        assertTrue("progress bar above the transport", bar.bottom <= pause.top)
+
+        // A lazy column only composes what is near the viewport, so each later pair is compared once
+        // it has been scrolled to, while both of its members exist. By their tops rather than edge to
+        // edge: near the rim the column shrinks its items towards their neighbours, so two rows in
+        // the right order can still overlap by a few dp there.
+        scrollTo("1.5x")
+        val pauseAgain = composeTestRule.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
         val speed = composeTestRule.onNodeWithText("1.5x").getUnclippedBoundsInRoot()
-        val moment = composeTestRule.onNodeWithText("Save moment").getUnclippedBoundsInRoot()
-        assertTrue("speed row above the moment button", speed.bottom <= moment.top)
+        assertTrue("transport above the speed row", pauseAgain.top < speed.top)
 
         scrollTo("Phone queue")
-        val momentAgain = composeTestRule.onNodeWithText("Save moment").getUnclippedBoundsInRoot()
+        val speedAgain = composeTestRule.onNodeWithText("1.5x").getUnclippedBoundsInRoot()
         val queue = composeTestRule.onNodeWithText("Phone queue").getUnclippedBoundsInRoot()
-        assertTrue("queue header below the moment button", momentAgain.bottom <= queue.top)
+        assertTrue("queue header below the speed row", speedAgain.top < queue.top)
+    }
+
+    /** The button is small and in a corner now, so this pins that it still does its one job. */
+    @Test
+    fun `the moment button marks a moment`() {
+        var marked = 0
+        setScreen(
+            uiState = WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing),
+            onMarkMoment = { marked++ },
+        )
+
+        composeTestRule.onNodeWithContentDescription("Save moment").performClick()
+
+        assertEquals(1, marked)
+    }
+
+    /** The glyph is the confirmation, so what TalkBack reads has to change with it. */
+    @Test
+    fun `a saved moment changes the button to say so`() {
+        setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing, momentSaved = true))
+
+        composeTestRule.onNodeWithContentDescription("Saved").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Save moment").assertDoesNotExist()
     }
 
     /**
-     * With nothing playing there are no controls, and the sentence explaining the empty transport
-     * sits above the episodes it is telling the wearer to pick from.
+     * With nothing playing there are no controls, but the queue is still the phone's and still
+     * worth reaching: the sentence explaining the empty transport sits above it.
      */
     @Test
     fun `an idle phone still lists its queue`() {
@@ -346,7 +378,7 @@ class WatchPlayerScreenTest {
      * are about changing what comes next.
      *
      * Walked in two steps, comparing a pair that is on screen together each time, for the reason
-     * `the queue sits right under the moment button` gives: a lazy column composes only what is
+     * `the controls read top to bottom and the queue follows them` gives: a lazy column composes only what is
      * near the viewport, and the two headers are far enough apart on a 192 dp screen that the
      * first is gone by the time the second arrives. Chaining them through the queue's own row —
      * header, then its row, then the next header — says the same thing about the order and says it
@@ -435,16 +467,6 @@ class WatchPlayerScreenTest {
         composeTestRule.onNode(isVerticalList()).performScrollToNode(hasText(text))
     }
 
-    /**
-     * The same for a control that carries no words of its own.
-     *
-     * The volume row is one: a bar and two glyphs, whose only text is what it says to TalkBack.
-     */
-    private fun scrollToControl(description: String) {
-        composeTestRule.onNode(isVerticalList())
-            .performScrollToNode(hasContentDescription(description))
-    }
-
     /** A pager: a scrollable that moves sideways. There must not be one on this screen any more. */
     private fun isHorizontalPager(): SemanticsMatcher = hasScrollToNodeAction() and
         SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
@@ -455,9 +477,9 @@ class WatchPlayerScreenTest {
 
     /**
      * The reduce-motion setting is read once by the screen and handed down, rather than read by the
-     * waveform inside the header — which is a list item, so reading it there registered and
-     * unregistered a `ContentObserver` every time the header scrolled past. This checks the part
-     * of that a test can see: with animations removed the header still draws, words and all.
+     * list items that animate — reading it there registered and unregistered a `ContentObserver`
+     * every time one scrolled past. This checks the part of that a test can see: with animations
+     * removed the header still draws, words and all.
      */
     @Test
     fun `a watch with animations turned off still gets its header`() {
@@ -510,8 +532,20 @@ class WatchPlayerScreenTest {
     /** The same episode, on a phone that reported a volume scale to move along. */
     private val playingWithVolume = playing.copy(volume = 9, maxVolume = 15)
 
+    /** Volume open: the bar in the title's place, holding the bezel. */
+    private val volumeOpen = WatchPlayerUiState(
+        link = PhoneLink.CONNECTED,
+        snapshot = playingWithVolume,
+        volumeLevel = 9,
+        isAdjustingVolume = true,
+    )
+
+    /**
+     * Closed, the top shows the episode and a way to the volume; the bar itself is not drawn, so
+     * it costs the first screen nothing until it is wanted.
+     */
     @Test
-    fun `the volume bar sits with the transport and says how to take hold of it`() {
+    fun `closed, the title is shown and the volume bar is not`() {
         setScreen(
             WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
@@ -520,30 +554,63 @@ class WatchPlayerScreenTest {
             ),
         )
 
-        scrollToControl("Volume. Tap to adjust")
-
-        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription("Quieter").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription("Louder").assertIsDisplayed()
+        composeTestRule.onNodeWithText("The one about batteries").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Volume").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Louder").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription(ADJUSTING_VOLUME).assertDoesNotExist()
     }
 
-    /**
-     * The buttons are the half of this control that needs no mode, and the only half a wearer who
-     * never discovers the bezel will ever use. They report an absolute level, as the slider does.
-     */
+    /** The toggle is the only way into the bar, now that the bar is not always on screen. */
     @Test
-    fun `the quieter and louder buttons move the phone one step`() {
-        val levels = mutableListOf<Int>()
+    fun `the volume button opens the bar`() {
+        var held = 0
         setScreen(
             uiState = WatchPlayerUiState(
                 link = PhoneLink.CONNECTED,
                 snapshot = playingWithVolume,
                 volumeLevel = 9,
             ),
-            onSetVolume = { levels += it },
+            onBeginVolume = { held++ },
         )
 
-        scrollToControl("Louder")
+        composeTestRule.onNodeWithContentDescription("Volume").performClick()
+
+        assertEquals(1, held)
+    }
+
+    /** Open, the bar is where the title was and says the bezel is now its own. */
+    @Test
+    fun `open, the volume bar takes the title's place`() {
+        setScreen(volumeOpen)
+
+        composeTestRule.onNodeWithContentDescription(ADJUSTING_VOLUME).assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Quieter").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Louder").assertIsDisplayed()
+        composeTestRule.onNodeWithText("The one about batteries").assertDoesNotExist()
+        // The show line stays: it is in the button row, not in the slot the bar borrows.
+        composeTestRule.onNodeWithText("Radio Hardware").assertIsDisplayed()
+    }
+
+    /** The button that opened the bar is the way back, so the thumb is already where it needs to be. */
+    @Test
+    fun `the same button brings the title back`() {
+        var released = 0
+        setScreen(uiState = volumeOpen, onEndVolume = { released++ })
+
+        composeTestRule.onNodeWithContentDescription("Show title").performClick()
+
+        assertEquals(1, released)
+    }
+
+    /**
+     * The buttons are the half of this control that needs no bezel, and the only half a wearer who
+     * never discovers it will ever use. They report an absolute level, as the slider does.
+     */
+    @Test
+    fun `the quieter and louder buttons move the phone one step`() {
+        val levels = mutableListOf<Int>()
+        setScreen(uiState = volumeOpen, onSetVolume = { levels += it })
+
         composeTestRule.onNodeWithContentDescription("Louder").performClick()
         composeTestRule.onNodeWithContentDescription("Quieter").performClick()
 
@@ -557,98 +624,27 @@ class WatchPlayerScreenTest {
     @Test
     fun `dragging a finger along the bar moves the volume by steps`() {
         val steps = mutableListOf<Int>()
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playingWithVolume,
-                volumeLevel = 9,
-            ),
-            onAdjustVolumeBy = { steps += it },
-        )
+        setScreen(uiState = volumeOpen, onAdjustVolumeBy = { steps += it })
 
-        scrollToControl("Volume. Tap to adjust")
-        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performTouchInput {
-            swipe(start = centerLeft, end = center)
-        }
+        val bar = composeTestRule.onNodeWithContentDescription(ADJUSTING_VOLUME)
+        bar.performTouchInput { swipe(start = centerLeft, end = center) }
 
         // Half the row is about half the scale. The exact count is the touch slop's business; what
         // matters is that it went the right way and by more than a step.
         assertTrue("expected louder, got $steps", steps.sum() > 1)
 
         steps.clear()
-        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performTouchInput {
-            swipe(start = center, end = centerLeft)
-        }
+        bar.performTouchInput { swipe(start = center, end = centerLeft) }
 
         assertTrue("expected quieter, got $steps", steps.sum() < -1)
     }
 
-    /** A drag is not a tap: it must not also take the bezel away from the list. */
-    @Test
-    fun `dragging the bar does not take hold of the bezel`() {
-        var held = 0
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playingWithVolume,
-                volumeLevel = 9,
-            ),
-            onBeginVolume = { held++ },
-        )
-
-        scrollToControl("Volume. Tap to adjust")
-        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performTouchInput {
-            swipe(start = centerLeft, end = center)
-        }
-
-        assertEquals(0, held)
-    }
-
-    @Test
-    fun `tapping the bar takes hold of the bezel`() {
-        var held = 0
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playingWithVolume,
-                volumeLevel = 9,
-            ),
-            onBeginVolume = { held++ },
-        )
-
-        scrollToControl("Volume. Tap to adjust")
-        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").performClick()
-
-        assertEquals(1, held)
-    }
-
-    @Test
-    fun `a bar being turned says so, and tapping it again lets go`() {
-        var released = 0
-        setScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playingWithVolume,
-                volumeLevel = 9,
-                isAdjustingVolume = true,
-            ),
-            onEndVolume = { released++ },
-        )
-
-        scrollToControl("Adjusting volume. Turn the bezel")
-        composeTestRule
-            .onNodeWithContentDescription("Adjusting volume. Turn the bezel")
-            .performClick()
-
-        assertEquals(1, released)
-    }
-
     /** A control whose bar cannot move is worse than no control: it is one that lies. */
     @Test
-    fun `a phone that will not have its volume set gets no volume bar`() {
+    fun `a phone that will not have its volume set gets no volume button`() {
         setScreen(WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing))
 
-        composeTestRule.onNodeWithContentDescription("Volume. Tap to adjust").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription("Volume").assertDoesNotExist()
         composeTestRule.onNodeWithContentDescription("Louder").assertDoesNotExist()
     }
 
@@ -663,8 +659,6 @@ class WatchPlayerScreenTest {
                 showsVolumeHint = true,
             ),
         )
-
-        scrollTo("Turn the bezel for volume")
 
         composeTestRule.onNodeWithText("Turn the bezel for volume").assertIsDisplayed()
     }
@@ -688,6 +682,7 @@ class WatchPlayerScreenTest {
         uiState: WatchPlayerUiState,
         position: () -> PlaybackPosition = { PlaybackPosition() },
         onTogglePlayPause: () -> Unit = {},
+        onMarkMoment: () -> Unit = {},
         onPlayOnPhone: (String) -> Unit = {},
         onQueueOnPhone: (String) -> Unit = {},
         onRetry: () -> Unit = {},
@@ -708,6 +703,7 @@ class WatchPlayerScreenTest {
                         onSkipToNext = {},
                         onSkipToPrevious = {},
                         onCycleSpeed = {},
+                        onMarkMoment = onMarkMoment,
                         onPlayOnPhone = onPlayOnPhone,
                         onQueueOnPhone = onQueueOnPhone,
                         onRetry = onRetry,
@@ -719,5 +715,10 @@ class WatchPlayerScreenTest {
                 }
             }
         }
+    }
+
+    private companion object {
+        /** What the open volume bar says to TalkBack. */
+        const val ADJUSTING_VOLUME = "Adjusting volume. Turn the bezel"
     }
 }
