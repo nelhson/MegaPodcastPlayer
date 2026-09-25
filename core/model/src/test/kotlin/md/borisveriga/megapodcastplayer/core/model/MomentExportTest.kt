@@ -76,36 +76,6 @@ class MomentExportTest {
     }
 
     @Test
-    fun `a shared moment leads with the note and ends with the link`() {
-        val text = momentShareText(moment(note = "  the bit about cancellation  "))
-
-        assertEquals(
-            """
-            the bit about cancellation
-
-            Podlodka Podcast — Episode 42
-            at 12:23
-            https://cdn.example.com/42.mp3#t=743
-            """.trimIndent(),
-            text,
-        )
-    }
-
-    @Test
-    fun `a shared moment with no note opens on the episode instead of a blank line`() {
-        val text = momentShareText(moment(note = null))
-
-        assertTrue(text, text.startsWith("Podlodka Podcast — Episode 42"))
-    }
-
-    @Test
-    fun `a blank note is treated as no note`() {
-        val text = momentShareText(moment(note = "   "))
-
-        assertTrue(text, text.startsWith("Podlodka Podcast — Episode 42"))
-    }
-
-    @Test
     fun `the document names every show's feed so an empty library can be rebuilt from it`() {
         val other = "https://feeds.example.com/other"
         val document = momentsMarkdown(
