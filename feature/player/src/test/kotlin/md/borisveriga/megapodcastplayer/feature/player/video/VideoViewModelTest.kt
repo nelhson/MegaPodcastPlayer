@@ -9,6 +9,7 @@ import io.mockk.verify
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -116,6 +117,57 @@ class VideoViewModelTest {
         assertTrue(viewModel.uiState.value.refused)
 
         viewModel.onRefusalShown()
+        assertFalse(viewModel.uiState.value.refused)
+    }
+
+    @Test
+    fun `leaving before the rendition is read never shows the picture`() = runTest {
+        // The rendition comes off disk; a Home press inside that wait must not be overtaken by an
+        // enter that lands after the exit, with no screen left to show the picture on.
+        val slowDisk = MutableSharedFlow<VideoQuality>()
+        every { playbackRepository.observeVideoQuality() } returns slowDisk
+        playbackState.value = watching()
+
+        viewModel.enter()
+        viewModel.exit()
+        slowDisk.emit(VideoQuality(1080))
+
+        coVerify(exactly = 0) { connection.enterVideo(any()) }
+        coVerify(exactly = 1) { connection.exitVideo() }
+    }
+
+    @Test
+    fun `a picture that fell back to sound is said so`() = runTest {
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching().copy(videoQuality = VideoQuality(720))
+        viewModel.enter()
+
+        // The service hands the same video back to sound after the picture failed.
+        playbackState.value = watching()
+
+        assertTrue(viewModel.uiState.value.refused)
+    }
+
+    @Test
+    fun `leaving the screen is not mistaken for a fall back`() = runTest {
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching().copy(videoQuality = VideoQuality(720))
+        viewModel.enter()
+
+        viewModel.exit()
+        playbackState.value = watching()
+
+        assertFalse(viewModel.uiState.value.refused)
+    }
+
+    @Test
+    fun `moving on to another video in sound is not a fall back`() = runTest {
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching(videoId = "aaaaaaaaaaa").copy(videoQuality = VideoQuality(720))
+        viewModel.enter()
+
+        playbackState.value = watching(videoId = "bbbbbbbbbbb")
+
         assertFalse(viewModel.uiState.value.refused)
     }
 

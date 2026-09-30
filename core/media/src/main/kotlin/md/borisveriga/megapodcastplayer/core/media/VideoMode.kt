@@ -102,13 +102,30 @@ internal fun Player.enterVideoMode(quality: VideoQuality): VideoModeOutcome {
  * Goes back to sound only, which is where every episode starts and where playback continues once
  * the video screen is gone.
  *
- * @return what was done; an episode already playing as sound reads as [VideoModeOutcome.UNCHANGED].
+ * Every item in the playlist, not only the current one. While the screen is up the queue moves on
+ * — an episode ends, the user presses next — and the item left behind stays in video flavour.
+ * Played again later from the mini player it would stream a picture nobody sees, and a downloaded
+ * episode would fail offline, because its picture was never on disk. Items other than the current
+ * one are replaced in place: the playhead is not on them, so there is no position to keep.
+ *
+ * @return what was done; a playlist already all sound reads as [VideoModeOutcome.UNCHANGED].
  */
 internal fun Player.exitVideoMode(): VideoModeOutcome {
     val current = currentMediaItem ?: return VideoModeOutcome.NOTHING_LOADED
-    if (!current.isVideoFlavour) return VideoModeOutcome.UNCHANGED
-    swapCurrentItem(current.toAudioFlavour())
-    return VideoModeOutcome.SWAPPED
+    val currentIndex = currentMediaItemIndex
+    var changed = false
+    for (index in 0 until mediaItemCount) {
+        val item = getMediaItemAt(index)
+        if (index != currentIndex && item.isVideoFlavour) {
+            replaceMediaItem(index, item.toAudioFlavour())
+            changed = true
+        }
+    }
+    if (current.isVideoFlavour) {
+        swapCurrentItem(current.toAudioFlavour())
+        changed = true
+    }
+    return if (changed) VideoModeOutcome.SWAPPED else VideoModeOutcome.UNCHANGED
 }
 
 /**

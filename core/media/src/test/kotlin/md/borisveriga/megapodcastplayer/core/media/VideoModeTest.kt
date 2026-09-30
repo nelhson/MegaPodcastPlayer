@@ -169,6 +169,41 @@ class VideoModeTest {
         verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
     }
 
+    @Test
+    fun `leaving video turns every item left in video back to sound`() {
+        // The queue moved on while the screen was up: the episode before still shows a picture.
+        val earlier = item("youtube://video-only/aaaaaaaaaaa?h=720", id = "ep-0")
+        val player = playerAt(index = 1, positionMs = 5_000L, current = video720)
+        every { player.mediaItemCount } returns 3
+        every { player.getMediaItemAt(0) } returns earlier
+        every { player.getMediaItemAt(1) } returns video720
+        every { player.getMediaItemAt(2) } returns feed
+        val replaced = slot<MediaItem>()
+        every { player.replaceMediaItem(0, capture(replaced)) } returns Unit
+
+        assertEquals(VideoModeOutcome.SWAPPED, player.exitVideoMode())
+
+        assertEquals(youTubeAudioSentinel("aaaaaaaaaaa"), replaced.captured.localConfiguration?.uri.toString())
+        assertEquals("ep-0", replaced.captured.mediaId)
+        // The current item keeps its swap, for the position; the feed episode is left alone.
+        verify(exactly = 0) { player.replaceMediaItem(1, any()) }
+        verify(exactly = 0) { player.replaceMediaItem(2, any()) }
+        verify(exactly = 1) { player.addMediaItem(2, any<MediaItem>()) }
+    }
+
+    @Test
+    fun `leaving from sound still clears a video item left behind`() {
+        val earlier = item("youtube://video-only/aaaaaaaaaaa?h=720", id = "ep-0")
+        val player = playerAt(index = 1, positionMs = 5_000L, current = audio)
+        every { player.mediaItemCount } returns 2
+        every { player.getMediaItemAt(0) } returns earlier
+        every { player.getMediaItemAt(1) } returns audio
+
+        assertEquals(VideoModeOutcome.SWAPPED, player.exitVideoMode())
+        verify(exactly = 1) { player.replaceMediaItem(0, any()) }
+        verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
+    }
+
     /** A relaxed player standing at [index] and [positionMs], with [current] loaded. */
     private fun playerAt(
         index: Int,

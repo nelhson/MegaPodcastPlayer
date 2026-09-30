@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -102,6 +103,15 @@ class VideoViewModel @Inject constructor(
     private var watching = false
 
     /**
+     * The [enter] still on its way to the service, if any.
+     *
+     * [enter] reads the remembered rendition from disk before it asks, and [exit] runs on another
+     * scope. Leaving within those few milliseconds would otherwise let the exit arrive first and
+     * the enter after it, leaving a picture streaming with no screen; [exit] cancels this instead.
+     */
+    private var pendingEnter: Job? = null
+
+    /**
      * The renditions of whichever video is loaded, re-asked as the video changes.
      *
      * `distinctUntilChanged` before the `flatMapLatest`, or every position tick would ask again.
@@ -124,6 +134,7 @@ class VideoViewModel @Inject constructor(
             }
         }
 
+    /** Everything the video screen renders, kept while the screen is subscribed. */
     val uiState: StateFlow<VideoUiState> = combine(
         connection.playbackState,
         playbackRepository.observePlaybackSettings(),
@@ -157,12 +168,25 @@ class VideoViewModel @Inject constructor(
                 .drop(1)
                 .collect { videoId -> if (watching && videoId != null) showPicture() }
         }
+        // Notice the service handing a failed picture back to sound. The same video dropping from
+        // picture to sound while the screen is up is only ever that: leaving clears `watching`
+        // first, and a change of rendition stays in picture.
+        viewModelScope.launch {
+            var before: Flavour? = null
+            connection.playbackState
+                .map { Flavour(videoId = it.youTubeVideoId, isVideo = it.isVideo) }
+                .distinctUntilChanged()
+                .collect { now ->
+                    if (watching && before.fellBackTo(now)) refusedState.value = true
+                    before = now
+                }
+        }
     }
 
     /** Shows the picture of the episode playing, at the remembered rendition. */
     fun enter() {
         watching = true
-        viewModelScope.launch { showPicture() }
+        pendingEnter = viewModelScope.launch { showPicture() }
     }
 
     /**
@@ -173,6 +197,7 @@ class VideoViewModel @Inject constructor(
      */
     fun exit() {
         watching = false
+        pendingEnter?.cancel()
         applicationScope.launch { connection.exitVideo() }
     }
 
@@ -273,6 +298,8 @@ class VideoViewModel @Inject constructor(
     /** Asks the service for the picture at the remembered rendition, noting a refusal. */
     private suspend fun showPicture() {
         val quality = playbackRepository.observeVideoQuality().first()
+        // The screen may have gone while the rendition was being read; see [pendingEnter].
+        if (!watching) return
         if (!connection.enterVideo(quality)) refusedState.value = true
     }
 
@@ -286,6 +313,23 @@ class VideoViewModel @Inject constructor(
         val available: List<VideoQuality>? = null,
         val failed: Boolean = false,
     )
+
+    /**
+     * Which video is loaded and whether it is showing its picture.
+     *
+     * @property videoId the loaded YouTube video, or null for a feed episode or nothing.
+     * @property isVideo true while it plays as sound and picture.
+     */
+    private data class Flavour(val videoId: String?, val isVideo: Boolean)
+
+    /**
+     * Whether going from this to [now] is the same video dropping from picture to sound.
+     *
+     * @param now the flavour just observed.
+     * @return true for a fall back to sound; false for a first value, another video, or anything else.
+     */
+    private fun Flavour?.fellBackTo(now: Flavour): Boolean =
+        this != null && isVideo && !now.isVideo && videoId != null && videoId == now.videoId
 
     private companion object {
         /** Keeps the state alive across a rotation or a fold, like the player sheet's. */

@@ -633,11 +633,19 @@ private fun FullscreenEffects(landscape: Boolean, keepScreenOn: Boolean) {
         onDispose { view.keepScreenOn = false }
     }
 
+    // The orientation found on arrival, saved so it survives the activity being recreated by the
+    // very rotation this screen allows; read again after one, it would be this screen's own SENSOR.
+    val arrivalOrientation = rememberSaveable {
+        activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
     DisposableEffect(activity) {
-        val previous = activity?.requestedOrientation
-            ?: return@DisposableEffect onDispose {}
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
-        onDispose { activity.requestedOrientation = previous }
+        val host = activity ?: return@DisposableEffect onDispose {}
+        host.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        onDispose {
+            // Only on the way out. Restoring on a rotation would ask the dying activity for the
+            // old orientation for a moment, and with auto-rotate off could turn the screen back.
+            if (!host.isChangingConfigurations) host.requestedOrientation = arrivalOrientation
+        }
     }
 
     DisposableEffect(activity, view, landscape) {
@@ -703,4 +711,6 @@ internal fun VideoScreenPreview() {
 
 /** The sample picture's size: a 720p frame. */
 private const val PREVIEW_WIDTH = 1280
+
+/** The rendition height the previews and goldens show, the default one. */
 private const val PREVIEW_HEIGHT = 720

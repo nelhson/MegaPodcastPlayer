@@ -202,6 +202,10 @@ class PlaybackService : MediaSessionService() {
             ),
         )
 
+        // A picture that fails takes the sound down with it, since the two are one merged source;
+        // this hands the episode back to sound so the listening carries on.
+        player.addListener(VideoFallbackListener(player = player, crashReporter = crashReporter))
+
         // Everything above is installed on the real player, because everything above is about what
         // the *player* did. The wrapper below is about what a button *means*, and it is what the
         // session — and therefore the notification, the lock screen, a car and a headset — sees.
@@ -396,7 +400,9 @@ class PlaybackService : MediaSessionService() {
                 return MediaSession.ConnectionResult.reject()
             }
             val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-            if (controller.packageName == packageName) {
+            // By uid, which the kernel vouches for, rather than the package name the controller
+            // reports about itself.
+            if (controller.uid == Process.myUid()) {
                 builder.setAvailableSessionCommands(
                     MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                         .add(SessionCommand(SESSION_COMMAND_ENTER_VIDEO, Bundle.EMPTY))
