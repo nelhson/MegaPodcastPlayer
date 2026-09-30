@@ -205,9 +205,10 @@ data class VideoActions(
 /**
  * The screen, in whichever of its two shapes the window calls for.
  *
- * Portrait is a page: the picture across the top, the episode's name and the transport under it,
- * the system bars where they always are. Landscape is the picture and nothing else, with the
- * transport laid over it and hidden again a few seconds after the last touch.
+ * Portrait is a page: the episode's name under the top bar, the picture centred in the room
+ * between that and the transport at the bottom, the system bars where they always are. Landscape
+ * is the picture and nothing else, with the transport laid over it and hidden again a few seconds
+ * after the last touch.
  *
  * The surface is a slot rather than drawn here, so a preview — and the golden — can put a plain
  * box where a `SurfaceView` bound to the player would be.
@@ -270,24 +271,33 @@ private fun PortraitVideo(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            VideoFrame(playback = uiState.playback, surface = surface, modifier = Modifier.fillMaxWidth())
-            Column(
+            EpisodeTitles(
+                playback = uiState.playback,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal),
+            )
+            // The picture floats in whatever is left between the names and the transport, rather
+            // than sitting against the top bar: on a tall screen that puts it near the middle,
+            // where the eye already is.
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal),
+                    .padding(vertical = MegaPodcastPlayerTheme.spacing.md),
+                contentAlignment = Alignment.Center,
             ) {
-                EpisodeTitles(
-                    playback = uiState.playback,
-                    modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.md),
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                VideoControls(
-                    uiState = uiState,
-                    actions = actions,
-                    modifier = Modifier.padding(bottom = MegaPodcastPlayerTheme.spacing.lg),
-                )
+                VideoFrame(playback = uiState.playback, surface = surface, modifier = Modifier.fillMaxWidth())
             }
+            VideoControls(
+                uiState = uiState,
+                actions = actions,
+                modifier = Modifier.padding(
+                    start = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                    end = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                    bottom = MegaPodcastPlayerTheme.spacing.lg,
+                ),
+            )
         }
     }
 }
