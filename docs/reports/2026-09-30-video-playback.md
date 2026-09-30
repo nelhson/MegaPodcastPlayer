@@ -112,3 +112,27 @@ one.
 - Seeking in merged video-only MP4 depends on the stream carrying an index; OTF streams are filtered out.
 - An episode downloaded but offline: the picture cannot load, the merged source errors, back
   restores cached audio.
+
+## Addendum: offline video (30 September 2026, later)
+
+The *Offline* decision above is reversed: a YouTube episode's video can now be downloaded at any
+quality the quality picker offers.
+
+- **How.** The picture is downloaded as a second Media3 download of the same episode, content id
+  `<episodeId>#video`, whose URI is the video-only sentinel for the chosen height. That sentinel is
+  exactly what the player mints when it shows that height, so the merged source finds the picture
+  in the download cache the same way the audio half already found the audio. No schema change: the
+  download index is the only record of a video download.
+- **The audio comes along.** The picture plays merged with the audio, so downloading a video also
+  downloads the audio when it is not already on the device.
+- **One quality per episode.** Choosing another height removes the old picture and queues the new
+  one under the same id; Media3 runs the add once the removal has deleted the old bytes.
+- **Removal.** Every existing removal path (the downloads screen, delete-after-playing, removing a
+  show, remove all) removes the video with the audio. The video screen's sheet can delete just the
+  video.
+- **Playback.** Entering video on an episode with a finished video download asks for the downloaded
+  height rather than the remembered one; offline, the quality picker offers the downloaded height.
+- **UI.** A download button beside speed and quality on the video screen opens a sheet with the
+  same quality chips, the download's state, and *Delete downloaded video* / *Cancel download*.
+- **Not done.** The downloads screen does not yet show whether an episode has a video; the export
+  is still audio only.

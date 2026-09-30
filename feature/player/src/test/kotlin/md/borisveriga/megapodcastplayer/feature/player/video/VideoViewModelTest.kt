@@ -15,11 +15,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
@@ -52,6 +55,8 @@ class VideoViewModelTest {
     private val playbackRepository: PlaybackRepository = mockk(relaxed = true)
     private val qualitySource: VideoQualitySource = mockk()
     private val crashReporter: CrashReporter = mockk(relaxed = true)
+    private val downloadRepository: DownloadRepository = mockk(relaxed = true)
+    private val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
 
     /** Unconfined, so a launched command has run by the time the call returns. */
     private val applicationScope = CoroutineScope(UnconfinedTestDispatcher())
@@ -65,6 +70,8 @@ class VideoViewModelTest {
         coEvery { connection.exitVideo() } returns true
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeVideoQuality() } returns preferredQuality
+        every { downloadRepository.observeVideoDownloads() } returns videoDownloads
+        coEvery { downloadRepository.downloadVideo(any(), any()) } returns true
         coEvery { qualitySource.qualitiesOf(any()) } returns
             listOf(VideoQuality(720), VideoQuality(1080))
 
@@ -72,6 +79,7 @@ class VideoViewModelTest {
             connection = connection,
             playbackRepository = playbackRepository,
             qualitySource = qualitySource,
+            downloadRepository = downloadRepository,
             crashReporter = crashReporter,
             applicationScope = applicationScope,
         )
@@ -274,6 +282,107 @@ class VideoViewModelTest {
         playbackState.value = watching().copy(videoQuality = VideoQuality(720))
         assertEquals(VideoQuality(720), viewModel.uiState.value.qualityShown)
     }
+
+    // --- downloads ------------------------------------------------------------
+
+    @Test
+    fun `a downloaded video is shown at its own rendition, not the remembered one`() = runTest {
+        // Asking for any other height would stream what is already on disk, or fail offline.
+        preferredQuality.value = VideoQuality(1080)
+        videoDownloads.value = mapOf("ep-$VIDEO_ID" to downloaded(VideoQuality(480)))
+        playbackState.value = watching()
+
+        viewModel.enter()
+
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480)) }
+    }
+
+    @Test
+    fun `a video still downloading does not decide the rendition`() = runTest {
+        preferredQuality.value = VideoQuality(1080)
+        videoDownloads.value = mapOf(
+            "ep-$VIDEO_ID" to VideoDownload(VideoQuality(480), DownloadState.DOWNLOADING, 10f),
+        )
+        playbackState.value = watching()
+
+        viewModel.enter()
+
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(1080)) }
+    }
+
+    @Test
+    fun `the state carries the loaded episode's video download and no other`() = runTest {
+        val mine = downloaded(VideoQuality(720))
+        videoDownloads.value = mapOf("ep-$VIDEO_ID" to mine, "ep-other" to downloaded(VideoQuality(360)))
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+
+        playbackState.value = watching()
+        assertEquals(mine, viewModel.uiState.value.videoDownload)
+
+        playbackState.value = watching(videoId = "unsavedVid1")
+        assertNull(viewModel.uiState.value.videoDownload)
+    }
+
+    @Test
+    fun `offline, a downloaded video still offers its own rendition`() = runTest {
+        coEvery { qualitySource.qualitiesOf(any()) } throws IOException("offline")
+        videoDownloads.value = mapOf("ep-$VIDEO_ID" to downloaded(VideoQuality(720)))
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+
+        playbackState.value = watching()
+
+        assertFalse(viewModel.uiState.value.qualitiesFailed)
+        assertEquals(listOf(VideoQuality(720)), viewModel.uiState.value.qualities)
+    }
+
+    @Test
+    fun `downloading asks for the loaded episode at the chosen rendition and says so`() = runTest {
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching()
+
+        viewModel.downloadVideo(VideoQuality(1080))
+
+        coVerify(exactly = 1) { downloadRepository.downloadVideo("ep-$VIDEO_ID", VideoQuality(1080)) }
+        assertEquals(
+            VideoDownloadMessage.Queued(VideoQuality(1080)),
+            viewModel.uiState.value.downloadMessage,
+        )
+        viewModel.onDownloadMessageShown()
+        assertNull(viewModel.uiState.value.downloadMessage)
+    }
+
+    @Test
+    fun `a download the repository refuses is said to have failed`() = runTest {
+        coEvery { downloadRepository.downloadVideo(any(), any()) } returns false
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching()
+
+        viewModel.downloadVideo(VideoQuality(720))
+
+        assertEquals(VideoDownloadMessage.Failed, viewModel.uiState.value.downloadMessage)
+    }
+
+    @Test
+    fun `a finished video is deleted and a transfer is cancelled`() = runTest {
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching()
+
+        videoDownloads.value = mapOf("ep-$VIDEO_ID" to downloaded(VideoQuality(720)))
+        viewModel.deleteVideoDownload()
+        assertEquals(VideoDownloadMessage.Deleted, viewModel.uiState.value.downloadMessage)
+
+        videoDownloads.value = mapOf(
+            "ep-$VIDEO_ID" to VideoDownload(VideoQuality(720), DownloadState.QUEUED, 0f),
+        )
+        viewModel.deleteVideoDownload()
+        assertEquals(VideoDownloadMessage.Cancelled, viewModel.uiState.value.downloadMessage)
+
+        coVerify(exactly = 2) { downloadRepository.removeVideoDownload("ep-$VIDEO_ID") }
+    }
+
+    /** A finished video download at [quality]. */
+    private fun downloaded(quality: VideoQuality) =
+        VideoDownload(quality, DownloadState.COMPLETED, percent = 100f)
 
     private companion object {
         const val VIDEO_ID = "niTJ2221aS8"

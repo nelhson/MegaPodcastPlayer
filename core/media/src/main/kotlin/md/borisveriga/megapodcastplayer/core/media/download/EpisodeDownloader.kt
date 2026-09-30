@@ -3,7 +3,9 @@ package md.borisveriga.megapodcastplayer.core.media.download
 import android.content.Context
 import android.os.storage.StorageManager
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.core.net.toUri
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
@@ -24,9 +26,16 @@ import md.borisveriga.megapodcastplayer.core.common.di.Dispatcher
 import md.borisveriga.megapodcastplayer.core.common.di.MegaPodcastPlayerDispatcher
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.media.di.DownloadCache
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoOnlySentinel
 
 /**
  * The app's handle on Media3's download machinery.
+ *
+ * An episode can have two downloads: its sound, under the episode id, which every episode has; and
+ * for a YouTube episode its picture at one rendition, under an id of its own (see
+ * `VideoDownloads.kt`), which is what lets it be watched offline.
  *
  * Wraps [DownloadManager] and [EpisodeDownloadService] so that callers deal in episode ids, suspend
  * functions and a [Flow] of [EpisodeDownloadStatus], rather than in intents, content ids and a
@@ -41,6 +50,7 @@ import md.borisveriga.megapodcastplayer.core.media.di.DownloadCache
  * @property ioDispatcher dispatcher for the index and cache reads, which both hit disk.
  */
 @Singleton
+@OptIn(UnstableApi::class)
 class EpisodeDownloader @Inject constructor(
     @ApplicationContext private val context: Context,
     private val downloadManager: DownloadManager,
@@ -49,12 +59,15 @@ class EpisodeDownloader @Inject constructor(
 ) {
 
     /**
-     * Every download state change, as it happens.
+     * Every change to an episode's audio download, as it happens.
      *
      * A removal is reported as [EpisodeDownloadStatus.notDownloaded] rather than as an event of its
      * own, because that is exactly what a caller mirroring the state into a database wants to
      * write. Collectors get nothing until something changes; use [currentStatuses] for the starting
      * picture.
+     *
+     * Picture downloads are left out: their content id is not an episode id, and the episodes table
+     * this feeds describes the sound. They are reported by [videoDownloads].
      */
     val statusUpdates: Flow<EpisodeDownloadStatus> = callbackFlow {
         val listener = object : DownloadManager.Listener {
@@ -63,13 +76,14 @@ class EpisodeDownloader @Inject constructor(
                 download: Download,
                 finalException: Exception?,
             ) {
-                trySend(download.asEpisodeDownloadStatus())
+                if (!download.isVideoDownload) trySend(download.asEpisodeDownloadStatus())
             }
 
             override fun onDownloadRemoved(
                 downloadManager: DownloadManager,
                 download: Download,
             ) {
+                if (download.isVideoDownload) return
                 trySend(EpisodeDownloadStatus.notDownloaded(download.request.id))
             }
         }
@@ -107,16 +121,130 @@ class EpisodeDownloader @Inject constructor(
     }
 
     /**
-     * Removes a download and its audio.
+     * Every episode's picture download, keyed by episode id, as it stands and then as it changes.
      *
-     * Safe to call for an episode that was never downloaded; Media3 ignores an unknown content id.
+     * Unlike [statusUpdates] this starts with the whole picture, read from the index, because
+     * nothing mirrors it anywhere: the index is the only record of a picture download, so a
+     * collector has to be told what is already there. Updates that land while the index is being
+     * read win over the snapshot, which is older than they are.
+     *
+     * An episode with no picture download is absent rather than present as "not downloaded".
+     */
+    val videoDownloads: Flow<Map<String, VideoDownload>> = callbackFlow {
+        // Touched only on the main thread: the listener is called there, and the producer runs
+        // there too, apart from the index read, which hands its result back before it is applied.
+        val downloads = mutableMapOf<String, VideoDownload>()
+        val changedDuringRead = mutableSetOf<String>()
+        val listener = object : DownloadManager.Listener {
+            override fun onDownloadChanged(
+                downloadManager: DownloadManager,
+                download: Download,
+                finalException: Exception?,
+            ) {
+                val episodeId = episodeIdOfVideoDownloadOrNull(download.request.id) ?: return
+                changedDuringRead += episodeId
+                val video = download.asVideoDownloadOrNull()?.second
+                if (video == null) downloads -= episodeId else downloads[episodeId] = video
+                trySend(downloads.toMap())
+            }
+
+            override fun onDownloadRemoved(
+                downloadManager: DownloadManager,
+                download: Download,
+            ) {
+                val episodeId = episodeIdOfVideoDownloadOrNull(download.request.id) ?: return
+                changedDuringRead += episodeId
+                downloads -= episodeId
+                trySend(downloads.toMap())
+            }
+        }
+        downloadManager.addListener(listener)
+        readIndex().mapNotNull { it.asVideoDownloadOrNull() }.forEach { (episodeId, video) ->
+            if (episodeId !in changedDuringRead) downloads[episodeId] = video
+        }
+        send(downloads.toMap())
+        awaitClose { downloadManager.removeListener(listener) }
+    }
+        // DownloadManager may only be touched from the looper it was created on.
+        .flowOn(Dispatchers.Main.immediate)
+
+    /**
+     * Queues an episode's picture for download, at one rendition.
+     *
+     * The picture only: an offline video also needs the episode's sound, which is its ordinary
+     * download, and asking for that is the caller's business — it knows whether the sound is
+     * already on the device.
+     *
+     * The request's URI is the video-only sentinel for [quality], so the picture is filed under the
+     * very key the player reads when it is asked to show that video at that height — the same trick
+     * that lets a downloaded episode's sound play from disk.
+     *
+     * An episode keeps one rendition. Asking for the height it already has, or is fetching, is a
+     * no-op or a retry, as for sound. Asking for another replaces it: the old picture is removed and
+     * the new one queued under the same content id. Media3 holds an add that arrives while its id
+     * is being removed until the removal is done, and the removal works from the request it started
+     * with, so it deletes the old picture's bytes and not the new one's. Merging the new request
+     * into a finished download instead would leave the old bytes filed under a key nothing reads
+     * any more, taking up storage no screen accounts for.
+     *
+     * @param episodeId the episode.
+     * @param videoId the YouTube video behind it.
+     * @param quality the rendition height to keep.
+     * @param foreground true when a user action started this; see [download].
+     */
+    suspend fun downloadVideo(
+        episodeId: String,
+        videoId: String,
+        quality: VideoQuality,
+        foreground: Boolean = true,
+    ) {
+        val id = videoDownloadId(episodeId)
+        val uri = youTubeVideoOnlySentinel(videoId, quality).toUri()
+        val existing = withContext(ioDispatcher) {
+            suspendRunCatching { downloadManager.downloadIndex.getDownload(id) }.getOrNull()
+        }
+        if (existing != null && existing.request.uri != uri) removeById(id, foreground)
+        val request = DownloadRequest.Builder(id, uri).build()
+        sendToService(id) {
+            DownloadService.sendAddDownload(
+                context,
+                EpisodeDownloadService::class.java,
+                request,
+                foreground,
+            )
+        }
+    }
+
+    /**
+     * Removes an episode's downloads: its sound and, if it has one, its picture.
+     *
+     * Both, because a picture without its sound does not play offline, and because every caller
+     * means "take this episode off the device" — the downloads screen, the delete-after-playing
+     * rule, a show being removed. Safe to call for an episode that was never downloaded; Media3
+     * ignores an unknown content id.
      */
     suspend fun remove(episodeId: String, foreground: Boolean = true) {
-        sendToService(episodeId) {
+        removeById(episodeId, foreground)
+        removeById(videoDownloadId(episodeId), foreground)
+    }
+
+    /**
+     * Removes an episode's picture download and leaves its sound on the device.
+     *
+     * @param episodeId the episode.
+     * @param foreground see [remove].
+     */
+    suspend fun removeVideo(episodeId: String, foreground: Boolean = true) {
+        removeById(videoDownloadId(episodeId), foreground)
+    }
+
+    /** Asks the service to remove the download whose content id is [id]. */
+    private suspend fun removeById(id: String, foreground: Boolean) {
+        sendToService(id) {
             DownloadService.sendRemoveDownload(
                 context,
                 EpisodeDownloadService::class.java,
-                episodeId,
+                id,
                 foreground,
             )
         }
@@ -148,24 +276,29 @@ class EpisodeDownloader @Inject constructor(
     }
 
     /**
-     * Reads the current state of every download Media3 knows about.
+     * Reads the current state of every episode's audio download Media3 knows about.
      *
      * Used to reconcile the database on start-up: a download that finished while the app was dead
      * fired its event to nobody, so the row still claims to be downloading until this puts it
-     * right.
+     * right. Picture downloads are left out, as from [statusUpdates].
      */
-    suspend fun currentStatuses(): List<EpisodeDownloadStatus> = withContext(ioDispatcher) {
+    suspend fun currentStatuses(): List<EpisodeDownloadStatus> =
+        readIndex().filterNot { it.isVideoDownload }.map { it.asEpisodeDownloadStatus() }
+
+    /**
+     * Every download in the index, sound and picture alike.
+     *
+     * An unreadable index is not worth crashing over: it reads as empty, and the UI simply keeps
+     * showing whatever it last knew.
+     */
+    private suspend fun readIndex(): List<Download> = withContext(ioDispatcher) {
         suspendRunCatching {
             downloadManager.downloadIndex.getDownloads().use { cursor ->
                 buildList {
-                    while (cursor.moveToNext()) {
-                        add(cursor.download.asEpisodeDownloadStatus())
-                    }
+                    while (cursor.moveToNext()) add(cursor.download)
                 }
             }
         }.getOrElse { error ->
-            // An unreadable index is not worth crashing over: the UI simply keeps showing whatever
-            // the database last recorded.
             Log.w(TAG, "Could not read the download index", error)
             emptyList()
         }

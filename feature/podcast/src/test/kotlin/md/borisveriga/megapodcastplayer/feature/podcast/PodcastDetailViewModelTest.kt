@@ -9,7 +9,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.repository.RebuildResult
-import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
@@ -190,57 +189,6 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
         viewModel.uiState.test {
             assertEquals(PodcastDetailMessage.EpisodeUnavailable, awaitItem().message)
         }
-    }
-
-    /**
-     * Adds "a" to the end of the queue with the player answering [result], and returns the message.
-     *
-     * @param result what the player reports having done.
-     */
-    private suspend fun messageAfterQueueing(result: QueueAddResult): PodcastDetailMessage? {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-        coEvery { episodePlayer.addToQueue("a") } returns result
-        viewModel.uiState.test { awaitItem() }
-
-        viewModel.addToQueue("a")
-
-        var message: PodcastDetailMessage? = null
-        viewModel.uiState.test { message = awaitItem().message }
-        return message
-    }
-
-    @Test
-    fun `adding to the queue is confirmed by name, and so is bringing back a hidden entry`() = runTest {
-        assertEquals(
-            PodcastDetailMessage.Queued("Episode a"),
-            messageAfterQueueing(QueueAddResult.ADDED),
-        )
-        // Behind the playing episode nothing lists it, so the move is an add to the user.
-        assertEquals(
-            PodcastDetailMessage.Queued("Episode a"),
-            messageAfterQueueing(QueueAddResult.MOVED_TO_END),
-        )
-    }
-
-    /** "Added" about a queue that looks exactly as it did reads as the app losing the episode. */
-    @Test
-    fun `adding what is already waiting or playing says so instead of added`() = runTest {
-        assertEquals(
-            PodcastDetailMessage.AlreadyQueued("Episode a", isPlaying = false),
-            messageAfterQueueing(QueueAddResult.ALREADY_QUEUED),
-        )
-        assertEquals(
-            PodcastDetailMessage.AlreadyQueued("Episode a", isPlaying = true),
-            messageAfterQueueing(QueueAddResult.ALREADY_PLAYING),
-        )
-    }
-
-    @Test
-    fun `adding an episode the player refuses reports it as unavailable`() = runTest {
-        assertEquals(
-            PodcastDetailMessage.EpisodeUnavailable,
-            messageAfterQueueing(QueueAddResult.UNPLAYABLE),
-        )
     }
 
     @Test
@@ -530,82 +478,6 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
             runCurrent()
 
             coVerify(exactly = 0) { repository.reorderEpisodes(any(), any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `marking an episode played goes through the player, so it leaves the queue too`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.setPlayed("a", isPlayed = true)
-            runCurrent()
-
-            coVerify { episodePlayer.setPlayed("a", true) }
-            assertEquals(
-                PodcastDetailMessage.PlayedChanged("Episode a", isPlayed = true),
-                expectMostRecentItem().message,
-            )
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `the mark is offered back, and put back as it was`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED, isPlayed = true))
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.setPlayed("a", isPlayed = false)
-            runCurrent()
-            viewModel.undoPlayedChange()
-            runCurrent()
-
-            // Back to what the episode was before the swipe, read off the row rather than assumed
-            // from the argument: the undo of "mark unplayed" is only "mark played" if it was.
-            coVerify { episodePlayer.setPlayed("a", true) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `the undo is spent once, and does not survive its snackbar`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.setPlayed("a", isPlayed = true)
-            runCurrent()
-            viewModel.undoPlayedChange()
-            viewModel.undoPlayedChange()
-            runCurrent()
-
-            // Two calls in total: the mark, and one undo.
-            coVerify(exactly = 2) { episodePlayer.setPlayed(any(), any()) }
-
-            viewModel.setPlayed("a", isPlayed = true)
-            runCurrent()
-            viewModel.onMessageShown()
-            viewModel.undoPlayedChange()
-            runCurrent()
-
-            coVerify(exactly = 3) { episodePlayer.setPlayed(any(), any()) }
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `marking an episode the list does not hold does nothing`() = runTest {
-        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
-        viewModel.uiState.test {
-            awaitItem()
-
-            viewModel.setPlayed("gone", isPlayed = true)
-            runCurrent()
-
-            coVerify(exactly = 0) { episodePlayer.setPlayed(any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }

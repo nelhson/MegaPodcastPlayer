@@ -54,6 +54,8 @@ import md.borisveriga.megapodcastplayer.navigation.rememberDetailPaneGraph
  *   the screen it closes the show; otherwise it is handed to the list pane, which scrolls (NAV-4).
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the shell
  *   can expand the sheet.
+ * @param onEpisodeWatching invoked once an episode the sheet's *Play video* started is loaded, so
+ *   the shell can open the video screen.
  * @param modifier layout modifier.
  * @param paneNavigator decides how many panes there is room for and which one is in front;
  *   injected for tests.
@@ -65,6 +67,7 @@ fun LibraryListDetail(
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onEpisodePlaying: () -> Unit,
+    onEpisodeWatching: () -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     paneNavigator: ThreePaneScaffoldNavigator<Nothing> =
@@ -125,6 +128,7 @@ fun LibraryListDetail(
                     }
                 },
                 onEpisodePlaying = onEpisodePlaying,
+                onEpisodeWatching = onEpisodeWatching,
                 showBackButton = !isListPaneVisible,
             )
         }

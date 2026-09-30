@@ -46,7 +46,8 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
 
 - **Episode audio URLs are identities, not addresses.** `youtube://video/<id>` is both the stored
   URL and the Media3 cache key; a feed URL is hashed into the podcast id. Changing either spelling
-  orphans existing data.
+  orphans existing data. The never-stored `youtube://video-only/<id>?h=<height>` sentinel is the
+  cache key of a downloaded video, so its spelling is an identity too.
 - **Untrusted feed input reaches the media stack.** New URL or file handling goes through
   `isPlayableMediaUrl` in `:core:model`.
 - **The watch pairing is package name plus signing certificate.** `:app` and `:wear` share both;

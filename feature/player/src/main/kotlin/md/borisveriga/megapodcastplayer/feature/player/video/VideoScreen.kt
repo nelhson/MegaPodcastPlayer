@@ -25,12 +25,16 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -64,6 +68,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
@@ -75,7 +80,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.feature.player.R
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyph
@@ -128,8 +135,16 @@ fun VideoRoute(
         viewModel.onRefusalShown()
     }
 
+    val downloadMessage = uiState.downloadMessage?.let { videoDownloadMessageText(it) }
+    LaunchedEffect(uiState.downloadMessage) {
+        if (downloadMessage == null) return@LaunchedEffect
+        snackbarHostState.showSnackbar(downloadMessage)
+        viewModel.onDownloadMessageShown()
+    }
+
     var speedOpen by rememberSaveable { mutableStateOf(false) }
     var qualityOpen by rememberSaveable { mutableStateOf(false) }
+    var downloadOpen by rememberSaveable { mutableStateOf(false) }
 
     if (speedOpen) {
         SpeedSheet(
@@ -149,6 +164,22 @@ fun VideoRoute(
                 viewModel.setQuality(quality)
             },
             onDismiss = { qualityOpen = false },
+        )
+    }
+    if (downloadOpen) {
+        DownloadVideoSheet(
+            qualities = uiState.qualities,
+            failed = uiState.qualitiesFailed,
+            download = uiState.videoDownload,
+            onDownload = { quality ->
+                downloadOpen = false
+                viewModel.downloadVideo(quality)
+            },
+            onDelete = {
+                downloadOpen = false
+                viewModel.deleteVideoDownload()
+            },
+            onDismiss = { downloadOpen = false },
         )
     }
 
@@ -172,6 +203,7 @@ fun VideoRoute(
             onSkipToPrevious = viewModel::skipToPrevious,
             onOpenSpeed = { speedOpen = true },
             onOpenQuality = { qualityOpen = true },
+            onOpenDownload = { downloadOpen = true },
         ),
         onBack = onBack,
         snackbarHostState = snackbarHostState,
@@ -190,6 +222,7 @@ fun VideoRoute(
  * @property onSkipToPrevious previous-episode handler.
  * @property onOpenSpeed opens the speed sheet.
  * @property onOpenQuality opens the quality sheet.
+ * @property onOpenDownload opens the download sheet.
  */
 data class VideoActions(
     val onPlayPause: () -> Unit = {},
@@ -200,7 +233,27 @@ data class VideoActions(
     val onSkipToPrevious: () -> Unit = {},
     val onOpenSpeed: () -> Unit = {},
     val onOpenQuality: () -> Unit = {},
+    val onOpenDownload: () -> Unit = {},
 )
+
+/**
+ * The snackbar sentence for what a download request did.
+ *
+ * @param message what happened.
+ */
+@Composable
+private fun videoDownloadMessageText(message: VideoDownloadMessage): String = when (message) {
+    is VideoDownloadMessage.Queued -> stringResource(
+        R.string.video_download_message_queued,
+        stringResource(R.string.video_quality_label, message.quality.height),
+    )
+
+    VideoDownloadMessage.Deleted -> stringResource(R.string.video_download_message_deleted)
+
+    VideoDownloadMessage.Cancelled -> stringResource(R.string.video_download_message_cancelled)
+
+    VideoDownloadMessage.Failed -> stringResource(R.string.video_download_message_failed)
+}
 
 /**
  * The screen, in whichever of its two shapes the window calls for.
@@ -567,7 +620,47 @@ private fun VideoControls(
             ) {
                 Text(text = quality)
             }
+
+            DownloadButton(download = uiState.videoDownload, onClick = actions.onOpenDownload)
         }
+    }
+}
+
+/**
+ * The door to the download sheet, drawn as what the phone holds of this video.
+ *
+ * An arrow when nothing is kept, or the last attempt failed; the in-progress glyph while a copy is
+ * on its way; a tick once it is here. The icon is the whole of the visible label, so the spoken one
+ * carries the percentage and the quality the glyph leaves out.
+ *
+ * @param download the episode's downloaded video, if any.
+ * @param onClick opens the sheet.
+ */
+@Composable
+private fun DownloadButton(download: VideoDownload?, onClick: () -> Unit) {
+    val quality = download?.let { stringResource(R.string.video_quality_label, it.quality.height) }
+    val (icon, description) = when {
+        download == null || quality == null ->
+            Icons.Rounded.Download to stringResource(R.string.video_download_button)
+
+        download.isComplete ->
+            Icons.Rounded.DownloadDone to stringResource(R.string.video_download_button_done, quality)
+
+        download.state == DownloadState.FAILED ->
+            Icons.Rounded.Download to stringResource(R.string.video_download_button)
+
+        else -> Icons.Rounded.Downloading to stringResource(
+            R.string.video_download_button_progress,
+            download.percent.roundToInt(),
+        )
+    }
+    // Primary, like the speed and quality buttons beside it: the three are the row's settings,
+    // set apart from the neutral transport above them.
+    IconButton(
+        onClick = onClick,
+        colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+    ) {
+        Icon(imageVector = icon, contentDescription = description)
     }
 }
 

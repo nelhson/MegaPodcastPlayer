@@ -24,11 +24,13 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 // One message per failure kind, fixed, so each groups into one report; see CrashReporter.
@@ -46,6 +48,9 @@ private const val NON_FATAL_QUALITIES = "Video qualities lookup failed"
  * @property refused true when the service would not show the picture — the episode has none, or the
  *   service was unreachable — until the screen has said so; cleared via
  *   [VideoViewModel.onRefusalShown].
+ * @property videoDownload the loaded episode's downloaded video, or null when it has none.
+ * @property downloadMessage what a download request just did, until the screen has said so;
+ *   cleared via [VideoViewModel.onDownloadMessageShown].
  */
 data class VideoUiState(
     val playback: PlaybackState = PlaybackState(),
@@ -54,6 +59,8 @@ data class VideoUiState(
     val qualities: List<VideoQuality>? = null,
     val qualitiesFailed: Boolean = false,
     val refused: Boolean = false,
+    val videoDownload: VideoDownload? = null,
+    val downloadMessage: VideoDownloadMessage? = null,
 ) {
 
     /** Whether the loaded episode has a picture at all; false is the screen's cue to leave. */
@@ -64,6 +71,26 @@ data class VideoUiState(
      * would be. Asked for rather than measured, because it is the user's choice being named.
      */
     val qualityShown: VideoQuality get() = playback.videoQuality ?: preferredQuality
+}
+
+/** What asking to download or delete the loaded episode's video did, for a snackbar to say. */
+sealed interface VideoDownloadMessage {
+
+    /**
+     * The video was queued for download.
+     *
+     * @property quality the rendition asked for.
+     */
+    data class Queued(val quality: VideoQuality) : VideoDownloadMessage
+
+    /** The downloaded video was deleted; the audio stays. */
+    data object Deleted : VideoDownloadMessage
+
+    /** A video download still under way was called off; there was no file yet to delete. */
+    data object Cancelled : VideoDownloadMessage
+
+    /** The episode is no longer stored, so there was nothing to download. */
+    data object Failed : VideoDownloadMessage
 }
 
 /**
@@ -77,6 +104,7 @@ data class VideoUiState(
  * @property connection the handle on the playback service.
  * @property playbackRepository the skip intervals and the remembered rendition.
  * @property qualitySource asks the extractor which renditions a video comes in.
+ * @property downloadRepository keeps a video on the device, and says which one is there.
  * @property crashReporter where a failed lookup goes; the picker shows a sentence, the report
  *   keeps the cause.
  * @property applicationScope where leaving runs. The screen's own scope dies with the screen, and
@@ -88,11 +116,14 @@ class VideoViewModel @Inject constructor(
     private val connection: PlaybackConnection,
     private val playbackRepository: PlaybackRepository,
     private val qualitySource: VideoQualitySource,
+    private val downloadRepository: DownloadRepository,
     private val crashReporter: CrashReporter,
     @ApplicationScope private val applicationScope: CoroutineScope,
 ) : ViewModel() {
 
     private val refusedState = MutableStateFlow(false)
+
+    private val downloadMessageState = MutableStateFlow<VideoDownloadMessage?>(null)
 
     /**
      * Whether the screen is up, between [enter] and [exit].
@@ -134,21 +165,39 @@ class VideoViewModel @Inject constructor(
             }
         }
 
+    /** The loaded episode's downloaded video, followed as the episode and the download change. */
+    private val videoDownload: Flow<VideoDownload?> = combine(
+        connection.playbackState.map { it.episodeId }.distinctUntilChanged(),
+        downloadRepository.observeVideoDownloads(),
+    ) { episodeId, downloads -> episodeId?.let(downloads::get) }
+        .distinctUntilChanged()
+
+    /** What the screen shows about renditions and downloads, gathered to keep [uiState] readable. */
+    private val extras: Flow<Extras> = combine(
+        qualities,
+        refusedState,
+        videoDownload,
+        downloadMessageState,
+    ) { qualities, refused, download, message ->
+        Extras(qualities.offeringDownload(download), refused, download, message)
+    }
+
     /** Everything the video screen renders, kept while the screen is subscribed. */
     val uiState: StateFlow<VideoUiState> = combine(
         connection.playbackState,
         playbackRepository.observePlaybackSettings(),
         playbackRepository.observeVideoQuality(),
-        qualities,
-        refusedState,
-    ) { playback, settings, preferred, qualities, refused ->
+        extras,
+    ) { playback, settings, preferred, extras ->
         VideoUiState(
             playback = playback,
             settings = settings,
             preferredQuality = preferred,
-            qualities = qualities.available,
-            qualitiesFailed = qualities.failed,
-            refused = refused,
+            qualities = extras.qualities.available,
+            qualitiesFailed = extras.qualities.failed,
+            refused = extras.refused,
+            videoDownload = extras.download,
+            downloadMessage = extras.message,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -240,6 +289,50 @@ class VideoViewModel @Inject constructor(
         refusedState.value = false
     }
 
+    /**
+     * Downloads the loaded episode's video at [quality], with its audio if that is not already
+     * on the device; a video kept at another quality is replaced.
+     *
+     * Leaves what is playing alone. The picture on screen keeps streaming at its own quality, and
+     * the download is what the next visit to this screen plays from.
+     *
+     * @param quality the rendition to keep.
+     */
+    fun downloadVideo(quality: VideoQuality) {
+        val episodeId = uiState.value.playback.episodeId ?: return
+        viewModelScope.launch {
+            val requested = downloadRepository.downloadVideo(episodeId, quality)
+            downloadMessageState.value = if (requested) {
+                VideoDownloadMessage.Queued(quality)
+            } else {
+                VideoDownloadMessage.Failed
+            }
+        }
+    }
+
+    /**
+     * Deletes the loaded episode's downloaded video, or calls off one still under way, and keeps
+     * its downloaded audio either way.
+     */
+    fun deleteVideoDownload() {
+        val state = uiState.value
+        val episodeId = state.playback.episodeId ?: return
+        val finished = state.videoDownload?.isComplete == true
+        viewModelScope.launch {
+            downloadRepository.removeVideoDownload(episodeId)
+            downloadMessageState.value = if (finished) {
+                VideoDownloadMessage.Deleted
+            } else {
+                VideoDownloadMessage.Cancelled
+            }
+        }
+    }
+
+    /** Clears [VideoUiState.downloadMessage] once its snackbar has been shown. */
+    fun onDownloadMessageShown() {
+        downloadMessageState.value = null
+    }
+
     /** Starts or pauses playback. */
     fun togglePlayPause() {
         viewModelScope.launch { connection.togglePlayPause() }
@@ -295,9 +388,20 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    /** Asks the service for the picture at the remembered rendition, noting a refusal. */
+    /**
+     * Asks the service for the picture, noting a refusal.
+     *
+     * At the downloaded rendition when the episode has a finished video download, else at the
+     * remembered one. A download is filed under its rendition, so asking for any other would
+     * stream a picture that is already on the device — or, offline, fail to show it at all.
+     */
     private suspend fun showPicture() {
-        val quality = playbackRepository.observeVideoQuality().first()
+        val episodeId = connection.playbackState.value.episodeId
+        val downloaded = episodeId
+            ?.let { downloadRepository.observeVideoDownloads().first()[it] }
+            ?.takeIf { it.isComplete }
+            ?.quality
+        val quality = downloaded ?: playbackRepository.observeVideoQuality().first()
         // The screen may have gone while the rendition was being read; see [pendingEnter].
         if (!watching) return
         if (!connection.enterVideo(quality)) refusedState.value = true
@@ -312,6 +416,38 @@ class VideoViewModel @Inject constructor(
     private data class Qualities(
         val available: List<VideoQuality>? = null,
         val failed: Boolean = false,
+    ) {
+
+        /**
+         * These renditions, with a finished download standing in when the extractor could not be
+         * asked.
+         *
+         * Offline the lookup fails, but a downloaded video still plays, and a picker that says it
+         * knows of no quality while the picture is showing at one would contradict the screen.
+         *
+         * @param download the loaded episode's downloaded video, if any.
+         */
+        fun offeringDownload(download: VideoDownload?): Qualities =
+            if (failed && download?.isComplete == true) {
+                Qualities(available = listOf(download.quality))
+            } else {
+                this
+            }
+    }
+
+    /**
+     * The parts of [VideoUiState] beyond the player and the settings.
+     *
+     * @property qualities what is known of the renditions.
+     * @property refused whether a refusal waits to be shown.
+     * @property download the loaded episode's downloaded video, if any.
+     * @property message a download message waiting to be shown.
+     */
+    private data class Extras(
+        val qualities: Qualities,
+        val refused: Boolean,
+        val download: VideoDownload?,
+        val message: VideoDownloadMessage?,
     )
 
     /**

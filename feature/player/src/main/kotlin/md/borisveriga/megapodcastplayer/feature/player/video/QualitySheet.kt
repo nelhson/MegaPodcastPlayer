@@ -62,7 +62,8 @@ fun QualitySheet(
  * The sheet's contents, without the sheet, so a preview can hold them.
  *
  * @param qualities the renditions on offer; null while still being asked for.
- * @param selected the rendition marked.
+ * @param selected the rendition marked, or null to mark none — the download sheet of a video
+ *   that is not on the phone.
  * @param failed true when the renditions could not be asked for.
  * @param onSelect a rendition was tapped.
  */
@@ -70,7 +71,7 @@ fun QualitySheet(
 @Composable
 internal fun QualityOptions(
     qualities: List<VideoQuality>?,
-    selected: VideoQuality,
+    selected: VideoQuality?,
     failed: Boolean,
     onSelect: (VideoQuality) -> Unit,
 ) {

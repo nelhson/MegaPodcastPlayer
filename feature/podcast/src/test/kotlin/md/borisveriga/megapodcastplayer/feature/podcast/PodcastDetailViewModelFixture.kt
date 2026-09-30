@@ -8,6 +8,7 @@ import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
@@ -19,12 +20,14 @@ import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Before
 import org.junit.Rule
@@ -93,6 +96,9 @@ abstract class PodcastDetailViewModelFixture {
     protected val playbackState = MutableStateFlow(PlaybackState())
     protected lateinit var downloadExporter: DownloadExporter
     protected val exportRun = MutableStateFlow<ExportRun?>(null)
+    protected val videoDownloads = MutableStateFlow(emptyMap<String, VideoDownload>())
+    protected lateinit var videoQualitySource: VideoQualitySource
+    protected lateinit var crashReporter: CrashReporter
 
     @Before
     fun setUp() {
@@ -121,6 +127,10 @@ abstract class PodcastDetailViewModelFixture {
         every { repository.observeEpisodes(any()) } returns episodes
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.download(any()) } returns true
+        // Combined into the state like the player's, and frozen just the same if left unstubbed.
+        every { downloadRepository.observeVideoDownloads() } returns videoDownloads
+        videoQualitySource = mockk()
+        crashReporter = mockk(relaxed = true)
         downloadExporter = mockk(relaxed = true)
         every { downloadExporter.observe(podcast.id) } returns exportRun
 
@@ -133,6 +143,8 @@ abstract class PodcastDetailViewModelFixture {
             playbackRepository = playbackRepository,
             connection = connection,
             downloadExporter = downloadExporter,
+            videoQualitySource = videoQualitySource,
+            crashReporter = crashReporter,
             savedStateHandle = SavedStateHandle(
                 mapOf(PodcastDetailViewModel.PODCAST_ID_ARG to podcast.id),
             ),

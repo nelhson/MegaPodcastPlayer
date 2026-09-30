@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.res.Resources
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +46,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -115,10 +113,11 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
-import md.borisveriga.megapodcastplayer.core.model.episodeShareText
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
 import md.borisveriga.megapodcastplayer.core.model.orderedBy
 import md.borisveriga.megapodcastplayer.core.model.showShareText
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
  * Podcast detail screen: the show's header and its episode list.
@@ -126,6 +125,8 @@ import md.borisveriga.megapodcastplayer.core.model.showShareText
  * @param onBack invoked when the user navigates back, and automatically once the show is removed.
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the caller
  *   can open the full player.
+ * @param onEpisodeWatching invoked once an episode the sheet's *Play video* started is loaded, so
+ *   the caller can open the video screen.
  * @param modifier layout modifier.
  * @param showBackButton false when the screen is rendered as the detail pane of a two-pane layout,
  *   where the list is still on screen and a back arrow would be misleading.
@@ -135,6 +136,7 @@ import md.borisveriga.megapodcastplayer.core.model.showShareText
 fun PodcastDetailRoute(
     onBack: () -> Unit,
     onEpisodePlaying: () -> Unit,
+    onEpisodeWatching: () -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
     viewModel: PodcastDetailViewModel = hiltViewModel(),
@@ -164,12 +166,13 @@ fun PodcastDetailRoute(
         onEpisodePlayFrom = { episodeId, positionMs ->
             viewModel.playFrom(episodeId, positionMs, onEpisodePlaying)
         },
-        onEpisodeAddToQueue = viewModel::addToQueue,
+        onEpisodeWatch = { episodeId -> viewModel.watchEpisode(episodeId, onEpisodeWatching) },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onEpisodePlayNext = viewModel::playNext,
-        onEpisodeSetPlayed = viewModel::setPlayed,
-        onUndoPlayedChange = viewModel::undoPlayedChange,
+        onVideoQualitiesRequest = viewModel::loadVideoQualities,
+        onVideoDownload = viewModel::downloadVideo,
+        onVideoDownloadRemove = viewModel::removeVideoDownload,
         onEpisodeMove = viewModel::moveEpisode,
         onFilterChange = viewModel::setFilter,
         onSortChange = viewModel::setSort,
@@ -196,10 +199,11 @@ fun PodcastDetailRoute(
  *   it — which is the half of "what shall I listen to" that a tap on the row cannot express.
  * @param onEpisodePlay plays an episode, or pauses the one already playing.
  * @param onEpisodePlayFrom plays an episode from a position — what a chapter tap does.
- * @param onEpisodeAddToQueue puts an episode at the end of the queue.
+ * @param onEpisodeWatch plays a YouTube episode and opens it as video.
  * @param onEpisodeSheetDismiss closes the episode sheet.
- * @param onEpisodeSetPlayed marks an episode played, or puts it back to unplayed.
- * @param onUndoPlayedChange reverses the last mark, from the snackbar that offered it.
+ * @param onVideoQualitiesRequest asks which renditions an episode's video comes in.
+ * @param onVideoDownload downloads an episode's video at a rendition.
+ * @param onVideoDownloadRemove deletes an episode's downloaded video, or cancels it.
  * @param onEpisodeMove applies a completed reorder on a hand-ordered show. Takes the ids currently
  *   on screen alongside the two positions, because a filter means those are a subset and the
  *   positions alone would name the wrong episodes.
@@ -227,12 +231,13 @@ fun PodcastDetailScreen(
     onEpisodeClick: (String) -> Unit,
     onEpisodePlay: (String) -> Unit,
     onEpisodePlayFrom: (String, Long) -> Unit,
-    onEpisodeAddToQueue: (String) -> Unit,
+    onEpisodeWatch: (String) -> Unit,
     onEpisodeSheetDismiss: () -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
     onEpisodePlayNext: (String) -> Unit,
-    onEpisodeSetPlayed: (String, Boolean) -> Unit,
-    onUndoPlayedChange: () -> Unit,
+    onVideoQualitiesRequest: (String) -> Unit,
+    onVideoDownload: (String, VideoQuality) -> Unit,
+    onVideoDownloadRemove: (String) -> Unit,
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onFilterChange: (EpisodeFilter) -> Unit,
     onSortChange: (EpisodeSort) -> Unit,
@@ -261,11 +266,8 @@ fun PodcastDetailScreen(
     val moveDown = stringResource(R.string.podcast_move_down)
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
-    val shareTitle = stringResource(R.string.episode_share_title)
     val shareShowTitle = stringResource(R.string.podcast_share_show_title)
     val feedClipLabel = stringResource(R.string.podcast_feed_clip_label)
-
-    val undoLabel = stringResource(R.string.podcast_undo)
 
     // The export asks two things in turn: what the folder is called, then where it goes. The name
     // is held here, saveably, across the system picker, which can recreate the activity.
@@ -289,14 +291,8 @@ fun PodcastDetailScreen(
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        // Only the mark is offered back. The rest report something that already happened and
-        // cannot be taken back — a refresh, a download — and a dead Undo beside them would teach
-        // the user to stop reading the action.
-        val result = snackbarHostState.showSnackbar(
-            message = message.toText(resources),
-            actionLabel = undoLabel.takeIf { message is PodcastDetailMessage.PlayedChanged },
-        )
-        if (result == SnackbarResult.ActionPerformed) onUndoPlayedChange() else onMessageShown()
+        snackbarHostState.showSnackbar(message = message.toText(resources))
+        onMessageShown()
     }
 
     uiState.openEpisode?.let { episode ->
@@ -307,6 +303,16 @@ fun PodcastDetailScreen(
             chapters = uiState.chapters,
             isChaptersLoading = uiState.isChaptersLoading,
             now = now,
+            // Only a YouTube episode has a picture; any other gets no video actions at all.
+            video = if (youTubeVideoIdOrNull(episode.audioUrl) != null) {
+                EpisodeVideo(
+                    download = uiState.openVideoDownload,
+                    qualities = uiState.videoQualities,
+                    qualitiesFailed = uiState.videoQualitiesFailed,
+                )
+            } else {
+                null
+            },
             onPlay = {
                 onEpisodeSheetDismiss()
                 onEpisodePlay(episode.id)
@@ -315,25 +321,17 @@ fun PodcastDetailScreen(
                 onEpisodeSheetDismiss()
                 onEpisodePlayFrom(episode.id, chapter.startMs)
             },
-            onPlayNext = {
-                onEpisodeSheetDismiss()
-                onEpisodePlayNext(episode.id)
-            },
-            onAddToQueue = {
-                onEpisodeSheetDismiss()
-                onEpisodeAddToQueue(episode.id)
-            },
-            // The two that leave the sheet open, because both are things you do *while* reading an
-            // episode and both change what the sheet itself shows.
+            // The downloads leave the sheet open: both change what the sheet itself shows.
             onToggleDownload = { onEpisodeDownloadToggle(episode.id) },
-            onSetPlayed = { played -> onEpisodeSetPlayed(episode.id, played) },
-            onShare = {
-                context.shareEpisode(
-                    episode = episode,
-                    showTitle = uiState.podcast?.title.orEmpty(),
-                    chooserTitle = shareTitle,
-                )
-            },
+            videoActions = EpisodeVideoActions(
+                onPlay = {
+                    onEpisodeSheetDismiss()
+                    onEpisodeWatch(episode.id)
+                },
+                onRequestQualities = { onVideoQualitiesRequest(episode.id) },
+                onDownload = { quality -> onVideoDownload(episode.id, quality) },
+                onRemoveDownload = { onVideoDownloadRemove(episode.id) },
+            ),
             onDismiss = onEpisodeSheetDismiss,
         )
     }
@@ -1304,31 +1302,6 @@ internal fun Context.shareShow(podcast: Podcast, chooserTitle: String) {
     startActivity(Intent.createChooser(send, chooserTitle))
 }
 
-/**
- * Hands an episode to the system share sheet.
- *
- * The same path a moment takes, and deliberately so: this app does not have a share screen, it has
- * the platform's, and the only decision it makes is what text goes into it.
- *
- * @param episode the episode being shared.
- * @param showTitle the show it belongs to, which the message leads with.
- * @param chooserTitle what the chooser is headed.
- */
-internal fun Context.shareEpisode(episode: Episode, showTitle: String, chooserTitle: String) {
-    val send = Intent(Intent.ACTION_SEND).apply {
-        type = SHARE_MIME_TYPE
-        putExtra(
-            Intent.EXTRA_TEXT,
-            episodeShareText(
-                showTitle = showTitle,
-                episodeTitle = episode.title,
-                audioUrl = episode.audioUrl,
-            ),
-        )
-    }
-    startActivity(Intent.createChooser(send, chooserTitle))
-}
-
 /** Plain text: a share is a sentence and a link, not a file. */
 private const val SHARE_MIME_TYPE = "text/plain"
 
@@ -1383,16 +1356,17 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
     is PodcastDetailMessage.QueuedNext ->
         resources.getString(R.string.podcast_message_queued_next, title)
 
-    is PodcastDetailMessage.Queued ->
-        resources.getString(R.string.podcast_message_queued, title)
+    is PodcastDetailMessage.VideoDownloadQueued -> resources.getString(
+        R.string.podcast_message_video_download_queued,
+        title,
+        resources.getString(R.string.episode_video_quality, quality.height),
+    )
 
-    is PodcastDetailMessage.AlreadyQueued -> resources.getString(wording, title)
-
-    is PodcastDetailMessage.PlayedChanged -> resources.getString(
-        if (isPlayed) {
-            R.string.podcast_message_marked_played
+    is PodcastDetailMessage.VideoDownloadRemoved -> resources.getString(
+        if (wasComplete) {
+            R.string.podcast_message_video_deleted
         } else {
-            R.string.podcast_message_marked_unplayed
+            R.string.podcast_message_video_cancelled
         },
         title,
     )
@@ -1487,11 +1461,12 @@ internal fun PodcastDetailScreenPreview() {
             onEpisodeDownloadToggle = {},
             onEpisodePlay = {},
             onEpisodePlayFrom = { _, _ -> },
-            onEpisodeAddToQueue = {},
+            onEpisodeWatch = {},
             onEpisodeSheetDismiss = {},
             onEpisodePlayNext = {},
-            onEpisodeSetPlayed = { _, _ -> },
-            onUndoPlayedChange = {},
+            onVideoQualitiesRequest = {},
+            onVideoDownload = { _, _ -> },
+            onVideoDownloadRemove = {},
             onEpisodeMove = { _, _, _ -> },
             onFilterChange = {},
             onSortChange = {},
@@ -1522,11 +1497,12 @@ internal fun PodcastDetailScreenInPanePreview() {
             onEpisodeDownloadToggle = {},
             onEpisodePlay = {},
             onEpisodePlayFrom = { _, _ -> },
-            onEpisodeAddToQueue = {},
+            onEpisodeWatch = {},
             onEpisodeSheetDismiss = {},
             onEpisodePlayNext = {},
-            onEpisodeSetPlayed = { _, _ -> },
-            onUndoPlayedChange = {},
+            onVideoQualitiesRequest = {},
+            onVideoDownload = { _, _ -> },
+            onVideoDownloadRemove = {},
             onEpisodeMove = { _, _, _ -> },
             onFilterChange = {},
             onSortChange = {},
@@ -1540,11 +1516,3 @@ internal fun PodcastDetailScreenInPanePreview() {
         )
     }
 }
-
-/** Which sentence says it: the episode is playing, or it is waiting to. */
-private val PodcastDetailMessage.AlreadyQueued.wording: Int
-    @StringRes get() = if (isPlaying) {
-        R.string.podcast_message_already_playing
-    } else {
-        R.string.podcast_message_already_queued
-    }

@@ -1,7 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,22 +11,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.RemoveDone
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -41,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.time.Instant
+import kotlin.math.roundToInt
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
@@ -54,6 +57,8 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgress
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 
 /**
@@ -64,10 +69,11 @@ import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
  * chapter list — was parsed by the feed reader, stored on the row, and displayed by no screen at
  * all, and the chapters with it.
  *
- * Everything about the episode is here, in the order a person asks for it: what it is, what it says,
- * what is in it, and only then what to do with it. The actions include the three the row cannot
- * carry — add to the end of the queue, mark played, share — because a row has space for two and a
- * sheet has space for all of them.
+ * Everything about the episode is here, in the order a person asks for it: what it is, and what to
+ * do with it — play it, or keep it — then what is in it and what it says. A YouTube episode can be
+ * played and kept two ways, as sound or as video, so it gets a pair of play buttons and a download
+ * button for each; any other episode has only its sound, and one of each. Queueing is the row's
+ * swipe, not the sheet's.
  *
  * Scrolls as one column rather than putting the notes in a scroller of their own: nested scrolling
  * inside a draggable sheet is how a description ends up impossible to read on a small screen.
@@ -78,13 +84,12 @@ import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
  * @param chapters the episode's chapters, once resolved.
  * @param isChaptersLoading true while they are still being looked for.
  * @param now the reference point for the published date, injected so previews and tests are stable.
- * @param onPlay plays the episode from where it was left.
+ * @param video the episode's picture — its download and the renditions it comes in — or null when
+ *   it has none, which hides every video action.
+ * @param onPlay plays the episode's sound from where it was left.
  * @param onPlayChapter plays it from a chapter's start.
- * @param onPlayNext queues it to play after whatever is playing now.
- * @param onAddToQueue puts it at the end of the queue.
- * @param onToggleDownload downloads, cancels or deletes — whichever the current state means.
- * @param onSetPlayed marks it played, or puts it back to unplayed.
- * @param onShare hands the episode to the system share sheet.
+ * @param onToggleDownload downloads, cancels or deletes the audio — whichever its state means.
+ * @param videoActions what the video buttons and the quality dialog do; unused when [video] is null.
  * @param onDismiss closes the sheet.
  * @param modifier layout modifier.
  */
@@ -100,13 +105,11 @@ fun EpisodeSheet(
     chapters: EpisodeChapters,
     isChaptersLoading: Boolean,
     now: Instant,
+    video: EpisodeVideo?,
     onPlay: () -> Unit,
     onPlayChapter: (Chapter) -> Unit,
-    onPlayNext: () -> Unit,
-    onAddToQueue: () -> Unit,
     onToggleDownload: () -> Unit,
-    onSetPlayed: (Boolean) -> Unit,
-    onShare: () -> Unit,
+    videoActions: EpisodeVideoActions,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -128,15 +131,12 @@ fun EpisodeSheet(
                 now = now,
             )
 
-            PrimaryAction(episode = episode, onPlay = onPlay)
-
             EpisodeActions(
                 episode = episode,
-                onPlayNext = onPlayNext,
-                onAddToQueue = onAddToQueue,
+                video = video,
+                onPlay = onPlay,
                 onToggleDownload = onToggleDownload,
-                onSetPlayed = onSetPlayed,
-                onShare = onShare,
+                videoActions = videoActions,
             )
 
             if (isChaptersLoading) {
@@ -218,126 +218,210 @@ private fun EpisodeIdentity(
 }
 
 /**
- * The one full-width button: play, or continue.
+ * What the sheet knows about an episode's picture.
  *
- * Larger and alone, because it is what the sheet is opened *on the way to* nine times in ten. The
- * rest of the verbs sit under it as chips, which is the shape that says "and these are the others".
- *
- * @param episode the episode.
- * @param onPlay the handler.
- * @param modifier layout modifier.
+ * @property download the video kept on the phone, or on its way; null when there is none.
+ * @property qualities the renditions on offer, lowest first; null until asked for and answered.
+ * @property qualitiesFailed true when asking for them failed.
  */
-@Composable
-private fun PrimaryAction(
-    episode: Episode,
-    onPlay: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val remaining = formatRemaining(LocalResources.current, episode.durationMs, episode.positionMs)
-    val label = when {
-        // "Continue · 12 min left" wherever the number is known; the number is what decides whether
-        // to press it now or later.
-        episode.isInProgress && remaining != null ->
-            stringResource(R.string.episode_continue_with_remaining, remaining)
-
-        episode.isInProgress -> stringResource(R.string.episode_continue)
-
-        episode.isPlayed -> stringResource(R.string.episode_play_again)
-
-        else -> stringResource(R.string.episode_play)
-    }
-
-    Button(
-        onClick = onPlay,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null)
-        Text(
-            text = label,
-            modifier = Modifier.padding(start = MegaPodcastPlayerTheme.spacing.sm),
-        )
-    }
-}
+data class EpisodeVideo(
+    val download: VideoDownload? = null,
+    val qualities: List<VideoQuality>? = null,
+    val qualitiesFailed: Boolean = false,
+)
 
 /**
- * Everything else the episode can be told to do.
+ * What the sheet's video actions do, gathered so the sheet's signature stays readable.
  *
- * Chips rather than a menu: they are all one tap, they all fit, and a menu would hide the two the
- * app had nowhere to put — *add to queue* and *mark played* — behind a second tap on the screen
- * built to reveal them.
+ * @property onPlay plays the episode and opens it as video.
+ * @property onRequestQualities asks which renditions the video comes in; called as the download
+ *   dialog opens.
+ * @property onDownload downloads the video at a rendition.
+ * @property onRemoveDownload deletes the downloaded video, or cancels one on its way.
+ */
+class EpisodeVideoActions(
+    val onPlay: () -> Unit,
+    val onRequestQualities: () -> Unit,
+    val onDownload: (VideoQuality) -> Unit,
+    val onRemoveDownload: () -> Unit,
+)
+
+/**
+ * The sheet's verbs: play, then keep.
  *
- * @param episode the episode, which decides the download and played labels.
- * @param onPlayNext queues it next.
- * @param onAddToQueue queues it last.
- * @param onToggleDownload downloads, cancels or deletes.
- * @param onSetPlayed marks it played or unplayed.
- * @param onShare shares it.
+ * Play comes first and on its own line, because it is what the sheet is opened on the way to nine
+ * times in ten; for an episode with a picture the line is split between sound and video, equal
+ * halves, since neither is the lesser way to take it. The downloads follow one per line, full
+ * width, so each can say in words what state its copy is in.
+ *
+ * @param episode the episode, which decides the labels.
+ * @param video its picture, or null when it has none.
+ * @param onPlay plays the sound.
+ * @param onToggleDownload downloads, cancels or deletes the audio.
+ * @param videoActions the video buttons' handlers.
  * @param modifier layout modifier.
  */
 @Composable
 private fun EpisodeActions(
     episode: Episode,
-    onPlayNext: () -> Unit,
-    onAddToQueue: () -> Unit,
+    video: EpisodeVideo?,
+    onPlay: () -> Unit,
     onToggleDownload: () -> Unit,
-    onSetPlayed: (Boolean) -> Unit,
-    onShare: () -> Unit,
+    videoActions: EpisodeVideoActions,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScrollIfNeeded(),
-        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+    // Saveable, so unfolding the phone with the dialog open does not close it.
+    var qualityDialogOpen by rememberSaveable { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
     ) {
-        ActionChip(
-            icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-            label = stringResource(R.string.podcast_action_play_next),
-            onClick = onPlayNext,
-        )
-        ActionChip(
-            icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-            label = stringResource(R.string.episode_action_add_to_queue),
-            onClick = onAddToQueue,
-        )
-        ActionChip(
+        if (video == null) {
+            ActionButton(
+                icon = Icons.Rounded.PlayArrow,
+                label = episode.playLabel(),
+                onClick = onPlay,
+                filled = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+            ) {
+                ActionButton(
+                    icon = Icons.Rounded.Headphones,
+                    label = stringResource(R.string.episode_play_audio),
+                    onClick = onPlay,
+                    filled = true,
+                    modifier = Modifier.weight(1f),
+                )
+                ActionButton(
+                    icon = Icons.Rounded.SmartDisplay,
+                    label = stringResource(R.string.episode_play_video),
+                    onClick = videoActions.onPlay,
+                    filled = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        ActionButton(
             icon = episode.downloadIcon(),
-            label = stringResource(episode.downloadLabelRes()),
+            label = stringResource(episode.downloadLabelRes(hasVideo = video != null)),
             onClick = onToggleDownload,
+            modifier = Modifier.fillMaxWidth(),
         )
-        ActionChip(
-            icon = if (episode.isPlayed) Icons.Rounded.RemoveDone else Icons.Rounded.DoneAll,
-            label = stringResource(
-                if (episode.isPlayed) {
-                    R.string.podcast_action_mark_unplayed
-                } else {
-                    R.string.podcast_action_mark_played
+
+        if (video != null) {
+            ActionButton(
+                icon = Icons.Rounded.OndemandVideo,
+                label = videoDownloadLabel(video.download),
+                onClick = {
+                    videoActions.onRequestQualities()
+                    qualityDialogOpen = true
                 },
-            ),
-            onClick = { onSetPlayed(!episode.isPlayed) },
-        )
-        ActionChip(
-            icon = Icons.Rounded.Share,
-            label = stringResource(R.string.episode_action_share),
-            onClick = onShare,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    if (qualityDialogOpen && video != null) {
+        VideoDownloadDialog(
+            qualities = video.qualities,
+            failed = video.qualitiesFailed,
+            download = video.download,
+            onDownload = { quality ->
+                qualityDialogOpen = false
+                videoActions.onDownload(quality)
+            },
+            onRemoveDownload = {
+                qualityDialogOpen = false
+                videoActions.onRemoveDownload()
+            },
+            onDismiss = { qualityDialogOpen = false },
         )
     }
 }
 
 /**
- * One action chip.
+ * One action button; the caller decides its width.
  *
  * @param icon the glyph.
  * @param label the words, which are also what a screen reader says.
  * @param onClick the handler.
+ * @param modifier layout modifier.
+ * @param filled true for a play button, which is filled; downloads are tonal, a step quieter.
  */
 @Composable
-private fun ActionChip(icon: ImageVector, label: String, onClick: () -> Unit) {
-    AssistChip(
-        onClick = onClick,
-        label = { Text(text = label) },
-        leadingIcon = { Icon(imageVector = icon, contentDescription = null) },
-    )
+private fun ActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    filled: Boolean = false,
+) {
+    val content: @Composable () -> Unit = {
+        Icon(imageVector = icon, contentDescription = null)
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = MegaPodcastPlayerTheme.spacing.sm),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (filled) {
+        Button(onClick = onClick, modifier = modifier) { content() }
+    } else {
+        FilledTonalButton(onClick = onClick, modifier = modifier) { content() }
+    }
+}
+
+/**
+ * What the single play button says for an episode with no picture: play, continue, or play again.
+ *
+ * "Continue · 12 min left" wherever the number is known; the number is what decides whether to
+ * press it now or later.
+ */
+@Composable
+private fun Episode.playLabel(): String {
+    val remaining = formatRemaining(LocalResources.current, durationMs, positionMs)
+    return when {
+        isInProgress && remaining != null ->
+            stringResource(R.string.episode_continue_with_remaining, remaining)
+
+        isInProgress -> stringResource(R.string.episode_continue)
+
+        isPlayed -> stringResource(R.string.episode_play_again)
+
+        else -> stringResource(R.string.episode_play)
+    }
+}
+
+/**
+ * What the *Download video* button says: the action while there is no video, its state once there
+ * is one — the tap opens the dialog either way, where it can be changed or deleted.
+ *
+ * @param download the episode's downloaded video, if any.
+ */
+@Composable
+private fun videoDownloadLabel(download: VideoDownload?): String {
+    val quality = download?.let { stringResource(R.string.episode_video_quality, it.quality.height) }
+    return when (download?.state) {
+        null, DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
+            stringResource(R.string.episode_download_video)
+
+        DownloadState.QUEUED -> stringResource(R.string.episode_video_download_waiting, quality.orEmpty())
+
+        DownloadState.DOWNLOADING -> stringResource(
+            R.string.episode_video_download_progress,
+            quality.orEmpty(),
+            download.percent.roundToInt(),
+        )
+
+        DownloadState.COMPLETED -> stringResource(R.string.episode_video_downloaded, quality.orEmpty())
+    }
 }
 
 /**
@@ -451,35 +535,31 @@ private fun Episode.metadataLine(now: Instant): String {
     ).joinToString(SEPARATOR)
 }
 
-/** The glyph for the download chip, which depends on what the copy is currently doing. */
+/** The glyph for the audio download button, which depends on what the copy is doing. */
 private fun Episode.downloadIcon(): ImageVector = when (downloadState) {
     DownloadState.COMPLETED -> Icons.Rounded.Delete
-    else -> Icons.Rounded.FileDownload
-}
-
-/** The words for the download chip; the same five states the swipe action names. */
-private fun Episode.downloadLabelRes(): Int = when (downloadState) {
-    DownloadState.NOT_DOWNLOADED,
-    DownloadState.FAILED,
-    -> R.string.podcast_action_download
-
-    DownloadState.QUEUED,
-    DownloadState.DOWNLOADING,
-    -> R.string.podcast_action_cancel_download
-
-    DownloadState.COMPLETED -> R.string.podcast_action_delete_download
+    DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Close
+    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.FileDownload
 }
 
 /**
- * Lets the action chips scroll sideways when they no longer fit.
+ * The words for the audio download button.
  *
- * Five chips fit a phone at the default text size and do not fit at 200 %, and a chip pushed off
- * the edge is an action that has silently stopped existing. Scrolling is what the settings screen's
- * own chip rows already do.
+ * The swipe's own three words for an episode that is only sound; for one that is also video they
+ * say *audio*, because beside a *Download video* button a bare *Download* no longer names a thing.
+ *
+ * @param hasVideo whether the episode has a picture too.
  */
-@Composable
-private fun Modifier.horizontalScrollIfNeeded(): Modifier =
-    this.then(Modifier.horizontalScroll(rememberScrollState()))
+private fun Episode.downloadLabelRes(hasVideo: Boolean): Int = when (downloadState) {
+    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
+        if (hasVideo) R.string.episode_download_audio else R.string.podcast_action_download
+
+    DownloadState.QUEUED, DownloadState.DOWNLOADING ->
+        if (hasVideo) R.string.episode_cancel_audio_download else R.string.podcast_action_cancel_download
+
+    DownloadState.COMPLETED ->
+        if (hasVideo) R.string.episode_delete_audio_download else R.string.podcast_action_delete_download
+}
 
 /** Between the date and the duration. */
 private const val SEPARATOR = " · "

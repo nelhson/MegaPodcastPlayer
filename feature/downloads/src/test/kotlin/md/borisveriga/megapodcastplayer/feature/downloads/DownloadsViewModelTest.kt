@@ -12,6 +12,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
@@ -86,6 +87,8 @@ class DownloadsViewModelTest {
         downloadRepository = mockk(relaxed = true)
         episodePlayer = mockk(relaxed = true)
         every { downloadRepository.observeDownloads() } returns downloads
+        // Combined into the state; a relaxed mock's flow never emits and would freeze it.
+        every { downloadRepository.observeVideoDownloads() } returns flowOf(emptyMap())
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.freeBytes() } returns FREE_BYTES
         viewModel = DownloadsViewModel(

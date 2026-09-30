@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -26,7 +27,9 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -93,6 +96,8 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 
 /**
@@ -386,6 +391,10 @@ private fun DownloadList(
                     index = index,
                     drag = drag.takeIf { group.isReorderable },
                     metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
+                    kinds = downloadedKinds(
+                        audio = download.episode.downloadState,
+                        video = uiState.videoDownloads[download.episode.id],
+                    ),
                     // Only where it is actually waiting for Wi-Fi: on any other row the action
                     // would be a control for a situation the row is not in.
                     onDownloadNow = { onEpisodeDownloadNow(download.episode.id) }
@@ -438,6 +447,7 @@ private val DownloadSection.labelResId: Int
  * @param drag the shared drag state, which owns the visual offset and the pending move; null in
  *   every section but *Ready*, where an arrangement would be rewritten by the next arrival.
  * @param metadata the line under the title, already assembled.
+ * @param kinds what of the episode is fully on the phone, drawn as badges at the row's end.
  * @param onDownloadNow starts this download without waiting for Wi-Fi; null unless it is actually
  *   waiting for one.
  * @param onClick tap handler; plays the episode in any state.
@@ -452,6 +462,7 @@ private fun DownloadRow(
     index: Int,
     drag: ReorderableState<EpisodeWithShow>?,
     metadata: String,
+    kinds: List<DownloadedKind>,
     onDownloadNow: (() -> Unit)?,
     onClick: (String) -> Unit,
     onRetry: (String) -> Unit,
@@ -560,9 +571,98 @@ private fun DownloadRow(
             // carries on underneath. A tap used to retry a failed row and ignore a running one,
             // which left the list's most-wanted episodes as the only ones a tap would not play.
             onClick = { onClick(episode.id) },
+            trailing = if (kinds.isEmpty()) {
+                null
+            } else {
+                {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xxs),
+                    ) {
+                        kinds.forEach { kind -> DownloadedKindBadge(kind) }
+                    }
+                }
+            },
         )
     }
 }
+
+/** One half of an episode that is fully on the phone. */
+internal sealed interface DownloadedKind {
+
+    /** The episode's sound. */
+    data object Audio : DownloadedKind
+
+    /**
+     * The episode's picture.
+     *
+     * @property download the finished video download, which names its rendition.
+     */
+    data class Video(val download: VideoDownload) : DownloadedKind
+}
+
+/**
+ * Which halves of an episode are fully on the phone, sound first.
+ *
+ * Only finished ones: a badge says "this is here", and a transfer or a failure is not — the row's
+ * section and metadata line already say what is happening to those.
+ *
+ * @param audio the episode's audio download state.
+ * @param video its video download, if it has one.
+ * @return the badges to draw; empty when nothing has finished.
+ */
+internal fun downloadedKinds(audio: DownloadState, video: VideoDownload?): List<DownloadedKind> =
+    listOfNotNull(
+        DownloadedKind.Audio.takeIf { audio == DownloadState.COMPLETED },
+        video?.takeIf { it.isComplete }?.let(DownloadedKind::Video),
+    )
+
+/**
+ * A small pill naming one downloaded half: *Audio*, or *Video · 720p*.
+ *
+ * Shaped like the library's source badge — a pill on the highest surface container, a glyph and a
+ * word — because it is the same kind of fact: what this row is, not something to tap.
+ *
+ * @param kind the half it names.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun DownloadedKindBadge(kind: DownloadedKind, modifier: Modifier = Modifier) {
+    val (icon, label) = when (kind) {
+        DownloadedKind.Audio ->
+            Icons.Rounded.Headphones to stringResource(R.string.downloads_badge_audio)
+
+        is DownloadedKind.Video ->
+            Icons.Rounded.SmartDisplay to
+                stringResource(R.string.downloads_badge_video, kind.download.quality.height)
+    }
+    Row(
+        modifier = modifier
+            .clip(MegaPodcastPlayerTheme.shapes.pill)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(
+                horizontal = MegaPodcastPlayerTheme.spacing.sm,
+                vertical = MegaPodcastPlayerTheme.spacing.xxs,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(BADGE_ICON_SIZE),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** The badge glyph, sized to the label type beside it. */
+private val BADGE_ICON_SIZE = 14.dp
 
 /**
  * What the downloads cost, drawn against what is left.
@@ -945,6 +1045,9 @@ internal fun DownloadsScreenPreview() {
                 deleteAfterPlaying = true,
                 downloads = downloads,
                 sections = downloads.groupIntoSections(),
+                videoDownloads = mapOf(
+                    "e4" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f),
+                ),
             ),
             onEpisodeClick = {},
             onEpisodeRetry = {},

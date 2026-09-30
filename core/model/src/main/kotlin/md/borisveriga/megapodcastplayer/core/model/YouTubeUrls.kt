@@ -14,8 +14,10 @@ package md.borisveriga.megapodcastplayer.core.model
  *    episode would silently miss its own cache entry.
  *  - [youTubeThumbnailUrl] is the only artwork a playlist feed offers.
  *
- * One string here is deliberately *not* an identity: [youTubeVideoOnlySentinel] exists only in
- * flight, inside the player, and is never stored, so its spelling can change freely.
+ * [youTubeVideoOnlySentinel] is never stored in the database, but it *is* a cache key: a video
+ * downloaded for offline viewing is filed in the Media3 download cache under it, exactly as the
+ * audio is filed under [youTubeAudioSentinel]. Changing its spelling orphans every downloaded
+ * picture, which then takes up storage the player can no longer find.
  */
 
 /**
@@ -34,8 +36,9 @@ private const val SENTINEL_PREFIX = "youtube://video/"
  * Shares the audio sentinel's scheme on purpose — everything that classifies an error or a failure
  * as "YouTube" reads the scheme — but not its prefix: `youtube://video-only/` does not start with
  * `youtube://video/`, so [youTubeVideoIdOrNull], and through it [isPlayableMediaUrl], reject it.
- * That is what keeps it out of the database and out of the download cache: a feed cannot mint one,
- * and nothing that stores a URL will accept one.
+ * That is what keeps it out of the database: a feed cannot mint one, and nothing that stores a URL
+ * will accept one. It reaches the download cache only by the one door built for it, a video
+ * download, which mints it from an id that is already a stored episode's.
  */
 private const val VIDEO_ONLY_PREFIX = "youtube://video-only/"
 
@@ -125,10 +128,12 @@ data class YouTubeVideoOnlyRef(val videoId: String, val quality: VideoQuality)
 /**
  * Builds the in-flight stand-in for a video's picture at a given quality.
  *
- * Unlike [youTubeAudioSentinel] this is never persisted and is never a cache key that matters: the
- * player mints one when the user asks to watch, and drops it when they stop. The height rides along
- * in the URI because the data source that resolves it sees nothing else — the `DataSpec` it is
- * handed has a URI and no room for a side channel.
+ * Unlike [youTubeAudioSentinel] this is never written to the database: the player mints one when
+ * the user asks to watch, and drops it when they stop. It is, though, the cache key of a picture
+ * downloaded for offline viewing, which is what lets the player find that picture on disk: asking
+ * for the same video at the same height mints the same string. The height rides along in the URI
+ * because the data source that resolves it sees nothing else — the `DataSpec` it is handed has a
+ * URI and no room for a side channel.
  *
  * @param videoId YouTube's video id, case preserved.
  * @param quality the rendition height to ask for.
