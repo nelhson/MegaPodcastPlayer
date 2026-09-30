@@ -13,6 +13,9 @@ package md.borisveriga.megapodcastplayer.core.model
  *    for both streaming and downloads. If the minting and the parsing ever disagreed, a downloaded
  *    episode would silently miss its own cache entry.
  *  - [youTubeThumbnailUrl] is the only artwork a playlist feed offers.
+ *
+ * One string here is deliberately *not* an identity: [youTubeVideoOnlySentinel] exists only in
+ * flight, inside the player, and is never stored, so its spelling can change freely.
  */
 
 /**
@@ -23,6 +26,21 @@ package md.borisveriga.megapodcastplayer.core.model
  * (`niTJ2221aS8`).
  */
 private const val SENTINEL_PREFIX = "youtube://video/"
+
+/**
+ * Scheme and path prefix of the video-only sentinel, which asks the resolver for the *picture* of a
+ * video rather than its sound.
+ *
+ * Shares the audio sentinel's scheme on purpose — everything that classifies an error or a failure
+ * as "YouTube" reads the scheme — but not its prefix: `youtube://video-only/` does not start with
+ * `youtube://video/`, so [youTubeVideoIdOrNull], and through it [isPlayableMediaUrl], reject it.
+ * That is what keeps it out of the database and out of the download cache: a feed cannot mint one,
+ * and nothing that stores a URL will accept one.
+ */
+private const val VIDEO_ONLY_PREFIX = "youtube://video-only/"
+
+/** Separates the video id from the height a video-only sentinel asks for. */
+private const val HEIGHT_QUERY = "?h="
 
 /**
  * YouTube's per-playlist Atom feed.
@@ -95,6 +113,67 @@ fun youTubeVideoIdOrNull(uri: String): String? =
     } else {
         null
     }
+
+/**
+ * A video-only sentinel, taken apart.
+ *
+ * @property videoId YouTube's video id, case preserved.
+ * @property quality the rendition height the sentinel asks the resolver for.
+ */
+data class YouTubeVideoOnlyRef(val videoId: String, val quality: VideoQuality)
+
+/**
+ * Builds the in-flight stand-in for a video's picture at a given quality.
+ *
+ * Unlike [youTubeAudioSentinel] this is never persisted and is never a cache key that matters: the
+ * player mints one when the user asks to watch, and drops it when they stop. The height rides along
+ * in the URI because the data source that resolves it sees nothing else — the `DataSpec` it is
+ * handed has a URI and no room for a side channel.
+ *
+ * @param videoId YouTube's video id, case preserved.
+ * @param quality the rendition height to ask for.
+ * @return the sentinel URI to put on a video `MediaItem`.
+ */
+fun youTubeVideoOnlySentinel(videoId: String, quality: VideoQuality): String =
+    VIDEO_ONLY_PREFIX + videoId + HEIGHT_QUERY + quality.height
+
+/**
+ * Takes a video-only sentinel apart.
+ *
+ * Plain string operations for the same reason as [youTubeVideoIdOrNull]: this runs on every data
+ * source open. Both halves are validated — the id against [isYouTubeVideoId] because it becomes an
+ * extractor argument, the height as a positive integer because it becomes a stream choice — so a
+ * malformed sentinel reads as "not one" rather than as a bad request.
+ *
+ * @param uri any media URI, sentinel or not.
+ * @return the parts, or `null` when [uri] is not a well-formed video-only sentinel.
+ */
+fun youTubeVideoOnlyRefOrNull(uri: String): YouTubeVideoOnlyRef? {
+    if (!uri.startsWith(VIDEO_ONLY_PREFIX)) return null
+    val rest = uri.substring(VIDEO_ONLY_PREFIX.length)
+    val queryAt = rest.indexOf(HEIGHT_QUERY)
+    // An absent or leading query leaves an empty id, which the id check below rejects.
+    val videoId = if (queryAt > 0) rest.substring(0, queryAt) else ""
+    val height = if (queryAt > 0) rest.substring(queryAt + HEIGHT_QUERY.length).toIntOrNull() else null
+    return if (isYouTubeVideoId(videoId) && height != null && height > 0) {
+        YouTubeVideoOnlyRef(videoId, VideoQuality(height))
+    } else {
+        null
+    }
+}
+
+/**
+ * The video id behind either sentinel, audio or video-only.
+ *
+ * For the places that treat both the same: chunking a YouTube transfer into ranged requests, and
+ * throwing away a resolution when a request built from it fails. Both halves of one video share a
+ * single extraction, so invalidating by video id is exactly right for either.
+ *
+ * @param uri any media URI.
+ * @return the video id, or `null` when [uri] is an ordinary URL.
+ */
+fun youTubeAnyVideoIdOrNull(uri: String): String? =
+    youTubeVideoIdOrNull(uri) ?: youTubeVideoOnlyRefOrNull(uri)?.videoId
 
 /**
  * The canonical Atom feed URL for a playlist.

@@ -9,6 +9,6 @@
     <ID>ArgumentListWrapping:NewPipeAudioResolver.kt:NewPipeAudioResolver$( videoId, "the video was removed or made private", e, )</ID>
     <ID>MagicNumber:NewPipeAudioResolver.kt:1000</ID>
     <ID>MagicNumber:NewPipeAudioResolver.kt:NewPipeAudioResolver$1000L</ID>
-    <ID>ThrowsCount:NewPipeAudioResolver.kt:NewPipeAudioResolver$private fun extract: ResolvedYouTubeAudio</ID>
+    <ID>ThrowsCount:NewPipeAudioResolver.kt:NewPipeAudioResolver$private fun extract: ExtractedStreams</ID>
   </CurrentIssues>
 </SmellBaseline>

@@ -143,6 +143,21 @@ class PlaybackPersistenceListenerTest {
     }
 
     @Test
+    fun `an episode queued twice mid-swap is mirrored once`() {
+        // Between the add and the remove of a flavour swap (see swapCurrentItem) the playing episode
+        // is in the timeline as sound and as picture. The queue table keys by episode, so the mirror
+        // must not try to write it twice.
+        every { player.mediaItemCount } returns 3
+        every { player.getMediaItemAt(0) } returns mediaItem("ep-1")
+        every { player.getMediaItemAt(1) } returns mediaItem("ep-1")
+        every { player.getMediaItemAt(2) } returns mediaItem("ep-2")
+
+        listener.onTimelineChanged(Timeline.EMPTY, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED)
+
+        assertEquals(listOf(listOf("ep-1", "ep-2")), recorder.queues)
+    }
+
+    @Test
     fun `a source update does not rewrite the queue`() {
         // The timeline also changes when a stream's duration becomes known; that is not an edit.
         every { player.mediaItemCount } returns 1

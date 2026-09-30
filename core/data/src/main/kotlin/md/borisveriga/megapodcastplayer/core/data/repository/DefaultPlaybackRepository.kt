@@ -19,6 +19,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * Room- and DataStore-backed implementation of everything the player persists.
@@ -53,6 +54,8 @@ class DefaultPlaybackRepository @Inject constructor(
     override fun observePlaybackSettings(): Flow<PlaybackSettings> =
         userPreferences.playbackSettings
 
+    override fun observeVideoQuality(): Flow<VideoQuality> = userPreferences.videoQuality
+
     override suspend fun playableEpisode(episodeId: String): PlayableEpisode? =
         withContext(ioDispatcher) {
             episodeDao.getWithShowByIds(listOf(episodeId)).firstOrNull()?.asPlayableEpisode()
@@ -84,6 +87,9 @@ class DefaultPlaybackRepository @Inject constructor(
 
     override suspend fun setSkipIntervals(forwardMs: Long, backMs: Long) =
         userPreferences.setSkipIntervals(forwardMs = forwardMs, backMs = backMs)
+
+    override suspend fun setVideoQuality(quality: VideoQuality) =
+        userPreferences.setVideoQuality(quality)
 
     override suspend fun setAutoPlayNext(enabled: Boolean) =
         userPreferences.setAutoPlayNext(enabled)

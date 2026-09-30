@@ -237,6 +237,49 @@
     <!-- A moment saved without typing anything, which is the common case. -->
     <string name="player_moment_no_note">No note</string>
 
+    <!--
+      The video screen: a YouTube episode's picture, shown on a screen of its own.
+
+      The way in is one button on the expanded player, drawn only for an episode that has a picture
+      to show. It says "the video" rather than "video" because the episode *is* a video already
+      playing — the button does not start anything, it shows what is there.
+    -->
+    <string name="player_watch">Watch the video</string>
+    <!--
+      Leaving keeps the episode playing, as sound. The label says where the tap goes rather than
+      "close", because nothing is closed: the same episode carries on in the player behind.
+    -->
+    <string name="video_back">Back to the player</string>
+    <!--
+      Spoken labels for the tap that shows and hides the overlaid controls in landscape, which a
+      screen reader cannot see happening.
+    -->
+    <string name="video_show_controls">Show the controls</string>
+    <string name="video_hide_controls">Hide the controls</string>
+
+    <!--
+      The quality picker. The button's label is the height alone — "720p" is how every video
+      service names a rendition and needs no word beside it — and its description supplies what the
+      label lacks, in the shape the speed button's does.
+    -->
+    <string name="video_quality_title">Video quality</string>
+    <string name="video_quality_description">Applies to every video you watch, until you change it. A video that has nothing this sharp plays at the best it has.</string>
+    <!-- %1$d is the rendition's height in pixels. -->
+    <string name="video_quality_label">%1$dp</string>
+    <!-- %1$s is an already-formatted rendition, e.g. "720p". -->
+    <string name="video_quality_button">Video quality, %1$s; tap to change it</string>
+    <!--
+      The two things the picker can say instead of a list. The first is a fact about the video and
+      stays; the second is the extractor failing and asks for another go, as the playback errors do.
+    -->
+    <string name="video_quality_none">This video has no picture the app can play.</string>
+    <string name="video_quality_unavailable">Could not find out which qualities this video comes in. Try again in a moment.</string>
+    <!--
+      Snackbar when the service would not show the picture. It says what did *not* change — the
+      sound — because a black screen with a message could otherwise read as playback having stopped.
+    -->
+    <string name="video_refused">Could not show the video. It keeps playing as audio.</string>
+
     <!-- %1$s is the timecode that was marked, e.g. "12:23". -->
     <string name="player_moment_saved">Moment saved at %1$s</string>
     <string name="player_moment_add_note">Note</string>

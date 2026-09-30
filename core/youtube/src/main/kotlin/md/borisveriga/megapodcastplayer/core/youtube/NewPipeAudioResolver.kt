@@ -6,6 +6,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.network.di.MegaPodcastPlayerOkHttp
 import okhttp3.OkHttpClient
 import org.schabi.newpipe.extractor.MediaFormat
@@ -25,6 +26,7 @@ import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
+import org.schabi.newpipe.extractor.stream.VideoStream
 
 /**
  * Initialises NewPipe exactly once per process.
@@ -51,7 +53,13 @@ internal class NewPipeBootstrap @Inject constructor(
 }
 
 /**
- * Resolves YouTube audio with NewPipeExtractor.
+ * Resolves YouTube audio — and, since the player learned to show the picture, YouTube video — with
+ * NewPipeExtractor.
+ *
+ * One class for both halves because they come from one extraction: YouTube's player response
+ * lists every rendition of a video at once, and the audio and the video-only streams the player
+ * merges expire together. Extracting twice for the two halves would double the cost of the slowest
+ * step and let the halves fall out of step on invalidation.
  *
  * @property bootstrap one-time NewPipe initialisation.
  * @property clock injected so cache expiry is deterministic in tests.
@@ -60,7 +68,7 @@ internal class NewPipeBootstrap @Inject constructor(
 internal class NewPipeAudioResolver @Inject constructor(
     private val bootstrap: NewPipeBootstrap,
     private val clock: Clock,
-) : YouTubeAudioResolver {
+) : YouTubeAudioResolver, YouTubeVideoResolver {
 
     /**
      * Serialises extraction.
@@ -73,31 +81,59 @@ internal class NewPipeAudioResolver @Inject constructor(
     private val extractionLock = Any()
 
     /**
-     * Resolved URLs, keyed by video id, guarded by [extractionLock].
+     * Extractions, keyed by video id, guarded by [extractionLock].
      *
      * Not an optimisation but a requirement: one download issues many `open()` calls as it resumes
-     * and retries, and one playback re-opens on every seek. Media3's own `ResolvingDataSource`
-     * documentation asks resolvers to cache for exactly this reason.
+     * and retries, and one playback re-opens on every seek — twice over when the picture is
+     * showing, once per half. Media3's own `ResolvingDataSource` documentation asks resolvers to
+     * cache for exactly this reason.
      */
-    private val cache = LinkedHashMap<String, ResolvedYouTubeAudio>()
+    private val cache = LinkedHashMap<String, ExtractedStreams>()
 
-    override fun resolve(videoId: String): ResolvedYouTubeAudio {
+    override fun resolve(videoId: String): ResolvedYouTubeAudio = streamsOf(videoId).audio
+
+    override fun resolveVideo(videoId: String, preferred: VideoQuality): ResolvedYouTubeVideo {
+        val streams = streamsOf(videoId)
+        val chosen = selectVideoCandidate(streams.video, preferred)
+            ?: throw YouTubeVideoUnavailableException(videoId, "no playable picture for this video")
+        return ResolvedYouTubeVideo(
+            url = chosen.url,
+            expiresAt = streams.expiresAt,
+            quality = VideoQuality(chosen.height),
+            requestHeaders = streams.audio.requestHeaders,
+        )
+    }
+
+    override fun availableQualities(videoId: String): List<VideoQuality> =
+        streamsOf(videoId).video
+            .map { it.height }
+            .distinct()
+            .sorted()
+            .map(::VideoQuality)
+
+    /**
+     * The extraction for [videoId], served from the cache while it is fresh.
+     *
+     * The one place the lock is taken for a read, so that [resolve], [resolveVideo] and
+     * [availableQualities] cannot disagree about what a video offers.
+     */
+    private fun streamsOf(videoId: String): ExtractedStreams {
         val now = Instant.now(clock)
 
         synchronized(extractionLock) {
             cache[videoId]?.let { cached ->
-                if (isFresh(cached, now)) return cached
+                if (cached.isFresh(now)) return cached
                 cache.remove(videoId)
             }
 
-            val resolved = extract(videoId, now)
-            cache[videoId] = resolved
+            val extracted = extract(videoId, now)
+            cache[videoId] = extracted
             // Bounded so a long listening session cannot grow this without limit. Insertion order,
-            // so the oldest resolution is the one dropped.
+            // so the oldest extraction is the one dropped.
             while (cache.size > MAX_CACHED_RESOLUTIONS) {
                 cache.remove(cache.keys.first())
             }
-            return resolved
+            return extracted
         }
     }
 
@@ -111,7 +147,7 @@ internal class NewPipeAudioResolver @Inject constructor(
     }
 
     /** Runs the extractor and translates its failures into something a user can read. */
-    private fun extract(videoId: String, now: Instant): ResolvedYouTubeAudio {
+    private fun extract(videoId: String, now: Instant): ExtractedStreams {
         bootstrap.ensureInitialised()
 
         val info = try {
@@ -164,18 +200,43 @@ internal class NewPipeAudioResolver @Inject constructor(
             ?: throw YouTubeAudioUnavailableException(videoId, "no downloadable audio track")
 
         val url = stream.content
-        return ResolvedYouTubeAudio(
+        val audio = ResolvedYouTubeAudio(
             url = url,
             expiresAt = expiryOf(url, now),
             // getDuration() is seconds. Carried so the caller can fill in what the feed omits.
             durationMs = info.duration.takeIf { it > 0L }?.times(1000L),
             requestHeaders = mapOf("User-Agent" to YOUTUBE_USER_AGENT),
         )
+        // The picture is optional here: a video with sound and no playable picture is still an
+        // episode. Only `resolveVideo` turns an empty list into a failure.
+        val video = playableVideoCandidates(info.videoOnlyStreams.orEmpty())
+        return ExtractedStreams(
+            audio = audio,
+            video = video,
+            // Every stream comes from one player response and states its own deadline; the snapshot
+            // dies with the first of them so no half is ever served past its expiry.
+            expiresAt = (video.map { expiryOf(it.url, now) } + audio.expiresAt).min(),
+        )
     }
 
-    /** Whether [audio] will still work for long enough to be worth reusing. */
-    private fun isFresh(audio: ResolvedYouTubeAudio, now: Instant): Boolean =
-        audio.expiresAt.minus(EXPIRY_SKEW).isAfter(now)
+    /**
+     * One extraction: the sound, the playable renditions of the picture, and when both stop working.
+     *
+     * The video candidates are this module's own type rather than the extractor's, so that nothing
+     * `org.schabi` leaks past the class that made the call.
+     *
+     * @property audio the chosen audio stream.
+     * @property video every playable video-only rendition, unranked.
+     * @property expiresAt the earliest deadline any of the URLs above carries.
+     */
+    private class ExtractedStreams(
+        val audio: ResolvedYouTubeAudio,
+        val video: List<VideoCandidate>,
+        val expiresAt: Instant,
+    ) {
+        /** Whether these URLs will still work for long enough to be worth reusing. */
+        fun isFresh(now: Instant): Boolean = expiresAt.minus(EXPIRY_SKEW).isAfter(now)
+    }
 
     private companion object {
         /**
@@ -247,6 +308,95 @@ internal fun selectAudioStream(streams: List<AudioStream>): AudioStream? {
                 .thenBy { if (it.format == MediaFormat.M4A) 0 else 1 },
         )
     }
+}
+
+/**
+ * A video-only rendition, reduced to what choosing between renditions needs.
+ *
+ * Deliberately not a [VideoStream]: this is what the resolver caches, and the cache must not hold
+ * extractor types any more than the API may expose them.
+ *
+ * @property url the direct URL of the stream.
+ * @property height the frame height in pixels.
+ * @property fps the frame rate, or `0` when the extractor does not say.
+ * @property isMp4 whether the container is MP4, which every phone decodes in hardware.
+ */
+internal data class VideoCandidate(
+    val url: String,
+    val height: Int,
+    val fps: Int,
+    val isMp4: Boolean,
+)
+
+/**
+ * Reduces the extractor's video-only streams to the ones the player can use.
+ *
+ * Two filters. **Delivery first**: only a progressive HTTP URL can be handed to the progressive
+ * media source the sentinel routes to — a DASH or HLS manifest, or an OTF stream that is a template
+ * rather than a URL, would fail at the first byte. **Then video-only**: a combined stream carries its
+ * own sound, and merging it with the audio stream the player already has would play two soundtracks.
+ * Height must be known, because it is the whole basis of the choice.
+ *
+ * Extracted as a top-level function so it can be tested without a network.
+ *
+ * @param streams the video-only streams the extractor reported.
+ * @return the usable renditions, in the extractor's order.
+ */
+internal fun playableVideoCandidates(streams: List<VideoStream>): List<VideoCandidate> =
+    streams.filter { stream ->
+        stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP &&
+            stream.isUrl &&
+            !stream.content.isNullOrBlank() &&
+            // The method, not the property: `VideoStream` exposes `isVideoOnly` as a public field
+            // as well as a getter, and Kotlin's property syntax would read the field.
+            stream.isVideoOnly() &&
+            stream.height > 0
+    }.map { stream ->
+        VideoCandidate(
+            url = stream.content,
+            height = stream.height,
+            fps = stream.fps,
+            isMp4 = stream.format == MediaFormat.MPEG_4,
+        )
+    }
+
+/**
+ * Picks the rendition to show for a requested height.
+ *
+ * In order of preference: the exact height asked for; the tallest below it that is still at least
+ * [VideoQuality.PREFERRED_MIN_HEIGHT]; the shortest above it; and, when the video offers nothing
+ * that tall at all, the best it has — an old 480p upload plays at 480p rather than refusing. Among
+ * renditions of one height, MP4 wins over WebM because every phone decodes H.264 in hardware and
+ * the audio it is merged with is already in an MP4 container; then the lower frame rate, because
+ * a talking head at 60 frames a second is twice the data for nothing anyone can see.
+ *
+ * Extracted as a top-level function so every one of those choices is testable without a network.
+ *
+ * @param candidates the playable renditions, from [playableVideoCandidates].
+ * @param preferred the height the user asked for.
+ * @return the rendition to play, or `null` when there is none.
+ */
+internal fun selectVideoCandidate(
+    candidates: List<VideoCandidate>,
+    preferred: VideoQuality,
+): VideoCandidate? {
+    if (candidates.isEmpty()) return null
+    val target = preferred.height
+
+    val exact = candidates.filter { it.height == target }
+    val belowButSharpEnough = candidates
+        .filter { it.height in VideoQuality.PREFERRED_MIN_HEIGHT until target }
+    val above = candidates.filter { it.height > target }
+
+    val chosenHeight = when {
+        exact.isNotEmpty() -> target
+        belowButSharpEnough.isNotEmpty() -> belowButSharpEnough.maxOf { it.height }
+        above.isNotEmpty() -> above.minOf { it.height }
+        else -> candidates.maxOf { it.height }
+    }
+    return candidates
+        .filter { it.height == chosenHeight }
+        .minWith(compareBy<VideoCandidate> { if (it.isMp4) 0 else 1 }.thenBy { it.fps })
 }
 
 /**

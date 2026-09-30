@@ -9,6 +9,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,6 +41,14 @@ class UserPreferencesDataSourceTest {
 
         assertEquals(PlaybackSettings(), settings)
         assertNull(dataSource.lastPlayedEpisodeId.first())
+        assertEquals(VideoQuality.DEFAULT, dataSource.videoQuality.first())
+    }
+
+    @Test
+    fun `the video quality round trips`() = runTest {
+        dataSource.setVideoQuality(VideoQuality(1080))
+
+        assertEquals(VideoQuality(1080), dataSource.videoQuality.first())
     }
 
     @Test

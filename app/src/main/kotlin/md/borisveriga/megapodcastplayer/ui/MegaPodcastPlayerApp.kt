@@ -16,6 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -29,6 +30,7 @@ import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetScaffold
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetState
 import md.borisveriga.megapodcastplayer.feature.player.QueueRoute
 import md.borisveriga.megapodcastplayer.feature.player.rememberPlayerSheetState
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoRoute
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailRoute
 import md.borisveriga.megapodcastplayer.feature.search.SearchRoute
 import md.borisveriga.megapodcastplayer.feature.settings.SettingsRoute
@@ -91,6 +93,10 @@ fun MegaPodcastPlayerApp(
     val currentDestination = backStackEntry?.destination
     val scope = rememberCoroutineScope()
 
+    // The one destination that is itself the player: the navigation bar and the sheet both step
+    // aside for it, because the episode it shows is the one the sheet would be showing.
+    val onVideo = currentDestination?.hasRoute(Route.Video::class) == true
+
     LaunchedEffect(pendingPodcastId, pendingEpisodeId) {
         val podcastId = pendingPodcastId ?: return@LaunchedEffect
         // launchSingleTop so a second tap on the same notification does not stack a second copy of
@@ -116,6 +122,9 @@ fun MegaPodcastPlayerApp(
     // at a moment ago.
     LaunchedEffect(pendingOpenPlayer) {
         if (!pendingOpenPlayer) return@LaunchedEffect
+        // The video screen hides the sheet, so expanding it there would open nothing. The tap asked
+        // for the player; leave the picture and give them the player.
+        if (onVideo) navController.popBackStack()
         playerSheetState.expand()
         onPendingOpenPlayerHandled()
     }
@@ -140,8 +149,12 @@ fun MegaPodcastPlayerApp(
 
     val navigationSuiteState = rememberNavigationSuiteScaffoldState()
 
-    LaunchedEffect(playerSheetState.isExpanded) {
-        if (playerSheetState.isExpanded) navigationSuiteState.hide() else navigationSuiteState.show()
+    LaunchedEffect(playerSheetState.isExpanded, onVideo) {
+        if (playerSheetState.isExpanded || onVideo) {
+            navigationSuiteState.hide()
+        } else {
+            navigationSuiteState.show()
+        }
     }
 
     NavigationSuiteScaffold(
@@ -174,6 +187,14 @@ fun MegaPodcastPlayerApp(
                     navController.navigateToTopLevel(TopLevelDestination.QUEUE)
                 }
             },
+            // The screen hides the sheet the moment it arrives, so the collapse need not be waited
+            // for: it runs behind the picture, and the sheet is a bar again by the time the user is
+            // back.
+            onWatch = {
+                scope.launch { playerSheetState.collapse() }
+                navController.navigate(Route.Video) { launchSingleTop = true }
+            },
+            hidden = onVideo,
             modifier = Modifier.fillMaxSize(),
         ) { playerPadding ->
             NavHost(
@@ -269,6 +290,13 @@ fun MegaPodcastPlayerApp(
                         onOpenSettings = { navController.navigate(Route.Settings) },
                         scrollToTopSignal = reTapCount,
                     )
+                }
+
+                composable<Route.Video> {
+                    // Backing out lands where the player was opened from, with the episode carrying
+                    // on as sound; the screen itself pops when the player moves on to an episode
+                    // with nothing to show.
+                    VideoRoute(onBack = { navController.popBackStack() })
                 }
             }
         }

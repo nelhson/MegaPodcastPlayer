@@ -1,12 +1,40 @@
 package md.borisveriga.megapodcastplayer.core.media
 
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Tests for the values [PlaybackState] derives for the player UI. */
 class PlaybackStateTest {
+
+    @Test
+    fun `only a youtube episode can be watched`() {
+        assertFalse(PlaybackState(episodeId = "e1").canWatch)
+        assertTrue(PlaybackState(episodeId = "e1", youTubeVideoId = "niTJ2221aS8").canWatch)
+    }
+
+    @Test
+    fun `a youtube episode is video only while a rendition is showing`() {
+        val audio = PlaybackState(episodeId = "e1", youTubeVideoId = "niTJ2221aS8")
+
+        assertFalse(audio.isVideo)
+        assertTrue(audio.copy(videoQuality = VideoQuality(720)).isVideo)
+    }
+
+    @Test
+    fun `the aspect ratio waits for a measured frame`() {
+        // A surface sized to a guess would jump when the real frame arrived.
+        assertNull(PlaybackState(videoWidth = 0, videoHeight = 0).videoAspectRatio)
+        assertNull(PlaybackState(videoWidth = 1280, videoHeight = 0).videoAspectRatio)
+        assertEquals(
+            16f / 9f,
+            checkNotNull(PlaybackState(videoWidth = 1280, videoHeight = 720).videoAspectRatio),
+            0.0001f,
+        )
+    }
 
     @Test
     fun `nothing loaded reads as idle`() {

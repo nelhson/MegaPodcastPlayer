@@ -31,7 +31,7 @@ import org.robolectric.annotation.Config
 class YouTubeInvalidatingDataSourceTest {
 
     private val audioResolver: YouTubeAudioResolver = mockk(relaxed = true)
-    private val resolver = YouTubeDataSpecResolver(audioResolver)
+    private val resolver = YouTubeDataSpecResolver(audioResolver, mockk(relaxed = true))
 
     private fun source(upstream: DataSource) = YouTubeInvalidatingDataSource(upstream, resolver)
 

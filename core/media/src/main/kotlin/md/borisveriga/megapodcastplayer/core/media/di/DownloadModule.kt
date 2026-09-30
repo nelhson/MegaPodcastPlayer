@@ -26,7 +26,7 @@ import javax.inject.Singleton
 import md.borisveriga.megapodcastplayer.core.media.datasource.ChunkedDataSource
 import md.borisveriga.megapodcastplayer.core.media.youtube.YouTubeDataSpecResolver
 import md.borisveriga.megapodcastplayer.core.media.youtube.YouTubeInvalidatingDataSource
-import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
+import md.borisveriga.megapodcastplayer.core.model.youTubeAnyVideoIdOrNull
 import md.borisveriga.megapodcastplayer.core.network.di.MegaPodcastPlayerOkHttp
 import okhttp3.OkHttpClient
 
@@ -123,8 +123,9 @@ object DownloadModule {
         ),
         chunkSizeBytes = YOUTUBE_CHUNK_BYTES,
         // Tested against the spec as it was opened, which is still the sentinel at this level: the
-        // resolver sits below and has not run yet.
-        shouldChunk = { dataSpec -> youTubeVideoIdOrNull(dataSpec.uri.toString()) != null },
+        // resolver sits below and has not run yet. Either sentinel: the picture of a video is
+        // served by the same host with the same throttle as its sound, and is several times larger.
+        shouldChunk = { dataSpec -> youTubeAnyVideoIdOrNull(dataSpec.uri.toString()) != null },
     )
 
     /**

@@ -23,6 +23,7 @@ Gradle daemon runs on JDK 25 (`gradle/gradle-daemon-jvm.properties`); detekt 2.x
 ## Standing constraints
 
 - Episode audio URLs are identities: `youtube://video/<id>` is the stored URL and the Media3 cache key; a feed URL is hashed into the podcast id. Changing either spelling orphans data.
+- The video screen's `youtube://video-only/<id>?h=<height>` sentinel is minted in-process by `VideoMode.kt` (`:core:media`) and never stored; `isPlayableMediaUrl` rejects it on purpose. Video is streaming only — downloads stay audio, and the audio half of a downloaded episode still plays from the cache while its picture streams.
 - Untrusted feed input reaches the media stack: new URL/file handling goes through `isPlayableMediaUrl` (`:core:model`), enforced twice on purpose; `MIGRATION_2_3` LIKE patterns must stay in step.
 - Watch pairing = package name + signing certificate. Install both sides from the same build.
 - Data Layer: state is a data item, a command is a message (`WearPaths`); no audio crosses to the watch.

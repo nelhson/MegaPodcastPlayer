@@ -92,6 +92,9 @@ internal class PlaybackPersistenceListener(
         if (reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) return
         val episodeIds = (0 until player.mediaItemCount)
             .mapNotNull { index -> player.getMediaItemAt(index).episodeId }
+            // Halfway through a flavour swap (see `swapCurrentItem`) the playing episode is in the
+            // queue twice, as sound and as picture. It is one episode, and the mirror says so.
+            .distinct()
         record(NON_FATAL_QUEUE) { progressRecorder.recordQueue(episodeIds) }
     }
 

@@ -10,9 +10,12 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException
 import java.time.Instant
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.youtube.ResolvedYouTubeAudio
+import md.borisveriga.megapodcastplayer.core.youtube.ResolvedYouTubeVideo
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubeAudioResolver
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubeAudioUnavailableException
+import md.borisveriga.megapodcastplayer.core.youtube.YouTubeVideoResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -47,7 +50,18 @@ class YouTubeDataSpecResolverTest {
         every { invalidate(any()) } just Runs
     }
 
-    private val resolver = YouTubeDataSpecResolver(audioResolver)
+    private val resolvedVideo = ResolvedYouTubeVideo(
+        url = "https://rr3.googlevideo.com/videoplayback?itag=136&expire=1790000000",
+        expiresAt = Instant.parse("2026-08-29T18:00:00Z"),
+        quality = VideoQuality(720),
+        requestHeaders = mapOf("User-Agent" to "TestAgent/1.0"),
+    )
+
+    private val videoResolver: YouTubeVideoResolver = mockk {
+        every { resolveVideo(any(), any()) } returns resolvedVideo
+    }
+
+    private val resolver = YouTubeDataSpecResolver(audioResolver, videoResolver)
 
     @Test
     fun `swaps a sentinel for the resolved audio url`() {
@@ -152,6 +166,38 @@ class YouTubeDataSpecResolverTest {
         } catch (e: IOException) {
             assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("private"))
         }
+    }
+
+    // --- the picture --------------------------------------------------------
+
+    @Test
+    fun `swaps a video-only sentinel for the resolved picture url`() {
+        val spec = DataSpec.Builder()
+            .setUri("youtube://video-only/niTJ2221aS8?h=720".toUri())
+            .setPosition(8_000_000L)
+            .build()
+
+        val out = resolver.resolveDataSpec(spec)
+
+        assertEquals(resolvedVideo.url, out.uri.toString())
+        assertEquals("TestAgent/1.0", out.httpRequestHeaders["User-Agent"])
+        // The range survives here too; a picture is chunked the same way as the sound.
+        assertEquals(8_000_000L, out.position)
+        verify { videoResolver.resolveVideo("niTJ2221aS8", VideoQuality(720)) }
+        verify(exactly = 0) { audioResolver.resolve(any()) }
+    }
+
+    @Test
+    fun `invalidating a video-only sentinel drops the whole video's resolution`() {
+        // Both halves come from one extraction, so a failed picture request invalidates the sound's
+        // URL as well — which is right, because they expire together.
+        val spec = DataSpec.Builder()
+            .setUri("youtube://video-only/aHsi-OHI_i8?h=1080".toUri())
+            .build()
+
+        resolver.invalidate(spec)
+
+        verify { audioResolver.invalidate("aHsi-OHI_i8") }
     }
 
     // --- invalidation -----------------------------------------------------

@@ -115,6 +115,18 @@ sealed interface Route {
      */
     @Serializable
     data object Queue : Route
+
+    /**
+     * The picture of the YouTube episode playing, on a screen of its own.
+     *
+     * The one full-screen destination: the navigation bar and the player sheet both step aside for
+     * it, because the sheet *is* the episode it shows and a second copy of the transport under the
+     * picture would be two players for one thing. The player itself is still not a route; only
+     * the surface is. It is reached from the expanded player, and backing out of it lands on the
+     * screen the player was opened over, with the episode carrying on as sound.
+     */
+    @Serializable
+    data object Video : Route
 }
 
 /**
