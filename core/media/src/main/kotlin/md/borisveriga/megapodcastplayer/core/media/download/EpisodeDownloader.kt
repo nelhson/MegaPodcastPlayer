@@ -219,8 +219,8 @@ class EpisodeDownloader @Inject constructor(
      * Removes an episode's downloads: its sound and, if it has one, its picture.
      *
      * Both, because a picture without its sound does not play offline, and because every caller
-     * means "take this episode off the device" — the downloads screen, the delete-after-playing
-     * rule, a show being removed. Safe to call for an episode that was never downloaded; Media3
+     * means "take this episode off the device" — the downloads screen, the episode sheet, the
+     * delete-after-playing rule. Safe to call for an episode that was never downloaded; Media3
      * ignores an unknown content id.
      */
     suspend fun remove(episodeId: String, foreground: Boolean = true) {

@@ -624,12 +624,13 @@ class PodcastDetailViewModel @Inject constructor(
      *
      * Waits for the player to report the episode as loaded before calling [onWatching]: the video
      * screen leaves at once when the episode loaded has no picture, and until the swap lands that
-     * is still whatever was playing before. The wait is bounded, so a player that never answers
-     * costs a moment rather than the tap.
+     * is still whatever was playing before. The wait is bounded, and when it runs out nothing is
+     * opened: the episode loaded is then some other one, and a video screen would show its
+     * picture instead.
      *
      * @param episodeId the episode to watch.
-     * @param onWatching invoked once playback has been handed to the player, so the caller can
-     *   open the video screen. Not called when the episode has gone.
+     * @param onWatching invoked once the player holds the episode, so the caller can open the
+     *   video screen. Not called when the episode has gone or the player never loaded it.
      */
     fun watchEpisode(episodeId: String, onWatching: () -> Unit) {
         viewModelScope.launch {
@@ -639,10 +640,10 @@ class PodcastDetailViewModel @Inject constructor(
                 )
                 return@launch
             }
-            withTimeoutOrNull(WATCH_LOAD_TIMEOUT_MS) {
+            val loaded = withTimeoutOrNull(WATCH_LOAD_TIMEOUT_MS) {
                 connection.playbackState.first { it.episodeId == episodeId }
             }
-            onWatching()
+            if (loaded != null) onWatching()
         }
     }
 

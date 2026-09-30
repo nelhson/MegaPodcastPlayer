@@ -127,12 +127,16 @@ quality the quality picker offers.
   downloads the audio when it is not already on the device.
 - **One quality per episode.** Choosing another height removes the old picture and queues the new
   one under the same id; Media3 runs the add once the removal has deleted the old bytes.
-- **Removal.** Every existing removal path (the downloads screen, delete-after-playing, removing a
-  show, remove all) removes the video with the audio. The video screen's sheet can delete just the
-  video.
+- **Removal.** Every existing removal path (the downloads screen, the episode sheet's audio
+  button, delete-after-playing, remove all) removes the video with the audio; the episode sheet's
+  button says so once a video is kept. The video screen's sheet and the episode sheet's quality
+  dialog can delete just the video. Removing a show removes no downloads at all, audio or video —
+  a gap that predates video and now leaks larger files.
 - **Playback.** Entering video on an episode with a finished video download asks for the downloaded
   height rather than the remembered one; offline, the quality picker offers the downloaded height.
 - **UI.** A download button beside speed and quality on the video screen opens a sheet with the
   same quality chips, the download's state, and *Delete downloaded video* / *Cancel download*.
-- **Not done.** The downloads screen does not yet show whether an episode has a video; the export
-  is still audio only.
+- **Episode sheet.** *Play audio* / *Play video* side by side, then *Download audio* and
+  *Download video*; the video download asks for a quality in a dialog first.
+- **Downloads screen.** Finished rows carry *Audio* and *Video · 720p* badges.
+- **Not done.** The export is still audio only; removing a show leaves its downloads behind.

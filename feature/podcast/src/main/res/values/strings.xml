@@ -205,6 +205,9 @@
     <string name="episode_download_audio">Download audio</string>
     <string name="episode_cancel_audio_download">Cancel audio download</string>
     <string name="episode_delete_audio_download">Delete audio download</string>
+    <!-- The same button once a video is kept too: removing the audio removes the video with it. -->
+    <string name="episode_cancel_audio_and_video_download">Cancel audio and video downloads</string>
+    <string name="episode_delete_audio_and_video_download">Delete audio and video downloads</string>
     <string name="episode_download_video">Download video</string>
     <!-- A rendition height, e.g. "720p". %1$d is the height in pixels. -->
     <string name="episode_video_quality">%1$dp</string>

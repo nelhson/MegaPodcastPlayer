@@ -309,7 +309,12 @@ private fun EpisodeActions(
 
         ActionButton(
             icon = episode.downloadIcon(),
-            label = stringResource(episode.downloadLabelRes(hasVideo = video != null)),
+            label = stringResource(
+                episode.downloadLabelRes(
+                    hasVideo = video != null,
+                    hasVideoDownload = video?.download != null,
+                ),
+            ),
             onClick = onToggleDownload,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -547,19 +552,30 @@ private fun Episode.downloadIcon(): ImageVector = when (downloadState) {
  *
  * The swipe's own three words for an episode that is only sound; for one that is also video they
  * say *audio*, because beside a *Download video* button a bare *Download* no longer names a thing.
+ * Once a video is downloaded or on its way, cancelling or deleting the audio takes the video with
+ * it — a picture without its sound does not play offline — so the words say so rather than let a
+ * large file go unannounced.
  *
  * @param hasVideo whether the episode has a picture too.
+ * @param hasVideoDownload whether that picture is downloaded or downloading.
  */
-private fun Episode.downloadLabelRes(hasVideo: Boolean): Int = when (downloadState) {
-    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
-        if (hasVideo) R.string.episode_download_audio else R.string.podcast_action_download
+internal fun Episode.downloadLabelRes(hasVideo: Boolean, hasVideoDownload: Boolean): Int =
+    when (downloadState) {
+        DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
+            if (hasVideo) R.string.episode_download_audio else R.string.podcast_action_download
 
-    DownloadState.QUEUED, DownloadState.DOWNLOADING ->
-        if (hasVideo) R.string.episode_cancel_audio_download else R.string.podcast_action_cancel_download
+        DownloadState.QUEUED, DownloadState.DOWNLOADING -> when {
+            hasVideoDownload -> R.string.episode_cancel_audio_and_video_download
+            hasVideo -> R.string.episode_cancel_audio_download
+            else -> R.string.podcast_action_cancel_download
+        }
 
-    DownloadState.COMPLETED ->
-        if (hasVideo) R.string.episode_delete_audio_download else R.string.podcast_action_delete_download
-}
+        DownloadState.COMPLETED -> when {
+            hasVideoDownload -> R.string.episode_delete_audio_and_video_download
+            hasVideo -> R.string.episode_delete_audio_download
+            else -> R.string.podcast_action_delete_download
+        }
+    }
 
 /** Between the date and the duration. */
 private const val SEPARATOR = " · "

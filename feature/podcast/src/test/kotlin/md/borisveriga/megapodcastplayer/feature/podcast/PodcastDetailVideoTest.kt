@@ -49,7 +49,7 @@ class PodcastDetailVideoTest : PodcastDetailViewModelFixture() {
     }
 
     @Test
-    fun `play video gives up waiting for the player rather than the tap`() = runTest {
+    fun `play video opens nothing when the player never loads the episode`() = runTest {
         episodes.value = listOf(youTubeEpisode("a"))
         coEvery { episodePlayer.play("a") } returns true
         var watching = false
@@ -58,8 +58,11 @@ class PodcastDetailVideoTest : PodcastDetailViewModelFixture() {
         viewModel.watchEpisode("a") { watching = true }
         advanceTimeBy(WAIT_PAST_TIMEOUT_MS)
         runCurrent()
+        // Too late: the wait is over, and the screen would have shown another episode's picture.
+        playbackState.value = PlaybackState(episodeId = "a")
+        runCurrent()
 
-        assertTrue(watching)
+        assertFalse(watching)
     }
 
     @Test
