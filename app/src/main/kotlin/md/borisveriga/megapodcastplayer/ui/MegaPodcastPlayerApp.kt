@@ -149,6 +149,14 @@ fun MegaPodcastPlayerApp(
 
     val navigationSuiteState = rememberNavigationSuiteScaffoldState()
 
+    // Opens the video screen, from the player's watch button or an episode sheet's *Play video*.
+    // The screen hides the sheet the moment it arrives, so the collapse need not be waited for: it
+    // runs behind the picture, and the sheet is a bar again by the time the user is back.
+    val openVideo: () -> Unit = {
+        scope.launch { playerSheetState.collapse() }
+        navController.navigate(Route.Video) { launchSingleTop = true }
+    }
+
     LaunchedEffect(playerSheetState.isExpanded, onVideo) {
         if (playerSheetState.isExpanded || onVideo) {
             navigationSuiteState.hide()
@@ -187,13 +195,7 @@ fun MegaPodcastPlayerApp(
                     navController.navigateToTopLevel(TopLevelDestination.QUEUE)
                 }
             },
-            // The screen hides the sheet the moment it arrives, so the collapse need not be waited
-            // for: it runs behind the picture, and the sheet is a bar again by the time the user is
-            // back.
-            onWatch = {
-                scope.launch { playerSheetState.collapse() }
-                navController.navigate(Route.Video) { launchSingleTop = true }
-            },
+            onWatch = openVideo,
             hidden = onVideo,
             modifier = Modifier.fillMaxSize(),
         ) { playerPadding ->
@@ -220,6 +222,7 @@ fun MegaPodcastPlayerApp(
                         onSearchClick = { navController.navigate(Route.Search()) },
                         onOpenSettings = { navController.navigate(Route.Settings) },
                         onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
+                        onEpisodeWatching = { openVideo() },
                         scrollToTopSignal = reTapCount,
                     )
                 }
@@ -269,6 +272,7 @@ fun MegaPodcastPlayerApp(
                     PodcastDetailRoute(
                         onBack = { navController.popBackStack() },
                         onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
+                        onEpisodeWatching = { openVideo() },
                     )
                 }
 

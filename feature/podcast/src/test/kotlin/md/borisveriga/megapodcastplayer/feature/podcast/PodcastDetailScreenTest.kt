@@ -23,6 +23,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -103,8 +104,9 @@ class PodcastDetailScreenTest {
         onRemove: () -> Unit = {},
         onEpisodeDownloadToggle: (String) -> Unit = {},
         onEpisodePlayNext: (String) -> Unit = {},
-        onEpisodeSetPlayed: (String, Boolean) -> Unit = { _, _ -> },
         onEpisodePlay: (String) -> Unit = {},
+        onEpisodeWatch: (String) -> Unit = {},
+        onVideoQualitiesRequest: (String) -> Unit = {},
         openEpisodeId: String? = null,
         isRebuilding: Boolean = false,
         settings: ShowSettings = ShowSettings.DEFAULT,
@@ -127,12 +129,13 @@ class PodcastDetailScreenTest {
                     onEpisodeClick = onEpisodeClick,
                     onEpisodePlay = onEpisodePlay,
                     onEpisodePlayFrom = { _, _ -> },
-                    onEpisodeAddToQueue = {},
+                    onEpisodeWatch = onEpisodeWatch,
                     onEpisodeSheetDismiss = {},
                     onEpisodeDownloadToggle = onEpisodeDownloadToggle,
                     onEpisodePlayNext = onEpisodePlayNext,
-                    onEpisodeSetPlayed = onEpisodeSetPlayed,
-                    onUndoPlayedChange = {},
+                    onVideoQualitiesRequest = onVideoQualitiesRequest,
+                    onVideoDownload = { _, _ -> },
+                    onVideoDownloadRemove = {},
                     onEpisodeMove = onEpisodeMove,
                     onFilterChange = onFilterChange,
                     onSortChange = onSortChange,
@@ -269,17 +272,63 @@ class PodcastDetailScreenTest {
     }
 
     @Test
-    fun `marking an episode played is the sheet's, not the row's`() {
-        var marked: Pair<String, Boolean>? = null
+    fun `an episode that is only sound gets one play and one download, no video`() {
+        var played: String? = null
+        var toggled: String? = null
         setScreen(
             listOf(episode("a")),
             openEpisodeId = "a",
-            onEpisodeSetPlayed = { id, played -> marked = id to played },
+            onEpisodePlay = { played = it },
+            onEpisodeDownloadToggle = { toggled = it },
         )
 
-        composeRule.onNodeWithText("Mark played").performClick()
+        composeRule.onNodeWithText("Play video").assertDoesNotExist()
+        composeRule.onNodeWithText("Download video").assertDoesNotExist()
+        composeRule.onNodeWithText("Download").performClick()
+        composeRule.onNodeWithText("Play").performClick()
 
-        assertEquals("a" to true, marked)
+        assertEquals("a", toggled)
+        assertEquals("a", played)
+    }
+
+    @Test
+    fun `a YouTube episode plays and downloads as audio or as video`() {
+        var played: String? = null
+        var watched: String? = null
+        var toggled: String? = null
+        setScreen(
+            listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("dQw4w9WgXcQ"))),
+            openEpisodeId = "a",
+            onEpisodePlay = { played = it },
+            onEpisodeWatch = { watched = it },
+            onEpisodeDownloadToggle = { toggled = it },
+        )
+
+        composeRule.onNodeWithText("Download audio").performClick()
+        composeRule.onNodeWithText("Download video").assertExists()
+        composeRule.onNodeWithText("Play video").performClick()
+        composeRule.onNodeWithText("Play audio").performClick()
+
+        assertEquals("a", toggled)
+        assertEquals("a", watched)
+        assertEquals("a", played)
+    }
+
+    @Test
+    fun `download video asks for a quality before downloading anything`() {
+        var asked: String? = null
+        setScreen(
+            listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("dQw4w9WgXcQ"))),
+            openEpisodeId = "a",
+            onVideoQualitiesRequest = { asked = it },
+        )
+
+        composeRule.onNodeWithText("Download video").performClick()
+
+        assertEquals("a", asked)
+        composeRule.onNodeWithText(
+            "Keeps the video on this phone to watch without a connection. The audio downloads with it.",
+        ).assertExists()
     }
 
     @Test
@@ -331,20 +380,6 @@ class PodcastDetailScreenTest {
         setScreen(listOf(episode("a")))
 
         composeRule.onNodeWithText("Show notes").assertDoesNotExist()
-    }
-
-    @Test
-    fun `a played episode offers to be marked unplayed instead`() {
-        var marked: Pair<String, Boolean>? = null
-        setScreen(
-            listOf(episode("a", isPlayed = true)),
-            openEpisodeId = "a",
-            onEpisodeSetPlayed = { id, played -> marked = id to played },
-        )
-
-        composeRule.onNodeWithText("Mark unplayed").performClick()
-
-        assertEquals("a" to false, marked)
     }
 
     @Test

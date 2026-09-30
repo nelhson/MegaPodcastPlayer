@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * Everything the app knows about episodes stored on the device.
@@ -96,11 +98,42 @@ interface DownloadRepository {
     suspend fun downloadNow(episodeId: String): Boolean
 
     /**
-     * Removes an episode's downloaded audio, cancelling it first if it is still in progress.
+     * Removes an episode's downloaded audio, and its downloaded video if it has one, cancelling
+     * either first if it is still in progress.
      *
      * @param episodeId the episode to remove.
      */
     suspend fun removeDownload(episodeId: String)
+
+    /**
+     * Observes every YouTube episode's downloaded video, keyed by episode id.
+     *
+     * A video is the picture of an episode, kept beside its audio so the episode can be watched
+     * offline; the audio is still [Episode.downloadState]. An episode with no video download is
+     * absent from the map.
+     */
+    fun observeVideoDownloads(): Flow<Map<String, VideoDownload>>
+
+    /**
+     * Requests a YouTube episode's video be downloaded at [quality].
+     *
+     * Downloads the audio too when it is not already on the device or on its way, because the
+     * picture plays merged with the audio and a video with its sound still on the network does not
+     * play offline. An episode keeps one quality: asking for another replaces the one it has.
+     *
+     * @param episodeId the episode.
+     * @param quality the rendition to keep, one of those the video offers.
+     * @return true if the request was made; false if the episode is not stored or is not a YouTube
+     *   episode, which has no picture to download.
+     */
+    suspend fun downloadVideo(episodeId: String, quality: VideoQuality): Boolean
+
+    /**
+     * Deletes an episode's downloaded video and keeps its downloaded audio.
+     *
+     * @param episodeId the episode.
+     */
+    suspend fun removeVideoDownload(episodeId: String)
 
     /**
      * Writes the finished downloads as a Markdown list, grouped by show.

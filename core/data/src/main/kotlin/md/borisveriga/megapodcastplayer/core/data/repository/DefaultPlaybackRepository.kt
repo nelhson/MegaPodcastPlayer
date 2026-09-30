@@ -135,7 +135,8 @@ class DefaultPlaybackRepository @Inject constructor(
     }
 
     /**
-     * Frees a finished episode's audio when the user has asked for that.
+     * Frees a finished episode's audio when the user has asked for that, and its downloaded video
+     * with it: the downloader removes both, since a picture without its sound does not play offline.
      *
      * Only touches episodes that are actually downloaded, so this is a cheap no-op for the usual
      * case of an episode that was streamed. The row's download columns are updated by the removal

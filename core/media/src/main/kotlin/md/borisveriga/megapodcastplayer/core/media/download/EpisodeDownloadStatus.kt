@@ -1,5 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.media.download
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 
@@ -68,10 +70,21 @@ internal fun Download.asEpisodeDownloadStatus(): EpisodeDownloadStatus {
         episodeId = request.id,
         state = mapped,
         downloadedBytes = bytesDownloaded,
-        percent = if (mapped == DownloadState.COMPLETED) {
-            100f
-        } else {
-            percentDownloaded.takeIf { !it.isNaN() }?.coerceIn(0f, 100f) ?: 0f
-        },
+        percent = percentOf(mapped),
     )
 }
+
+/**
+ * This download's progress in `0f..100f`, as a progress bar should draw it.
+ *
+ * @param mapped the download's state, already translated by [downloadStateOf].
+ * @return `100f` for a completed download, whatever Media3 last reported; otherwise the reported
+ *   percentage, clamped, or `0f` before the length is known.
+ */
+@OptIn(UnstableApi::class)
+internal fun Download.percentOf(mapped: DownloadState): Float =
+    if (mapped == DownloadState.COMPLETED) {
+        100f
+    } else {
+        percentDownloaded.takeIf { !it.isNaN() }?.coerceIn(0f, 100f) ?: 0f
+    }

@@ -22,6 +22,7 @@ import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 
 /**
@@ -53,6 +54,8 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  *   the gesture's own spinner, which is the only feedback it has.
  * @property message a one-off outcome for the snackbar; cleared via
  *   [DownloadsViewModel.onMessageShown].
+ * @property videoDownloads every YouTube episode's downloaded video, keyed by episode id, so a row
+ *   can say whether its picture is on the phone as well as its sound.
  */
 data class DownloadsUiState(
     val downloads: List<EpisodeWithShow> = emptyList(),
@@ -65,6 +68,7 @@ data class DownloadsUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val message: DownloadsMessage? = null,
+    val videoDownloads: Map<String, VideoDownload> = emptyMap(),
 )
 
 /**
@@ -191,8 +195,9 @@ class DownloadsViewModel @Inject constructor(
         downloadRepository.observeDownloadSettings(),
         freeBytes,
         refreshing,
-        transientState,
-    ) { downloads, settings, free, isRefreshing, message ->
+        // Paired to stay within `combine`'s typed arity.
+        combine(transientState, downloadRepository.observeVideoDownloads(), ::Pair),
+    ) { downloads, settings, free, isRefreshing, (message, videoDownloads) ->
         val completed = downloads.filter { it.episode.downloadState == DownloadState.COMPLETED }
         DownloadsUiState(
             downloads = downloads,
@@ -208,6 +213,7 @@ class DownloadsViewModel @Inject constructor(
             isLoading = false,
             isRefreshing = isRefreshing,
             message = message,
+            videoDownloads = videoDownloads,
         )
     }.stateIn(
         scope = viewModelScope,

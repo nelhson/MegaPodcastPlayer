@@ -24,6 +24,9 @@ import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoOnlySentinel
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -209,6 +212,160 @@ class EpisodeDownloaderTest {
         verify { downloadManager.requirements = Requirements(Requirements.NETWORK) }
     }
 
+    @Test
+    fun `remove takes the episode's picture as well as its sound`() = runTest {
+        downloader().remove("ep-2")
+
+        assertEquals("ep-2", nextServiceIntent().getStringExtra(DownloadService.KEY_CONTENT_ID))
+        val picture = nextServiceIntent()
+        assertEquals(DownloadService.ACTION_REMOVE_DOWNLOAD, picture.action)
+        assertEquals("ep-2#video", picture.getStringExtra(DownloadService.KEY_CONTENT_ID))
+    }
+
+    @Test
+    fun `removing the picture leaves the sound alone`() = runTest {
+        downloader().removeVideo("ep-2")
+
+        assertEquals("ep-2#video", nextServiceIntent().getStringExtra(DownloadService.KEY_CONTENT_ID))
+        assertNull(shadowOf(application).nextStartedService)
+    }
+
+    @Test
+    fun `a picture is downloaded under the sentinel the player asks for`() = runTest {
+        givenIndex()
+
+        downloader().downloadVideo("ep-1", VIDEO_ID, VideoQuality(1080))
+
+        val intent = nextServiceIntent()
+        assertEquals(DownloadService.ACTION_ADD_DOWNLOAD, intent.action)
+        val request = intent.getParcelableExtra<DownloadRequest>(DownloadService.KEY_DOWNLOAD_REQUEST)
+        assertEquals("ep-1#video", request?.id)
+        // The exact string the player mints for 1080p: anything else and the download is never
+        // found, and the video streams while its copy sits on disk.
+        assertEquals(youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(1080)).toUri(), request?.uri)
+        assertNull(request?.customCacheKey)
+        assertNull(shadowOf(application).nextStartedService)
+    }
+
+    @Test
+    fun `asking again for the height already kept adds without removing`() = runTest {
+        val sentinel = youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(720))
+        givenIndex(download("ep-1#video", Download.STATE_COMPLETED, uri = sentinel))
+
+        downloader().downloadVideo("ep-1", VIDEO_ID, VideoQuality(720))
+
+        assertEquals(DownloadService.ACTION_ADD_DOWNLOAD, nextServiceIntent().action)
+        assertNull(shadowOf(application).nextStartedService)
+    }
+
+    @Test
+    fun `another height removes the picture kept before queuing the new one`() = runTest {
+        val old = youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(720))
+        givenIndex(download("ep-1#video", Download.STATE_COMPLETED, uri = old))
+
+        downloader().downloadVideo("ep-1", VIDEO_ID, VideoQuality(1080))
+
+        val removal = nextServiceIntent()
+        assertEquals(DownloadService.ACTION_REMOVE_DOWNLOAD, removal.action)
+        assertEquals("ep-1#video", removal.getStringExtra(DownloadService.KEY_CONTENT_ID))
+        val add = nextServiceIntent()
+        assertEquals(DownloadService.ACTION_ADD_DOWNLOAD, add.action)
+        val request = add.getParcelableExtra<DownloadRequest>(DownloadService.KEY_DOWNLOAD_REQUEST)
+        assertEquals(youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(1080)).toUri(), request?.uri)
+    }
+
+    @Test
+    fun `status updates and current statuses leave pictures out`() = runTest {
+        val sentinel = youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(720))
+        givenIndex(
+            download("ep-1", Download.STATE_COMPLETED),
+            download("ep-1#video", Download.STATE_DOWNLOADING, uri = sentinel),
+        )
+        val listener = slot<DownloadManager.Listener>()
+        every { downloadManager.addListener(capture(listener)) } returns Unit
+        val downloader = downloader()
+
+        assertEquals(listOf("ep-1"), downloader.currentStatuses().map { it.episodeId })
+        downloader.statusUpdates.test {
+            val picture = download("ep-1#video", Download.STATE_DOWNLOADING, uri = sentinel)
+            listener.captured.onDownloadChanged(downloadManager, picture, null)
+            listener.captured.onDownloadRemoved(downloadManager, picture)
+            listener.captured.onDownloadChanged(downloadManager, download("ep-2", Download.STATE_QUEUED), null)
+            // The sound of ep-2 is the first thing through: neither picture event was.
+            assertEquals("ep-2", awaitItem().episodeId)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `video downloads start from the index and follow the manager`() = runTest {
+        val sentinel = youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(720))
+        givenIndex(
+            download("ep-1", Download.STATE_COMPLETED),
+            download("ep-1#video", Download.STATE_COMPLETED, uri = sentinel),
+        )
+        val listener = slot<DownloadManager.Listener>()
+        every { downloadManager.addListener(capture(listener)) } returns Unit
+
+        downloader().videoDownloads.test {
+            assertEquals(
+                mapOf("ep-1" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+                awaitItem(),
+            )
+
+            val other = youTubeVideoOnlySentinel("otherVideo1", VideoQuality(1080))
+            listener.captured.onDownloadChanged(
+                downloadManager,
+                download("ep-2#video", Download.STATE_DOWNLOADING, percent = 40f, uri = other),
+                null,
+            )
+            assertEquals(
+                VideoDownload(VideoQuality(1080), DownloadState.DOWNLOADING, 40f),
+                awaitItem()["ep-2"],
+            )
+
+            listener.captured.onDownloadRemoved(
+                downloadManager,
+                download("ep-1#video", Download.STATE_REMOVING, uri = sentinel),
+            )
+            assertEquals(setOf("ep-2"), awaitItem().keys)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a picture change heard while the index is read beats the older snapshot`() = runTest {
+        val sentinel = youTubeVideoOnlySentinel(VIDEO_ID, VideoQuality(720))
+        val listener = slot<DownloadManager.Listener>()
+        every { downloadManager.addListener(capture(listener)) } returns Unit
+        val index: DownloadIndex = mockk()
+        every { downloadManager.downloadIndex } returns index
+        every { index.getDownloads() } answers {
+            // The removal lands after the listener is registered and before the snapshot, which
+            // still lists the picture, is applied.
+            listener.captured.onDownloadRemoved(
+                downloadManager,
+                download("ep-1#video", Download.STATE_REMOVING, uri = sentinel),
+            )
+            FakeDownloadCursor(listOf(download("ep-1#video", Download.STATE_COMPLETED, uri = sentinel)))
+        }
+
+        downloader().videoDownloads.test {
+            assertEquals(emptyMap<String, VideoDownload>(), expectMostRecentItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** Makes the manager's index hold exactly [downloads]. */
+    private fun givenIndex(vararg downloads: Download) {
+        val index: DownloadIndex = mockk()
+        every { downloadManager.downloadIndex } returns index
+        every { index.getDownloads() } answers { FakeDownloadCursor(downloads.toList()) }
+        every { index.getDownload(any()) } answers {
+            downloads.firstOrNull { it.request.id == firstArg<String>() }
+        }
+    }
+
     /** The next intent sent to a service, which must be [EpisodeDownloadService]. */
     private fun nextServiceIntent(): Intent {
         val intent = shadowOf(application).nextStartedService
@@ -217,14 +374,18 @@ class EpisodeDownloaderTest {
         return intent
     }
 
-    /** A [Download] for [episodeId] in [state] with the given progress. */
+    /**
+     * A [Download] with content id [id] in [state] with the given progress, fetching [uri]; an
+     * episode's audio unless told otherwise.
+     */
     private fun download(
-        episodeId: String,
+        id: String,
         state: Int,
-        bytesDownloaded: Long,
-        percent: Float,
+        bytesDownloaded: Long = 0L,
+        percent: Float = 0f,
+        uri: String = "https://example.com/$id.mp3",
     ): Download = Download(
-        DownloadRequest.Builder(episodeId, "https://example.com/$episodeId.mp3".toUri()).build(),
+        DownloadRequest.Builder(id, uri.toUri()).build(),
         state,
         /* startTimeMs = */ 0L,
         /* updateTimeMs = */ 0L,
@@ -236,6 +397,11 @@ class EpisodeDownloaderTest {
             this.percentDownloaded = percent
         },
     )
+
+    private companion object {
+        /** The YouTube video behind the episode whose picture is downloaded. */
+        const val VIDEO_ID = "niTJ2221aS8"
+    }
 
     /** An in-memory [DownloadCursor] over a fixed list, as the index would return. */
     private class FakeDownloadCursor(private val downloads: List<Download>) : DownloadCursor {

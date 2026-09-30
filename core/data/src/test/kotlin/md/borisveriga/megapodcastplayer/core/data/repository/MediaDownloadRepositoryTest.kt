@@ -28,6 +28,8 @@ import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloadStatus
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -408,6 +410,59 @@ class MediaDownloadRepositoryTest {
         assertEquals(document, repository.exportListMarkdown(podcastId = podcast.id))
         assertEquals("", repository.exportListMarkdown(podcastId = "someone-else"))
     }
+
+    @Test
+    fun `a video download fetches the audio with the picture when the audio is not there`() =
+        runTest {
+            database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y")))
+
+            assertTrue(repository.downloadVideo("y", VideoQuality(1080)))
+
+            // The picture plays merged with the audio, so offline it needs both.
+            assertEquals(DownloadState.QUEUED, database.episodeDao().getById("y")?.downloadState)
+            coVerify { downloader.download("y", youTubeAudioSentinel(VIDEO_ID), true) }
+            coVerify { downloader.downloadVideo("y", VIDEO_ID, VideoQuality(1080), true) }
+        }
+
+    @Test
+    fun `a video download leaves audio already on the device alone`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y")))
+        markDownloaded("y")
+
+        assertTrue(repository.downloadVideo("y", VideoQuality(720)))
+
+        assertEquals(DownloadState.COMPLETED, database.episodeDao().getById("y")?.downloadState)
+        coVerify(exactly = 0) { downloader.download(any(), any(), any()) }
+        coVerify { downloader.downloadVideo("y", VIDEO_ID, VideoQuality(720), true) }
+    }
+
+    @Test
+    fun `a feed episode has no video to download`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+
+        assertFalse(repository.downloadVideo("a", VideoQuality(720)))
+        assertFalse(repository.downloadVideo("missing", VideoQuality(720)))
+
+        coVerify(exactly = 0) { downloader.download(any(), any(), any()) }
+        coVerify(exactly = 0) { downloader.downloadVideo(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `deleting a video keeps the audio`() = runTest {
+        repository.removeVideoDownload("y")
+
+        coVerify { downloader.removeVideo("y", true) }
+        coVerify(exactly = 0) { downloader.remove(any(), any()) }
+    }
+
+    private companion object {
+        /** The YouTube video behind [youTubeEpisode]. */
+        const val VIDEO_ID = "niTJ2221aS8"
+    }
+
+    /** A YouTube episode, whose stored audio URL is the sentinel for [VIDEO_ID]. */
+    private fun youTubeEpisode(id: String) =
+        episode(id, publishedAt = 1_000L).copy(audioUrl = youTubeAudioSentinel(VIDEO_ID))
 
     /** Marks [ids] as fully downloaded, as a completed Media3 event would. */
     private suspend fun markDownloaded(vararg ids: String) {

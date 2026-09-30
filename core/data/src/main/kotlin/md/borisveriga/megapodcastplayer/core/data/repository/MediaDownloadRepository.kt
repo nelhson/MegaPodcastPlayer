@@ -27,7 +27,10 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.downloadListMarkdown
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
  * Media3- and Room-backed implementation of the download stack.
@@ -146,6 +149,24 @@ class MediaDownloadRepository @Inject constructor(
         }
     }
 
+    override fun observeVideoDownloads(): Flow<Map<String, VideoDownload>> =
+        downloader.videoDownloads
+
+    override suspend fun downloadVideo(episodeId: String, quality: VideoQuality): Boolean {
+        val episode = withContext(ioDispatcher) { episodeDao.getById(episodeId) } ?: return false
+        val videoId = youTubeVideoIdOrNull(episode.audioUrl) ?: return false
+        // Only when the audio is missing or failed: asking again for audio that is on the device
+        // would briefly mark a finished download queued, and Media3 would walk the whole file to
+        // confirm what it already knows.
+        if (episode.downloadState in AUDIO_TO_FETCH) download(episodeId)
+        downloader.downloadVideo(episodeId = episodeId, videoId = videoId, quality = quality)
+        return true
+    }
+
+    override suspend fun removeVideoDownload(episodeId: String) {
+        downloader.removeVideo(episodeId)
+    }
+
     /**
      * Puts the stored "Wi-Fi only" rule back once nothing is downloading any more.
      *
@@ -252,5 +273,8 @@ class MediaDownloadRepository @Inject constructor(
     private companion object {
         /** Where a download the user has never dragged sorts: after everything they have placed. */
         const val UNPLACED = Int.MAX_VALUE
+
+        /** Audio states a video download also asks for the audio from: nothing there, or broken. */
+        val AUDIO_TO_FETCH = setOf(DownloadState.NOT_DOWNLOADED, DownloadState.FAILED)
     }
 }

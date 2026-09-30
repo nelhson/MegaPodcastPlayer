@@ -117,4 +117,11 @@
     <string name="downloads_message_list_export_failed">Could not write that file</string>
     <string name="downloads_message_nothing_to_export">Nothing has finished downloading yet</string>
 
+
+    <!--
+        Badges at the end of a finished row, naming what of the episode is on the phone: its sound,
+        its picture, or both. %1$d is the video's height in pixels, e.g. 720.
+    -->
+    <string name="downloads_badge_audio">Audio</string>
+    <string name="downloads_badge_video">Video · %1$dp</string>
 </resources>

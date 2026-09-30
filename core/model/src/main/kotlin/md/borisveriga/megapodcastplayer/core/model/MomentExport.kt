@@ -98,24 +98,6 @@ fun episodeLink(audioUrl: String): String? {
 }
 
 /**
- * One episode, as a message.
- *
- * Say what this is, then give the reader a way to hear it. The link is [momentLink] at position zero — an
- * episode shared from the sheet is being recommended from the beginning, not from where the sender
- * happens to have got to.
- *
- * @param showTitle the show the episode belongs to.
- * @param episodeTitle the episode.
- * @param audioUrl the episode's stored audio URL; a URL that cannot carry a link simply omits one.
- * @return the text to share.
- */
-fun episodeShareText(showTitle: String, episodeTitle: String, audioUrl: String): String =
-    buildString {
-        appendLine("$showTitle — $episodeTitle")
-        momentLink(audioUrl, positionMs = 0L)?.let(::appendLine)
-    }.trimEnd()
-
-/**
  * One show, as a message.
  *
  * A name and the feed URL, and nothing else. The URL is the show's identity everywhere outside this

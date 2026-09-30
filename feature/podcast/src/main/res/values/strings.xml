@@ -123,14 +123,6 @@
         this and the queueing the downloads screen offers.
     -->
     <string name="podcast_action_play_next">Play next</string>
-    <!--
-        The two faces of one swipe button. Written as instructions rather than states, because the
-        button is what the tap will do, not what the episode currently is; a screen reader reads the
-        same words as the label.
-    -->
-    <string name="podcast_action_mark_played">Mark played</string>
-    <string name="podcast_action_mark_unplayed">Mark unplayed</string>
-
     <!-- Snackbars. -->
     <plurals name="podcast_message_new_episodes">
         <item quantity="one">%1$d new episode</item>
@@ -155,10 +147,11 @@
     <string name="podcast_message_download_removed">Deleted \"%1$s\" from this device</string>
     <!-- %1$s is the episode's title. Says where it went, because the queue is another screen. -->
     <string name="podcast_message_queued_next">\"%1$s\" plays next</string>
-    <!-- Snackbar after a mark; %1$s is the episode title. Both are offered back. -->
-    <string name="podcast_message_marked_played">Marked \"%1$s\" played</string>
-    <string name="podcast_message_marked_unplayed">Marked \"%1$s\" unplayed</string>
-    <string name="podcast_undo">Undo</string>
+    <!-- %1$s is the episode title, %2$s a quality such as "720p". The audio comes with it. -->
+    <string name="podcast_message_video_download_queued">Downloading the video of \"%1$s\" at %2$s</string>
+    <!-- The audio stays in both cases, so neither says the episode was deleted. -->
+    <string name="podcast_message_video_deleted">Deleted the video of \"%1$s\"</string>
+    <string name="podcast_message_video_cancelled">Cancelled the video download of \"%1$s\"</string>
 
     <!--
         Download and export: downloads the episodes on screen that are not on the device, then
@@ -203,8 +196,37 @@
     <string name="episode_continue">Continue</string>
     <string name="episode_continue_with_remaining">Continue · %1$s</string>
 
-    <string name="episode_action_add_to_queue">Add to queue</string>
-    <string name="episode_action_share">Share</string>
+    <!--
+        A YouTube episode is sound and picture, so its sheet has a play button and a download
+        button for each, and each has to say which half it is about.
+    -->
+    <string name="episode_play_audio">Play audio</string>
+    <string name="episode_play_video">Play video</string>
+    <string name="episode_download_audio">Download audio</string>
+    <string name="episode_cancel_audio_download">Cancel audio download</string>
+    <string name="episode_delete_audio_download">Delete audio download</string>
+    <!-- The same button once a video is kept too: removing the audio removes the video with it. -->
+    <string name="episode_cancel_audio_and_video_download">Cancel audio and video downloads</string>
+    <string name="episode_delete_audio_and_video_download">Delete audio and video downloads</string>
+    <string name="episode_download_video">Download video</string>
+    <!-- A rendition height, e.g. "720p". %1$d is the height in pixels. -->
+    <string name="episode_video_quality">%1$dp</string>
+    <!-- The video button once a download exists; the tap opens the dialog to change or delete it. -->
+    <string name="episode_video_download_waiting">Video waiting to download · %1$s</string>
+    <!-- %1$s is the quality, %2$d the percentage done. -->
+    <string name="episode_video_download_progress">Downloading video · %1$s, %2$d%%</string>
+    <string name="episode_video_downloaded">Video downloaded · %1$s</string>
+
+    <!-- The dialog that picks a quality before a video is downloaded. -->
+    <string name="video_dialog_title">Download video</string>
+    <string name="video_dialog_description">Keeps the video on this phone to watch without a connection. The audio downloads with it.</string>
+    <string name="video_dialog_loading">Looking for qualities</string>
+    <string name="video_dialog_failed">Couldn\'t find this video\'s qualities. Check the connection and try again.</string>
+    <string name="video_dialog_empty">This video has no quality to download</string>
+    <string name="video_dialog_confirm">Download</string>
+    <string name="video_dialog_cancel">Cancel</string>
+    <string name="video_dialog_delete">Delete downloaded video</string>
+    <string name="video_dialog_cancel_download">Cancel video download</string>
 
     <!-- Heading over the publisher's own show notes. -->
     <string name="episode_notes">Show notes</string>
@@ -217,14 +239,6 @@
     <!-- Spoken while the app looks for chapters, which can mean a fetch from the publisher. -->
     <string name="episode_chapters_loading">Looking for chapters</string>
 
-    <!-- Snackbar after adding to the end of the queue; %1$s is the episode title. -->
-    <string name="podcast_message_queued">\"%1$s\" added to the queue</string>
-    <!-- Nothing changed, and saying "added" about a queue that looks the same reads as a loss. -->
-    <string name="podcast_message_already_queued">\"%1$s\" is already in the queue</string>
-    <string name="podcast_message_already_playing">\"%1$s\" is already playing</string>
-
-    <!-- What the system share sheet is titled when an episode is shared out of the app. -->
-    <string name="episode_share_title">Share episode</string>
 
     <!--
         The counts line under a show's title, in the same words as the library row's own line: one

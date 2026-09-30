@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
+import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
@@ -30,7 +33,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
-import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
+import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -39,7 +42,10 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
  * State rendered by the podcast detail screen.
@@ -73,6 +79,12 @@ import md.borisveriga.megapodcastplayer.core.model.filterBy
  * @property appAutoDownload the app-wide auto-download answer, shown for the same reason.
  * @property exportProgress how far a *Download and export* of this show has got, or null when none
  *   is running. Held so the menu can say so, rather than offering to start a second one.
+ * @property videoDownloads every YouTube episode's downloaded video, keyed by episode id; an episode
+ *   without one is absent. Read by the sheet's *Download video* button.
+ * @property videoQualities the renditions the open episode's video comes in, lowest first, once
+ *   asked for with [PodcastDetailViewModel.loadVideoQualities]; null while not yet known.
+ * @property videoQualitiesFailed true when that lookup failed, so the dialog can say so rather
+ *   than wait forever.
  */
 data class PodcastDetailUiState(
     val podcast: Podcast? = null,
@@ -90,9 +102,15 @@ data class PodcastDetailUiState(
     val appSpeed: Float = PlaybackSettings.DEFAULT_SPEED,
     val appAutoDownload: Boolean = false,
     val exportProgress: ExportProgress? = null,
+    val videoDownloads: Map<String, VideoDownload> = emptyMap(),
+    val videoQualities: List<VideoQuality>? = null,
+    val videoQualitiesFailed: Boolean = false,
 ) {
     /** The episode the sheet is about, or null when it is closed or the episode has gone. */
     val openEpisode: Episode? get() = episodes.firstOrNull { it.id == openEpisodeId }
+
+    /** The open episode's downloaded video, or null when it has none or the sheet is closed. */
+    val openVideoDownload: VideoDownload? get() = openEpisodeId?.let(videoDownloads::get)
 
     /**
      * Whether the list on screen has anything in it, which is what *Download and export* covers.
@@ -189,27 +207,6 @@ sealed interface PodcastDetailMessage {
     data class QueuedNext(val title: String) : PodcastDetailMessage
 
     /**
-     * An episode was added to the end of the queue.
-     *
-     * Distinct from [QueuedNext] because the two put it in different places, and "queued" with no
-     * indication of where is the one thing worse than no message at all.
-     *
-     * @property title the episode's title.
-     */
-    data class Queued(val title: String) : PodcastDetailMessage
-
-    /**
-     * The episode was already in the queue — waiting, or playing — so nothing changed.
-     *
-     * Said rather than answered with [Queued]: "added" about a queue that looks exactly as it did
-     * reads as the app having lost the episode.
-     *
-     * @property title the episode's title.
-     * @property isPlaying true when it is the episode playing rather than one waiting behind it.
-     */
-    data class AlreadyQueued(val title: String, val isPlaying: Boolean) : PodcastDetailMessage
-
-    /**
      * An episode was queued for download.
      *
      * Worth confirming because the download itself may not start for a while — "Wi-Fi only" is on
@@ -229,17 +226,23 @@ sealed interface PodcastDetailMessage {
     data class DownloadRemoved(val title: String) : PodcastDetailMessage
 
     /**
-     * An episode was marked played, or put back to unplayed.
-     *
-     * The one message on this screen that is offered back. Marking played is reversible and the
-     * gesture that does it is a swipe, so it is the classic case for an undo — and under the
-     * *Unplayed* filter the row it applies to disappears as the mark lands, which takes the obvious
-     * way of reversing it (swipe again) with it.
+     * A YouTube episode's video was queued for download, with its audio if that was missing.
      *
      * @property title the episode's title.
-     * @property isPlayed what it was marked as, which decides the wording.
+     * @property quality the rendition asked for.
      */
-    data class PlayedChanged(val title: String, val isPlayed: Boolean) : PodcastDetailMessage
+    data class VideoDownloadQueued(val title: String, val quality: VideoQuality) :
+        PodcastDetailMessage
+
+    /**
+     * An episode's downloaded video was deleted, or its download called off; the audio stays.
+     *
+     * @property title the episode's title.
+     * @property wasComplete true when a finished file was deleted, false when a transfer was
+     *   cancelled — the two are worded differently, because a cancelled transfer deleted nothing.
+     */
+    data class VideoDownloadRemoved(val title: String, val wasComplete: Boolean) :
+        PodcastDetailMessage
 
     /**
      * A *Download and export* of this show was started.
@@ -276,6 +279,10 @@ sealed interface PodcastDetailMessage {
  * @property connection read only, and only for which row is playing.
  * @property downloadExporter downloads this show's episodes and copies them to a folder, in the
  *   background.
+ * @property videoQualitySource asks the extractor which renditions a YouTube episode comes in, for
+ *   the sheet's *Download video* dialog.
+ * @property crashReporter where a failed rendition lookup goes; the dialog shows a sentence, the
+ *   report keeps the cause.
  * @param savedStateHandle carries the `podcastId` navigation argument.
  */
 @HiltViewModel
@@ -288,6 +295,8 @@ class PodcastDetailViewModel @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val connection: PlaybackConnection,
     private val downloadExporter: DownloadExporter,
+    private val videoQualitySource: VideoQualitySource,
+    private val crashReporter: CrashReporter,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -317,14 +326,6 @@ class PodcastDetailViewModel @Inject constructor(
     private var expectingExportOutcome = false
 
     /**
-     * The mark [undoPlayedChange] would reverse, or null.
-     *
-     * Held here rather than in [PodcastDetailUiState] so the state stays comparable data, which is
-     * the same rule the queue's undo follows.
-     */
-    private var pendingPlayedUndo: PlayedUndo? = null
-
-    /**
      * Which row is playing, and nothing else about the player.
      *
      * `distinctUntilChanged` after the narrowing rather than before it is what makes this cheap:
@@ -344,7 +345,12 @@ class PodcastDetailViewModel @Inject constructor(
     val uiState: StateFlow<PodcastDetailUiState> = combine(
         repository.observePodcast(podcastId),
         repository.observeEpisodes(podcastId),
-        combine(transientState, downloadExporter.observe(podcastId), ::Pair),
+        combine(
+            transientState,
+            downloadExporter.observe(podcastId),
+            downloadRepository.observeVideoDownloads(),
+            ::Triple,
+        ),
         nowPlaying,
         combine(
             showSettings.observeSettings(podcastId),
@@ -352,7 +358,7 @@ class PodcastDetailViewModel @Inject constructor(
             downloadRepository.observeDownloadSettings(),
             ::ShowPreferences,
         ),
-    ) { podcast, episodes, (transient, export), playing, preferences ->
+    ) { podcast, episodes, (transient, export, videoDownloads), playing, preferences ->
         PodcastDetailUiState(
             podcast = podcast,
             episodes = episodes,
@@ -369,6 +375,9 @@ class PodcastDetailViewModel @Inject constructor(
             appSpeed = preferences.playback.speed,
             appAutoDownload = preferences.downloads.autoDownloadNewEpisodes,
             exportProgress = (export as? ExportRun.Running)?.progress,
+            videoDownloads = videoDownloads,
+            videoQualities = transient.videoQualities,
+            videoQualitiesFailed = transient.videoQualitiesFailed,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -611,6 +620,97 @@ class PodcastDetailViewModel @Inject constructor(
     }
 
     /**
+     * Plays a YouTube episode and hands over to the video screen once the player holds it.
+     *
+     * Waits for the player to report the episode as loaded before calling [onWatching]: the video
+     * screen leaves at once when the episode loaded has no picture, and until the swap lands that
+     * is still whatever was playing before. The wait is bounded, and when it runs out nothing is
+     * opened: the episode loaded is then some other one, and a video screen would show its
+     * picture instead.
+     *
+     * @param episodeId the episode to watch.
+     * @param onWatching invoked once the player holds the episode, so the caller can open the
+     *   video screen. Not called when the episode has gone or the player never loaded it.
+     */
+    fun watchEpisode(episodeId: String, onWatching: () -> Unit) {
+        viewModelScope.launch {
+            if (!episodePlayer.play(episodeId)) {
+                transientState.value = transientState.value.copy(
+                    message = PodcastDetailMessage.EpisodeUnavailable,
+                )
+                return@launch
+            }
+            val loaded = withTimeoutOrNull(WATCH_LOAD_TIMEOUT_MS) {
+                connection.playbackState.first { it.episodeId == episodeId }
+            }
+            if (loaded != null) onWatching()
+        }
+    }
+
+    /**
+     * Asks which renditions an episode's video comes in, for the *Download video* dialog.
+     *
+     * The answer lands in [PodcastDetailUiState.videoQualities], or as
+     * [PodcastDetailUiState.videoQualitiesFailed]; a failure is reported, not thrown. Dropped when
+     * the sheet has closed or moved to another episode by the time it arrives.
+     *
+     * @param episodeId the episode whose sheet asked; must be a YouTube episode to have an answer.
+     */
+    fun loadVideoQualities(episodeId: String) {
+        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        val videoId = youTubeVideoIdOrNull(episode.audioUrl) ?: return
+        transientState.value = transientState.value.copy(
+            videoQualities = null,
+            videoQualitiesFailed = false,
+        )
+        viewModelScope.launch {
+            val result = suspendRunCatching { videoQualitySource.qualitiesOf(videoId) }
+            result.exceptionOrNull()?.let { crashReporter.recordNonFatal(NON_FATAL_QUALITIES, it) }
+            if (transientState.value.openEpisodeId != episodeId) return@launch
+            transientState.value = transientState.value.copy(
+                videoQualities = result.getOrNull(),
+                videoQualitiesFailed = result.isFailure,
+            )
+        }
+    }
+
+    /**
+     * Downloads an episode's video at [quality], with its audio if that is not on the device yet.
+     *
+     * @param episodeId the episode.
+     * @param quality the rendition to keep; replaces one kept at another quality.
+     */
+    fun downloadVideo(episodeId: String, quality: VideoQuality) {
+        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        viewModelScope.launch {
+            transientState.value = transientState.value.copy(
+                message = if (downloadRepository.downloadVideo(episodeId, quality)) {
+                    PodcastDetailMessage.VideoDownloadQueued(episode.title, quality)
+                } else {
+                    PodcastDetailMessage.EpisodeUnavailable
+                },
+            )
+        }
+    }
+
+    /**
+     * Deletes an episode's downloaded video, or calls off one still arriving; the audio stays.
+     *
+     * @param episodeId the episode.
+     */
+    fun removeVideoDownload(episodeId: String) {
+        val state = uiState.value
+        val episode = state.episodes.firstOrNull { it.id == episodeId } ?: return
+        val wasComplete = state.videoDownloads[episodeId]?.isComplete == true
+        viewModelScope.launch {
+            downloadRepository.removeVideoDownload(episodeId)
+            transientState.value = transientState.value.copy(
+                message = PodcastDetailMessage.VideoDownloadRemoved(episode.title, wasComplete),
+            )
+        }
+    }
+
+    /**
      * Puts an episode at the head of the queue, to play when the current one ends.
      *
      * Distinct from tapping the row, which interrupts whatever is playing. Both belong on this
@@ -679,6 +779,8 @@ class PodcastDetailViewModel @Inject constructor(
             openEpisodeId = episodeId,
             chapters = EpisodeChapters(),
             isChaptersLoading = true,
+            videoQualities = null,
+            videoQualitiesFailed = false,
         )
 
         viewModelScope.launch {
@@ -700,6 +802,8 @@ class PodcastDetailViewModel @Inject constructor(
             openEpisodeId = null,
             chapters = EpisodeChapters(),
             isChaptersLoading = false,
+            videoQualities = null,
+            videoQualitiesFailed = false,
         )
     }
 
@@ -723,79 +827,6 @@ class PodcastDetailViewModel @Inject constructor(
                 )
             }
         }
-    }
-
-    /**
-     * Adds an episode to the end of the queue.
-     *
-     * The sheet's third playback verb, beside "play now" and "play next". A list row has room for
-     * two of them and the sheet has room for all three, which is part of what the sheet is for.
-     *
-     * @param episodeId the episode to queue.
-     */
-    fun addToQueue(episodeId: String) {
-        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
-        viewModelScope.launch {
-            transientState.value = transientState.value.copy(
-                message = when (episodePlayer.addToQueue(episodeId)) {
-                    // A move to the end is an add to anyone looking at the queue.
-                    QueueAddResult.ADDED, QueueAddResult.MOVED_TO_END ->
-                        PodcastDetailMessage.Queued(episode.title)
-
-                    QueueAddResult.ALREADY_QUEUED ->
-                        PodcastDetailMessage.AlreadyQueued(episode.title, isPlaying = false)
-
-                    QueueAddResult.ALREADY_PLAYING ->
-                        PodcastDetailMessage.AlreadyQueued(episode.title, isPlaying = true)
-
-                    QueueAddResult.UNPLAYABLE, QueueAddResult.UNREACHABLE ->
-                        PodcastDetailMessage.EpisodeUnavailable
-                },
-            )
-        }
-    }
-
-    /**
-     * Marks an episode played, or puts it back to unplayed.
-     *
-     * The second most common action in a list of episodes after playing one, and until now the only
-     * place in the app that could do it at all was the player — which meant marking an episode
-     * played required playing it. It is offered on the short-swipe tier beside *Play next*, and as a
-     * named accessibility action, so a TalkBack user has it too.
-     *
-     * @param episodeId the episode to mark.
-     * @param isPlayed true to mark it finished, false to put it back to the start.
-     */
-    fun setPlayed(episodeId: String, isPlayed: Boolean) {
-        // Read before the suspend and from the state: it is the only place the title is, and under
-        // a filter the episode leaves the list the moment the mark lands.
-        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
-
-        viewModelScope.launch {
-            episodePlayer.setPlayed(episodeId, isPlayed)
-            pendingPlayedUndo = PlayedUndo(episodeId = episodeId, wasPlayed = episode.isPlayed)
-            transientState.value = transientState.value.copy(
-                message = PodcastDetailMessage.PlayedChanged(episode.title, isPlayed),
-            )
-        }
-    }
-
-    /**
-     * Reverses the last mark.
-     *
-     * Consumed rather than kept, for the same reason every other undo in the app is: one left armed
-     * past the snackbar that offered it would fire on the next message instead.
-     *
-     * The position is *not* restored. `setPlayed` resets it by design — see [EpisodePlayer.setPlayed]
-     * — and an undo that put back "played: no, position: 41 minutes" would restore a state the mark
-     * never came from.
-     */
-    fun undoPlayedChange() {
-        val undo = pendingPlayedUndo ?: return
-        pendingPlayedUndo = null
-        transientState.value = transientState.value.copy(message = null)
-
-        viewModelScope.launch { episodePlayer.setPlayed(undo.episodeId, undo.wasPlayed) }
     }
 
     /**
@@ -869,21 +900,7 @@ class PodcastDetailViewModel @Inject constructor(
     /** Clears the current message once its snackbar has been shown. */
     fun onMessageShown() {
         transientState.value = transientState.value.copy(message = null)
-        // The message and its undo go together: one left armed past the snackbar that offered it
-        // would fire on whichever message came next.
-        pendingPlayedUndo = null
     }
-
-    /**
-     * Everything needed to reverse one mark.
-     *
-     * @property episodeId the episode that was marked.
-     * @property wasPlayed what it was before.
-     */
-    private data class PlayedUndo(
-        val episodeId: String,
-        val wasPlayed: Boolean,
-    )
 
     private data class TransientState(
         val openEpisodeId: String? = null,
@@ -893,6 +910,8 @@ class PodcastDetailViewModel @Inject constructor(
         val isAutoRefreshing: Boolean = false,
         val isRebuilding: Boolean = false,
         val message: PodcastDetailMessage? = null,
+        val videoQualities: List<VideoQuality>? = null,
+        val videoQualitiesFailed: Boolean = false,
     ) {
         /**
          * Whether a feed operation of any kind is already running.
@@ -917,6 +936,12 @@ class PodcastDetailViewModel @Inject constructor(
         const val EPISODE_ID_ARG = "episodeId"
 
         private const val STOP_TIMEOUT_MS = 5_000L
+
+        /** How long *Play video* waits for the player to load the episode before moving on anyway. */
+        private const val WATCH_LOAD_TIMEOUT_MS = 3_000L
+
+        /** One message for every failed rendition lookup, so they group into one report. */
+        private const val NON_FATAL_QUALITIES = "Episode sheet video qualities lookup failed"
 
         /**
          * How stale this show's feed must be before opening it re-fetches it.
