@@ -3,10 +3,15 @@ package md.borisveriga.megapodcastplayer.core.media
 import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
+import android.os.Bundle
+import android.view.SurfaceView
+import androidx.core.os.bundleOf
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -37,6 +42,7 @@ import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * The app's handle on [PlaybackService].
@@ -392,6 +398,71 @@ class PlaybackConnection @Inject constructor(
         player.clearMediaItems()
     }
 
+    /**
+     * Shows the picture of the episode playing, at [quality], keeping its position.
+     *
+     * Idempotent: asking again for the rendition already showing changes nothing, which is what
+     * lets the video screen ask on every start without a rotation costing a re-buffer.
+     *
+     * @param quality the rendition height wanted; the resolver settles for the nearest the video has.
+     * @return true when the episode is showing, or already was; false when it has no picture to
+     *   show, when nothing is loaded, or when the service could not be reached.
+     */
+    suspend fun enterVideo(quality: VideoQuality): Boolean = sendSessionCommand(
+        SESSION_COMMAND_ENTER_VIDEO,
+        bundleOf(EXTRA_VIDEO_HEIGHT to quality.height),
+    )
+
+    /**
+     * Goes back to sound only, keeping the position. Playback carries on; only the picture stops.
+     *
+     * @return true when the episode plays as sound, or already did; false when the service could
+     *   not be reached.
+     */
+    suspend fun exitVideo(): Boolean = sendSessionCommand(SESSION_COMMAND_EXIT_VIDEO, Bundle.EMPTY)
+
+    /**
+     * Gives the player a surface to draw the picture on.
+     *
+     * The controller forwards it to the service's player, so the picture is decoded where the
+     * sound is and the two cannot drift. Cleared with [detachVideoSurface] before the view goes.
+     *
+     * @param view the surface to draw on.
+     */
+    suspend fun attachVideoSurface(view: SurfaceView) = onController { player ->
+        player.setVideoSurfaceView(view)
+    }
+
+    /**
+     * Takes [view] back from the player, if it is the one drawing.
+     *
+     * @param view the surface handed over by [attachVideoSurface].
+     */
+    suspend fun detachVideoSurface(view: SurfaceView) = onController { player ->
+        player.clearVideoSurfaceView(view)
+    }
+
+    /**
+     * Sends one of this app's own session commands and waits for the answer.
+     *
+     * Unlike [onController], the answer matters: the service says whether it did the thing, and a
+     * refusal is an outcome the screen words, not a failure. Only an exception — the service could
+     * not be reached — is recorded as a command error.
+     *
+     * @return true when the service reported success.
+     */
+    private suspend fun sendSessionCommand(action: String, args: Bundle): Boolean =
+        suspendRunCatching {
+            withContext(Dispatchers.Main.immediate) {
+                controller().sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args).await()
+            }
+        }
+            .map { result -> result.resultCode == SessionResult.RESULT_SUCCESS }
+            .getOrElse { error ->
+                commandErrors.value = error.message ?: error::class.simpleName
+                false
+            }
+
     /** Clears the last command error once the UI has shown it. */
     fun clearError() {
         commandErrors.value = null
@@ -511,6 +582,10 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
         // the message is all there is for it.
         error = playbackErrorOf(playerError, isYouTube = currentMediaItem.isYouTubeSourced())
             ?: errorMessage?.let { PlaybackError.UNKNOWN },
+        youTubeVideoId = currentMediaItem?.youTubeVideoId,
+        videoQuality = currentMediaItem?.videoQualityOrNull,
+        videoWidth = videoSize.width,
+        videoHeight = videoSize.height,
     )
 }
 

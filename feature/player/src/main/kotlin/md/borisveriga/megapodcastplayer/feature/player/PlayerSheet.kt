@@ -83,7 +83,11 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  *
  * @param sheetState how open the sheet is; hoisted because the navigation bar reacts to it too.
  * @param onOpenQueue opens the queue screen.
+ * @param onWatch opens the video screen for the episode playing.
  * @param modifier layout modifier.
+ * @param hidden true while a screen that is itself the player — the video screen — is showing.
+ *   The sheet then neither draws nor reserves its height, so the screen has the whole window;
+ *   the view model and its sheets are kept, because the same episode is still playing.
  * @param viewModel injected by Hilt.
  * @param content the app's screens, given the padding the sheet occupies at rest.
  */
@@ -91,7 +95,9 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 fun PlayerSheetScaffold(
     sheetState: PlayerSheetState,
     onOpenQueue: () -> Unit,
+    onWatch: () -> Unit,
     modifier: Modifier = Modifier,
+    hidden: Boolean = false,
     viewModel: PlayerViewModel = hiltViewModel(),
     content: @Composable (PaddingValues) -> Unit,
 ) {
@@ -220,12 +226,12 @@ fun PlayerSheetScaffold(
         )
     }
 
-    val reserved = if (uiState.isIdle) 0.dp else collapsedPlayerHeight()
+    val reserved = if (uiState.isIdle || hidden) 0.dp else collapsedPlayerHeight()
 
     Box(modifier = modifier.fillMaxSize()) {
         content(PaddingValues(bottom = reserved))
 
-        if (!uiState.isIdle) {
+        if (!uiState.isIdle && !hidden) {
             PlayerSheet(
                 uiState = uiState,
                 sheetState = sheetState,
@@ -241,6 +247,7 @@ fun PlayerSheetScaffold(
                 onMarkMoment = viewModel::markMoment,
                 onOpenMoments = { momentsOpen = true },
                 onOpenQueue = onOpenQueue,
+                onWatch = onWatch,
                 onDismiss = viewModel::dismiss,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -249,13 +256,16 @@ fun PlayerSheetScaffold(
         // Last, so it draws over the sheet rather than under it. Every message here is about
         // something the user did *in* the player — marking a moment, a playback error — and the
         // expanded sheet fills the screen, so a host drawn before it would put the confirmation
-        // for a button press behind the button that was pressed.
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = reserved),
-        )
+        // for a button press behind the button that was pressed. Not while hidden: the video
+        // screen has a host of its own, and two snackbars for one player would race.
+        if (!hidden) {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = reserved),
+            )
+        }
     }
 }
 
@@ -291,6 +301,7 @@ fun PlayerSheetScaffold(
  * @param onMarkMoment saves a moment at the playhead.
  * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
+ * @param onWatch opens the video screen; offered only for an episode with a picture.
  * @param onDismiss stops playback and puts the player away; what a downward pull on the collapsed
  *   bar commits to, what the bar's spoken action does, and what the expanded sheet's close button
  *   presses.
@@ -312,6 +323,7 @@ fun PlayerSheet(
     onMarkMoment: () -> Unit,
     onOpenMoments: () -> Unit,
     onOpenQueue: () -> Unit,
+    onWatch: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -507,6 +519,7 @@ fun PlayerSheet(
                             onMarkMoment = onMarkMoment,
                             onOpenMoments = onOpenMoments,
                             onOpenQueue = onOpenQueue,
+                            onWatch = onWatch,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer { alpha = expandedAlpha(progress) },
@@ -782,6 +795,7 @@ private fun OpenPlayerSheet() {
             onMarkMoment = {},
             onOpenMoments = {},
             onOpenQueue = {},
+            onWatch = {},
             onDismiss = {},
             modifier = Modifier.fillMaxSize(),
         )

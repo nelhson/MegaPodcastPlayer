@@ -1,5 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.media
 
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+
 /**
  * Everything the UI needs to render the player, flattened out of Media3's callback API.
  *
@@ -36,6 +38,11 @@ package md.borisveriga.megapodcastplayer.core.media
  *   better to say; for every other case the screen has a sentence of its own.
  * @property error what kind of failure it was, classified so a screen can word it. Null when
  *   nothing has failed.
+ * @property youTubeVideoId the YouTube video behind the loaded episode, or null for a feed episode.
+ *   Present in both flavours; it is what says the episode *could* be watched.
+ * @property videoQuality the rendition the episode is showing, or null while it plays as sound only.
+ * @property videoWidth the picture's width in pixels once the decoder has reported it, else `0`.
+ * @property videoHeight the picture's height, likewise.
  */
 data class PlaybackState(
     val isConnected: Boolean = false,
@@ -55,10 +62,29 @@ data class PlaybackState(
     val maxVolume: Int = 0,
     val errorMessage: String? = null,
     val error: PlaybackError? = null,
+    val youTubeVideoId: String? = null,
+    val videoQuality: VideoQuality? = null,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
 ) {
 
     /** True when there is nothing loaded, i.e. the mini player should be hidden. */
     val isIdle: Boolean get() = episodeId == null
+
+    /** True when the loaded episode has a picture the video screen could show. */
+    val canWatch: Boolean get() = youTubeVideoId != null
+
+    /** True while the loaded episode plays as sound and picture rather than sound alone. */
+    val isVideo: Boolean get() = videoQuality != null
+
+    /**
+     * Width over height of the picture, or null until the decoder has measured a frame.
+     *
+     * Null rather than a 16:9 guess so a surface can stay hidden until the first real frame, instead
+     * of drawing a box of the wrong shape and then jumping.
+     */
+    val videoAspectRatio: Float?
+        get() = if (videoWidth > 0 && videoHeight > 0) videoWidth.toFloat() / videoHeight else null
 
     /** The duration if the player has read it, otherwise null. */
     val knownDurationMs: Long? get() = durationMs.takeIf { it > 0L }

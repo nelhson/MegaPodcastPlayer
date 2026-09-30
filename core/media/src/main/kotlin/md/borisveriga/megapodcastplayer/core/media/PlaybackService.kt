@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.media
 
 import android.app.PendingIntent
+import android.os.Bundle
 import android.os.Process
 import android.util.Log
 import androidx.annotation.OptIn
@@ -12,6 +13,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,7 +33,9 @@ import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.di.PlaybackDataSource
+import md.borisveriga.megapodcastplayer.core.media.youtube.YouTubeMediaSourceFactory
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * The foreground service that owns the one and only [ExoPlayer] instance.
@@ -120,6 +127,13 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
 
+    /**
+     * The player itself, kept apart from the session's wrapper for the one thing the wrapper is
+     * not for: swapping the item playing between its sound-only and its video flavour, which is an
+     * edit to the playlist rather than a meaning given to a button.
+     */
+    private var exoPlayer: ExoPlayer? = null
+
     override fun onCreate() {
         super.onCreate()
 
@@ -132,7 +146,11 @@ class PlaybackService : MediaSessionService() {
         setListener(ForegroundStartListener())
 
         val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            // Media3's default for every stored episode; the wrapper only steps in for a video
+            // sentinel, which it plays as a picture merged with the episode's own audio.
+            .setMediaSourceFactory(
+                YouTubeMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory), dataSourceFactory),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     // The speech content type lets a car head unit duck us for a navigation prompt
@@ -161,6 +179,7 @@ class PlaybackService : MediaSessionService() {
             .setSeekForwardIncrementMs(PlaybackSettings.DEFAULT_SKIP_FORWARD_MS)
             .setSeekBackIncrementMs(PlaybackSettings.DEFAULT_SKIP_BACK_MS)
             .build()
+        exoPlayer = player
 
         player.addListener(
             PlaybackPersistenceListener(
@@ -259,6 +278,7 @@ class PlaybackService : MediaSessionService() {
             release()
         }
         mediaSession = null
+        exoPlayer = null
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -358,6 +378,9 @@ class PlaybackService : MediaSessionService() {
          *
          * If a legitimate integration ever stops working — a car head unit, a launcher's media
          * widget — the fix is to add its package to that list, having checked what it is.
+         *
+         * The two video commands go to this app alone. They edit the playlist, and nothing outside
+         * the app has a surface to show a picture on.
          */
         override fun onConnect(
             session: MediaSession,
@@ -372,7 +395,53 @@ class PlaybackService : MediaSessionService() {
                 Log.i(TAG, "Refused a media session connection from ${controller.packageName}")
                 return MediaSession.ConnectionResult.reject()
             }
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            if (controller.packageName == packageName) {
+                builder.setAvailableSessionCommands(
+                    MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                        .add(SessionCommand(SESSION_COMMAND_ENTER_VIDEO, Bundle.EMPTY))
+                        .add(SessionCommand(SESSION_COMMAND_EXIT_VIDEO, Bundle.EMPTY))
+                        .build(),
+                )
+            }
+            return builder.build()
+        }
+
+        /**
+         * Handles the two video commands; everything else is left to Media3.
+         *
+         * Answered synchronously, on the player's thread, because a swap is three playlist calls
+         * and the caller is waiting to attach a surface: an asynchronous answer would only add a
+         * hop. The outcome is folded into the result code so the screen can tell "already showing"
+         * from "this episode has no picture" without a second round trip.
+         */
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            val player = exoPlayer
+                ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+            val outcome = when (customCommand.customAction) {
+                SESSION_COMMAND_ENTER_VIDEO -> {
+                    val height = args.getInt(EXTRA_VIDEO_HEIGHT, 0)
+                    if (height <= 0) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    }
+                    player.enterVideoMode(VideoQuality(height))
+                }
+
+                SESSION_COMMAND_EXIT_VIDEO -> player.exitVideoMode()
+
+                else -> return super.onCustomCommand(session, controller, customCommand, args)
+            }
+            val code = when (outcome) {
+                VideoModeOutcome.SWAPPED, VideoModeOutcome.UNCHANGED -> SessionResult.RESULT_SUCCESS
+                VideoModeOutcome.NOT_YOUTUBE -> SessionError.ERROR_BAD_VALUE
+                VideoModeOutcome.NOTHING_LOADED -> SessionError.ERROR_INVALID_STATE
+            }
+            return Futures.immediateFuture(SessionResult(code))
         }
 
         override fun onPlaybackResumption(

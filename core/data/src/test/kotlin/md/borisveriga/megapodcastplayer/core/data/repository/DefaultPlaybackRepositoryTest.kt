@@ -13,6 +13,7 @@ import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -263,5 +264,14 @@ class DefaultPlaybackRepositoryTest {
         repository.setSpeed(1.5f)
 
         assertEquals(1.5f, repository.observePlaybackSettings().first().speed, 0.001f)
+    }
+
+    @Test
+    fun `the video quality defaults and then round trips`() = runTest {
+        assertEquals(VideoQuality.DEFAULT, repository.observeVideoQuality().first())
+
+        repository.setVideoQuality(VideoQuality(1080))
+
+        assertEquals(VideoQuality(1080), repository.observeVideoQuality().first())
     }
 }

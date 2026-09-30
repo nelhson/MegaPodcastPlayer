@@ -20,6 +20,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.ShowSettingsCodec
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * Reads and writes the small, user-owned settings that are not worth a database table.
@@ -145,6 +146,20 @@ class UserPreferencesDataSource @Inject constructor(
      */
     val lastPlayedEpisodeId: Flow<String?> =
         dataStore.data.map { preferences -> preferences[Keys.LAST_PLAYED_EPISODE_ID] }
+
+    /**
+     * Observes the video rendition the user last chose on the video screen, [VideoQuality.DEFAULT]
+     * until they choose one.
+     *
+     * Only the height is stored, and a stored value that is not positive reads as the default
+     * rather than as a [VideoQuality] that throws in its own constructor.
+     */
+    val videoQuality: Flow<VideoQuality> = dataStore.data.map { preferences ->
+        preferences[Keys.VIDEO_QUALITY_HEIGHT]
+            ?.takeIf { it > 0 }
+            ?.let(::VideoQuality)
+            ?: VideoQuality.DEFAULT
+    }
 
     /**
      * Observes when a backup was last exported, or null if one never has been.
@@ -326,6 +341,15 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Records the video rendition the user chose, so the next video opens at it.
+     *
+     * @param quality the chosen rendition.
+     */
+    suspend fun setVideoQuality(quality: VideoQuality) {
+        dataStore.edit { it[Keys.VIDEO_QUALITY_HEIGHT] = quality.height }
+    }
+
+    /**
      * Records that a backup was exported successfully.
      *
      * @param exportedAtMs when the export was written, epoch milliseconds.
@@ -406,6 +430,7 @@ class UserPreferencesDataSource @Inject constructor(
         val ACKNOWLEDGED_RESTORE_ID = stringPreferencesKey("acknowledged_restore_id")
         val SHOW_SETTINGS = stringPreferencesKey("show_settings")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
+        val VIDEO_QUALITY_HEIGHT = intPreferencesKey("video_quality_height")
     }
 
     private companion object {

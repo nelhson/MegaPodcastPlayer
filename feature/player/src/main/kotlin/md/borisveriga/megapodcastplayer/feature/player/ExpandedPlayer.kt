@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.BedtimeOff
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -101,6 +102,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * @param onMarkMoment saves a moment at the playhead.
  * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
+ * @param onWatch opens the video screen; offered only for an episode that has a picture.
  * @param modifier layout modifier.
  */
 @Composable
@@ -120,6 +122,7 @@ fun ExpandedPlayer(
     onMarkMoment: () -> Unit,
     onOpenMoments: () -> Unit,
     onOpenQueue: () -> Unit,
+    onWatch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The two blocks as slots, built once and handed to whichever arrangement is in force. A
@@ -141,6 +144,7 @@ fun ExpandedPlayer(
             onMarkMoment = onMarkMoment,
             onOpenMoments = onOpenMoments,
             onOpenQueue = onOpenQueue,
+            onWatch = onWatch,
         )
     }
 
@@ -348,6 +352,7 @@ private fun EpisodeHeading(
  * @param onMarkMoment saves a moment at the playhead.
  * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
+ * @param onWatch opens the video screen.
  */
 @Composable
 private fun PlayerControls(
@@ -364,6 +369,7 @@ private fun PlayerControls(
     onMarkMoment: () -> Unit,
     onOpenMoments: () -> Unit,
     onOpenQueue: () -> Unit,
+    onWatch: () -> Unit,
 ) {
     Scrubber(
         playback = uiState.playback,
@@ -389,6 +395,7 @@ private fun PlayerControls(
         onToggleDownload = onToggleDownload,
         onMarkMoment = onMarkMoment,
         onOpenMoments = onOpenMoments,
+        onWatch = onWatch,
     )
 
     // Drawn at zero too. The link used to vanish with the queue, which meant the player never
@@ -574,6 +581,7 @@ private fun TransportControls(
  * @param onToggleDownload starts, cancels, retries or deletes the episode's offline copy.
  * @param onMarkMoment saves a moment at the playhead.
  * @param onOpenMoments opens the list of this episode's moments.
+ * @param onWatch opens the video screen; drawn only when the episode has a picture to show.
  * @param modifier layout modifier.
  */
 @Composable
@@ -584,6 +592,7 @@ private fun SecondaryActions(
     onToggleDownload: () -> Unit,
     onMarkMoment: () -> Unit,
     onOpenMoments: () -> Unit,
+    onWatch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -641,6 +650,18 @@ private fun SecondaryActions(
             onClick = onMarkMoment,
             onCountClick = onOpenMoments,
         )
+
+        // Only for an episode with a picture, which today means a YouTube one. A feed episode has
+        // nothing to show, and a disabled button would be a question with no answer.
+        if (uiState.playback.canWatch) {
+            IconButton(onClick = onWatch) {
+                Icon(
+                    imageVector = Icons.Rounded.SmartDisplay,
+                    contentDescription = stringResource(R.string.player_watch),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         uiState.download?.let { download ->
             DownloadButton(

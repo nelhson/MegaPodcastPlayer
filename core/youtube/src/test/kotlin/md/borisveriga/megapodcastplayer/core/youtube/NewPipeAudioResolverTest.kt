@@ -9,9 +9,11 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -19,6 +21,7 @@ import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
+import org.schabi.newpipe.extractor.stream.VideoStream
 
 /**
  * Tests the decisions inside the resolver that can be made without a network.
@@ -52,6 +55,31 @@ class NewPipeAudioResolverTest {
         every { audioTrackType } returns trackType
     }
 
+    private fun videoStream(
+        h: Int,
+        frameRate: Int = 30,
+        format: MediaFormat = MediaFormat.MPEG_4,
+        delivery: DeliveryMethod = DeliveryMethod.PROGRESSIVE_HTTP,
+        isUrl: Boolean = true,
+        content: String = "https://rr3.googlevideo.com/videoplayback?itag=136&expire=2000000000",
+        videoOnly: Boolean = true,
+    ): VideoStream = mockk(relaxed = true) {
+        every { height } returns h
+        every { fps } returns frameRate
+        every { getFormat() } returns format
+        every { deliveryMethod } returns delivery
+        every { isUrl() } returns isUrl
+        every { getContent() } returns content
+        every { isVideoOnly() } returns videoOnly
+    }
+
+    private fun candidate(height: Int, fps: Int = 30, mp4: Boolean = true) = VideoCandidate(
+        url = "https://rr3.googlevideo.com/videoplayback?h=$height&fps=$fps&mp4=$mp4",
+        height = height,
+        fps = fps,
+        isMp4 = mp4,
+    )
+
     // --- the resolution cache ---------------------------------------------
 
     /**
@@ -59,13 +87,24 @@ class NewPipeAudioResolverTest {
      *
      * The stub always succeeds and always returns the same video, so the only thing that varies
      * between these tests is how many times it was asked — which is exactly the question.
+     *
+     * @param videoOnly the picture renditions the stubbed video offers; by default 720p and 1080p
+     *   in MP4 and a WebM 720p, which is the shape of an ordinary upload.
      */
-    private fun withStubbedExtractor(block: (NewPipeAudioResolver) -> Unit) {
+    private fun withStubbedExtractor(
+        videoOnly: List<VideoStream> = listOf(
+            videoStream(h = 1080),
+            videoStream(h = 720, format = MediaFormat.WEBM),
+            videoStream(h = 720),
+        ),
+        block: (NewPipeAudioResolver) -> Unit,
+    ) {
         mockkStatic(StreamInfo::class)
         try {
             val info: StreamInfo = mockk(relaxed = true) {
                 every { streamType } returns StreamType.VIDEO_STREAM
                 every { audioStreams } returns listOf(audioStream(bitrate = 128, content = URL))
+                every { videoOnlyStreams } returns videoOnly
                 every { duration } returns 3600L
             }
             every { StreamInfo.getInfo(any<String>()) } returns info
@@ -117,6 +156,153 @@ class NewPipeAudioResolverTest {
 
             verify(exactly = 1) { StreamInfo.getInfo(any<String>()) }
         }
+
+    // --- the picture shares the sound's extraction ------------------------
+
+    @Test
+    fun `the picture and the sound come from one extraction`() = withStubbedExtractor { resolver ->
+        // The video screen asks for all three within a second of opening. Three extractions
+        // would triple the slowest step and let the halves expire on different clocks.
+        resolver.resolve(VIDEO_ID)
+        resolver.resolveVideo(VIDEO_ID, VideoQuality.DEFAULT)
+        resolver.availableQualities(VIDEO_ID)
+
+        verify(exactly = 1) { StreamInfo.getInfo(any<String>()) }
+    }
+
+    @Test
+    fun `invalidate drops the picture along with the sound`() = withStubbedExtractor { resolver ->
+        resolver.resolveVideo(VIDEO_ID, VideoQuality.DEFAULT)
+        resolver.invalidate(VIDEO_ID)
+        resolver.resolveVideo(VIDEO_ID, VideoQuality.DEFAULT)
+
+        verify(exactly = 2) { StreamInfo.getInfo(any<String>()) }
+    }
+
+    @Test
+    fun `available qualities lists each height once, lowest first`() =
+        withStubbedExtractor { resolver ->
+            assertEquals(
+                listOf(VideoQuality(720), VideoQuality(1080)),
+                resolver.availableQualities(VIDEO_ID),
+            )
+        }
+
+    @Test
+    fun `resolving the picture reports the height it settled on`() =
+        withStubbedExtractor { resolver ->
+            val video = resolver.resolveVideo(VIDEO_ID, VideoQuality(4320))
+
+            assertEquals(VideoQuality(1080), video.quality)
+            assertEquals("TestAgent/1.0".isEmpty(), video.requestHeaders.isEmpty())
+        }
+
+    @Test
+    fun `a video with sound and no playable picture fails readably`() =
+        withStubbedExtractor(videoOnly = emptyList()) { resolver ->
+            // The sound is still an episode, so `resolve` must keep working…
+            resolver.resolve(VIDEO_ID)
+            assertEquals(emptyList<VideoQuality>(), resolver.availableQualities(VIDEO_ID))
+
+            // …and only the request for the picture fails, with a reason the screen can show.
+            assertThrows(YouTubeVideoUnavailableException::class.java) {
+                resolver.resolveVideo(VIDEO_ID, VideoQuality.DEFAULT)
+            }
+        }
+
+    // --- playableVideoCandidates ------------------------------------------
+
+    @Test
+    fun `keeps only progressive video-only urls`() {
+        val dash = videoStream(h = 1080, delivery = DeliveryMethod.DASH)
+        val manifest = videoStream(h = 1080, isUrl = false)
+        val blank = videoStream(h = 1080, content = "")
+        val combined = videoStream(h = 360, videoOnly = false)
+        val unknownHeight = videoStream(h = 0)
+        val good = videoStream(h = 720)
+
+        val candidates = playableVideoCandidates(
+            listOf(dash, manifest, blank, combined, unknownHeight, good),
+        )
+
+        assertEquals(listOf(candidate(720)), candidates.map { candidate(it.height, it.fps, it.isMp4) })
+    }
+
+    @Test
+    fun `records the container and the frame rate`() {
+        val webm60 = videoStream(h = 720, frameRate = 60, format = MediaFormat.WEBM)
+
+        val candidate = playableVideoCandidates(listOf(webm60)).single()
+
+        assertEquals(60, candidate.fps)
+        assertEquals(false, candidate.isMp4)
+    }
+
+    // --- selectVideoCandidate ---------------------------------------------
+
+    @Test
+    fun `the exact height wins`() {
+        val choice = selectVideoCandidate(
+            listOf(candidate(480), candidate(720), candidate(1080)),
+            VideoQuality(720),
+        )
+
+        assertEquals(720, choice?.height)
+    }
+
+    @Test
+    fun `falls back to the tallest below the request while it is still sharp enough`() {
+        val choice = selectVideoCandidate(
+            listOf(candidate(480), candidate(720), candidate(1440)),
+            VideoQuality(1080),
+        )
+
+        assertEquals(720, choice?.height)
+    }
+
+    @Test
+    fun `goes above the request rather than below the floor`() {
+        // 480p is closer to 720p than 1080p is, but 480p is the thing the floor exists to avoid.
+        val choice = selectVideoCandidate(
+            listOf(candidate(480), candidate(1080)),
+            VideoQuality(720),
+        )
+
+        assertEquals(1080, choice?.height)
+    }
+
+    @Test
+    fun `settles for the best there is when nothing reaches the floor`() {
+        // An old upload. Refusing to play it would be worse than playing it as it is.
+        val choice = selectVideoCandidate(
+            listOf(candidate(240), candidate(480), candidate(360)),
+            VideoQuality(720),
+        )
+
+        assertEquals(480, choice?.height)
+    }
+
+    @Test
+    fun `prefers mp4 at the chosen height`() {
+        val webm = candidate(720, mp4 = false)
+        val mp4 = candidate(720, mp4 = true)
+
+        assertSame(mp4, selectVideoCandidate(listOf(webm, mp4), VideoQuality(720)))
+    }
+
+    @Test
+    fun `prefers the lower frame rate at the chosen height`() {
+        // Twice the data for a talking head nobody can see move any faster.
+        val sixty = candidate(720, fps = 60)
+        val thirty = candidate(720, fps = 30)
+
+        assertSame(thirty, selectVideoCandidate(listOf(sixty, thirty), VideoQuality(720)))
+    }
+
+    @Test
+    fun `returns null when there is no picture at all`() {
+        assertNull(selectVideoCandidate(emptyList(), VideoQuality.DEFAULT))
+    }
 
     // --- selectAudioStream ------------------------------------------------
 

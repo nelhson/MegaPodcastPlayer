@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.core.data.repository
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * The durable side of playback: the "up next" queue and the user's playback preferences.
@@ -31,6 +32,15 @@ interface PlaybackRepository {
 
     /** Observes the user's playback preferences. */
     fun observePlaybackSettings(): Flow<PlaybackSettings>
+
+    /**
+     * Observes the video rendition the user last chose, [VideoQuality.DEFAULT] until they choose.
+     *
+     * Apart from [observePlaybackSettings] because it is read by one screen and written by one
+     * control, and folding it into a settings object every player surface combines would recompose
+     * all of them for a number none of them draws.
+     */
+    fun observeVideoQuality(): Flow<VideoQuality>
 
     /**
      * Loads one episode with its show details.
@@ -83,6 +93,9 @@ interface PlaybackRepository {
 
     /** Sets how far the skip buttons jump. */
     suspend fun setSkipIntervals(forwardMs: Long, backMs: Long)
+
+    /** Records the video rendition the user chose, so the next video opens at it. */
+    suspend fun setVideoQuality(quality: VideoQuality)
 
     /**
      * Enables or disables advancing to the next queued episode when one finishes.

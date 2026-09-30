@@ -82,6 +82,71 @@ class YouTubeUrlsTest {
         assertFalse(url.contains("hqdefault"))
     }
 
+    // --- the video-only sentinel ------------------------------------------
+
+    @Test
+    fun `a minted video-only sentinel parses back to the same id and height`() {
+        val ref = youTubeVideoOnlyRefOrNull(
+            youTubeVideoOnlySentinel("niTJ2221aS8", VideoQuality(1080)),
+        )
+
+        assertEquals(YouTubeVideoOnlyRef("niTJ2221aS8", VideoQuality(1080)), ref)
+    }
+
+    @Test
+    fun `the video-only sentinel is exactly the documented shape`() {
+        assertEquals(
+            "youtube://video-only/niTJ2221aS8?h=720",
+            youTubeVideoOnlySentinel("niTJ2221aS8", VideoQuality(720)),
+        )
+    }
+
+    @Test
+    fun `the video-only sentinel is not an audio sentinel`() {
+        // The load-bearing property. The audio parser is what the scheme allowlist, the cache key
+        // and the download index all go through, so the picture's stand-in must read as "not one"
+        // to every one of them.
+        val videoOnly = youTubeVideoOnlySentinel("niTJ2221aS8", VideoQuality(720))
+
+        assertNull(youTubeVideoIdOrNull(videoOnly))
+        assertFalse(isPlayableMediaUrl(videoOnly))
+    }
+
+    @Test
+    fun `an audio sentinel is not a video-only sentinel`() {
+        assertNull(youTubeVideoOnlyRefOrNull(youTubeAudioSentinel("niTJ2221aS8")))
+        assertNull(youTubeVideoOnlyRefOrNull("https://cdn.example.com/episode-42.mp3"))
+    }
+
+    @Test
+    fun `the video-only sentinel preserves the id's case`() {
+        val ref = youTubeVideoOnlyRefOrNull(youTubeVideoOnlySentinel("aHsi-OHI_i8", VideoQuality(720)))
+
+        assertEquals("aHsi-OHI_i8", ref?.videoId)
+    }
+
+    @Test
+    fun `a malformed video-only sentinel is not one`() {
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/"))
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/niTJ2221aS8"))
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/niTJ2221aS8?h="))
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/niTJ2221aS8?h=tall"))
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/niTJ2221aS8?h=0"))
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/niTJ2221aS8?h=-720"))
+        assertNull(youTubeVideoOnlyRefOrNull("youtube://video-only/../../etc?h=720"))
+    }
+
+    @Test
+    fun `either sentinel yields its video id`() {
+        // Chunking and invalidation treat the two halves of one video the same.
+        assertEquals("niTJ2221aS8", youTubeAnyVideoIdOrNull(youTubeAudioSentinel("niTJ2221aS8")))
+        assertEquals(
+            "niTJ2221aS8",
+            youTubeAnyVideoIdOrNull(youTubeVideoOnlySentinel("niTJ2221aS8", VideoQuality(720))),
+        )
+        assertNull(youTubeAnyVideoIdOrNull("https://cdn.example.com/episode-42.mp3"))
+    }
+
     // --- playlist id round trip -------------------------------------------
 
     @Test

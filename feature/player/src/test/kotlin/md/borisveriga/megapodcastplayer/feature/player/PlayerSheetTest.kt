@@ -69,6 +69,7 @@ class PlayerSheetTest {
         onOpenSleepTimer: () -> Unit = {},
         onToggleDownload: () -> Unit = {},
         onDismiss: () -> Unit = {},
+        onWatch: () -> Unit = {},
     ): PlayerSheetState {
         lateinit var sheetState: PlayerSheetState
         composeRule.setContent {
@@ -89,6 +90,7 @@ class PlayerSheetTest {
                     onMarkMoment = {},
                     onOpenMoments = {},
                     onOpenQueue = {},
+                    onWatch = onWatch,
                     onDismiss = onDismiss,
                 )
             }
@@ -168,6 +170,26 @@ class PlayerSheetTest {
         close.performClick()
 
         assertTrue(dismissed)
+    }
+
+    @Test
+    fun `expanded, a youtube episode offers its picture`() {
+        var watched = false
+        val youTube = playing.copy(playback = playing.playback.copy(youTubeVideoId = "niTJ2221aS8"))
+        setContent(PlayerSheetValue.Expanded, uiState = youTube, onWatch = { watched = true })
+
+        composeRule.onNodeWithContentDescription("Watch the video").performClick()
+
+        assertTrue(watched)
+    }
+
+    @Test
+    fun `expanded, a feed episode has nothing to watch`() {
+        // Not disabled: absent. A feed episode has no picture, and a button that says so on every
+        // episode of every ordinary show would be noise on the row that matters most.
+        setContent(PlayerSheetValue.Expanded)
+
+        composeRule.onNodeWithContentDescription("Watch the video").assertDoesNotExist()
     }
 
     @Test

@@ -17,6 +17,7 @@ import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyphsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SpeedControlsPreview
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenPreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -103,6 +104,16 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
      */
     @Test
     fun skipGlyphs() = capture("skip-glyphs") { SkipGlyphsPreview() }
+
+    /**
+     * The video screen's page shape, with a grey box where the picture would be.
+     *
+     * The large-font variant is the one that earns it: the title, the show and the transport share
+     * the room under a picture whose height is fixed by its proportions, and at 200 % text the
+     * question is whether the transport still fits without the title being cut.
+     */
+    @Test
+    fun videoScreen() = capture("video-screen") { VideoScreenPreview() }
 
     companion object {
         @JvmStatic

@@ -1,0 +1,696 @@
+package md.borisveriga.megapodcastplayer.feature.player.video
+
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.view.SurfaceView
+import android.view.WindowManager
+import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
+import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
+import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
+import md.borisveriga.megapodcastplayer.core.designsystem.component.LabelledWaveScrubber
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
+import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.feature.player.R
+import md.borisveriga.megapodcastplayer.feature.player.SkipGlyph
+import md.borisveriga.megapodcastplayer.feature.player.SpeedSheet
+import md.borisveriga.megapodcastplayer.feature.player.previewPlayback
+
+/**
+ * The video screen: the picture of the YouTube episode playing, with the transport under it.
+ *
+ * It is a place the episode is *shown*, not a second player. The service keeps playing the same
+ * episode at the same position before, during and after; what this screen adds is a surface, and
+ * two commands that bracket its time on screen — show the picture on the way in, go back to sound
+ * on the way out. Back, home and the screen going off all count as the way out. A rotation or a
+ * fold does not: the activity is recreated, the surface is made again, and the picture carries on.
+ *
+ * @param onBack leaves the screen; playback carries on as sound.
+ * @param modifier layout modifier.
+ * @param viewModel injected by Hilt.
+ */
+@Composable
+fun VideoRoute(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: VideoViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current
+
+    LifecycleStartEffect(Unit) {
+        viewModel.enter()
+        onStopOrDispose {
+            // A rotation or a fold stops the activity too, and starts it again a moment later.
+            // The picture must survive that; only a real departure hands back to sound.
+            if (activity?.isChangingConfigurations != true) viewModel.exit()
+        }
+    }
+
+    // The screen is about one episode's picture. When the player has moved on to something without
+    // one, or has emptied, there is nothing left here to show. Not before the service has answered:
+    // the first frame reads as "nothing loaded" and would send the user straight back out.
+    LaunchedEffect(uiState.playback.isConnected, uiState.canWatch) {
+        if (uiState.playback.isConnected && !uiState.canWatch) onBack()
+    }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val refusedText = stringResource(R.string.video_refused)
+    LaunchedEffect(uiState.refused) {
+        if (!uiState.refused) return@LaunchedEffect
+        snackbarHostState.showSnackbar(refusedText)
+        viewModel.onRefusalShown()
+    }
+
+    var speedOpen by rememberSaveable { mutableStateOf(false) }
+    var qualityOpen by rememberSaveable { mutableStateOf(false) }
+
+    if (speedOpen) {
+        SpeedSheet(
+            speed = uiState.playback.speed,
+            onPreview = viewModel::previewSpeed,
+            onCommit = viewModel::setSpeed,
+            onDismiss = { speedOpen = false },
+        )
+    }
+    if (qualityOpen) {
+        QualitySheet(
+            qualities = uiState.qualities,
+            selected = uiState.qualityShown,
+            failed = uiState.qualitiesFailed,
+            onSelect = { quality ->
+                qualityOpen = false
+                viewModel.setQuality(quality)
+            },
+            onDismiss = { qualityOpen = false },
+        )
+    }
+
+    FullscreenEffects(landscape = isLandscape(), keepScreenOn = uiState.playback.isPlaying)
+
+    VideoScreen(
+        uiState = uiState,
+        surface = { surfaceModifier ->
+            VideoSurface(
+                onAttach = viewModel::attachSurface,
+                onDetach = viewModel::detachSurface,
+                modifier = surfaceModifier,
+            )
+        },
+        actions = VideoActions(
+            onPlayPause = viewModel::togglePlayPause,
+            onSeek = viewModel::seekTo,
+            onSkipForward = viewModel::skipForward,
+            onSkipBack = viewModel::skipBack,
+            onSkipToNext = viewModel::skipToNext,
+            onSkipToPrevious = viewModel::skipToPrevious,
+            onOpenSpeed = { speedOpen = true },
+            onOpenQuality = { qualityOpen = true },
+        ),
+        onBack = onBack,
+        snackbarHostState = snackbarHostState,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Everything the transport on the video screen can do, gathered so the layouts take one thing.
+ *
+ * @property onPlayPause play/pause handler.
+ * @property onSeek absolute-seek handler.
+ * @property onSkipForward skip-ahead handler.
+ * @property onSkipBack skip-back handler.
+ * @property onSkipToNext next-episode handler.
+ * @property onSkipToPrevious previous-episode handler.
+ * @property onOpenSpeed opens the speed sheet.
+ * @property onOpenQuality opens the quality sheet.
+ */
+data class VideoActions(
+    val onPlayPause: () -> Unit = {},
+    val onSeek: (Long) -> Unit = {},
+    val onSkipForward: () -> Unit = {},
+    val onSkipBack: () -> Unit = {},
+    val onSkipToNext: () -> Unit = {},
+    val onSkipToPrevious: () -> Unit = {},
+    val onOpenSpeed: () -> Unit = {},
+    val onOpenQuality: () -> Unit = {},
+)
+
+/**
+ * The screen, in whichever of its two shapes the window calls for.
+ *
+ * Portrait is a page: the picture across the top, the episode's name and the transport under it,
+ * the system bars where they always are. Landscape is the picture and nothing else, with the
+ * transport laid over it and hidden again a few seconds after the last touch.
+ *
+ * The surface is a slot rather than drawn here, so a preview — and the golden — can put a plain
+ * box where a `SurfaceView` bound to the player would be.
+ *
+ * @param uiState what to render.
+ * @param surface draws the player's picture into the modifier it is given.
+ * @param actions the transport.
+ * @param onBack leaves the screen.
+ * @param modifier layout modifier.
+ * @param snackbarHostState where a refusal is shown.
+ */
+@Composable
+internal fun VideoScreen(
+    uiState: VideoUiState,
+    surface: @Composable (Modifier) -> Unit,
+    actions: VideoActions,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+) {
+    if (isLandscape()) {
+        LandscapeVideo(uiState, surface, actions, onBack, snackbarHostState, modifier)
+    } else {
+        PortraitVideo(uiState, surface, actions, onBack, snackbarHostState, modifier)
+    }
+}
+
+/** Whether the window is wider than it is tall, which is what chooses the screen's shape. */
+@Composable
+private fun isLandscape(): Boolean =
+    LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+/**
+ * The page shape.
+ *
+ * @param uiState what to render.
+ * @param surface draws the picture.
+ * @param actions the transport.
+ * @param onBack leaves the screen.
+ * @param snackbarHostState where a refusal is shown.
+ * @param modifier layout modifier.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PortraitVideo(
+    uiState: VideoUiState,
+    surface: @Composable (Modifier) -> Unit,
+    actions: VideoActions,
+    onBack: () -> Unit,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+) {
+    Scaffold(
+        modifier = modifier,
+        topBar = { TopAppBar(title = {}, navigationIcon = { BackButton(onBack) }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize(),
+        ) {
+            VideoFrame(playback = uiState.playback, surface = surface, modifier = Modifier.fillMaxWidth())
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal),
+            ) {
+                EpisodeTitles(
+                    playback = uiState.playback,
+                    modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.md),
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                VideoControls(
+                    uiState = uiState,
+                    actions = actions,
+                    modifier = Modifier.padding(bottom = MegaPodcastPlayerTheme.spacing.lg),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The full-screen shape.
+ *
+ * The whole surface is one tap target that shows and hides the controls; while playing they go
+ * away on their own after [CONTROLS_TIMEOUT_MS], and stay while paused, because a paused picture is
+ * one the user is about to do something to.
+ *
+ * @param uiState what to render.
+ * @param surface draws the picture.
+ * @param actions the transport.
+ * @param onBack leaves the screen.
+ * @param snackbarHostState where a refusal is shown.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun LandscapeVideo(
+    uiState: VideoUiState,
+    surface: @Composable (Modifier) -> Unit,
+    actions: VideoActions,
+    onBack: () -> Unit,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+) {
+    var controlsVisible by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(controlsVisible, uiState.playback.isPlaying) {
+        if (controlsVisible && uiState.playback.isPlaying) {
+            delay(CONTROLS_TIMEOUT_MS)
+            controlsVisible = false
+        }
+    }
+    val toggleLabel = stringResource(
+        if (controlsVisible) R.string.video_hide_controls else R.string.video_show_controls,
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                // No ripple: a flash across the whole picture on every tap would be the most
+                // visible thing on the screen.
+                indication = null,
+                onClickLabel = toggleLabel,
+            ) { controlsVisible = !controlsVisible },
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            VideoFrame(playback = uiState.playback, surface = surface)
+        }
+
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            CompositionLocalProvider(LocalContentColor provides Color.White) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(SCRIM, Color.Transparent, Color.Transparent, SCRIM),
+                            ),
+                        )
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = MegaPodcastPlayerTheme.spacing.md),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BackButton(onBack)
+                        EpisodeTitles(
+                            playback = uiState.playback,
+                            modifier = Modifier.weight(1f),
+                            compact = true,
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    VideoControls(
+                        uiState = uiState,
+                        actions = actions,
+                        modifier = Modifier.padding(bottom = MegaPodcastPlayerTheme.spacing.sm),
+                    )
+                }
+            }
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+        )
+    }
+}
+
+/**
+ * The picture, in a box of its own shape.
+ *
+ * The box takes the picture's measured proportions once the decoder has reported them, and 16:9
+ * until then — every YouTube rendition this app plays is 16:9, so the guess is right far more often
+ * than not and a box of the wrong shape never jumps. Black under and over the surface until the
+ * first frame, so nothing of what was behind shows through the hole a `SurfaceView` punches.
+ *
+ * @param playback what the player is doing; the shape, the shutter and the spinner come from it.
+ * @param surface draws the picture.
+ * @param modifier layout modifier; the caller decides which edge the box fills.
+ */
+@Composable
+private fun VideoFrame(
+    playback: PlaybackState,
+    surface: @Composable (Modifier) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val measured = playback.videoAspectRatio
+    Box(
+        modifier = modifier
+            .aspectRatio(measured ?: DEFAULT_ASPECT_RATIO)
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        surface(Modifier.fillMaxSize())
+        if (!playback.isVideo || measured == null) {
+            // The shutter: over the surface, which draws whatever it last held until the picture
+            // starts — including a frame of the previous episode.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+            )
+        }
+        if (playback.isBuffering || !playback.isVideo) {
+            CircularProgressIndicator(color = Color.White)
+        }
+    }
+}
+
+/**
+ * The episode's title and its show's.
+ *
+ * @param playback where the names come from.
+ * @param modifier layout modifier.
+ * @param compact true over the picture, where there is one line's worth of room beside the back
+ *   button and the colour is the overlay's rather than the page's.
+ */
+@Composable
+private fun EpisodeTitles(
+    playback: PlaybackState,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = playback.title,
+            style = if (compact) {
+                MaterialTheme.typography.titleMedium
+            } else {
+                MaterialTheme.typography.headlineSmall
+            },
+            maxLines = if (compact) 1 else 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = playback.showTitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (compact) {
+                LocalContentColor.current.copy(alpha = SECONDARY_TEXT_ALPHA)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * The scrubber, the transport and the two settings buttons, stacked.
+ *
+ * @param uiState what to render.
+ * @param actions the transport.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun VideoControls(
+    uiState: VideoUiState,
+    actions: VideoActions,
+    modifier: Modifier = Modifier,
+) {
+    val playback = uiState.playback
+    val durationMs = playback.knownDurationMs
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        LabelledWaveScrubber(
+            positionMs = playback.positionMs,
+            // Zero renders an inert, empty rail, the right face for a duration not yet read.
+            durationMs = durationMs ?: 0L,
+            playing = playback.isPlaying,
+            onSeek = actions.onSeek,
+            elapsedLabel = formatPosition(playback.positionMs),
+            remainingLabel = formatCountdown(durationMs, playback.positionMs)
+                ?: stringResource(R.string.player_unknown_duration),
+            enabled = durationMs != null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = MegaPodcastPlayerTheme.spacing.sm),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = actions.onSkipToPrevious) {
+                Icon(
+                    imageVector = Icons.Rounded.SkipPrevious,
+                    contentDescription = stringResource(R.string.player_previous),
+                )
+            }
+            IconButton(onClick = actions.onSkipBack) {
+                SkipGlyph(skipMs = uiState.settings.skipBackMs, forward = false)
+            }
+            PlayPauseButton(
+                playing = playback.isPlaying,
+                onToggle = { actions.onPlayPause() },
+                size = PlayPauseSize.Hero,
+                buffering = playback.isBuffering,
+                modifier = Modifier.padding(horizontal = MegaPodcastPlayerTheme.spacing.md),
+            )
+            IconButton(onClick = actions.onSkipForward) {
+                SkipGlyph(skipMs = uiState.settings.skipForwardMs, forward = true)
+            }
+            IconButton(onClick = actions.onSkipToNext) {
+                Icon(
+                    imageVector = Icons.Rounded.SkipNext,
+                    contentDescription = stringResource(R.string.player_next),
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                MegaPodcastPlayerTheme.spacing.sm,
+                Alignment.CenterHorizontally,
+            ),
+        ) {
+            // Both labels are their own text and both are doors, so both say so when spoken —
+            // the shape the player sheet's speed button set.
+            val speed = formatSpeed(playback.speed)
+            val speedDescription = stringResource(R.string.player_speed, speed)
+            TextButton(
+                onClick = actions.onOpenSpeed,
+                modifier = Modifier.semantics { contentDescription = speedDescription },
+            ) {
+                Text(text = speed)
+            }
+
+            val quality = stringResource(R.string.video_quality_label, uiState.qualityShown.height)
+            val qualityDescription = stringResource(R.string.video_quality_button, quality)
+            TextButton(
+                onClick = actions.onOpenQuality,
+                modifier = Modifier.semantics { contentDescription = qualityDescription },
+            ) {
+                Text(text = quality)
+            }
+        }
+    }
+}
+
+/**
+ * The way out, which keeps the episode playing.
+ *
+ * @param onBack leaves the screen.
+ */
+@Composable
+private fun BackButton(onBack: () -> Unit) {
+    IconButton(onClick = onBack) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+            contentDescription = stringResource(R.string.video_back),
+        )
+    }
+}
+
+/**
+ * The player's canvas.
+ *
+ * A plain `SurfaceView` handed to the player through the controller, rather than a Media3 view:
+ * the controls are this app's own and the one thing wanted from Media3 here is the pixels. Handed
+ * over when made and taken back when released, so the player is never left drawing into a surface
+ * that no longer exists.
+ *
+ * @param onAttach receives the surface once it exists.
+ * @param onDetach receives it again before it goes.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun VideoSurface(
+    onAttach: (SurfaceView) -> Unit,
+    onDetach: (SurfaceView) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AndroidView(
+        factory = { context -> SurfaceView(context).also(onAttach) },
+        modifier = modifier,
+        onRelease = onDetach,
+    )
+}
+
+/**
+ * What the screen does to the window and the activity for as long as it is up.
+ *
+ * Three things, each undone on the way out. The screen stays on while the picture moves. The
+ * orientation follows the sensor even with auto-rotate off, because turning the phone is how a
+ * video is made big — and it is undone on leaving so the rest of the app is back under the user's
+ * setting. And in landscape the system bars go, coming back with a swipe, while the picture is let
+ * run under the cutout; there is no content there to lose to it.
+ *
+ * @param landscape whether the window is currently wider than tall.
+ * @param keepScreenOn whether the picture is moving.
+ */
+@Composable
+private fun FullscreenEffects(landscape: Boolean, keepScreenOn: Boolean) {
+    val view = LocalView.current
+    val activity = LocalActivity.current
+
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
+
+    DisposableEffect(activity) {
+        val previous = activity?.requestedOrientation
+            ?: return@DisposableEffect onDispose {}
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        onDispose { activity.requestedOrientation = previous }
+    }
+
+    DisposableEffect(activity, view, landscape) {
+        val window = activity?.window
+        if (window == null || !landscape) return@DisposableEffect onDispose {}
+        val controller = WindowInsetsControllerCompat(window, view)
+        val previousCutoutMode = window.attributes.layoutInDisplayCutoutMode
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        onDispose {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = previousCutoutMode
+            }
+        }
+    }
+}
+
+/** The shape assumed until the decoder reports one; every YouTube rendition here is 16:9. */
+private const val DEFAULT_ASPECT_RATIO = 16f / 9f
+
+/** How long the landscape controls stay after the last touch while the picture is moving. */
+private const val CONTROLS_TIMEOUT_MS = 3_000L
+
+/** The overlay's darkening at the top and bottom edges, where the controls sit over the picture. */
+private val SCRIM = Color.Black.copy(alpha = 0.6f)
+
+/** How much the show's name recedes behind the episode's over the picture. */
+private const val SECONDARY_TEXT_ALPHA = 0.8f
+
+/**
+ * The video screen in portrait, on the sample episode, in both schemes and at three font scales.
+ *
+ * The surface is a grey box: a `SurfaceView` has no player to draw from in a preview, and the
+ * golden guards the page around the picture, not the picture.
+ */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+internal fun VideoScreenPreview() {
+    MegaPodcastPlayerTheme {
+        VideoScreen(
+            uiState = VideoUiState(
+                playback = previewPlayback.copy(
+                    youTubeVideoId = "niTJ2221aS8",
+                    videoQuality = VideoQuality(PREVIEW_HEIGHT),
+                    videoWidth = PREVIEW_WIDTH,
+                    videoHeight = PREVIEW_HEIGHT,
+                ),
+                settings = PlaybackSettings(),
+                qualities = listOf(VideoQuality(PREVIEW_HEIGHT), VideoQuality(1080)),
+            ),
+            surface = { surfaceModifier -> Box(modifier = surfaceModifier.background(Color.DarkGray)) },
+            actions = VideoActions(),
+            onBack = {},
+        )
+    }
+}
+
+/** The sample picture's size: a 720p frame. */
+private const val PREVIEW_WIDTH = 1280
+private const val PREVIEW_HEIGHT = 720
