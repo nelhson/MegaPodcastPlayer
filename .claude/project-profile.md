@@ -41,8 +41,20 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 ## install_on_devices
 
 - **Targets:** `:app` → Galaxy Z Fold 7, `:wear` → Galaxy Watch Ultra 2.
-- **Build type:** `debug`. `installRelease` does not exist (no `keystore.properties` → `configureSharedSigning` leaves release unsigned; `failReleasePackagingWithoutAKeystore`).
-- **Install tasks:** `installDebug` only.
+- **Build type:** `debug` for the phone. **For the watch, not debug any more** — since 2026-09-30 the
+  watch carries the R8-shrunk, non-debuggable, debug-signed APK from
+  `.\gradlew.bat :wear:assembleRelease -PallowDebugSigningForRelease=true` (3.4 MB), pushed with
+  `adb install -r --no-streaming wear\build\outputs\apk\release\wear-release.apk`. Reason, with
+  numbers: `docs/reports/2026-09-30-watch-performance-plan.md` — the 80 MB debug APK cold-started
+  in 1.7 s with an 11 % janky scroll, and ART refuses to AOT-compile a debuggable package at all, so
+  it could never get better. Same key and app id, so it pairs with the debug phone build without an
+  uninstall. Installing `wear-debug.apk` over it brings the slowness back. After installing, run
+  `adb shell cmd package compile -m speed-profile -f md.borisveriga.megapodcastplayer` on the watch
+  rather than waiting for background dexopt. The flag is for *this* sideload only; never for
+  `distribute`. A named build type that makes the flag unnecessary is phase 1 of that report.
+- **Install tasks:** `installDebug` for the phone; the watch is the `adb install` above (no
+  `installRelease`: without `keystore.properties`, `configureSharedSigning` leaves release unsigned
+  and `failReleasePackagingWithoutAKeystore` fails the task unless the flag is passed).
 - **Launch / smoke check:** `monkey -p md.borisveriga.megapodcastplayer -c android.intent.category.LAUNCHER 1` (two namespaces, one app id — do not hardcode a component).
 - **adb:** not on PATH; use `$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe`. Both devices are on wireless debugging, so their serials (IP:port) change on every reconnect: re-list before each install.
 - **Try `adb mdns services` before the server restart.** Seen 2026-09-21 (second run): the watch was
@@ -80,7 +92,7 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 
 - **Hot paths:** continuously animating `WaveScrubber`, `WavyProgressLine`, `MorphShape`, player sheet drag; startup (`MegaPodcastPlayerApplication`, Hilt, WorkManager); `:core:media` data source chain, `EpisodePlayer`, `PlaybackService`; downloads (`EpisodeDownloader`, `ChunkedDataSource`, `MAX_PARALLEL_DOWNLOADS`, 8 MB chunks); `NewPipeAudioResolver` single lock; Room queries.
 - **Baseline profiles:** none.
-- **Measure:** `am start -W md.borisveriga.megapodcastplayer/.MainActivity`; `dumpsys gfxinfo md.borisveriga.megapodcastplayer` scrolling library and animating player sheet.
+- **Measure:** `am start -W md.borisveriga.megapodcastplayer/.MainActivity`; `dumpsys gfxinfo md.borisveriga.megapodcastplayer` scrolling library and animating player sheet. Watch: the protocol in `docs/reports/2026-09-30-watch-performance-plan.md` (cold start ×3, 20 scripted swipes, `gfxinfo` tail and janky count — the median is the swipe script's pacing, not the app). Its numbers there are the baseline for the shrunk build.
 - **Never propose:** none specific.
 
 ## project-report
