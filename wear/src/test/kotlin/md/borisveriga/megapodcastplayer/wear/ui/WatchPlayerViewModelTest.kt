@@ -597,11 +597,15 @@ class WatchPlayerViewModelTest {
     }
 
     /**
-     * The whole round trip. A publish for another reason still says playing and must not flip the
-     * button back; the answer is believed; and once the hold is over the phone's later word is too.
+     * A publish for another reason still says playing and must not flip the button back; and once
+     * the hold is over, the phone's later word is believed again.
+     *
+     * What this does not claim is that the answer in the middle *releases* the hold. A snapshot
+     * that agrees with the tap draws the same frame whether it is counted as the answer or not,
+     * so no assertion here could tell; the hold's bound is what the last step proves.
      */
     @Test
-    fun `the phone's answer is believed and a stale snapshot is not`() = runTest {
+    fun `a stale snapshot does not flip the button back, and the hold lets go`() = runTest {
         val snapshots = MutableStateFlow<ReceivedSnapshot?>(ReceivedSnapshot(playingAloud, 0L))
         every { client.snapshots } returns snapshots
         val viewModel = viewModel()

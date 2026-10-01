@@ -244,8 +244,12 @@ class WatchPlayerUiStateTest {
         assertEquals(32_000L, frame.position.positionMs)
     }
 
+    /**
+     * Once the phone says paused, the bar is the phone's paused position — not the place the
+     * watch froze it at the press, which was an extrapolation of the snapshot before.
+     */
     @Test
-    fun `the phone's own word wins once it confirms the toggle`() {
+    fun `once the phone answers a pause the bar reads the phone's own position`() {
         val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 1_000L)
         val confirmation = ReceivedSnapshot(
             playing.copy(isPlaying = false, positionMs = 31_000L),

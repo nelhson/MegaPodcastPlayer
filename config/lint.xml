@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Lint configuration for the two application modules; wired in by `nameBuildTypesForCrashReports`
+    in build-logic. Everything else about lint is in `configureAndroidCommon`.
+
+    One exemption, and it is for one resource. Each application build type writes its own name into
+    `crash_build_type`, and the only reader is `FirebaseCrashReporter` in `:core:common`. Lint runs
+    per module with `checkDependencies` off (see why in `configureAndroidCommon`), so from inside
+    `:app` or `:wear` the string has no reader and is reported as unused. It is used; lint cannot
+    see where from.
+-->
+<lint>
+    <issue id="UnusedResources">
+        <ignore regexp="R\.string\.crash_build_type" />
+    </issue>
+</lint>
