@@ -28,6 +28,33 @@ internal const val SEEK_HOLD_MS = 3_000L
 internal const val VOLUME_HOLD_MS = 1_500L
 
 /**
+ * How long a play or pause the wearer asked for is shown before the phone's own word is believed.
+ *
+ * The most-pressed button on the screen used to be the one that answered slowest: `SetVolume` and
+ * `SeekTo` showed the wearer's value at once and held it over the round trip, while play/pause
+ * waited for the phone's snapshot to change the glyph — a Bluetooth round trip, plus a phone
+ * process that may have to be started first. So the glyph flips as the thumb lifts, and the phone
+ * corrects it if it disagrees. Longer than [VOLUME_HOLD_MS] because that first tap after the phone
+ * app has been killed pays Hilt, the player connection and the publisher before it can answer.
+ */
+internal const val PLAY_HOLD_MS = 3_000L
+
+/**
+ * A play or pause the wearer asked for, and when.
+ *
+ * The held reading for the transport button, the way [VolumeAdjustment] is the held reading for the
+ * volume row. Always sent — there is no "in progress" for a tap — so unlike the other two the send
+ * time is not optional.
+ *
+ * @property isPlaying what the wearer asked for: true for play, false for pause.
+ * @property sentAtElapsedMs the watch's elapsed-realtime clock when `TogglePlayPause` went out.
+ */
+internal data class PlaybackToggle(
+    val isPlaying: Boolean,
+    val sentAtElapsedMs: Long,
+)
+
+/**
  * A scrub in progress, or one just committed.
  *
  * @property positionMs where the user has dragged to.
@@ -67,7 +94,9 @@ internal data class VolumeAdjustment(
  * @property link whether the phone can be reached at all.
  * @property snapshot what the phone last said it was playing. Its `positionMs` is always zero here.
  *   The live position is [PlaybackPosition]; the snapshot's was the reading it was extrapolated
- *   from, and keeping it would put the clock back into the list by the side door.
+ *   from, and keeping it would put the clock back into the list by the side door. Its `isPlaying`
+ *   is not always the phone's either: a play or pause the wearer has just asked for is shown at
+ *   once and held over the round trip, as a volume level is; see [PlaybackToggle].
  * @property lastCommandFailed set when a command could not be delivered, so the screen can say the
  *   tap did nothing instead of silently ignoring it.
  * @property isScrubbing true while the user is dragging the progress bar, which is what makes the
@@ -201,6 +230,8 @@ internal data class WatchPlayerFrame(
  * @param lastCommandFailed whether the most recent command failed to send.
  * @param scrub a scrub in progress or recently committed, which overrides the extrapolated position.
  * @param volume a level the wearer has just set, which overrides the phone's until it confirms.
+ * @param playback a play or pause the wearer has just asked for, which overrides the phone's
+ *   `isPlaying` until it confirms — and with it whether the bar moves.
  * @param isAdjustingVolume whether the volume row currently holds the bezel.
  * @param momentSaved whether the mark-a-moment confirmation is up.
  * @param showsScrubHint whether the first-scrub explanation is up.
@@ -215,19 +246,27 @@ internal fun watchPlayerFrame(
     lastCommandFailed: Boolean = false,
     scrub: ScrubState? = null,
     volume: VolumeAdjustment? = null,
+    playback: PlaybackToggle? = null,
     isAdjustingVolume: Boolean = false,
     momentSaved: Boolean = false,
     showsScrubHint: Boolean = false,
     showsVolumeHint: Boolean = false,
 ): WatchPlayerFrame {
     val snapshot = received?.snapshot ?: NowPlayingSnapshot()
-    val sinceArrivalMs = if (received == null) 0L else nowElapsedMs - received.receivedAtElapsedMs
+
+    // Whether the button says playing: the wearer's tap wins until the phone confirms it, on the
+    // rule the volume row uses. Confirmed means the phone *says so*, not merely that it has spoken
+    // since — a snapshot published for another reason still carries the state the tap is changing.
+    val isPlaying = playback?.isPlaying?.takeIf { asked ->
+        stillShowing(playback.sentAtElapsedMs, received, nowElapsedMs, PLAY_HOLD_MS) {
+            it.snapshot.isPlaying == asked
+        }
+    } ?: snapshot.isPlaying
 
     val shown = scrub?.positionMs?.takeIf {
         stillShowing(scrub.committedAtElapsedMs, received, nowElapsedMs, SEEK_HOLD_MS)
     }
-    // The phone's position is a reading taken some time ago, so it is advanced to now.
-    val positionMs = shown ?: snapshot.positionAfter(sinceArrivalMs)
+    val positionMs = shown ?: extrapolatedPosition(snapshot, received, nowElapsedMs, playback, isPlaying)
 
     // The level the wearer turned to wins until the phone confirms it, for the reason a held
     // scrub does: the last snapshot still describes the level they turned away from. Confirmed
@@ -243,8 +282,9 @@ internal fun watchPlayerFrame(
     val uiState = WatchPlayerUiState(
         link = link,
         // The reading the position was extrapolated from has done its job by now; see the
-        // property's documentation for why it is not carried along.
-        snapshot = snapshot.copy(positionMs = 0L),
+        // property's documentation for why it is not carried along. `isPlaying` is what the button
+        // shows, which for a moment after a tap is the wearer's word rather than the phone's.
+        snapshot = snapshot.copy(positionMs = 0L, isPlaying = isPlaying),
         lastCommandFailed = lastCommandFailed,
         // Only an uncommitted scrub is "scrubbing": once the seek is away the user has let go, and
         // the held position is just covering the round trip.
@@ -263,6 +303,44 @@ internal fun watchPlayerFrame(
             progress = snapshot.progressAt(positionMs),
         ),
     )
+}
+
+/**
+ * Where the bar reads, given what the phone last said and what the wearer has asked for since.
+ *
+ * The phone's position is a reading taken some time ago, so it is advanced to now — at the speed
+ * the phone reported, and only if the phone was playing. A play or pause the wearer has asked for
+ * and the phone has not yet confirmed changes that in the one way a thumb would expect: a pause
+ * stops the bar where it stood when the button was pressed, rather than letting it run on for the
+ * round trip and jump back when the phone answers; a play starts it moving from the phone's paused
+ * position at the moment of the press. Once the phone agrees — or the hold runs out — the phone's
+ * own reading is extrapolated as before.
+ *
+ * @param snapshot what the phone last said.
+ * @param received the same, with its arrival time; null if the phone has never spoken.
+ * @param nowElapsedMs the watch's clock.
+ * @param playback the wearer's play or pause, if any.
+ * @param isPlaying what the button shows; the phone's `isPlaying` unless [playback] governs.
+ */
+private fun extrapolatedPosition(
+    snapshot: NowPlayingSnapshot,
+    received: ReceivedSnapshot?,
+    nowElapsedMs: Long,
+    playback: PlaybackToggle?,
+    isPlaying: Boolean,
+): Long {
+    val receivedAtMs = received?.receivedAtElapsedMs ?: nowElapsedMs
+    return when {
+        // The phone's word and the button agree, whether or not a tap is pending.
+        playback == null || isPlaying == snapshot.isPlaying ->
+            snapshot.positionAfter(nowElapsedMs - receivedAtMs)
+
+        // Paused by the wearer, still playing by the phone: frozen where it was at the press.
+        !isPlaying -> snapshot.positionAfter(playback.sentAtElapsedMs - receivedAtMs)
+
+        // Started by the wearer, still paused by the phone: moving from the press onwards.
+        else -> snapshot.copy(isPlaying = true).positionAfter(nowElapsedMs - playback.sentAtElapsedMs)
+    }
 }
 
 /**

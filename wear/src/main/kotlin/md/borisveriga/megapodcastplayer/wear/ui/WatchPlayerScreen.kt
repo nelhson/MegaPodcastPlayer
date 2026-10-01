@@ -61,13 +61,13 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
@@ -1022,8 +1022,9 @@ private fun VolumePanel(
  * faint and narrow so that it reads as life in the bar rather than as a second progress indicator.
  *
  * Composed only while playing, so a pause removes it outright instead of freezing a highlight
- * mid-bar that would look like a marker. The phase and the progress are both read inside the draw
- * lambda, never in composition: each frame repaints this layer and nothing else.
+ * mid-bar that would look like a marker. The phase is an infinite transition, which keeps the
+ * frame clock running for as long as the bar is on screen and playing; that is the one fixed cost
+ * every scroll of this screen pays on top of its own, and it is what says "playing".
  *
  * @param progress how much of the bar is filled, from zero to one.
  * @param modifier sizes the glint to the bar it runs along.
@@ -1040,7 +1041,44 @@ private fun ProgressGlint(progress: () -> Float, modifier: Modifier = Modifier) 
         ),
         label = "glint-phase",
     )
+    ProgressGlintFrame(progress = progress, phase = { phase.value }, modifier = modifier)
+}
+
+/**
+ * One frame of [ProgressGlint]: the band at [phase] along the fill at [progress].
+ *
+ * Split from the animation so that a frame can be rendered still, which is what a screenshot
+ * golden needs — and so that what a frame *costs* is all in one place. Nothing here is allocated
+ * per frame that can be made once: the gradient is a shader, and a shader is a cache key, so it is
+ * built once per band width and translated into place each frame rather than rebuilt at each new
+ * position; the clip path is one object, emptied and refilled. Both the phase and the progress
+ * are read inside the draw lambda, never in composition: each frame repaints this layer and
+ * nothing else. A watch has little heap to spare, and an allocation at 60 Hz for 1.8 s at a time is
+ * a collector that runs while the wearer is scrolling.
+ *
+ * @param progress how much of the bar is filled, from zero to one.
+ * @param phase how far the band has travelled, from zero (wholly before the bar) to one (wholly
+ *   past the fill), so that it slides in and out rather than popping into being at the left edge.
+ * @param modifier sizes the glint to the bar it runs along.
+ */
+@Composable
+internal fun ProgressGlintFrame(
+    progress: () -> Float,
+    phase: () -> Float,
+    modifier: Modifier = Modifier,
+) {
     val light = MaterialTheme.colorScheme.onSurface.copy(alpha = GLINT_ALPHA)
+    val band = with(LocalDensity.current) { GLINT_WIDTH.toPx() }
+    // The band's gradient, from its own left edge: the same object every frame, moved by
+    // translating the canvas rather than by asking for a new one at the new position.
+    val glow = remember(light, band) {
+        Brush.horizontalGradient(
+            colors = listOf(Color.Transparent, light, Color.Transparent),
+            startX = 0f,
+            endX = band,
+        )
+    }
+    val clip = remember { Path() }
 
     Canvas(
         modifier = modifier
@@ -1053,24 +1091,14 @@ private fun ProgressGlint(progress: () -> Float, modifier: Modifier = Modifier) 
         val filled = size.width * progress().coerceIn(0f, 1f)
         if (filled <= 0f) return@Canvas
 
-        val band = GLINT_WIDTH.toPx()
-        // Starts wholly before the bar and ends wholly past the fill, so the band slides in and out
-        // rather than popping into being at the left edge.
-        val centre = -band * HALF + phase.value * (filled + band)
+        val centre = -band * HALF + phase().coerceIn(0f, 1f) * (filled + band)
         val radius = size.height * HALF
-        val clip = Path().apply {
-            addRoundRect(RoundRect(0f, 0f, filled, size.height, CornerRadius(radius)))
-        }
+        clip.reset()
+        clip.addRoundRect(RoundRect(0f, 0f, filled, size.height, CornerRadius(radius)))
         clipPath(clip) {
-            drawRect(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(Color.Transparent, light, Color.Transparent),
-                    startX = centre - band * HALF,
-                    endX = centre + band * HALF,
-                ),
-                topLeft = Offset(centre - band * HALF, 0f),
-                size = Size(band, size.height),
-            )
+            translate(left = centre - band * HALF) {
+                drawRect(brush = glow, size = Size(band, size.height))
+            }
         }
     }
 }

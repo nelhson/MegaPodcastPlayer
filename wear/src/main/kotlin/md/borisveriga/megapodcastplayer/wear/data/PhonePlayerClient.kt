@@ -136,25 +136,50 @@ class PhonePlayerClient @Inject constructor(
     }
 
     /**
+     * The phone's node ids as of the last time anyone asked Play Services for them.
+     *
+     * Every command used to begin with a capability lookup — an IPC into Play Services — before
+     * the message that was the point. That lookup answers a question [phoneLink] already asks on
+     * every poll and on every change the capability listener reports, so [send] now takes the
+     * last answer and looks the phone up only when there is no answer or the answer fails: one
+     * trip to Play Services per tap rather than two. Empty until the first lookup, and empty again
+     * when a lookup finds nothing, so a phone that has gone is not sent to on its old address for
+     * longer than one failed message.
+     */
+    @Volatile
+    private var lastKnownPhoneNodeIds: List<String> = emptyList()
+
+    /**
      * Asks the phone to do something.
      *
      * @param command what to ask for.
      * @return true if at least one node accepted the message.
      */
     suspend fun send(command: WearCommand): Boolean {
-        val nodeIds = capablePhoneNodeIds()
-        if (nodeIds.isEmpty()) return false
-
         val payload = WearMessages.encodeCommand(command)
-        // Delivered to every candidate node: a watch paired with two phones should reach whichever
-        // one is actually playing, and the other one ignores a command about an episode it has not
-        // loaded anyway.
-        return nodeIds.count { nodeId ->
+        val remembered = lastKnownPhoneNodeIds
+        if (remembered.isNotEmpty() && deliver(payload, remembered)) return true
+
+        // Nothing remembered, or the remembered node did not take it: ask once, and try the answer.
+        val current = capablePhoneNodeIds()
+        return current.isNotEmpty() && deliver(payload, current)
+    }
+
+    /**
+     * Sends one encoded command to every node in [nodeIds].
+     *
+     * Delivered to every candidate node: a watch paired with two phones should reach whichever
+     * one is actually playing, and the other one ignores a command about an episode it has not
+     * loaded anyway.
+     *
+     * @return true if at least one node accepted the message.
+     */
+    private suspend fun deliver(payload: ByteArray, nodeIds: List<String>): Boolean =
+        nodeIds.count { nodeId ->
             suspendRunCatching {
                 messageClient.sendMessage(nodeId, WearPaths.COMMAND, payload).await()
             }.isSuccess
         } > 0
-    }
 
     /**
      * The last thing the phone published, read once.
@@ -178,11 +203,12 @@ class PhonePlayerClient @Inject constructor(
     }
 
     /**
-     * Ids of reachable nodes that advertise the phone app's capability.
+     * Ids of reachable nodes that advertise the phone app's capability, asked of Play Services now.
      *
      * These are the only nodes worth sending to, and the only ones [currentLink] calls
      * [PhoneLink.CONNECTED]: a connected node that does not advertise the capability is a phone
-     * without the app on it.
+     * without the app on it. Whatever it answers is remembered for [send], a failure included —
+     * an unanswerable Play Services is not one to keep addressing a stale phone through.
      */
     private suspend fun capablePhoneNodeIds(): List<String> = suspendRunCatching {
         capabilityClient
@@ -190,7 +216,7 @@ class PhonePlayerClient @Inject constructor(
             .await()
             .nodes
             .map { it.id }
-    }.getOrNull().orEmpty()
+    }.getOrNull().orEmpty().also { lastKnownPhoneNodeIds = it }
 
     /**
      * Reads the snapshot the Data Layer already holds.

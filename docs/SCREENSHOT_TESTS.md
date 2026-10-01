@@ -92,5 +92,10 @@ What a golden is for is what a screen *looks like* once it is.
   with a preview and no golden.
 - **Anything that needs a gesture.** `SwipeActionsRow` at rest is a row; the states worth seeing are
   the ones a finger produces, and those belong to its behaviour tests.
-- **The watch.** `:wear` draws with Wear Compose on a round screen, and W-1 and W-4 have already
-  said what that needs is a wrist, not an image.
+- **The watch's feel.** `:wear` has goldens since 2026-09-30 (`WatchPlayerScreenshotTest`: the
+  playing screen, the volume bar open, a scrub, idle, disconnected, and one still frame of the
+  progress glint), recorded on the 192 dp round window the screen tests use and in one variant
+  only, because Wear Material has one colour scheme. They pin what the screen *draws*; whether a
+  scroll feels right is still a wrist's call, as W-1 and W-4 said — the two watch performance
+  reports before these existed each found a regression that lived in a `graphicsLayer`, which is
+  exactly what a golden sees and a layout assertion does not.

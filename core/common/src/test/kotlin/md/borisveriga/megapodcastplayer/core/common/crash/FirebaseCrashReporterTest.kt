@@ -36,6 +36,38 @@ class FirebaseCrashReporterTest {
         verify { crashlytics.setCustomKey("buildType", "release") }
     }
 
+    /**
+     * The case the debuggable flag gets wrong. The watch's daily build is shrunk and not
+     * debuggable, so by the flag alone its crashes would be filed as a release's — the one build
+     * they most need telling apart from.
+     */
+    @Test
+    fun `an APK that names its build type is tagged with that name`() {
+        FirebaseCrashReporter(crashlytics, context(debuggable = false, declared = "wrist"))
+
+        verify { crashlytics.setCustomKey("buildType", "wrist") }
+        verify(exactly = 0) { crashlytics.setCustomKey("buildType", "release") }
+    }
+
+    @Test
+    fun `the declared name wins over the debuggable flag, and a blank one does not`() {
+        assertEquals("wrist", buildTypeTag(declared = "wrist", debuggable = false))
+        assertEquals("debug", buildTypeTag(declared = "debug", debuggable = true))
+        assertEquals("debug", buildTypeTag(declared = "", debuggable = true))
+        assertEquals("release", buildTypeTag(declared = " ", debuggable = false))
+    }
+
+    /** A resource lookup that throws must not fail the reporter's construction. */
+    @Test
+    fun `an unreadable build type falls back to the flag`() {
+        val context = context(debuggable = true)
+        every { context.getString(any()) } throws IllegalStateException("no resources")
+
+        FirebaseCrashReporter(crashlytics, context)
+
+        verify { crashlytics.setCustomKey("buildType", "debug") }
+    }
+
     @Test
     fun `a non-fatal is logged before it is recorded`() {
         val reporter = reporter()
@@ -106,14 +138,22 @@ class FirebaseCrashReporterTest {
     private fun reporter() = FirebaseCrashReporter(crashlytics, context(debuggable = false))
 
     /**
-     * A [Context] that reports only whether its APK carries `FLAG_DEBUGGABLE`.
+     * A [Context] that reports whether its APK carries `FLAG_DEBUGGABLE` and what build type it
+     * names itself.
      *
-     * That flag is all [FirebaseCrashReporter] reads from a context, so nothing else is stubbed.
+     * Those two are all [FirebaseCrashReporter] reads from a context, so nothing else is stubbed.
+     *
+     * @param debuggable whether the manifest flag is set.
+     * @param declared the build type name in the APK's resources; blank is what a library on its
+     *   own, or an application that names nothing, has.
      */
-    private fun context(debuggable: Boolean): Context {
+    private fun context(debuggable: Boolean, declared: String = ""): Context {
         val info = ApplicationInfo().apply {
             flags = if (debuggable) ApplicationInfo.FLAG_DEBUGGABLE else 0
         }
-        return mockk<Context> { every { applicationInfo } returns info }
+        return mockk<Context> {
+            every { applicationInfo } returns info
+            every { getString(any()) } returns declared
+        }
     }
 }

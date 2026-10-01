@@ -58,7 +58,13 @@ backgrounded refresh filed a non-fatal per show, and those were the only issues 
 The usual advice is to disable collection for debug, on the assumption that debug runs on a desk.
 Here it is the other way round: `install_on_devices` sideloads **debug** APKs onto the Fold and the
 Watch, and those are the builds this app actually lives in. Switching debug off would leave the only
-builds anyone uses unreported. The `buildType` key is what separates the two in the dashboard.
+builds anyone uses unreported. The `buildType` key is what separates them in the dashboard, and it has three values: `debug`,
+`release` and `wrist` — the shrunk, debug-signed build the watch runs (`docs/RELEASE_SIGNING.md`).
+The reporter lives in a library and cannot see the application's build type, so each application
+build type writes its own name into the `crash_build_type` string resource
+(`nameBuildTypesForCrashReports` in build-logic) and `FirebaseCrashReporter` reads it; the
+manifest's debuggable flag is only the fallback, because by that flag a `wrist` crash would be
+filed as a release's.
 
 ## google-services.json
 
