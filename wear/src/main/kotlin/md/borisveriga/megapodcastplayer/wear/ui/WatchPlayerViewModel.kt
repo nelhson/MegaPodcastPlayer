@@ -5,13 +5,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
@@ -28,24 +31,40 @@ import md.borisveriga.megapodcastplayer.wear.data.WatchHints
  * Drives the watch's screen, which is a remote control for the phone's player.
  *
  * Every button becomes a [WearCommand] and goes to the phone; the watch decides nothing about
- * playback itself and learns the result from the phone's next snapshot. Two things are still
+ * playback itself and learns the result from the phone's next snapshot. Three things are still
  * computed locally. The position ticks between the phone's publishes so the bar moves without a
- * Bluetooth write per second, and a scrub in progress is held here rather than sent continuously.
+ * Bluetooth write per second; a scrub in progress is held here rather than sent continuously; and
+ * what the wearer has just asked for — a level, a position, a play or a pause — is shown at once
+ * and held over the round trip, so that no button on the screen waits for Bluetooth to change.
+ *
+ * `flatMapLatest` is still experimental, as it is everywhere else in this repository that uses it;
+ * here it is what restarts the position clock each time the phone speaks.
  *
  * @property client the connection to the phone.
  * @property hints what the watch has already explained once.
+ * @property clock the watch's elapsed-realtime clock. A parameter so that a test can move it; the
+ *   app hands in [SystemClock.elapsedRealtime].
  */
 @HiltViewModel
-class WatchPlayerViewModel @Inject constructor(
+@OptIn(ExperimentalCoroutinesApi::class)
+class WatchPlayerViewModel internal constructor(
     private val client: PhonePlayerClient,
     private val hints: WatchHints,
+    private val clock: () -> Long,
 ) : ViewModel() {
+
+    /** The constructor Hilt uses: the real clock. */
+    @Inject
+    constructor(client: PhonePlayerClient, hints: WatchHints) : this(client, hints, SystemClock::elapsedRealtime)
 
     /** Set when a command could not be delivered; cleared as soon as one gets through. */
     private val lastCommandFailed = MutableStateFlow(false)
 
     /** Where the user has dragged the progress bar, or null when they are not touching it. */
     private val scrub = MutableStateFlow<ScrubState?>(null)
+
+    /** The play or pause the wearer last asked for, or null when the phone's own word is the truth. */
+    private val playback = MutableStateFlow<PlaybackToggle?>(null)
 
     /** The level the wearer has turned to, or null when the phone's own reading is the truth. */
     private val volume = MutableStateFlow<VolumeAdjustment?>(null)
@@ -82,23 +101,32 @@ class WatchPlayerViewModel @Inject constructor(
     private val volumeState = combine(volume, volumeEngaged, ::VolumeMode)
 
     /**
-     * What the phone is doing, and when it said so.
+     * What the phone is doing, what the wearer has asked of it, and the time now.
      *
-     * Grouped because these three change together and because `combine` gives typed lambdas only up
-     * to five sources.
+     * Grouped because these change together and because `combine` gives typed lambdas only up to
+     * five sources. The clock is read as each value is built, so it is fresh whenever anything
+     * else changes, and it is *re-read* once a second by [ticksWhile] — but only while the bar has
+     * a reason to move: the phone says it is playing, or the wearer has just said play or pause
+     * and the phone has not answered yet. A paused watch used to wake every second to rebuild a
+     * frame the state flow then threw away; now it wakes when the phone speaks, and not otherwise.
      */
-    private val phone = combine(
+    private val phone: Flow<PhoneState> = combine(
         client.phoneLink.onStart { emit(PhoneLink.CHECKING) },
         client.snapshots,
-        elapsedRealtimeTicker(),
-    ) { link, received, nowElapsedMs -> PhoneState(link, received, nowElapsedMs) }
+        playback,
+    ) { link, received, playback -> Triple(link, received, playback) }
+        .flatMapLatest { (link, received, playback) ->
+            val moving = received?.snapshot?.isPlaying == true || playback != null
+            ticksWhile(moving).map { PhoneState(link, received, playback, nowElapsedMs = clock()) }
+        }
 
     /**
      * Everything the screen draws, computed once per change of any input.
      *
      * Private, and split in two below, because its inputs move at two very different rates. The
-     * clock in [phone] ticks every second, so this flow emits every second — and the screen is a
-     * list whose rows must not be rebuilt for a clock tick, so the screen is never handed this.
+     * clock in [phone] ticks every second while something plays, so this flow emits every second
+     * — and the screen is a list whose rows must not be rebuilt for a clock tick, so the screen is
+     * never handed this.
      */
     private val frame: StateFlow<WatchPlayerFrame> = combine(
         phone,
@@ -114,6 +142,7 @@ class WatchPlayerViewModel @Inject constructor(
             lastCommandFailed = failed,
             scrub = scrubState,
             volume = volume.adjustment,
+            playback = phone.playback,
             isAdjustingVolume = volume.engaged,
             momentSaved = cues.momentSaved,
             showsScrubHint = cues.scrubHint,
@@ -164,8 +193,32 @@ class WatchPlayerViewModel @Inject constructor(
         send(WearCommand.RequestState)
     }
 
-    /** Starts or pauses playback on the phone. */
-    fun togglePlayPause() = send(WearCommand.TogglePlayPause)
+    /**
+     * Starts or pauses playback on the phone — and on the screen, at once.
+     *
+     * The button flips as the thumb lifts and the phone corrects it if it disagrees; see
+     * [PlaybackToggle] and [PLAY_HOLD_MS]. What is asked for is the opposite of what the button
+     * shows, which is the wearer's own reading of it: two quick taps ask for play and then pause,
+     * and the second replaces the first on the screen as it will on the phone.
+     *
+     * A tap that could not be delivered changed nothing on the phone, so the button is put back
+     * rather than left claiming a state the phone is not in.
+     */
+    fun togglePlayPause() {
+        val asked = PlaybackToggle(
+            isPlaying = !frame.value.uiState.snapshot.isPlaying,
+            sentAtElapsedMs = clock(),
+        )
+        playback.value = asked
+        viewModelScope.launch {
+            val reached = client.send(WearCommand.TogglePlayPause)
+            lastCommandFailed.value = !reached
+            if (reached) delay(PLAY_HOLD_MS)
+            // Compared by identity of the whole value: a tap the wearer has since repeated is a
+            // different one, and must not be cleared out from under them.
+            playback.compareAndSet(expect = asked, update = null)
+        }
+    }
 
     /** Jumps forward by the interval configured on the phone. */
     fun skipForward() = send(WearCommand.SkipForward)
@@ -283,11 +336,11 @@ class WatchPlayerViewModel @Inject constructor(
     private fun scheduleVolumeSend(level: Int) {
         volumeSendJob?.cancel()
         volumeSendJob = viewModelScope.launch {
-            val sinceLastSend = SystemClock.elapsedRealtime() - lastVolumeSentAtElapsedMs
+            val sinceLastSend = clock() - lastVolumeSentAtElapsedMs
             val wait = VOLUME_SEND_INTERVAL_MS - sinceLastSend
             if (wait > 0L) delay(wait)
 
-            val sentAt = SystemClock.elapsedRealtime()
+            val sentAt = clock()
             lastVolumeSentAtElapsedMs = sentAt
             // Stamped before the reply can arrive, so the held reading covers the whole round trip.
             val sent = VolumeAdjustment(level = level, sentAtElapsedMs = sentAt)
@@ -397,7 +450,7 @@ class WatchPlayerViewModel @Inject constructor(
         val current = scrub.value ?: return
         if (current.committedAtElapsedMs != null) return
 
-        val committed = current.copy(committedAtElapsedMs = SystemClock.elapsedRealtime())
+        val committed = current.copy(committedAtElapsedMs = clock())
         scrub.value = committed
         scrubHintVisible.value = false
         seekTo(committed.positionMs)
@@ -475,15 +528,20 @@ class WatchPlayerViewModel @Inject constructor(
     }
 
     /**
-     * The phone's half of the screen state.
+     * The phone's half of the screen state, and the one thing the wearer asks of it that changes
+     * how the clock is read.
      *
      * @property link whether it can be reached.
      * @property received its last snapshot, or null if it has never spoken.
+     * @property playback the play or pause the wearer has asked for and the phone has not yet
+     *   answered, or null. Here rather than beside the scrub and the volume because it is what
+     *   keeps the clock ticking while the phone still says paused.
      * @property nowElapsedMs the watch's clock, for extrapolating [received].
      */
     private data class PhoneState(
         val link: PhoneLink,
         val received: ReceivedSnapshot?,
+        val playback: PlaybackToggle?,
         val nowElapsedMs: Long,
     )
 
@@ -540,16 +598,22 @@ class WatchPlayerViewModel @Inject constructor(
         const val VOLUME_RELEASE_MS = 4_000L
 
         /**
-         * Emits the watch's elapsed-realtime clock once a second.
+         * Emits once at once, and then once a second for as long as [moving] — or never again.
          *
-         * This is what advances the progress bar between the phone's publishes. It runs regardless
-         * of whether anything is playing, because a paused snapshot simply extrapolates to itself,
-         * and one timer is cheaper to reason about than one that has to be started and stopped.
+         * The heartbeat that advances the progress bar between the phone's publishes. It used to
+         * run regardless of whether anything was playing, on the grounds that one timer was
+         * cheaper to reason about than one that had to be started and stopped; on a watch that
+         * was a wake-up per second, for as long as the screen was up, to rebuild a frame that a
+         * paused snapshot made identical to the last. Now it is restarted by whatever restarts it
+         * — see [phone] — and told whether to keep going.
+         *
+         * @param moving whether the bar has a reason to move; false gives one emission and stops.
          */
-        fun elapsedRealtimeTicker() = flow {
-            while (currentCoroutineContext().isActive) {
-                emit(SystemClock.elapsedRealtime())
+        fun ticksWhile(moving: Boolean) = flow {
+            emit(Unit)
+            while (moving && currentCoroutineContext().isActive) {
                 delay(POSITION_TICK_MS)
+                emit(Unit)
             }
         }
     }

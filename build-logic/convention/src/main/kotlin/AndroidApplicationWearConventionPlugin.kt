@@ -1,5 +1,6 @@
 import com.android.build.api.dsl.ApplicationExtension
 import md.borisveriga.megapodcastplayer.buildlogic.addSharedTestingModule
+import md.borisveriga.megapodcastplayer.buildlogic.addWristBuildType
 import md.borisveriga.megapodcastplayer.buildlogic.configureAndroidCommon
 import md.borisveriga.megapodcastplayer.buildlogic.configureSharedSigning
 import md.borisveriga.megapodcastplayer.buildlogic.configureWearCompose
@@ -51,6 +52,9 @@ class AndroidApplicationWearConventionPlugin : Plugin<Project> {
                     )
                 }
             }
+            // After release is configured, because it copies release. This is the build the watch
+            // runs; see `addWristBuildType` for the measurements that made it one.
+            addWristBuildType()
         }
 
         dependencies {

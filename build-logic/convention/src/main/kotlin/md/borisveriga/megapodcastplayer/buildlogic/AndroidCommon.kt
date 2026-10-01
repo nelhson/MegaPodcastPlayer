@@ -179,6 +179,47 @@ internal fun Project.configureSharedSigning(extension: ApplicationExtension) {
 }
 
 /**
+ * Adds the `wrist` build type: release's code, debug's key, for the two devices on this desk.
+ *
+ * Shrunk with R8, not debuggable, signed with the debug key. It exists because the watch was slow
+ * for as long as it ran the debug build, and `docs/reports/2026-09-30-watch-performance-plan.md`
+ * measured why: the debug APK was 80 MB of unshrunk dex with no baseline profile, and ART refuses to
+ * compile a *debuggable* package past `verify` at all, so no amount of waiting would ever have made
+ * it faster. The release APK of the same source is 3 MB, carries Compose's profiles, and cold-starts
+ * in a sixth of the time. That is the build the watch should run, and the phone may.
+ *
+ * Why a build type of its own rather than `assembleRelease -PallowDebugSigningForRelease=true`,
+ * which produces the same bytes: the flag is the escape hatch that `distribute` must never use, and
+ * a daily install that types it teaches the hand to type it. `installWrist` says what it is, and
+ * its output can never be mistaken for a release — `distribute` builds `…Release` tasks and nothing
+ * here matches that name.
+ *
+ * Its trust is the debug build's, exactly. Same key, same application ID, so it pairs with a debug
+ * build on the other device with no uninstall — the phone is Boris's daily driver, and an uninstall
+ * there deletes the library — and a wrist APK handed to anyone else would be as re-signable as a
+ * debug one. It is for the two devices on this desk and for nothing else, which is also why
+ * `failReleasePackagingWithoutAKeystore` leaves it alone: that guard exists for the artifact that
+ * *claims* to be a release.
+ *
+ * `initWith` copies release's R8 configuration, so a rule that changes there changes here. Called
+ * after the release block, deliberately: `initWith` copies what release *is* at that moment.
+ *
+ * `matchingFallbacks` is what lets the app modules have a build type the library modules do not:
+ * every `:core` and `:feature` module is built as `release` for a `wrist` app.
+ */
+internal fun ApplicationExtension.addWristBuildType() {
+    buildTypes.create(WRIST_BUILD_TYPE) {
+        initWith(buildTypes.getByName("release"))
+        isDebuggable = false
+        signingConfig = signingConfigs.getByName("debug")
+        matchingFallbacks += "release"
+    }
+}
+
+/** The name of the shrunk, debug-signed build type; see [addWristBuildType]. */
+const val WRIST_BUILD_TYPE = "wrist"
+
+/**
  * Makes every release packaging task in this project fail with an explanation.
  *
  * Matched by name (`package…Release`, `assemble…Release`, `bundle…Release`) rather than by task

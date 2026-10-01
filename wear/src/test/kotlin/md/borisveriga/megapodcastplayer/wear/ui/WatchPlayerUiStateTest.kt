@@ -194,6 +194,119 @@ class WatchPlayerUiStateTest {
         assertFalse(frame.uiState.canSetVolume)
     }
 
+    // ---- Play and pause -------------------------------------------------------------------------
+
+    /** The most-pressed button on the screen must not be the one that waits for Bluetooth. */
+    @Test
+    fun `a pause just asked for is shown before the phone confirms it`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+        val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 1_500L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 2_000L, playback = asked)
+
+        assertFalse(frame.uiState.snapshot.isPlaying)
+    }
+
+    @Test
+    fun `a play just asked for is shown before the phone confirms it`() {
+        val received = ReceivedSnapshot(playing.copy(isPlaying = false), receivedAtElapsedMs = 1_000L)
+        val asked = PlaybackToggle(isPlaying = true, sentAtElapsedMs = 1_500L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 2_000L, playback = asked)
+
+        assertTrue(frame.uiState.snapshot.isPlaying)
+    }
+
+    /**
+     * A pause stops the bar where the thumb stopped it. Without this the bar would run on for the
+     * round trip and then jump back to wherever the phone actually paused — the bounce the seek
+     * hold exists to prevent, on the button pressed most.
+     */
+    @Test
+    fun `a pause just asked for stops the bar where it was pressed`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+        val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 6_000L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 8_000L, playback = asked)
+
+        // Five seconds into the snapshot's reading, not seven: the two since the press do not count.
+        assertEquals(35_000L, frame.position.positionMs)
+    }
+
+    /** And a play starts it moving from the press, so the bar and the glyph agree at once. */
+    @Test
+    fun `a play just asked for starts the bar moving from the press`() {
+        val received = ReceivedSnapshot(playing.copy(isPlaying = false), receivedAtElapsedMs = 1_000L)
+        val asked = PlaybackToggle(isPlaying = true, sentAtElapsedMs = 6_000L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 8_000L, playback = asked)
+
+        assertEquals(32_000L, frame.position.positionMs)
+    }
+
+    @Test
+    fun `the phone's own word wins once it confirms the toggle`() {
+        val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 1_000L)
+        val confirmation = ReceivedSnapshot(
+            playing.copy(isPlaying = false, positionMs = 31_000L),
+            receivedAtElapsedMs = 1_200L,
+        )
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, confirmation, nowElapsedMs = 5_000L, playback = asked)
+
+        assertFalse(frame.uiState.snapshot.isPlaying)
+        // Back to the phone's reading, which is paused and so does not move.
+        assertEquals(31_000L, frame.position.positionMs)
+    }
+
+    /**
+     * The phone publishes for reasons of its own, and a snapshot sent for another one — a seek, a
+     * volume step — arrives after the tap still saying what the tap is changing. Arriving is not
+     * answering.
+     */
+    @Test
+    fun `a snapshot that still says playing does not flip the button back`() {
+        val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 1_000L)
+        val stale = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_200L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, stale, nowElapsedMs = 1_300L, playback = asked)
+
+        assertFalse(frame.uiState.snapshot.isPlaying)
+    }
+
+    /** A phone that never answers — or refused — gets the last word once the hold runs out. */
+    @Test
+    fun `a toggle nobody confirmed is let go of after the hold`() {
+        val received = ReceivedSnapshot(playing, receivedAtElapsedMs = 1_000L)
+        val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 1_500L)
+
+        val frame = watchPlayerFrame(
+            PhoneLink.CONNECTED,
+            received,
+            nowElapsedMs = 1_500L + PLAY_HOLD_MS + 1L,
+            playback = asked,
+        )
+
+        assertTrue(frame.uiState.snapshot.isPlaying)
+        // And the bar is the phone's extrapolation again, the whole way from the snapshot.
+        assertEquals(playing.positionAfter(500L + PLAY_HOLD_MS + 1L), frame.position.positionMs)
+    }
+
+    /**
+     * Two quick taps: play, then pause. The second tap asks for what the phone already says, and
+     * the bar must read as the phone's own paused position — not as if a play were pending.
+     */
+    @Test
+    fun `a toggle that asks for what the phone already says leaves the bar alone`() {
+        val received = ReceivedSnapshot(playing.copy(isPlaying = false), receivedAtElapsedMs = 1_000L)
+        val asked = PlaybackToggle(isPlaying = false, sentAtElapsedMs = 1_500L)
+
+        val frame = watchPlayerFrame(PhoneLink.CONNECTED, received, nowElapsedMs = 2_000L, playback = asked)
+
+        assertFalse(frame.uiState.snapshot.isPlaying)
+        assertEquals(30_000L, frame.position.positionMs)
+    }
+
     // ---- The clock, and what it is allowed to change --------------------------------------------
 
     /**

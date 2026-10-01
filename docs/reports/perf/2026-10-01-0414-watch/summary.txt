@@ -1,0 +1,66 @@
+﻿# Watch performance, 2026-10-01 04:14
+Package md.borisveriga.megapodcastplayer on adb-RFGL632B49Z-AjJ9bD._adb-tls-connect._tcp; git 22687bb
+
+## 0. Installed package
+  primaryCpuAbi=armeabi-v7a
+  versionName=1.0
+  flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]
+  privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+  lastUpdateTime=2026-10-01 04:13:32
+  pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]
+  privatePkgFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+  android.permission.POST_NOTIFICATIONS: granted=true, flags=[ USER_SET|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+  android.permission.ACCESS_LOCAL_NETWORK: granted=true, flags=[ REVOKE_WHEN_REQUESTED|USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+  arm: [status=speed-profile] [reason=cmdline] [primary-abi]
+  debuggable: False
+  package:/data/app/~~I-Z65S1lt8hGJxTlKIy2Cg==/md.borisveriga.megapodcastplayer-grZS_krDqmXR1fNBXmuBYg==/base.apk
+  apk size: 3.2 MB
+  Dalvik Heap     3730     3280      284      160     4344   196608     3972   192636
+  .dex mmap       77        4        0        0      984
+  .oat mmap     1449        0      228        0     9116
+  .art mmap     2123      608      428      240    12856
+  TOTAL PSS:    33065            TOTAL RSS:    85736       TOTAL SWAP PSS:      489
+
+## 1. Device state
+  low_power: 0
+  animator_duration_scale: 1.0
+  status: 3
+  level: 60
+  Capacity level: -1
+  mSavedFullStatusUsageHigh: 52
+  mSavedFullStatusUsageLow: 921
+  mIsFullStatusUsageHighTemperature: false
+  sIsFullStatusUsageCycleSupported: true
+  cpu0 governor: walt
+  cpu0 cur/max kHz: 902400 / 1958400
+  State:         ON
+  ConnectionState: STATE_CONNECTED
+  MaxConnectedAudioDevices: 1
+
+## 2. Cold start (am start -W), three runs
+  run 1: LaunchState: WARM TotalTime: 388 WaitTime: 394
+  run 2: LaunchState: WARM TotalTime: 186 WaitTime: 188
+  run 3: LaunchState: WARM TotalTime: 152 WaitTime: 155
+
+## 3. Scroll frames: 10 swipes down and back
+  Total frames rendered: 869
+  Janky frames: 2 (0.23%)
+  Janky frames (legacy): 746 (85.85%)
+  50th percentile: 34ms
+  90th percentile: 34ms
+  95th percentile: 34ms
+  99th percentile: 34ms
+  Number Missed Vsync: 0
+  Number High input latency: 1726
+  Number Slow UI thread: 2
+  Number Slow bitmap uploads: 0
+  Number Slow issue draw commands: 2
+  Number Frame deadline missed: 2
+  Number Frame deadline missed (legacy): 10
+  50th gpu percentile: 4950ms
+  90th gpu percentile: 4950ms
+  95th gpu percentile: 4950ms
+  99th gpu percentile: 4950ms
+  framestats: E:\projects\pet\mobile-apps\MegaPodcastPlayer\docs\reports\perf\2026-10-01-0414-watch\framestats.txt
+
+The median frame is the swipe script, not the app; read the janky count and the 95th/99th percentile.

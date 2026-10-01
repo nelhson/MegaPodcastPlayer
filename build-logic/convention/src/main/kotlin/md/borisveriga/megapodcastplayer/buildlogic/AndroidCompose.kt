@@ -86,6 +86,11 @@ private fun Project.configureScreenshotTests() {
     tasks.withType(Test::class.java).configureEach {
         systemProperty("roborazzi.test.record", recording)
         systemProperty("roborazzi.test.verify", !recording)
+        // Robolectric's native graphics reach into `java.nio.DirectByteBuffer` by reflection for
+        // the buffers some drawing hands to Skia — Wear's curved time text was the first here to
+        // do so — and the module system of a modern JDK refuses that unless the package is opened.
+        // Test JVM only; nothing about the app changes.
+        jvmArgs("--add-opens=java.base/java.nio=ALL-UNNAMED")
         inputs.files(goldens)
             .withPropertyName("screenshotGoldens")
             .withPathSensitivity(PathSensitivity.RELATIVE)
@@ -101,6 +106,8 @@ private fun Project.configureScreenshotTests() {
 internal fun Project.configureWearCompose(extension: CommonExtension) {
     pluginManager.apply("org.jetbrains.kotlin.plugin.compose")
     configureComposeMetrics()
+    configureComposeStability()
+    configureScreenshotTests()
 
     extension.buildFeatures.compose = true
 
@@ -108,6 +115,13 @@ internal fun Project.configureWearCompose(extension: CommonExtension) {
         val bom = libs.findLibrary("androidx-compose-bom").get()
         add("implementation", platform(bom))
         add("androidTestImplementation", platform(bom))
+        add("testImplementation", platform(bom))
+
+        // The same screenshot suite the phone modules have; see `configureCompose`. The watch went
+        // without one for two performance reports, and both found a visual regression nothing in
+        // the module could catch — `docs/reports/2026-09-21-watch-scroll-lag.md` names it.
+        add("testImplementation", libs.findLibrary("roborazzi").get())
+        add("testImplementation", libs.findLibrary("roborazzi-compose").get())
 
         add("implementation", libs.findLibrary("androidx-compose-ui").get())
         add("implementation", libs.findLibrary("androidx-compose-ui-graphics").get())
@@ -149,8 +163,34 @@ private fun Project.configureComposeMetrics() {
     }
 }
 
+/**
+ * Tells the Compose compiler which of this repository's types it may treat as stable.
+ *
+ * The compiler infers stability only for classes in the module it is compiling; a data class from
+ * another module is *unstable* to it however immutable it is, because it cannot see whether that
+ * module was compiled with the Compose plugin. `:core:wearprotocol` is a pure JVM module, so
+ * `NowPlayingSnapshot` and `WatchEpisode` cross into `:wear` unstable and take
+ * `WatchPlayerUiState` — which carries one of them — down with them. Strong skipping still skips
+ * such a parameter when the *instance* is the same, so the watch's list skipped in practice; the
+ * configuration file makes it skip by *value*, and stops depending on the publisher happening to
+ * keep instances rare.
+ *
+ * One file for the whole build, at `config/compose-stability.conf`, in the format the compiler
+ * documents: one fully qualified class name or wildcard per line. Check what it did with
+ * `-Pmegapodcastplayer.compose.metrics=true` and the `-classes.txt` report; see
+ * [configureComposeMetrics].
+ */
+private fun Project.configureComposeStability() {
+    extensions.configure<ComposeCompilerGradlePluginExtension> {
+        stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file(COMPOSE_STABILITY_FILE))
+    }
+}
+
 /** Gradle property that turns on the Compose compiler reports; see [configureComposeMetrics]. */
 private const val COMPOSE_METRICS_FLAG = "megapodcastplayer.compose.metrics"
+
+/** The stability configuration, relative to the repository root; see [configureComposeStability]. */
+private const val COMPOSE_STABILITY_FILE = "config/compose-stability.conf"
 
 /** Gradle property that re-records the screenshot goldens; see [configureScreenshotTests]. */
 private const val SCREENSHOT_RECORD_FLAG = "megapodcastplayer.screenshots.record"

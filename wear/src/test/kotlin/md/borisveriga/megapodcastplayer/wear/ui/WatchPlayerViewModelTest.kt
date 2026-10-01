@@ -81,8 +81,25 @@ class WatchPlayerViewModelTest {
         coEvery { hints.hasSeenVolumeHint() } returns true
     }
 
-    /** Builds the view model under test with its sources stubbed. */
-    private fun viewModel() = WatchPlayerViewModel(client, hints)
+    /**
+     * How many times the view model has read the clock.
+     *
+     * The clock is read once per frame the view model builds, so this is the count of its
+     * wake-ups — the one thing the clock-gating tests below can observe, since a paused frame is
+     * identical to the last and the state flow drops it whether or not it was built.
+     */
+    private var clockReads = 0
+
+    /**
+     * Builds the view model under test with its sources stubbed, on the test scheduler's clock.
+     *
+     * The clock follows virtual time, so a hold measured in milliseconds expires when the test
+     * advances past it, and a snapshot stamped `0L` has arrived at the moment the test began.
+     */
+    private fun TestScope.viewModel() = WatchPlayerViewModel(client, hints) {
+        clockReads++
+        testScheduler.currentTime
+    }
 
     @Test
     fun `opening the app asks the phone to republish its state`() = runTest {
@@ -543,6 +560,122 @@ class WatchPlayerViewModelTest {
             assertFalse(awaitItem().showsScrubHint)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // ---- Play and pause -------------------------------------------------------------------------
+
+    /** The same episode, playing, for the tests that press pause. */
+    private val playingAloud = playing.copy(isPlaying = true)
+
+    @Test
+    fun `pressing pause flips the button before the phone answers`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingAloud, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+        assertTrue(viewModel.uiState.value.snapshot.isPlaying)
+
+        viewModel.togglePlayPause()
+        runCurrent()
+
+        assertFalse(viewModel.uiState.value.snapshot.isPlaying)
+        coVerify(exactly = 1) { client.send(WearCommand.TogglePlayPause) }
+    }
+
+    /** A tap that never reached the phone changed nothing there, so the button must not say it did. */
+    @Test
+    fun `a toggle that could not be delivered puts the button back`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingAloud, 0L))
+        coEvery { client.send(WearCommand.TogglePlayPause) } returns false
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.togglePlayPause()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.snapshot.isPlaying)
+        assertTrue(viewModel.uiState.value.lastCommandFailed)
+    }
+
+    /**
+     * The whole round trip. A publish for another reason still says playing and must not flip the
+     * button back; the answer is believed; and once the hold is over the phone's later word is too.
+     */
+    @Test
+    fun `the phone's answer is believed and a stale snapshot is not`() = runTest {
+        val snapshots = MutableStateFlow<ReceivedSnapshot?>(ReceivedSnapshot(playingAloud, 0L))
+        every { client.snapshots } returns snapshots
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+
+        viewModel.togglePlayPause()
+        runCurrent()
+        snapshots.value = ReceivedSnapshot(playingAloud.copy(volume = 3), LATER_MS)
+        runCurrent()
+        assertFalse(viewModel.uiState.value.snapshot.isPlaying)
+
+        snapshots.value = ReceivedSnapshot(playing, LATER_MS + 1L)
+        runCurrent()
+        assertFalse(viewModel.uiState.value.snapshot.isPlaying)
+
+        advanceTimeBy(PLAY_HOLD_MS + 1L)
+        runCurrent()
+        snapshots.value = ReceivedSnapshot(playingAloud, LATER_MS + 2L)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.snapshot.isPlaying)
+    }
+
+    // ---- The clock ------------------------------------------------------------------------------
+
+    /**
+     * The position clock used to tick every second regardless, which on a watch was a wake-up per
+     * second to build a frame a paused snapshot made identical to the last. The frame is not
+     * observable — the state flow drops it — but the clock read that builds it is.
+     */
+    @Test
+    fun `a paused phone does not wake the watch every second`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+        val settled = clockReads
+
+        advanceTimeBy(10_000L)
+        runCurrent()
+
+        assertEquals(settled, clockReads)
+    }
+
+    @Test
+    fun `a playing phone reads the clock once a second and moves the bar`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playingAloud, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.position.collect {} }
+        runCurrent()
+        val settled = clockReads
+        assertEquals(30_000L, viewModel.position.value.positionMs)
+
+        advanceTimeBy(5_000L)
+        runCurrent()
+
+        assertEquals(settled + 5, clockReads)
+        assertEquals(35_000L, viewModel.position.value.positionMs)
+    }
+
+    /** The bar starts moving from the press, while the phone is still starting up. */
+    @Test
+    fun `a play just asked for starts the clock while the phone still says paused`() = runTest {
+        every { client.snapshots } returns flowOf(ReceivedSnapshot(playing, 0L))
+        val viewModel = viewModel()
+        keepStateLive(viewModel)
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.position.collect {} }
+        runCurrent()
+
+        viewModel.togglePlayPause()
+        advanceTimeBy(2_000L)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.snapshot.isPlaying)
+        assertEquals(32_000L, viewModel.position.value.positionMs)
     }
 
     @Test

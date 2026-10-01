@@ -1,5 +1,7 @@
 import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.api.dsl.BuildType
 import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
+import md.borisveriga.megapodcastplayer.buildlogic.WRIST_BUILD_TYPE
 import md.borisveriga.megapodcastplayer.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -51,16 +53,22 @@ class AndroidCrashlyticsConventionPlugin : Plugin<Project> {
         // owns it. Only `release` is minified, so only `release` has a mapping file at all.
         extensions.configure<ApplicationExtension> {
             buildTypes.named("release") {
-                val crashlytics = (this as ExtensionAware)
-                    .extensions
-                    .getByType(CrashlyticsExtension::class.java)
                 // Uploading the R8 mapping file is what makes a release stack trace readable, and
                 // it needs the network at build time. CI's release smoke build is debug-signed,
                 // never installed and immediately discarded, so its mapping file describes nothing
                 // anyone will ever look up — and making every CI run depend on a Firebase upload
                 // succeeding would trade a real signal for an unrelated flake. The flag that
                 // already marks a build as "not for anyone" turns the upload off.
-                crashlytics.mappingFileUploadEnabled = uploadMappings
+                crashlytics().mappingFileUploadEnabled = uploadMappings
+            }
+            buildTypes.named(WRIST_BUILD_TYPE) {
+                // Shrunk like release, so it has a mapping file too — and it is the build on the
+                // watch, so its crashes are the ones that actually arrive. Without the upload a
+                // wrist stack trace is R8's letters, and the mapping that would decode it is
+                // overwritten by the next build on this desk. Made here and never on CI, so the
+                // network the upload needs is the one this machine has. The build type key
+                // `FirebaseCrashReporter` sets is what tells its reports from release's.
+                crashlytics().mappingFileUploadEnabled = true
             }
         }
 
@@ -73,6 +81,16 @@ class AndroidCrashlyticsConventionPlugin : Plugin<Project> {
         }
     }
 }
+
+/**
+ * The Crashlytics DSL the plugin hangs on a build type, reached through the build type that owns it.
+ *
+ * The Crashlytics plugin registers `firebaseCrashlytics` as an extension on each *build type*
+ * rather than on the project — including build types this build created before it was applied,
+ * which is what makes the `wrist` block above work.
+ */
+private fun BuildType.crashlytics(): CrashlyticsExtension =
+    (this as ExtensionAware).extensions.getByType(CrashlyticsExtension::class.java)
 
 /**
  * The Firebase configuration this module would use.

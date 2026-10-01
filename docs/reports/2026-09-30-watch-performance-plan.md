@@ -242,7 +242,7 @@ The protocol above, on the debug build. Results are in the table. Step 5 turned 
 impossible on a debuggable package, which answered the question more firmly than running it
 would have.
 
-### Phase 1 — put a shrunk, non-debuggable build on the watch — half done
+### Phase 1 — put a shrunk, non-debuggable build on the watch — done (see "What landed")
 
 **Immediate, zero code — done 2026-09-30:** `:wear:assembleRelease -PallowDebugSigningForRelease=true`,
 installed with `adb install -r --no-streaming`. The flag exists for exactly this ("for local
@@ -329,6 +329,139 @@ reports each ended with "not verified on hardware"; this one should be the last 
 
 ## Still deferred
 
-Release keystore on both devices (needs the moments and settings exports first); Roborazzi goldens
-for `:wear` (phase 3.3 is the first consumer); `QUEUE_BUTTON_SIZE` to the 48 dp floor, noticed in
-the 09-21 report and still unrelated to speed.
+Release keystore on both devices (needs the moments and settings exports first);
+`QUEUE_BUTTON_SIZE` to the 48 dp floor, noticed in the 09-21 report and still unrelated to speed.
+
+## What landed (same day, after the measurements)
+
+Everything in the plan that is code or build, with the two on-device measurements left open
+because neither device was on adb when this was implemented. Nothing below has been felt on the
+wrist yet; `tools\watch-perf.ps1` is what to run when it is.
+
+### Phase 1, durable — the `wrist` build type
+
+`addWristBuildType` in `AndroidCommon.kt`, applied by both application convention plugins:
+`initWith(release)`, `isDebuggable = false`, debug signing, `matchingFallbacks += "release"`.
+`:wear:installWrist` is now the watch's install task and the profile says so; the phone stays on
+`debug` unless asked. `docs/RELEASE_SIGNING.md` has the paragraph on why it is not a release. One
+departure from the sketch above: the Crashlytics mapping file **is** uploaded for `wrist`. This is
+the build whose crashes actually arrive, an unmapped R8 trace is unreadable, and the mapping that
+would decode it is overwritten by the next build on this desk; the build type key still tells the
+reports apart. The upload needs the network at build time, which the desk has and CI — which never
+builds `wrist` — does not need.
+
+### Phase 3 — the code
+
+1. **Optimistic play/pause.** `PlaybackToggle` and `PLAY_HOLD_MS` (3 s, longer than the volume
+   hold because the first tap after the phone app is killed pays its whole start-up) in
+   `WatchPlayerUiState.kt`; `watchPlayerFrame` shows the wearer's word until a snapshot arrives
+   *after the send saying that state*, or the hold passes. The bar follows the button: a pause
+   freezes it where it was pressed, a play starts it moving from the press, so the glint and the
+   glyph answer the thumb together. A tap that cannot be delivered puts the button back.
+2. **One IPC per tap.** `PhonePlayerClient` remembers the last answer of the capability lookup —
+   which the link poll and the capability listener already refresh — and `send` uses it, looking
+   the phone up only when there is no answer or the remembered node refuses the message.
+3. **`ProgressGlint` without per-frame allocation.** The band's gradient is built once per band
+   width and translated into place; the clip path is one remembered object, reset each frame. The
+   drawing is `ProgressGlintFrame`, a still frame, which is what the golden renders.
+4. **The clock is gated.** `ticksWhile(moving)` runs once a second only while the phone says
+   playing or a play/pause is pending; a paused watch wakes when the phone speaks and not
+   otherwise. The clock is read as each frame is built rather than carried in the tick, and it is
+   injected, so the view model tests move virtual time and count the wake-ups.
+5. **Stability configuration.** `config/compose-stability.conf` marks
+   `md.borisveriga.megapodcastplayer.core.wearprotocol.*` stable; `configureComposeStability` wires
+   it into the Compose compiler for the watch module. Verification is in the section below.
+6. **Firebase's start cost** — *not measured*; needs the watch on adb. The profile records how.
+7. **Phone-side sender cache.** `WearSenderVerifier` keeps the last node list for ten seconds and
+   lets it vouch for a node it named; a node it did not name is still checked live, so the cache
+   only ever makes the check cheaper for the paired watch, never looser for anyone else. Done
+   without the round-trip measurement the plan gated it on, because it is small and fails the same
+   way the live check does.
+
+### Roborazzi goldens for `:wear`
+
+`configureWearCompose` now calls `configureScreenshotTests()` and adds the two roborazzi
+artifacts. `WatchPlayerScreenshotTest` records six goldens under `wear/src/test/screenshots/`:
+playing, volume open, scrubbing, idle, disconnected, and one frame of the glint. One variant each,
+because Wear Material has one colour scheme.
+
+### Phase 4
+
+`tools\watch-perf.ps1` runs steps 0–3 of the protocol against whichever connected device is a watch,
+re-reading the serial before every batch, and writes a summary and the framestats under
+`docs/reports/perf/`. The profile's `performance-plan` section points at it.
+
+### Verified on this machine
+
+- `:wear:assembleWrist` → `wear-wrist.apk`, 3.38 MB, one `classes.dex`, `assets/dexopt/baseline.prof`
+  present, no `debuggable` attribute in the manifest, signed with the same certificate as
+  `wear-debug.apk` (`ce4cb092…9f6d`). `:app:assembleWrist` → 10.8 MB. Both uploaded their mapping
+  file to Crashlytics as part of the build.
+- Compose compiler report for `:wear` (`-Pmegapodcastplayer.compose.metrics=true`):
+  `WatchPlayerUiState`, `ReceivedSnapshot` and `PlaybackPosition` read `stable`, with
+  `snapshot: NowPlayingSnapshot` a `stable val`; before the configuration file they were inferred
+  unstable. Every composable on the screen — `WatchPlayerScreen`, `NowPlayingTop`, `ProgressRow`,
+  `ProgressGlintFrame`, `TransportRow`, `QueueRow` — is `restartable skippable`.
+- `detekt` clean across the build; `:wear:lintDebug` and `:app:lintDebug` clean (the `wrist`
+  builds also ran `lintVitalWrist`, clean).
+- `:wear:testDebugUnitTest`: 161 tests, all passing, the six goldens in verify mode. New:
+  eight `watchPlayerFrame` cases for the play/pause hold and the bar that follows it; five view
+  model cases, including the two that count clock reads — a paused phone reads the clock zero
+  times in ten seconds, a playing one exactly once a second; `PhonePlayerClientTest`, five cases
+  on the remembered node ids; `WatchPlayerScreenshotTest`, six goldens. `:app`:
+  `WearSenderVerifierTest` gains six cases on the sender cache; all passing.
+- One thing the goldens needed that the plan did not foresee: Robolectric's native graphics
+  reach into `java.nio.DirectByteBuffer` by reflection when Wear draws its curved time text, and
+  the JDK's module system refuses that. `configureScreenshotTests` now passes
+  `--add-opens=java.base/java.nio=ALL-UNNAMED` to every unit-test JVM. Test JVM only.
+
+### Measured on the wrist (2026-10-01, `wrist` build of the code above, `speed-profile`)
+
+Same watch, same protocol, now from `tools\watch-perf.ps1`; the raw output is under
+`docs/reports/perf/2026-10-01-0414-watch/`. Battery 60 % on battery, `low_power` 0, animator
+scale 1.0, Bluetooth connected to the phone. The APK on the device is 3.2 MB, one dex, not
+debuggable.
+
+| Measure | Debug (09-30) | Shrunk + `speed-profile` (09-30) | **`wrist` + phase 3 code (10-01)** |
+|---|---|---|---|
+| `am start -W` COLD | 1 729 ms | — | **342 / 331 ms** |
+| `am start -W` WARM | 537 / 545 ms | 241 / 176 / 137 ms | 388 / 186 / 152 ms |
+| Scroll, 20 swipes: janky frames | 76 of 668 (11.4 %) | 6 of 841 (0.7 %) | **2 of 869 (0.23 %)** |
+| 90th / 95th / 99th percentile frame | 48 / 53 / 73 ms | 44 / 46 / 48 ms | **34 / 34 / 34 ms** |
+| Slow UI thread frames | 75 | 6 | 2 |
+
+Read with the same caveat as before: the 34 ms median and percentiles are the swipe script's
+pacing, and in this run *no* frame fell outside it. The phase 3 code cost nothing measurable and
+the scroll is as smooth as the measurement can see; the glint was running for all of it (the
+episode was playing).
+
+Two things learnt about the measurement itself, both now in the script:
+
+- **`cmd package compile -m speed-profile` right after an install leaves the package at `verify`.**
+  The baseline profile ships inside the APK and reaches ART's profile store only when the app's
+  own profile installer runs, on a launch. Launch once, send the
+  `androidx.profileinstaller.action.INSTALL_PROFILE` broadcast, *then* compile; `-Compile` does
+  exactly that, and the profile's install notes say so.
+- **A two-second pause between `force-stop` and `am start -W` turns a COLD start into a WARM one**
+  on this watch: Play Services re-binds the chip service and brings the process back in the gap.
+  The script's first run of the day (388 ms, WARM) is that; the two COLD figures came from a
+  stop-and-start with no pause.
+
+**Phase 3.6, Firebase, measured and closed.** From `logcat -v epoch` around two COLD starts:
+the process is forked at +0, `FirebaseApp` begins initialising at +84 / +67 ms (that gap is the
+fork, bind and class loading before any content provider runs), and `FirebaseInitProvider`
+reports success at +114 / +104 ms — **30 and 37 ms** on the main thread, in starts of 342 and
+331 ms. That is the tenth the plan said should be a known tenth, and it is the content
+provider's own work, not the `CrashReporter` injection `WearApplication` does afterwards:
+deferring ours would not move it, and removing the provider means disabling it in the manifest
+and initialising Firebase by hand off the main thread, with the early-crash window that opens.
+Not worth 30 ms. Left as it is, on purpose.
+
+### Not yet felt by a thumb
+
+The optimistic play/pause is verified by its tests and the screen draws right in the goldens, but
+whether the flip *feels* immediate on the wrist is a thumb's call: tap play and pause repeatedly,
+including once after the phone's app has been killed. The glyph should flip as the thumb lifts;
+the bar should stop dead on pause and start on play without a later jump; the phone should catch
+up within the three-second hold. The tap-to-change round trip itself (step 4 of the protocol) is
+still unmeasured and needs the two temporary log lines the protocol describes.
