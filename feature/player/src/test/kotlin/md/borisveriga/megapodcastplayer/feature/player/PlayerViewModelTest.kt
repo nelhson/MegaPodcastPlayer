@@ -5,6 +5,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
@@ -521,6 +522,8 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
         playbackState.value = PlaybackState(isConnected = false)
 
         assertFalse(viewModel.awaitOpensAsVideo())
+        // Not a moment of the timeout spent: the mode alone answered.
+        assertEquals(0L, currentTime)
     }
 
     @Test
@@ -529,6 +532,8 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
         playbackState.value = PlaybackState(isConnected = false)
 
         assertFalse(viewModel.awaitOpensAsVideo())
+        // It did wait, and gave up: the answer came from the timeout, not from the mode.
+        assertTrue(currentTime > 0L)
     }
 
     @Test

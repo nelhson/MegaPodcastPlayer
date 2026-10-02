@@ -134,8 +134,8 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * @param onBack invoked when the user navigates back, and automatically once the show is removed.
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the caller
  *   can open the full player.
- * @param onEpisodeWatching invoked once an episode the sheet's *Play video* started is loaded, so
- *   the caller can open the video screen.
+ * @param onEpisodeWatching invoked once an episode started as video — by the sheet's *Play video*
+ *   or a row's video button — is loaded, so the caller can open the video screen.
  * @param modifier layout modifier.
  * @param showBackButton false when the screen is rendered as the detail pane of a two-pane layout,
  *   where the list is still on screen and a back arrow would be misleading.

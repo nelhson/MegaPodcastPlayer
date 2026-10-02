@@ -199,6 +199,19 @@ class PlayerSheetStateTest {
     }
 
     @Test
+    fun `a part-open sheet that may no longer expand can still be dragged shut`() = runTest {
+        // The queue moved on to an episode being watched while the bar was half-way up.
+        val sheet = state()
+        sheet.dragBy(deltaPx = -800f, sheetTravelPx = travelPx)
+
+        sheet.dragBy(deltaPx = -400f, sheetTravelPx = travelPx, canExpand = false)
+        assertEquals(0.4f, sheet.progress, TOLERANCE)
+
+        sheet.dragBy(deltaPx = 800f, sheetTravelPx = travelPx, canExpand = false)
+        assertEquals(0f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
     fun `a sheet that may not expand still follows the dismiss pull`() = runTest {
         val sheet = state()
 

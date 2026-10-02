@@ -73,8 +73,9 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 /**
  * The app shell's player layer: content, then the sheet on top of it.
  *
- * Owns the player's view model so that the shell above it needs nothing but a [PlayerSheetState],
- * and reserves the height of the collapsed bar in [content]'s padding so a list's last row is not
+ * Draws from the player's view model, so that the shell above it needs little more than a
+ * [PlayerSheetState] — it holds the same view model only to say which face the player is in — and
+ * reserves the height of the collapsed bar in [content]'s padding so a list's last row is not
  * left permanently underneath it — which is what the sheet's predecessor, a sibling in a `Column`,
  * got for free and an overlay does not.
  *
@@ -433,9 +434,13 @@ fun PlayerSheet(
                                 sheetState.consumePullDown(dismissPx) -> onDismiss()
 
                                 // The flick that would have opened the sheet opens what the tap
-                                // opens. Anything slower did not move the sheet, so there is
-                                // nothing to settle.
-                                barOpensVideo -> if (velocity < -flingPx) onWatch()
+                                // opens. The sheet itself goes back to the bar either way: it is
+                                // normally there already, but the bar can become the video's
+                                // mid-drag, with the sheet part-way up and nothing else to settle it.
+                                barOpensVideo -> {
+                                    if (velocity < -flingPx) onWatch()
+                                    if (sheetState.progress > 0f) sheetState.collapse()
+                                }
 
                                 else -> sheetState.settle(velocity, flingPx)
                             }

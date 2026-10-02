@@ -8,10 +8,13 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
@@ -98,6 +101,23 @@ class VideoScreenControlsTest {
         composeRule.onNodeWithContentDescription("Next episode").assertDoesNotExist()
         composeRule.onNodeWithText("Episode").assertDoesNotExist()
         tapLabelled("Show the controls").assertExists()
+    }
+
+    @Test
+    fun `a tap where a faded button sits brings the controls back instead of pressing it`() {
+        val pressed = mutableListOf<String>()
+        setScreen(VideoActions(onCollapse = { pressed += "collapse" }))
+        // Where the minimise button is, read while it can still be found.
+        val button = composeRule.onNodeWithContentDescription("Minimise the video")
+            .fetchSemanticsNode().boundsInRoot.center
+        controlsVisible = false
+        composeRule.waitForIdle()
+
+        composeRule.onRoot().performTouchInput { click(button) }
+        composeRule.waitForIdle()
+
+        assertEquals(emptyList<String>(), pressed)
+        assertEquals(true, controlsVisible)
     }
 
     @Test

@@ -142,7 +142,14 @@ class MainActivity : ComponentActivity() {
                     pendingSharedLink = pendingSharedLink,
                     onPendingSharedLinkHandled = { pendingSharedLink = null },
                     pendingOpenPlayer = pendingOpenPlayer,
-                    onPendingOpenPlayerHandled = { pendingOpenPlayer = false },
+                    onPendingOpenPlayerHandled = {
+                        pendingOpenPlayer = false
+                        // The request has been delivered, so it comes off the intent too. A
+                        // rotation or a fold recreates the activity with this same intent and
+                        // reads it again, and the player would be opened a second time over
+                        // whatever the user has done since — a video they had just minimised.
+                        intent.removeExtra(EXTRA_OPEN_PLAYER)
+                    },
                     pendingShortcut = pendingShortcut,
                     onPendingShortcutHandled = { pendingShortcut = null },
                 )

@@ -66,7 +66,8 @@ import md.borisveriga.megapodcastplayer.navigation.pushExit
  * @param onPendingSharedLinkHandled called after [pendingSharedLink] has been navigated to.
  * @param pendingOpenPlayer true when the intent that brought the app up was the media
  *   notification's own tap target. Consumed the same way.
- * @param onPendingOpenPlayerHandled called after the player has been expanded.
+ * @param onPendingOpenPlayerHandled called after the player has been opened, as whichever of its
+ *   two faces it was left in.
  * @param pendingShortcut the launcher shortcut this launch came from, or null. Consumed the same
  *   way; see [navigateToShortcut] for why one of the four navigates nowhere.
  * @param onPendingShortcutHandled called after [pendingShortcut] has been acted on.
@@ -329,12 +330,15 @@ fun MegaPodcastPlayerApp(
                         // The mode is left alone, so a tap on the bar comes back here. The screen
                         // pops itself the same way when the player moves on to an episode with
                         // nothing to show.
-                        onCollapse = { navController.popBackStack() },
+                        //
+                        // Both exits pop *this* route rather than whatever is on top. The screen
+                        // still takes taps while it animates out, and a second tap must find
+                        // nothing left to pop instead of taking the screen underneath with it.
+                        onCollapse = { navController.popBackStack(Route.Video, inclusive = true) },
                         // The other way out changes what the player is: the picture goes, and the
                         // audio player opens in its place over the same screen.
                         onListen = {
-                            navController.popBackStack()
-                            openAudio()
+                            if (navController.popBackStack(Route.Video, inclusive = true)) openAudio()
                         },
                     )
                 }

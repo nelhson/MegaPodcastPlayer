@@ -61,6 +61,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -203,12 +204,14 @@ fun VideoRoute(
         )
     }
 
-    // Whether the names, the transport and the buttons are on screen, or only the picture. Saved,
-    // so it survives the Fold opening — but keyed on the shape, so a turn starts over with them
-    // showing. Landscape hides them on a timer, and turning back to portrait to find a black page
-    // where the player was would read as the screen having broken.
+    // Whether the names, the transport and the buttons are on screen, or only the picture — kept
+    // as *the shape they were hidden in*, or null while they show. Saved, so a cleared picture
+    // survives the Fold opening; but a turn recreates the activity and restores whatever was
+    // saved, and landscape hides its controls on a timer, so a plain flag would turn back to
+    // portrait as a black page where the player was. Hidden in the other shape reads as showing.
     val landscape = isLandscape()
-    var controlsVisible by rememberSaveable(landscape) { mutableStateOf(true) }
+    var hiddenInLandscape by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    val controlsVisible = hiddenInLandscape != landscape
 
     FullscreenEffects(
         landscape = landscape,
@@ -240,7 +243,7 @@ fun VideoRoute(
         ),
         modifier = modifier,
         controlsVisible = controlsVisible,
-        onControlsVisibleChange = { controlsVisible = it },
+        onControlsVisibleChange = { visible -> hiddenInLandscape = if (visible) null else landscape },
         snackbarHostState = snackbarHostState,
     )
 }
@@ -382,10 +385,11 @@ private fun PortraitVideo(
         animationSpec = Motion.fade(),
         label = "video controls",
     )
-    // Furniture that has faded out is also taken out of the spoken tree: a button nobody can see
-    // is not one a screen reader should land on.
+    // Furniture that has faded out is also taken out of the spoken tree and out of focus order: a
+    // button nobody can see is not one a screen reader should land on, or a keyboard should press.
     val furniture = Modifier
         .graphicsLayer { alpha = shown.value }
+        .focusProperties { canFocus = controls.visible }
         .then(if (controls.visible) Modifier else Modifier.clearAndSetSemantics { })
     val steadyBars = WindowInsets.systemBarsIgnoringVisibility
 
@@ -611,8 +615,8 @@ private fun VideoFrame(
  *
  * @param playback where the names come from.
  * @param modifier layout modifier.
- * @param compact true over the picture, where there is one line's worth of room beside the back
- *   button and the colour is the overlay's rather than the page's.
+ * @param compact true over the picture, where there is one line's worth of room between the two
+ *   buttons and the colour is the overlay's rather than the page's.
  */
 @Composable
 private fun EpisodeTitles(
