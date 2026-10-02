@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.feature.player.video
 
 import android.view.SurfaceView
+import android.view.TextureView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
@@ -94,17 +96,24 @@ sealed interface VideoDownloadMessage {
 }
 
 /**
- * Drives the video screen: the one place the picture of a YouTube episode is shown.
+ * Drives the picture of a YouTube episode, in the two places it is shown: the video screen, and the
+ * collapsed bar the screen is put away behind.
  *
- * Holds no playback state of its own. The player is the [PlaybackConnection]'s, and the screen is a
- * surface attached to it plus two commands — show the picture, stop showing it — that bracket the
- * screen's time in the foreground. Everything else here is the ordinary transport, delegated the
- * way the player sheet's view model delegates it.
+ * Holds no playback state of its own. The player is the [PlaybackConnection]'s, and the picture is
+ * a surface attached to it plus two commands — show the picture, stop showing it — that bracket the
+ * time the player spends in video with the app in front. Everything else here is the ordinary
+ * transport, delegated the way the player sheet's view model delegates it.
+ *
+ * One instance serves both places, held by the shell that holds both. The bracket is the shell's
+ * to keep for that reason: minimising the screen moves the picture to the bar rather than ending
+ * it, and two holders each bracketing their own time on screen would hand back to sound in the gap
+ * between them.
  *
  * @property connection the handle on the playback service.
  * @property playbackRepository the skip intervals and the remembered rendition.
  * @property qualitySource asks the extractor which renditions a video comes in.
  * @property downloadRepository keeps a video on the device, and says which one is there.
+ * @property networkStatus says whether a picture that is not on the device could be fetched.
  * @property crashReporter where a failed lookup goes; the picker shows a sentence, the report
  *   keeps the cause.
  * @property applicationScope where leaving runs. The screen's own scope dies with the screen, and
@@ -117,6 +126,7 @@ class VideoViewModel @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val qualitySource: VideoQualitySource,
     private val downloadRepository: DownloadRepository,
+    private val networkStatus: NetworkStatus,
     private val crashReporter: CrashReporter,
     @ApplicationScope private val applicationScope: CoroutineScope,
 ) : ViewModel() {
@@ -126,10 +136,10 @@ class VideoViewModel @Inject constructor(
     private val downloadMessageState = MutableStateFlow<VideoDownloadMessage?>(null)
 
     /**
-     * Whether the screen is up, between [enter] and [exit].
+     * Whether the picture is wanted, between [enter] and [exit].
      *
      * Read by the collector in `init` that follows the episode: the player moving on to another
-     * YouTube episode should keep the picture going only while there is a screen to show it on.
+     * YouTube episode should keep the picture going only while there is somewhere to show it.
      */
     private var watching = false
 
@@ -182,7 +192,15 @@ class VideoViewModel @Inject constructor(
         Extras(qualities.offeringDownload(download), refused, download, message)
     }
 
-    /** Everything the video screen renders, kept while the screen is subscribed. */
+    /**
+     * Everything the video screen renders, kept while the screen is subscribed.
+     *
+     * Forgotten once it has stopped being kept. This view model outlives a visit to the screen, and
+     * the screen reads the state before the first fresh value arrives; a value left over from the
+     * last visit — an episode with nothing to show, say, which is what sent that visit away — would
+     * send this one away too. So an unwatched state goes back to the empty one, which the screen
+     * reads as "not connected yet" and waits on.
+     */
     val uiState: StateFlow<VideoUiState> = combine(
         connection.playbackState,
         playbackRepository.observePlaybackSettings(),
@@ -201,15 +219,18 @@ class VideoViewModel @Inject constructor(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+        started = SharingStarted.WhileSubscribed(
+            stopTimeoutMillis = STOP_TIMEOUT_MS,
+            replayExpirationMillis = 0L,
+        ),
         initialValue = VideoUiState(),
     )
 
     init {
-        // Follow the episode. When the queue moves on while the screen is up — the episode ended,
-        // or the user pressed next — the next one arrives as sound, because that is how every
-        // episode is stored; if it has a picture, show it too. The first value is the episode the
-        // screen opened on, which `enter` already handles.
+        // Follow the episode. When the queue moves on while the picture is wanted — the episode
+        // ended, or the user pressed next — the next one arrives as sound, because that is how
+        // every episode is stored; if it has a picture, show it too. The first value is whatever
+        // was loaded when this view model was made, which is `enter`'s to handle if it is wanted.
         viewModelScope.launch {
             connection.playbackState
                 .map { it.youTubeVideoId }
@@ -232,17 +253,28 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    /** Shows the picture of the episode playing, at the remembered rendition. */
+    /**
+     * Shows the picture of the episode playing, at the remembered rendition.
+     *
+     * Safe to call again while the picture is already wanted, and called so: by the shell when the
+     * player is put in video, and by the video screen each time it starts. The service answers a
+     * repeat by doing nothing, so the second ask costs a round trip and no re-buffer — and it is
+     * what retries a picture that was refused the first time, which is why a refusal still waiting
+     * to be said is dropped here rather than said about an ask that has been superseded.
+     */
     fun enter() {
         watching = true
+        refusedState.value = false
+        pendingEnter?.cancel()
         pendingEnter = viewModelScope.launch { showPicture() }
     }
 
     /**
      * Goes back to sound only. Playback carries on; only the picture stops.
      *
-     * On the application scope rather than this view model's: the screen calls this on its way out,
-     * and a scope that is being torn down would cancel the very command that hands back to audio.
+     * On the application scope rather than this view model's: this is called as the activity stops,
+     * which can be the activity finishing, and a scope that is being torn down would cancel the very
+     * command that hands back to audio.
      */
     fun exit() {
         watching = false
@@ -282,6 +314,26 @@ class VideoViewModel @Inject constructor(
      */
     fun detachSurface(view: SurfaceView) {
         applicationScope.launch { connection.detachVideoSurface(view) }
+    }
+
+    /**
+     * Gives the player the collapsed bar's texture to draw on.
+     *
+     * @param view the texture, freshly created by the bar.
+     */
+    fun attachTexture(view: TextureView) {
+        viewModelScope.launch { connection.attachVideoTexture(view) }
+    }
+
+    /**
+     * Takes the texture back before the bar destroys it.
+     *
+     * On the application scope for the reason [detachSurface] is.
+     *
+     * @param view the texture handed over by [attachTexture].
+     */
+    fun detachTexture(view: TextureView) {
+        applicationScope.launch { connection.detachVideoTexture(view) }
     }
 
     /** Clears [VideoUiState.refused] once its snackbar has been shown. */
@@ -394,6 +446,13 @@ class VideoViewModel @Inject constructor(
      * At the downloaded rendition when the episode has a finished video download, else at the
      * remembered one. A download is filed under its rendition, so asking for any other would
      * stream a picture that is already on the device — or, offline, fail to show it at all.
+     *
+     * Not asked at all for a picture that is neither on the device nor fetchable. The video flavour
+     * is one merged source, so asking takes the sound down until the player gives up on the picture
+     * and falls back — and this is asked on its own every time the app comes forward in video, not
+     * only when the user says "watch". Offline with the audio downloaded, that would be an
+     * interruption per visit to the app. It is said as a refusal instead, which the video screen
+     * words if it is up and the bar lets pass.
      */
     private suspend fun showPicture() {
         val episodeId = connection.playbackState.value.episodeId
@@ -404,6 +463,10 @@ class VideoViewModel @Inject constructor(
         val quality = downloaded ?: playbackRepository.observeVideoQuality().first()
         // The screen may have gone while the rendition was being read; see [pendingEnter].
         if (!watching) return
+        if (downloaded == null && !networkStatus.isOnline()) {
+            refusedState.value = true
+            return
+        }
         if (!connection.enterVideo(quality)) refusedState.value = true
     }
 

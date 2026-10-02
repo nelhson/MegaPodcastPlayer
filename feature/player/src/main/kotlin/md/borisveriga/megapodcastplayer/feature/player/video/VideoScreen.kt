@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.player.video
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.SurfaceView
+import android.view.TextureView
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -105,22 +106,24 @@ import md.borisveriga.megapodcastplayer.feature.player.previewPlayback
  *
  * It is the player's other face rather than a second player. The service keeps playing the same
  * episode at the same position before, during and after; what this screen adds is a surface, and
- * two commands that bracket its time on screen — show the picture on the way in, go back to sound
- * on the way out. Minimising, back, home and the screen going off all count as the way out: with
- * no surface to draw on there is no picture worth streaming. A rotation or a fold does not: the
- * activity is recreated, the surface is made again, and the picture carries on.
+ * an ask for the picture each time it starts. It does not end the picture when it goes: that is
+ * the shell's, which knows what this screen cannot — whether the picture is going on to the
+ * collapsed bar or going away. See `PlayerSheetScaffold`.
  *
  * There are two ways to leave and they mean different things. *Minimise* puts the video away: the
- * episode carries on behind the collapsed bar, and a tap on the bar comes back here. *Switch to
- * audio* changes what the player is: the caller opens the audio player in its place. Which of the
- * two the player is in is the caller's to remember; this screen only reports the choice.
+ * episode carries on in the collapsed bar, picture and all, and a tap on the bar comes back here.
+ * *Switch to audio* changes what the player is: the picture stops, and the caller opens the audio
+ * player in its place. Which of the two the player is in is the caller's to remember; this screen
+ * only reports the choice.
  *
  * A tap on the picture hides everything but the picture, and a tap anywhere brings it back.
  *
  * @param onCollapse puts the video away; playback carries on, and the bar reopens this screen.
  * @param onListen leaves for the audio player.
  * @param modifier layout modifier.
- * @param viewModel injected by Hilt.
+ * @param viewModel the picture's view model. The shell passes the instance its collapsed bar draws
+ *   from, so the picture is one thing handed between two surfaces; the default is a screen of its
+ *   own, for a caller with no bar.
  */
 @Composable
 fun VideoRoute(
@@ -130,22 +133,25 @@ fun VideoRoute(
     viewModel: VideoViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val activity = LocalActivity.current
 
+    // Asked on every start, not once: coming back to the front finds the picture handed back to
+    // sound, and arriving here is also the retry for one the service refused. Nothing is undone on
+    // the way out — minimising must leave the picture playing for the bar.
     LifecycleStartEffect(Unit) {
         viewModel.enter()
-        onStopOrDispose {
-            // A rotation or a fold stops the activity too, and starts it again a moment later.
-            // The picture must survive that; only a real departure hands back to sound.
-            if (activity?.isChangingConfigurations != true) viewModel.exit()
-        }
+        onStopOrDispose {}
     }
 
     // The screen is about one episode's picture. When the player has moved on to something without
     // one, or has emptied, there is nothing left here to show. Not before the service has answered:
     // the first frame reads as "nothing loaded" and would send the user straight back out.
     LaunchedEffect(uiState.playback.isConnected, uiState.canWatch) {
-        if (uiState.playback.isConnected && !uiState.canWatch) onCollapse()
+        if (uiState.playback.isConnected && !uiState.canWatch) {
+            // Said here as well as left to the shell: the queue may still hold episodes in their
+            // video flavour, and going back to sound is what turns them back.
+            viewModel.exit()
+            onCollapse()
+        }
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -239,7 +245,12 @@ fun VideoRoute(
             onOpenQuality = { qualityOpen = true },
             onOpenDownload = { downloadOpen = true },
             onCollapse = onCollapse,
-            onListen = onListen,
+            // Before the mode change it leads to has been stored and read back, so the picture
+            // stops with the tap rather than a moment after the audio player has opened.
+            onListen = {
+                viewModel.exit()
+                onListen()
+            },
         ),
         modifier = modifier,
         controlsVisible = controlsVisible,
@@ -836,6 +847,31 @@ private fun VideoSurface(
 ) {
     AndroidView(
         factory = { context -> SurfaceView(context).also(onAttach) },
+        modifier = modifier,
+        onRelease = onDetach,
+    )
+}
+
+/**
+ * The player's canvas at the size of the collapsed bar.
+ *
+ * A `TextureView` where the screen has a `SurfaceView`, because this picture is a piece of a bar:
+ * it is clipped to the artwork's corners, fades with the bar and is pulled down with it, and a
+ * surface behind a hole in the window does none of those. Handed over when made and taken back when
+ * released, like [VideoSurface].
+ *
+ * @param onAttach receives the texture once it exists.
+ * @param onDetach receives it again before it goes.
+ * @param modifier layout modifier.
+ */
+@Composable
+internal fun VideoTexture(
+    onAttach: (TextureView) -> Unit,
+    onDetach: (TextureView) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AndroidView(
+        factory = { context -> TextureView(context).also(onAttach) },
         modifier = modifier,
         onRelease = onDetach,
     )

@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.player.video
 
+import android.view.TextureView
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -13,10 +14,12 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
@@ -56,6 +59,7 @@ class VideoViewModelTest {
     private val qualitySource: VideoQualitySource = mockk()
     private val crashReporter: CrashReporter = mockk(relaxed = true)
     private val downloadRepository: DownloadRepository = mockk(relaxed = true)
+    private val networkStatus: NetworkStatus = mockk()
     private val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
 
     /** Unconfined, so a launched command has run by the time the call returns. */
@@ -71,6 +75,7 @@ class VideoViewModelTest {
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeVideoQuality() } returns preferredQuality
         every { downloadRepository.observeVideoDownloads() } returns videoDownloads
+        every { networkStatus.isOnline() } returns true
         coEvery { downloadRepository.downloadVideo(any(), any()) } returns true
         coEvery { qualitySource.qualitiesOf(any()) } returns
             listOf(VideoQuality(720), VideoQuality(1080))
@@ -80,6 +85,7 @@ class VideoViewModelTest {
             playbackRepository = playbackRepository,
             qualitySource = qualitySource,
             downloadRepository = downloadRepository,
+            networkStatus = networkStatus,
             crashReporter = crashReporter,
             applicationScope = applicationScope,
         )
@@ -126,6 +132,82 @@ class VideoViewModelTest {
 
         viewModel.onRefusalShown()
         assertFalse(viewModel.uiState.value.refused)
+    }
+
+    @Test
+    fun `asking again while the picture is wanted is the retry for a refusal`() = runTest {
+        // The shell asks when the player is put in video and the screen asks each time it starts,
+        // so two asks in a row are the ordinary case. The service answers a repeat by doing nothing.
+        coEvery { connection.enterVideo(any()) } returns false
+        playbackState.value = watching()
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        viewModel.enter()
+        assertTrue(viewModel.uiState.value.refused)
+
+        coEvery { connection.enterVideo(any()) } returns true
+        viewModel.enter()
+
+        // The refusal belonged to the ask this one replaced; saying it over a picture that is now
+        // showing would be saying something no longer true.
+        assertFalse(viewModel.uiState.value.refused)
+        coVerify(exactly = 2) { connection.enterVideo(VideoQuality.DEFAULT) }
+    }
+
+    @Test
+    fun `offline, a picture that is not on the device is not asked for`() = runTest {
+        // The ask is not free: the video flavour is one merged source, so a picture that cannot
+        // be fetched takes the sound down until the player gives up on it. The bar asks every time
+        // the app comes forward, so offline that would interrupt a downloaded episode per visit.
+        every { networkStatus.isOnline() } returns false
+        playbackState.value = watching()
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.enter()
+
+        coVerify(exactly = 0) { connection.enterVideo(any()) }
+        // Said rather than dropped: on the video screen this is why there is no picture.
+        assertTrue(viewModel.uiState.value.refused)
+    }
+
+    @Test
+    fun `offline, a downloaded video is still shown`() = runTest {
+        every { networkStatus.isOnline() } returns false
+        playbackState.value = watching()
+        videoDownloads.value = mapOf("ep-$VIDEO_ID" to downloaded(VideoQuality(480)))
+
+        viewModel.enter()
+
+        // It is on the device, at its own rendition; the network has nothing to do with it.
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480)) }
+    }
+
+    @Test
+    fun `the bar's texture is handed to the player and taken back`() = runTest {
+        val texture: TextureView = mockk()
+
+        viewModel.attachTexture(texture)
+        viewModel.detachTexture(texture)
+
+        coVerifyOrder {
+            connection.attachVideoTexture(texture)
+            connection.detachVideoTexture(texture)
+        }
+    }
+
+    @Test
+    fun `a visit that ended does not leave its state behind for the next one`() = runTest {
+        // One view model serves every visit to the screen. The last visit ended on an episode with
+        // nothing to show, which is the state that sends the screen away.
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "feed-episode")
+        val visit = launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        assertTrue(viewModel.uiState.value.playback.isConnected)
+        visit.cancel()
+
+        advanceTimeBy(STATE_KEPT_MS + 1)
+
+        // Read by the next visit before anything fresh arrives: it must say "not connected yet",
+        // which the screen waits on, not "connected, nothing to watch", which it leaves on.
+        assertEquals(VideoUiState(), viewModel.uiState.value)
     }
 
     @Test
@@ -386,5 +468,8 @@ class VideoViewModelTest {
 
     private companion object {
         const val VIDEO_ID = "niTJ2221aS8"
+
+        /** How long the view model keeps its state after the last subscriber leaves. */
+        const val STATE_KEPT_MS = 5_000L
     }
 }

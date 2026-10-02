@@ -479,31 +479,47 @@ class OfflineFirstPodcastRepositoryTest {
         return added.podcast
     }
 
+    /** Makes the feed's next answer one where "b" is gone and "c" is new. */
+    private fun withdrawBAndPublishC() {
+        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
+            FeedFetchResult.Fetched(channel(feedItem("a"), feedItem("c")), etag = "v2", lastModified = null)
+    }
+
     @Test
     fun `a rebuild drops withdrawn episodes and keeps the progress of the rest`() = runTest {
         val podcast = addPodlodkaWithProgress()
-        val withdrawnId = repository.observeEpisodes(podcast.id).first().first { it.guid == "b" }.id
-        database.episodeDao().updateDownloadState(withdrawnId, DownloadState.COMPLETED, 1L, 100f)
+        // A refresh would have left "b" behind forever, because a merge has no way to know an
+        // episode was withdrawn.
+        withdrawBAndPublishC()
 
-        // "b" is gone from the feed and "c" is new; a refresh would have left "b" behind forever,
-        // because a merge has no way to know an episode was withdrawn.
-        coEvery { feeds.fetch(podlodkaFeedUrl, null, null) } returns
-            FeedFetchResult.Fetched(
-                channel(feedItem("a"), feedItem("c")),
-                etag = "v2",
-                lastModified = null,
-            )
-
-        assertEquals(
-            RebuildResult(episodeCount = 2, withdrawnDownloadIds = listOf(withdrawnId)),
-            repository.rebuild(podcast.id).getOrThrow(),
-        )
+        assertEquals(RebuildResult(episodeCount = 2), repository.rebuild(podcast.id).getOrThrow())
 
         val episodes = repository.observeEpisodes(podcast.id).first()
         assertEquals(setOf("a", "c"), episodes.mapTo(mutableSetOf()) { it.guid })
         assertEquals(90_000L, episodes.first { it.guid == "a" }.positionMs)
         // Same rule as adding a show: what arrived with a pull the user asked for is not "new".
         assertTrue(episodes.none { it.isNew })
+    }
+
+    @Test
+    fun `a rebuild keeps a withdrawn episode the user has downloaded`() = runTest {
+        val podcast = addPodlodkaWithProgress()
+        val withdrawnId = repository.observeEpisodes(podcast.id).first().first { it.guid == "b" }.id
+        database.episodeDao().updateDownloadState(withdrawnId, DownloadState.COMPLETED, 1L, 100f)
+        withdrawBAndPublishC()
+
+        // The count is the feed's and the kept download is reported beside it, so the screen can
+        // say why the list is one longer than the number.
+        assertEquals(
+            RebuildResult(episodeCount = 2, keptDownloadIds = listOf(withdrawnId)),
+            repository.rebuild(podcast.id).getOrThrow(),
+        )
+
+        // Still an episode of its show and still downloaded: that row is what the downloads screen
+        // lists the file by, and losing it was how a pull cost the user the copy on the device.
+        val episodes = repository.observeEpisodes(podcast.id).first()
+        assertEquals(setOf("a", "b", "c"), episodes.mapTo(mutableSetOf()) { it.guid })
+        assertEquals(listOf(withdrawnId), repository.observeDownloadedEpisodes().first().map { it.id })
     }
 
     @Test

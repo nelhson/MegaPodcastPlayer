@@ -353,27 +353,33 @@ class PodcastDetailViewModelTest : PodcastDetailViewModelFixture() {
     }
 
     @Test
-    fun `a rebuild clears only the downloads of the episodes the feed withdrew`() = runTest {
+    fun `a rebuild deletes no download, and counts the ones kept past the feed`() = runTest {
         episodes.value = listOf(
-            episode("kept", DownloadState.COMPLETED),
+            episode("listed", DownloadState.COMPLETED),
             episode("withdrawn", DownloadState.COMPLETED),
             episode("arriving", DownloadState.DOWNLOADING),
         )
         coEvery { repository.rebuild(podcast.id) } returns Result.success(
-            RebuildResult(episodeCount = 1, withdrawnDownloadIds = listOf("withdrawn", "arriving")),
+            RebuildResult(episodeCount = 1, keptDownloadIds = listOf("withdrawn", "arriving")),
         )
 
         viewModel.uiState.test {
             awaitItem()
             viewModel.rebuild()
+            assertTrue(awaitItem().isRebuilding)
+
+            // Both counts: the list now holds two more episodes than the feed gave it, and they are
+            // ones the user knows they took off the playlist.
+            assertEquals(
+                PodcastDetailMessage.Rebuilt(episodeCount = 1, keptDownloadCount = 2),
+                awaitItem().message,
+            )
             cancelAndIgnoreRemainingEvents()
         }
 
-        // What the repository reports, not what the screen was showing: an episode still in the
-        // feed keeps its row, so its audio still belongs to something.
-        coVerify { downloadRepository.removeDownload("withdrawn") }
-        coVerify { downloadRepository.removeDownload("arriving") }
-        coVerify(exactly = 0) { downloadRepository.removeDownload("kept") }
+        // The screen used to free the downloads of the episodes a rebuild dropped, which is how
+        // taking a video off a playlist deleted the copy on the device.
+        coVerify(exactly = 0) { downloadRepository.removeDownload(any()) }
     }
 
     @Test

@@ -8,8 +8,6 @@ import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -384,7 +382,7 @@ class PlayerQueueTest : PlayerViewModelFixture() {
     }
 
     @Test
-    fun `dismissing stops the player and announces itself`() = runTest {
+    fun `dismissing stops the player and says nothing about it`() = runTest {
         playing("a")
         queue.value = listOf(playable("a"), playable("b"))
 
@@ -392,10 +390,15 @@ class PlayerQueueTest : PlayerViewModelFixture() {
             awaitItem()
             viewModel.dismiss()
 
-            assertTrue(expectMostRecentItem().dismissed)
+            // No message for a snackbar to show: the bar going is the answer. This used to raise a
+            // "Playback stopped" with an undo on it; the queue screen's own clear still has one.
+            // Read off the state rather than awaited: nothing in it changes, so there is no
+            // new item to wait for.
+            assertEquals(null, viewModel.uiState.value.message)
             cancelAndIgnoreRemainingEvents()
         }
         coVerify { episodePlayer.dismiss() }
+        coVerify(exactly = 0) { episodePlayer.restoreDismissed(any(), any(), any()) }
     }
 
     @Test
@@ -408,61 +411,6 @@ class PlayerQueueTest : PlayerViewModelFixture() {
             viewModel.dismiss()
 
             coVerify(exactly = 0) { episodePlayer.dismiss() }
-            // Read off the state rather than awaited: nothing changed, so there is no new item.
-            assertFalse(viewModel.uiState.value.dismissed)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `undoing a dismissal puts the whole queue back where it was`() = runTest {
-        viewModel.uiState.test {
-            awaitItem()
-            playbackState.value = PlaybackState(episodeId = "b", positionMs = 90_000L)
-            currentEpisode.value = episode("b")
-            queue.value = listOf(playable("a"), playable("b"), playable("c"))
-            expectMostRecentItem()
-
-            viewModel.dismiss()
-            viewModel.undoDismiss()
-
-            // The arrangement as it stood, the episode that was loaded, and the second it stopped
-            // at — an undo that restarted the queue from the top would lose an hour of listening.
-            coVerify {
-                episodePlayer.restoreDismissed(
-                    orderedIds = listOf("a", "b", "c"),
-                    startEpisodeId = "b",
-                    positionMs = 90_000L,
-                )
-            }
-            assertFalse(expectMostRecentItem().dismissed)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `the dismissal undo is spent once, and does not survive its snackbar`() = runTest {
-        viewModel.uiState.test {
-            awaitItem()
-            playing("a")
-            queue.value = listOf(playable("a"))
-            expectMostRecentItem()
-
-            viewModel.dismiss()
-            viewModel.undoDismiss()
-            // A second tap on a snackbar that has already been acted on.
-            viewModel.undoDismiss()
-
-            coVerify(exactly = 1) { episodePlayer.restoreDismissed(any(), any(), any()) }
-
-            viewModel.dismiss()
-            // The snackbar timed out rather than being tapped.
-            viewModel.onDismissMessageShown()
-            viewModel.undoDismiss()
-
-            // Still one: an undo left armed past the message that offered it would restore a queue
-            // the user has since replaced.
-            coVerify(exactly = 1) { episodePlayer.restoreDismissed(any(), any(), any()) }
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -483,8 +431,6 @@ class PlayerQueueTest : PlayerViewModelFixture() {
             coVerify(exactly = 0) { episodePlayer.removeFromQueue(any()) }
             val state = expectMostRecentItem()
             assertEquals(QueueMessage.Cleared(3), state.message)
-            // The queue screen's own snackbar, not the player bar's: one message for one gesture.
-            assertFalse(state.dismissed)
             cancelAndIgnoreRemainingEvents()
         }
     }

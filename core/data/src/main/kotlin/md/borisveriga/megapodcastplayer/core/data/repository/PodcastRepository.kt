@@ -133,13 +133,14 @@ data class RefreshSummary(
 /**
  * Result of rebuilding one show's episode list.
  *
- * @property episodeCount how many episodes the feed yielded, which is how many the show now has.
- * @property withdrawnDownloadIds episodes the feed no longer lists that had a download in any
- *   state. Their rows are gone, so the audio is stranded until the caller frees it.
+ * @property episodeCount how many episodes the feed yielded.
+ * @property keptDownloadIds episodes the feed no longer lists that were kept all the same, because
+ *   they have a download in any state. The show now has these on top of [episodeCount], and both
+ *   the rows and what is on the device are exactly as they were.
  */
 data class RebuildResult(
     val episodeCount: Int,
-    val withdrawnDownloadIds: List<String> = emptyList(),
+    val keptDownloadIds: List<String> = emptyList(),
 )
 
 /**
@@ -275,14 +276,16 @@ interface PodcastRepository {
      * stored order with the feed's.
      *
      * Every episode the feed still lists keeps its playback progress, played flag and download —
-     * only what the feed withdrew is lost.
+     * only what the feed withdrew is lost, and of that, nothing the user downloaded. A withdrawn
+     * episode with a download in any state keeps its row, at the end of a hand-ordered show: a
+     * video taken off a playlist is still a file on the device, and the row is what the downloads
+     * screen shows it by. It goes with a later rebuild, once its download has been deleted.
      *
      * The feed is fetched *before* anything is deleted, and unconditionally — no `ETag`, no
      * `Last-Modified` — so a failed fetch leaves the show exactly as it was, and the server cannot
      * answer "unchanged" to a request whose entire point is to be told everything again.
      *
-     * Never downloads audio, and does not remove any either: the downloads of withdrawn episodes
-     * are returned for the caller to free.
+     * Never downloads anything, and never deletes a download either.
      *
      * @param podcastId the show to rebuild.
      * @return what the rebuild left, or a failure carrying the fetch error.

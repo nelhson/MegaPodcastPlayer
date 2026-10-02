@@ -276,8 +276,8 @@ class EpisodePlayer @Inject constructor(
     }
 
     /**
-     * Puts back a queue that [dismiss] emptied — the undo of dismissing the player or clearing the
-     * queue.
+     * Puts back a queue that [dismiss] emptied — the undo of clearing the queue. Closing the player
+     * empties it the same way and offers nothing back.
      *
      * Takes the whole arrangement rather than an index for the same reason [restoreToQueue] does:
      * it is the only description of the queue that survives it having been thrown away. Episodes

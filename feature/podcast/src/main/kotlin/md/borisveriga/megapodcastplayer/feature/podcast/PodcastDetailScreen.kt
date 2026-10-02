@@ -450,7 +450,7 @@ fun PodcastDetailScreen(
                 // thing that would fix it was three taps into a menu. The gesture now means "fetch
                 // this show again from scratch". It asks nothing first: every episode the feed
                 // still lists keeps its progress and its audio, so the only things it removes are
-                // episodes the publisher already took away.
+                // episodes the publisher already took away — and of those, none with a download.
                 else -> PullToRefreshBox(
                     isRefreshing = uiState.isRebuilding,
                     onRefresh = onRebuild,
@@ -1364,7 +1364,7 @@ private const val SHARE_MIME_TYPE = "text/plain"
  * @param resources resolved from the composition by the caller.
  * @return the text to show.
  */
-private fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
+internal fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
     is PodcastDetailMessage.Refreshed -> if (newEpisodeCount == 0) {
         resources.getString(R.string.podcast_message_no_new_episodes)
     } else {
@@ -1380,11 +1380,27 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 
     // No "no episodes" special case, unlike a refresh: a rebuild that lands on zero means the feed
     // now publishes nothing, which is news rather than the ordinary answer, and the plural says it.
-    is PodcastDetailMessage.Rebuilt -> resources.getQuantityString(
-        R.plurals.podcast_message_rebuilt,
-        episodeCount,
-        episodeCount,
-    )
+    is PodcastDetailMessage.Rebuilt -> {
+        val reloaded = resources.getQuantityString(
+            R.plurals.podcast_message_rebuilt,
+            episodeCount,
+            episodeCount,
+        )
+        if (keptDownloadCount == 0) {
+            reloaded
+        } else {
+            // Two counts, so two plurals joined rather than one string with both in it.
+            resources.getString(
+                R.string.podcast_message_rebuilt_and_kept,
+                reloaded,
+                resources.getQuantityString(
+                    R.plurals.podcast_message_rebuilt_kept,
+                    keptDownloadCount,
+                    keptDownloadCount,
+                ),
+            )
+        }
+    }
 
     is PodcastDetailMessage.RebuildFailed ->
         resources.getString(R.string.podcast_message_rebuild_failed, reason)

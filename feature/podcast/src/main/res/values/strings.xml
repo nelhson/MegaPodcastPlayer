@@ -132,13 +132,23 @@
     <!-- %1$s is the failure reason. -->
     <string name="podcast_message_refresh_failed">Couldn\'t refresh: %1$s</string>
     <!--
-        A rebuild counts what the show now has rather than what arrived, so unlike a refresh there
+        A rebuild counts what the feed lists rather than what arrived, so unlike a refresh there
         is no "nothing new" case: zero here means the feed published nothing at all.
     -->
     <plurals name="podcast_message_rebuilt">
         <item quantity="one">Reloaded %1$d episode</item>
         <item quantity="other">Reloaded %1$d episodes</item>
     </plurals>
+    <!--
+        Added to the count above when a rebuild found downloads the feed no longer lists. They stay
+        in the show, so the sentence says why the list is longer than the number before it.
+    -->
+    <plurals name="podcast_message_rebuilt_kept">
+        <item quantity="one">Kept %1$d download that is no longer listed</item>
+        <item quantity="other">Kept %1$d downloads that are no longer listed</item>
+    </plurals>
+    <!-- %1$s is podcast_message_rebuilt and %2$s is podcast_message_rebuilt_kept. -->
+    <string name="podcast_message_rebuilt_and_kept">%1$s. %2$s.</string>
     <!-- %1$s is the failure reason. Says the list survived, because that is the useful half. -->
     <string name="podcast_message_rebuild_failed">Couldn\'t reload: %1$s. Your episodes are unchanged.</string>
     <string name="podcast_message_episode_unavailable">That episode is no longer in your library</string>

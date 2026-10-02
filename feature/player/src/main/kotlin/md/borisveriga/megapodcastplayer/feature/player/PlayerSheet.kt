@@ -69,6 +69,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.rememberHaptics
 import md.borisveriga.megapodcastplayer.core.media.PlaybackError
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.feature.player.video.KeepPictureEffect
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoTexture
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoViewModel
 
 /**
  * The app shell's player layer: content, then the sheet on top of it.
@@ -82,6 +85,11 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * Renders no sheet at all when the player is idle, so a user who has not started anything never
  * sees an empty bar.
  *
+ * It is also where the picture of an episode being watched is kept on. Both of the picture's homes
+ * are under this composable — the video screen in [content], and the collapsed bar that screen is
+ * put away behind — so this is the one place that can tell the picture moving between them from the
+ * picture ending; see [KeepPictureEffect].
+ *
  * @param sheetState how open the sheet is; hoisted because the navigation bar reacts to it too.
  * @param onOpenQueue opens the queue screen.
  * @param onWatch opens the video screen for the episode playing.
@@ -90,6 +98,8 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  *   The sheet then neither draws nor reserves its height, so the screen has the whole window;
  *   the view model and its sheets are kept, because the same episode is still playing.
  * @param viewModel injected by Hilt.
+ * @param videoViewModel the picture's view model, which must be the instance the video screen in
+ *   [content] is given: the bar and the screen hand one picture between them.
  * @param content the app's screens, given the padding the sheet occupies at rest.
  */
 @Composable
@@ -100,9 +110,21 @@ fun PlayerSheetScaffold(
     modifier: Modifier = Modifier,
     hidden: Boolean = false,
     viewModel: PlayerViewModel = hiltViewModel(),
+    videoViewModel: VideoViewModel = hiltViewModel(),
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    KeepPictureEffect(
+        // Somewhere to draw it, as well as the mode: the video screen, or the bar at rest. An
+        // expanded sheet has neither — a player in video can be found there when an episode with a
+        // picture arrives under a sheet that was opened on one without — and a picture asked for
+        // then would be fetched and decoded for nobody.
+        wanted = uiState.opensAsVideo && (hidden || !sheetState.isExpanded),
+        onEnter = videoViewModel::enter,
+        onExit = videoViewModel::exit,
+    )
+
     val snackbarHostState = remember { SnackbarHostState() }
     val haptics = rememberHaptics()
     // LocalResources rather than LocalContext.current.resources, so a configuration change
@@ -200,19 +222,6 @@ fun PlayerSheetScaffold(
         viewModel.onMomentMessageShown()
     }
 
-    // Dismissing stops playback and empties the queue, which is not a small thing to do on a
-    // gesture — so it follows the app's own rule and is offered straight back. The undo restores
-    // both the queue and the position it was dismissed at.
-    LaunchedEffect(uiState.dismissed) {
-        if (!uiState.dismissed) return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = resources.getString(R.string.player_dismissed),
-            actionLabel = resources.getString(R.string.player_dismiss_undo),
-        )
-        if (result == SnackbarResult.ActionPerformed) viewModel.undoDismiss()
-        viewModel.onDismissMessageShown()
-    }
-
     noteFor?.let { saved ->
         NoteDialog(
             title = stringResource(R.string.player_moment_note_title),
@@ -251,6 +260,13 @@ fun PlayerSheetScaffold(
                 onWatch = onWatch,
                 onDismiss = viewModel::dismiss,
                 modifier = Modifier.fillMaxSize(),
+                picture = { pictureModifier ->
+                    VideoTexture(
+                        onAttach = videoViewModel::attachTexture,
+                        onDetach = videoViewModel::detachTexture,
+                        modifier = pictureModifier,
+                    )
+                },
             )
         }
 
@@ -309,6 +325,9 @@ fun PlayerSheetScaffold(
  *   bar commits to, what the bar's spoken action does, and what the expanded sheet's close button
  *   presses.
  * @param modifier layout modifier; must be given the space the sheet may grow into.
+ * @param picture draws the player's picture into the modifier it is given. Composed only while the
+ *   bar is the video screen put away, where it takes the artwork's place; a slot so that a test or
+ *   a preview can put a plain box where a view bound to the player would be.
  */
 @Composable
 fun PlayerSheet(
@@ -329,6 +348,7 @@ fun PlayerSheet(
     onWatch: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    picture: @Composable (Modifier) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -517,6 +537,7 @@ fun PlayerSheet(
                             onSkipBack = onSkipBack,
                             onSkipForward = onSkipForward,
                             video = uiState.opensAsVideo,
+                            picture = picture,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .height(collapsedHeight)
@@ -568,13 +589,19 @@ fun PlayerSheet(
                         )
                     }
 
-                    TravellingArtwork(
-                        artworkUrl = uiState.artworkUrl,
-                        progress = progress,
-                        heroSize = layout.heroSize,
-                        heroLeft = layout.heroLeft,
-                        heroTop = layout.heroTop,
-                    )
+                    // At rest, the bar of an episode being watched has the picture where the
+                    // artwork would be, in a frame of its own shape, and the artwork drawn over it
+                    // would cover the picture. It is back the moment the sheet leaves the bar, which
+                    // such a bar only does on its way to being something else.
+                    if (!uiState.opensAsVideo || progress > 0f) {
+                        TravellingArtwork(
+                            artworkUrl = uiState.artworkUrl,
+                            progress = progress,
+                            heroSize = layout.heroSize,
+                            heroLeft = layout.heroLeft,
+                            heroTop = layout.heroTop,
+                        )
+                    }
                 }
             }
         }
@@ -668,7 +695,7 @@ private fun TravellingArtwork(
  * this strip and the back gesture already take the sheet down to the bar. It closes the player
  * outright: playback stops, the queue empties and the bar goes too, which from the full player
  * used to take collapsing first and then pulling the bar away. The next episode played brings the
- * bar back, and the snackbar offers the queue back in the meantime. A cross rather than an arrow,
+ * bar back. A cross rather than an arrow,
  * so it does not read as "go back" on a surface that has nowhere to go back to.
  *
  * @param onClose stops playback and puts the player away.

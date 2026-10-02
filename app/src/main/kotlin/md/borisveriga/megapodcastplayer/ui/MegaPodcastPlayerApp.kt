@@ -34,6 +34,7 @@ import md.borisveriga.megapodcastplayer.feature.player.PlayerViewModel
 import md.borisveriga.megapodcastplayer.feature.player.QueueRoute
 import md.borisveriga.megapodcastplayer.feature.player.rememberPlayerSheetState
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoRoute
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoViewModel
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailRoute
 import md.borisveriga.megapodcastplayer.feature.search.SearchRoute
 import md.borisveriga.megapodcastplayer.feature.settings.SettingsRoute
@@ -77,6 +78,9 @@ import md.borisveriga.megapodcastplayer.navigation.pushExit
  * @param playerViewModel the player's view model, the same instance the sheet draws from. The
  *   shell holds it for one thing: which face the player is in is decided here, where the two
  *   faces — the sheet and the video screen — are told apart.
+ * @param videoViewModel the picture's view model. Held here, at the activity, and handed to both
+ *   places the picture is drawn — the video screen and the collapsed bar it is put away behind —
+ *   so that minimising moves one picture rather than ending it and starting another.
  */
 // LibraryListDetail's pane navigator is an adaptive type, and it is a parameter of that composable
 // so tests can drive it; naming it here is the whole of the opt-in.
@@ -96,6 +100,7 @@ fun MegaPodcastPlayerApp(
     navController: NavHostController = rememberNavController(),
     playerSheetState: PlayerSheetState = rememberPlayerSheetState(),
     playerViewModel: PlayerViewModel = hiltViewModel(),
+    videoViewModel: VideoViewModel = hiltViewModel(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
@@ -138,7 +143,13 @@ fun MegaPodcastPlayerApp(
     // Opens the audio player and makes audio the player's face: an episode started as sound, or
     // *Switch to audio* on the video screen. The mode is what a later tap on the bar goes by, so an
     // episode the user chose to listen to must not come back as a picture.
+    //
+    // The picture is told directly as well, without waiting for the mode to be stored and read
+    // back. With a video minimised in the bar, the episode just started would otherwise be asked
+    // for its picture the moment it loaded and be handed back to sound a moment later: two
+    // re-buffers at the start of something the user chose to listen to.
     val openAudio: () -> Unit = {
+        videoViewModel.exit()
         playerViewModel.setPlayerMode(PlayerMode.AUDIO)
         scope.launch { playerSheetState.expand() }
     }
@@ -225,6 +236,7 @@ fun MegaPodcastPlayerApp(
             hidden = onVideo,
             modifier = Modifier.fillMaxSize(),
             viewModel = playerViewModel,
+            videoViewModel = videoViewModel,
         ) { playerPadding ->
             NavHost(
                 navController = navController,
@@ -326,10 +338,11 @@ fun MegaPodcastPlayerApp(
                 composable<Route.Video> {
                     VideoRoute(
                         // Minimising — and the back gesture, which is the same pop — lands where
-                        // the player was opened from, with the episode carrying on behind the bar.
-                        // The mode is left alone, so a tap on the bar comes back here. The screen
-                        // pops itself the same way when the player moves on to an episode with
-                        // nothing to show.
+                        // the player was opened from, with the episode carrying on in the bar,
+                        // picture included: the bar draws from the same view model this screen is
+                        // given. The mode is left alone, so a tap on the bar comes back here. The
+                        // screen pops itself the same way when the player moves on to an episode
+                        // with nothing to show.
                         //
                         // Both exits pop *this* route rather than whatever is on top. The screen
                         // still takes taps while it animates out, and a second tap must find
@@ -340,6 +353,7 @@ fun MegaPodcastPlayerApp(
                         onListen = {
                             if (navController.popBackStack(Route.Video, inclusive = true)) openAudio()
                         },
+                        viewModel = videoViewModel,
                     )
                 }
             }

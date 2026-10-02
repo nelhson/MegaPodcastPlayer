@@ -1,9 +1,12 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -99,6 +102,10 @@ class PlayerSheetTest {
                     onOpenQueue = {},
                     onWatch = onWatch,
                     onDismiss = onDismiss,
+                    // A tagged box where the view bound to the player would be.
+                    picture = { pictureModifier ->
+                        Box(modifier = pictureModifier.testTag("picture"))
+                    },
                 )
             }
         }
@@ -286,6 +293,45 @@ class PlayerSheetTest {
         assertEquals(1, watched)
         assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
         assertEquals(0f, sheetState.progress, 0.001f)
+    }
+
+    /**
+     * The box standing in for the player's picture.
+     *
+     * Unmerged, because the bar is one clickable thing and folds everything in it into one node.
+     */
+    private fun picture() = composeRule.onNodeWithTag("picture", useUnmergedTree = true)
+
+    @Test
+    fun `while an episode is being watched, the bar carries its picture`() {
+        setContent(PlayerSheetValue.Collapsed, uiState = watching)
+
+        // The video screen put away is still a video: the picture carries on in the bar.
+        picture().assertIsDisplayed()
+    }
+
+    @Test
+    fun `an episode being listened to has no picture in its bar, whatever it could show`() {
+        // The same YouTube episode, in audio: nothing asked for the picture, so nothing draws it.
+        setContent(
+            PlayerSheetValue.Collapsed,
+            uiState = watching.copy(mode = PlayerMode.AUDIO),
+        )
+
+        picture().assertDoesNotExist()
+    }
+
+    @Test
+    fun `a tap on the picture's frame opens the video, like a tap anywhere else on the bar`() {
+        // A stand-in box, so this pins the bar's own wiring: the frame is inside the one tap
+        // target. That a real texture view lets the touch through is checked on a device.
+        var watched = 0
+        setContent(PlayerSheetValue.Collapsed, uiState = watching, onWatch = { watched++ })
+
+        picture().performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, watched)
     }
 
     @Test

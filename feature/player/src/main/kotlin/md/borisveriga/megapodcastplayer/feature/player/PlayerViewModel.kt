@@ -72,10 +72,6 @@ data class SleepChapterOption(val index: Int, val title: String)
  * @property momentSaved the moment a press just saved, for a snackbar that offers to put a note on
  *   it; cleared via [PlayerViewModel.onMomentMessageShown].
  * @property chapters the loaded episode's chapters, once resolved; empty when it has none.
- * @property dismissed true once the player has been put away and the snackbar offering it back has
- *   not been shown yet; cleared via [PlayerViewModel.onDismissMessageShown]. A flag rather than the
- *   queue it emptied, for the same reason [message] is: the UI state stays data a test can compare,
- *   and the payload lives with the view model that will replay it.
  * @property mode which face the player was last put in; see [opensAsVideo] for what it decides.
  */
 data class PlayerUiState(
@@ -89,7 +85,6 @@ data class PlayerUiState(
     val moments: List<Moment> = emptyList(),
     val momentSaved: SavedMoment? = null,
     val chapters: List<Chapter> = emptyList(),
-    val dismissed: Boolean = false,
     val mode: PlayerMode = PlayerMode.AUDIO,
 ) {
 
@@ -380,17 +375,6 @@ class PlayerViewModel @Inject constructor(
 
     private val momentSavedState = MutableStateFlow<SavedMoment?>(null)
 
-    private val dismissedState = MutableStateFlow(false)
-
-    /**
-     * The queue [dismiss] emptied, kept so [undoDismiss] can put it back.
-     *
-     * Held here rather than in [PlayerUiState] for the same reason [pendingUndo] is, and cleared
-     * with the snackbar that offered it: an undo left armed past its message would restore a queue
-     * the user has since replaced.
-     */
-    private var pendingDismissal: DismissedPlayback? = null
-
     /**
      * Everything the player reads straight off the service, the durable queue and the bell.
      *
@@ -485,7 +469,6 @@ class PlayerViewModel @Inject constructor(
         moments,
         combine(
             momentSavedState,
-            dismissedState,
             chapters,
             playbackRepository.observePlayerMode(),
             ::PlayerExtras,
@@ -502,7 +485,6 @@ class PlayerViewModel @Inject constructor(
             moments = episodeMoments,
             momentSaved = extras.momentSaved,
             chapters = extras.chapters,
-            dismissed = extras.dismissed,
             mode = extras.mode,
         )
     }.stateIn(
@@ -880,51 +862,18 @@ class PlayerViewModel @Inject constructor(
     /**
      * Stops playback and puts the player away.
      *
-     * What a downward pull on the collapsed bar commits to, and what its spoken action does. This
-     * is the only gesture in the app that ends a listening session, and it empties the queue to do
-     * it — so the queue and the position are captured first and offered straight back through
-     * [undoDismiss], which is the rule every other destructive-but-reversible action here follows.
+     * What a downward pull on the collapsed bar commits to, what its spoken action does, and what
+     * the expanded player's close button presses. It empties the queue to do it, and says nothing
+     * afterwards: the bar going is the whole of the answer, and a *Playback stopped* snackbar with
+     * an undo on it was a message about something the user had just done on purpose. Each
+     * episode's position is stored as it plays, so what goes is the queue's arrangement and no
+     * listening.
      */
     fun dismiss() {
         val state = uiState.value
         if (state.isIdle && state.queue.isEmpty()) return
 
-        pendingDismissal = DismissedPlayback(
-            orderedIds = state.queue.map { it.episode.id },
-            startEpisodeId = state.currentEpisodeId,
-            positionMs = state.playback.positionMs,
-        )
-
-        viewModelScope.launch {
-            episodePlayer.dismiss()
-            dismissedState.value = true
-        }
-    }
-
-    /**
-     * Puts back the queue [dismiss] emptied, paused where it stopped.
-     *
-     * Consumed rather than kept, for the same reason [undoQueueChange] is.
-     */
-    fun undoDismiss() {
-        val dismissal = pendingDismissal ?: return
-        pendingDismissal = null
-        dismissedState.value = false
-
-        viewModelScope.launch {
-            episodePlayer.restoreDismissed(
-                orderedIds = dismissal.orderedIds,
-                startEpisodeId = dismissal.startEpisodeId,
-                positionMs = dismissal.positionMs,
-            )
-        }
-    }
-
-    /** Clears [PlayerUiState.dismissed] once its snackbar has been shown. */
-    fun onDismissMessageShown() {
-        dismissedState.value = false
-        // The message and its undo go together; see [onQueueMessageShown].
-        pendingDismissal = null
+        viewModelScope.launch { episodePlayer.dismiss() }
     }
 
     /** Clears the playback error once its snackbar has been shown. */
@@ -955,17 +904,15 @@ class PlayerViewModel @Inject constructor(
     /**
      * The parts of [PlayerUiState] that come from neither the service nor the queue.
      *
-     * Exists for the reason [PlayerCore] does: `combine` takes five flows, and these four are
+     * Exists for the reason [PlayerCore] does: `combine` takes five flows, and these three are
      * folded into one of the five.
      *
      * @property momentSaved a saved moment waiting to be acknowledged.
-     * @property dismissed whether a dismissal waits to be offered back.
      * @property chapters the loaded episode's chapters.
      * @property mode which face the player was last put in.
      */
     private data class PlayerExtras(
         val momentSaved: SavedMoment?,
-        val dismissed: Boolean,
         val chapters: List<Chapter>,
         val mode: PlayerMode,
     )
@@ -1003,19 +950,6 @@ class PlayerViewModel @Inject constructor(
             val positionMs: Long,
         ) : QueueUndo
     }
-
-    /**
-     * Everything needed to reverse a dismissal.
-     *
-     * @property orderedIds the queue as it stood, first to play first.
-     * @property startEpisodeId the episode that was loaded.
-     * @property positionMs how far into it playback had reached.
-     */
-    private data class DismissedPlayback(
-        val orderedIds: List<String>,
-        val startEpisodeId: String?,
-        val positionMs: Long,
-    )
 
     private companion object {
         /** Keeps the controller attached across a rotation or a fold. */
