@@ -151,7 +151,15 @@ interface EpisodeDao {
     )
     suspend fun getWithShowByIds(ids: List<String>): List<EpisodeWithShowEntity>
 
-    @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId")
+    /**
+     * The ids of one show's episodes, in stored order.
+     *
+     * `sort_order` only means something for a hand-ordered show; an RSS show ties on it and the
+     * order is then arbitrary, which no caller minds.
+     *
+     * @param podcastId the show.
+     */
+    @Query("SELECT id FROM episodes WHERE podcast_id = :podcastId ORDER BY sort_order ASC")
     suspend fun getIdsForPodcast(podcastId: String): List<String>
 
     /**
@@ -359,19 +367,25 @@ interface EpisodeDao {
 
     /**
      * Rebuilds one show's episode list from the feed, keeping what the user has for every episode
-     * the feed still lists.
+     * the feed still lists — and every episode they have downloaded, listed or not.
      *
      * Three things happen, in one transaction so the show is never seen half-rebuilt:
      *
      *  1. Episodes the feed no longer lists are deleted — the case no merge can express, and the
-     *     reason this exists alongside [upsertFromFeed].
+     *     reason this exists alongside [upsertFromFeed] — unless the download stack is tracking
+     *     them. A video taken off a playlist is still a file the user put on the device, and the
+     *     row is the only thing the downloads screen can show it by, so that row stays: with its
+     *     show, its progress and its download, until the download itself is deleted and a later
+     *     rebuild finds nothing left to keep it for.
      *  2. Episodes it still lists keep `position_ms`, `is_played`, `is_new` and their download, and
      *     only have the publisher's fields refreshed, exactly as a refresh would.
      *  3. Episodes it lists for the first time are inserted unbadged: they arrived with a pull the
      *     user asked for, so marking them unseen would say nothing.
      *
      * For a hand-ordered show the feed's order then replaces the stored one, which is the other
-     * thing a rebuild is for: a playlist whose stored order no longer resembles the real one.
+     * thing a rebuild is for: a playlist whose stored order no longer resembles the real one. The
+     * kept downloads follow everything the feed lists, in the order they already had among
+     * themselves — the feed has no position to give them.
      *
      * Rows are kept rather than deleted and re-inserted so that their queue entries, which cascade
      * on delete, survive too.
@@ -381,8 +395,8 @@ interface EpisodeDao {
      * @param handOrdered true for a show the user can reorder, whose positions are reseeded from
      *   feed order. Left false for an RSS show, whose screen orders by date and never reads
      *   `sort_order`.
-     * @return the ids of deleted episodes that had a download in any state, so the caller can free
-     *   the audio nothing points at any more.
+     * @return the ids of the episodes the feed no longer lists that were kept for their download,
+     *   in stored order, so the caller can say the list is longer than the feed.
      */
     @Transaction
     suspend fun replaceForPodcast(
@@ -391,12 +405,15 @@ interface EpisodeDao {
         handOrdered: Boolean = false,
     ): List<String> {
         val listed = episodes.mapTo(HashSet()) { it.id }
+        val unlisted = getIdsForPodcast(podcastId).filterNot { it in listed }
         // Chunked because SQLite caps the variables one statement may bind, and a long-running
         // playlist can withdraw more episodes than that in one go.
-        val withdrawn = getIdsForPodcast(podcastId).filterNot { it in listed }
-            .chunked(SQLITE_VARIABLE_CHUNK)
-        val withdrawnDownloads = withdrawn.flatMap { getIdsWithDownloadStateIn(it) }
-        withdrawn.forEach { deleteByIds(it) }
+        val downloaded = unlisted.chunked(SQLITE_VARIABLE_CHUNK)
+            .flatMapTo(HashSet()) { getIdsWithDownloadStateIn(it) }
+        // In any state, not only finished: a transfer in flight has bytes on the device too, and
+        // a failed one is a row the downloads screen is still showing with a retry on it.
+        val (kept, withdrawn) = unlisted.partition { it in downloaded }
+        withdrawn.chunked(SQLITE_VARIABLE_CHUNK).forEach { deleteByIds(it) }
 
         val insertedRowIds = insertIgnoringExisting(episodes.map { it.copy(isNew = false) })
         episodes.forEachIndexed { index, episode ->
@@ -405,8 +422,8 @@ interface EpisodeDao {
 
         // Feed order becomes the stored order, numbered from 0, which also clears out the negative
         // positions a run of refreshes leaves behind.
-        if (handOrdered) reorder(episodes.map { it.id })
-        return withdrawnDownloads
+        if (handOrdered) reorder(episodes.map { it.id } + kept)
+        return kept
     }
 
     /**

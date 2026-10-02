@@ -513,7 +513,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
             }
 
             val episodes = channel.channel.items.map { it.asEpisodeEntity(podcastId) }
-            val withdrawnDownloadIds = episodeDao.replaceForPodcast(
+            val keptDownloadIds = episodeDao.replaceForPodcast(
                 podcastId = podcastId,
                 episodes = episodes,
                 handOrdered = podcast.source == PodcastSource.YOUTUBE,
@@ -528,7 +528,7 @@ class OfflineFirstPodcastRepository @Inject constructor(
             // No `autoDownloadScheduler` call, unlike `refreshOne`. A rebuild can insert a whole
             // back catalogue the feed had been hiding, and handing that to the download stack is
             // precisely what nobody asked for by rebuilding a list.
-            RebuildResult(episodes.size, withdrawnDownloadIds)
+            RebuildResult(episodes.size, keptDownloadIds)
         }
     }
 

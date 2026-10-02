@@ -1,9 +1,13 @@
 package md.borisveriga.megapodcastplayer.feature.player
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,6 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,6 +35,7 @@ import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
@@ -35,6 +43,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
  * The player at rest: a bar above the navigation bar showing what is playing.
@@ -43,6 +52,10 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * moves it between here and the expanded player as the sheet opens — a second copy fading in and
  * out underneath would give the effect away. What is left here is a gap of exactly the right size
  * for it to sit in.
+ *
+ * The bar of an episode being watched is the exception: where the artwork would sit it carries the
+ * picture itself, still playing, in a frame of a picture's shape. Nothing travels then — that bar
+ * opens the video screen and not the sheet — so the frame is the bar's own; see [MiniPicture].
  *
  * Three controls, not one. The bar used to carry play/pause and a fixed `Forward30` glyph, which
  * was wrong twice over: there was no way to replay a sentence without opening the sheet, and the
@@ -56,8 +69,12 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * @param onSkipForward skip-ahead handler.
  * @param modifier layout modifier.
  * @param video true while the bar is the video screen put away rather than the sheet. It then
- *   carries a small screen glyph beside the show's name: the bar looks the same either way, and
- *   without the mark a tap that opens a picture instead of the sheet would be a surprise.
+ *   shows the picture where the artwork would be, and carries a small screen glyph beside the
+ *   show's name: until the picture has a frame to show the bar looks much as it does for sound,
+ *   and without the mark a tap that opens a picture instead of the sheet would be a surprise.
+ * @param picture draws the player's picture into the modifier it is given; only called while
+ *   [video] is true. A slot for the reason the video screen's is one: a preview, a test and a
+ *   golden can put a plain box where a view bound to the player would be.
  */
 @Composable
 fun CollapsedPlayer(
@@ -68,6 +85,7 @@ fun CollapsedPlayer(
     onSkipForward: () -> Unit,
     modifier: Modifier = Modifier,
     video: Boolean = false,
+    picture: @Composable (Modifier) -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         // A thin progress line rather than a scrubber: the bar is a status indicator, and precise
@@ -90,8 +108,12 @@ fun CollapsedPlayer(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
         ) {
-            // The hole the shared artwork is drawn into.
-            Spacer(modifier = Modifier.size(ArtworkSize.Mini.dimension))
+            if (video) {
+                MiniPicture(playback = playback, picture = picture)
+            } else {
+                // The hole the shared artwork is drawn into.
+                Spacer(modifier = Modifier.size(ArtworkSize.Mini.dimension))
+            }
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -144,6 +166,51 @@ fun CollapsedPlayer(
 }
 
 /**
+ * The picture of the episode being watched, at the size of the bar.
+ *
+ * As tall as the artwork it stands in for and as wide as a picture of that height, so the bar keeps
+ * its height and the frame costs the title a little width. A picture of another shape sits inside
+ * the frame on black, as it does on the video screen.
+ *
+ * The episode's artwork covers the frame until the picture has a frame of its own to show — while
+ * it is being fetched, after the app comes back to the front, between one episode and the next —
+ * so the bar is never a black box and never a still of the episode before. For a YouTube episode
+ * that artwork is the video's own thumbnail, which makes it the poster it looks like.
+ *
+ * @param playback what the player is doing; says whether there is a picture and what shape it is.
+ * @param picture draws the picture.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun MiniPicture(
+    playback: PlaybackState,
+    picture: @Composable (Modifier) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val measured = playback.videoAspectRatio
+    Box(
+        modifier = modifier
+            .size(
+                width = ArtworkSize.Mini.dimension * MINI_PICTURE_ASPECT_RATIO,
+                height = ArtworkSize.Mini.dimension,
+            )
+            .clip(MegaPodcastPlayerTheme.shapes.artwork)
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        picture(Modifier.aspectRatio(measured ?: MINI_PICTURE_ASPECT_RATIO))
+        if (!playback.isVideo || measured == null) {
+            PodcastArtwork(
+                url = playback.artworkUrl,
+                modifier = Modifier.fillMaxSize(),
+                // The frame is already clipped; a second, squarer mask would show its corners.
+                shape = RectangleShape,
+            )
+        }
+    }
+}
+
+/**
  * Height of the whole collapsed bar; the sheet's resting height, and the space it reserves.
  *
  * Measured rather than fixed. It used to be a flat 64 dp holding two lines of text, which meant the
@@ -178,6 +245,9 @@ private val CollapsedPlayerMinHeight: Dp = 64.dp
 
 /** The video mark's side; small enough to sit inside the show line's own height at any scale. */
 private val VideoMarkSize: Dp = 14.dp
+
+/** The shape of the bar's picture frame; every YouTube rendition this app plays is 16:9. */
+private const val MINI_PICTURE_ASPECT_RATIO = 16f / 9f
 
 /** Height of the hairline progress line at the top of the bar. */
 internal val collapsedProgressHeight: Dp = 4.dp
@@ -262,8 +332,9 @@ internal fun CollapsedPlayerPreview() {
 }
 
 /**
- * The bar of an episode being watched: the same bar, with the mark that says a tap opens the
- * picture. At 200 % text too, where the mark has to stay inside a line that has grown around it.
+ * The bar of an episode being watched: the picture where the artwork would be — a grey box here,
+ * as in the video screen's preview — and the mark that says a tap opens it. At 200 % text too,
+ * where the mark has to stay inside a line that has grown around it.
  */
 @ThemePreviews
 @FontScalePreviews
@@ -271,13 +342,27 @@ internal fun CollapsedPlayerPreview() {
 internal fun CollapsedPlayerVideoPreview() {
     MegaPodcastPlayerTheme {
         CollapsedPlayer(
-            playback = previewPlayback.copy(youTubeVideoId = "niTJ2221aS8"),
+            playback = previewPlayback.copy(
+                youTubeVideoId = "niTJ2221aS8",
+                videoQuality = VideoQuality(PREVIEW_PICTURE_HEIGHT),
+                videoWidth = PREVIEW_PICTURE_WIDTH,
+                videoHeight = PREVIEW_PICTURE_HEIGHT,
+            ),
             settings = PlaybackSettings(),
             onPlayPause = {},
             onSkipBack = {},
             onSkipForward = {},
             modifier = Modifier.height(collapsedPlayerHeight()),
             video = true,
+            picture = { pictureModifier ->
+                Box(modifier = pictureModifier.background(Color.DarkGray))
+            },
         )
     }
 }
+
+/** The sample picture's size in the video bar's preview: a 720p frame. */
+private const val PREVIEW_PICTURE_WIDTH = 1280
+
+/** The sample picture's rendition height. */
+private const val PREVIEW_PICTURE_HEIGHT = 720

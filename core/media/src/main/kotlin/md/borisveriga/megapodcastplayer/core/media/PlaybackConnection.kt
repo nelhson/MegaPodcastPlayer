@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.os.Bundle
 import android.view.SurfaceView
+import android.view.TextureView
 import androidx.core.os.bundleOf
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -440,6 +441,33 @@ class PlaybackConnection @Inject constructor(
      */
     suspend fun detachVideoSurface(view: SurfaceView) = onController { player ->
         player.clearVideoSurfaceView(view)
+    }
+
+    /**
+     * Gives the player a texture to draw the picture on, in place of whatever it was drawing on.
+     *
+     * The same hand-over as [attachVideoSurface], for a picture that is part of a layout rather
+     * than a screen of its own. A `SurfaceView` is a hole in the window with the picture behind it,
+     * so it cannot be clipped to rounded corners, faded, or moved with what it sits in; a
+     * `TextureView` is drawn like any other view, at the cost of a copy that a picture the size of
+     * a thumbnail does not notice.
+     *
+     * @param view the texture to draw on.
+     */
+    suspend fun attachVideoTexture(view: TextureView) = onController { player ->
+        player.setVideoTextureView(view)
+    }
+
+    /**
+     * Takes [view] back from the player, if it is the one drawing.
+     *
+     * A no-op when the picture has since been given somewhere else to go, which is what makes the
+     * hand-over between the bar and the video screen safe in either order.
+     *
+     * @param view the texture handed over by [attachVideoTexture].
+     */
+    suspend fun detachVideoTexture(view: TextureView) = onController { player ->
+        player.clearVideoTextureView(view)
     }
 
     /**

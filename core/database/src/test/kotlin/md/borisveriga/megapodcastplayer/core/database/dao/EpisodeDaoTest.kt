@@ -503,13 +503,13 @@ class EpisodeDaoTest {
             )
 
             // The feed no longer lists "b" and now lists "c". A merge cannot express that; this can.
-            val withdrawn = episodeDao.replaceForPodcast(
+            val keptDownloads = episodeDao.replaceForPodcast(
                 podcast.id,
                 listOf(episode("a").copy(title = "Renamed"), episode("c")),
             )
 
             assertNull("A withdrawn episode must not survive a rebuild", episodeDao.getById("b"))
-            assertEquals(emptyList<String>(), withdrawn)
+            assertEquals(emptyList<String>(), keptDownloads)
             val kept = checkNotNull(episodeDao.getById("a"))
             assertEquals(42_000L, kept.positionMs)
             assertEquals(true, kept.isPlayed)
@@ -522,31 +522,91 @@ class EpisodeDaoTest {
         }
 
     @Test
-    fun `replaceForPodcast reports the downloads of the episodes it drops`() = runTest {
+    fun `replaceForPodcast keeps a withdrawn episode that has a download`() = runTest {
         podcastDao.upsert(podcast)
-        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b"), episode("c"), episode("d")))
+        episodeDao.upsertFromFeed(
+            listOf(episode("a"), episode("b"), episode("c"), episode("d"), episode("e")),
+        )
+        episodeDao.updateDownloadState("a", DownloadState.COMPLETED, 5_000L, 100f)
         episodeDao.updateDownloadState("b", DownloadState.COMPLETED, 5_000L, 100f)
         episodeDao.updateDownloadState("c", DownloadState.DOWNLOADING, 1_000L, 20f)
-        episodeDao.updateDownloadState("a", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.updateDownloadState("e", DownloadState.FAILED, 0L, 0f)
+        episodeDao.updatePosition("b", 42_000L)
 
-        val withdrawn = episodeDao.replaceForPodcast(podcast.id, listOf(episode("a")))
+        val kept = episodeDao.replaceForPodcast(podcast.id, listOf(episode("a")))
 
-        // In any state, because a transfer in flight has bytes on disk too; never a kept episode,
-        // and never a dropped one that had nothing downloaded.
-        assertEquals(setOf("b", "c"), withdrawn.toSet())
+        // The bug this pins: a video taken off a playlist lost its row, and with the row went the
+        // copy on the device. In any state — a transfer in flight has bytes on disk too, and a
+        // failed one is still a row on the downloads screen — and never an episode the feed still
+        // lists, which was never in question.
+        assertEquals(setOf("b", "c", "e"), kept.toSet())
+        val survivor = checkNotNull(episodeDao.getById("b"))
+        assertEquals(DownloadState.COMPLETED, survivor.downloadState)
+        assertEquals(5_000L, survivor.downloadedBytes)
+        assertEquals(42_000L, survivor.positionMs)
+        assertEquals(DownloadState.DOWNLOADING, episodeDao.getById("c")?.downloadState)
+        // Only the download earns the exception: the withdrawn episode without one still goes.
+        assertNull(episodeDao.getById("d"))
     }
 
     @Test
-    fun `replaceForPodcast drops more episodes than one statement can bind`() = runTest {
+    fun `replaceForPodcast lets a kept episode go once its download has been deleted`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(listOf(episode("a"), episode("b")))
+        episodeDao.updateDownloadState("b", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.replaceForPodcast(podcast.id, listOf(episode("a")))
+
+        // What deleting the download does to the row.
+        episodeDao.updateDownloadState("b", DownloadState.NOT_DOWNLOADED, 0L, 0f)
+        val kept = episodeDao.replaceForPodcast(podcast.id, listOf(episode("a")))
+
+        // Kept for the download and for nothing else, so it is not kept for ever.
+        assertEquals(emptyList<String>(), kept)
+        assertNull(episodeDao.getById("b"))
+    }
+
+    @Test
+    fun `replaceForPodcast puts kept downloads after everything the feed lists`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("a"), episode("b"), episode("c"), episode("d")),
+            handOrdered = true,
+        )
+        episodeDao.reorder(listOf("d", "c", "b", "a"))
+        episodeDao.updateDownloadState("d", DownloadState.COMPLETED, 5_000L, 100f)
+        episodeDao.updateDownloadState("b", DownloadState.COMPLETED, 5_000L, 100f)
+
+        val kept = episodeDao.replaceForPodcast(
+            podcastId = podcast.id,
+            episodes = listOf(episode("a"), episode("c")),
+            handOrdered = true,
+        )
+
+        // The feed has no position for a video it no longer lists, so the kept ones follow it, in
+        // the order they had among themselves — not scattered through the list at the positions
+        // they held before the feed's order replaced everything around them.
+        assertEquals(listOf("d", "b"), kept)
+        val rebuilt = episodeDao.observeByPodcastOrdered(podcast.id).first()
+        assertEquals(listOf("a", "c", "d", "b"), rebuilt.map { it.id })
+        assertEquals(listOf(0, 1, 2, 3), rebuilt.map { it.sortOrder })
+    }
+
+    @Test
+    fun `replaceForPodcast handles more episodes than one statement can bind`() = runTest {
         podcastDao.upsert(podcast)
         val many = (0 until 2_000).map { episode("e$it") }
         episodeDao.upsertFromFeed(many)
-        many.forEach { episodeDao.updateDownloadState(it.id, DownloadState.COMPLETED, 1L, 100f) }
+        // Every other one downloaded, so both the lookup and the delete run past one chunk.
+        val downloaded = many.filterIndexed { index, _ -> index % 2 == 1 }
+        downloaded.forEach { episodeDao.updateDownloadState(it.id, DownloadState.COMPLETED, 1L, 100f) }
 
-        val withdrawn = episodeDao.replaceForPodcast(podcast.id, listOf(episode("e0")))
+        val kept = episodeDao.replaceForPodcast(podcast.id, listOf(episode("e0")))
 
-        assertEquals(1_999, withdrawn.size)
-        assertEquals(listOf("e0"), episodeDao.observeByPodcast(podcast.id).first().map { it.id })
+        assertEquals(downloaded.mapTo(mutableSetOf()) { it.id }, kept.toSet())
+        assertEquals(
+            downloaded.mapTo(mutableSetOf("e0")) { it.id },
+            episodeDao.observeByPodcast(podcast.id).first().mapTo(mutableSetOf()) { it.id },
+        )
     }
 
     @Test

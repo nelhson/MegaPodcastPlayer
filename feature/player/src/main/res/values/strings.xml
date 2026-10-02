@@ -24,9 +24,6 @@
         rather than "close", because playback stops as well as the bar disappearing.
     -->
     <string name="player_dismiss">Stop playing and hide the player</string>
-    <!-- Snackbar after the gesture. The queue it emptied is offered back. -->
-    <string name="player_dismissed">Playback stopped</string>
-    <string name="player_dismiss_undo">Undo</string>
 
     <string name="player_idle_title">Nothing playing</string>
     <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>

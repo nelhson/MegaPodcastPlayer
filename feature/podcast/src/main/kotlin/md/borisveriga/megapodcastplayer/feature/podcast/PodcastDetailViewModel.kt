@@ -178,8 +178,14 @@ sealed interface PodcastDetailMessage {
      * figure that says whether the rebuild fixed anything.
      *
      * @property episodeCount episodes the feed yielded.
+     * @property keptDownloadCount downloaded episodes the feed no longer lists, which stay in the
+     *   show because of their download. Said when it is not zero: otherwise the list is longer
+     *   than the count just reported, and holds episodes the user knows they took off the playlist.
      */
-    data class Rebuilt(val episodeCount: Int) : PodcastDetailMessage
+    data class Rebuilt(
+        val episodeCount: Int,
+        val keptDownloadCount: Int = 0,
+    ) : PodcastDetailMessage
 
     /**
      * A rebuild failed, leaving the existing list untouched.
@@ -568,9 +574,9 @@ class PodcastDetailViewModel @Inject constructor(
      * refresh merges into the same wrong list. Episodes the feed still lists keep their progress,
      * played flag and download; a hand-made order is replaced by the feed's.
      *
-     * The downloads of episodes the feed withdrew are cleared: their rows do not survive, so the
-     * audio would otherwise sit on the device with nothing left pointing at it. The repository
-     * reports them only on success — a failed rebuild deletes nothing, and frees nothing.
+     * No download is deleted, whatever the feed withdrew. It used to free the downloads of the
+     * episodes it dropped, which made taking a video off a playlist the way to lose the copy on
+     * the device; the repository now keeps those episodes instead, and the message counts them.
      */
     fun rebuild() {
         if (transientState.value.isBusy) return
@@ -578,13 +584,15 @@ class PodcastDetailViewModel @Inject constructor(
 
         viewModelScope.launch {
             val result = repository.rebuild(podcastId)
-            result.onSuccess { rebuilt ->
-                rebuilt.withdrawnDownloadIds.forEach { downloadRepository.removeDownload(it) }
-            }
             transientState.value = TransientState(
                 isRebuilding = false,
                 message = result.fold(
-                    onSuccess = { PodcastDetailMessage.Rebuilt(it.episodeCount) },
+                    onSuccess = { rebuilt ->
+                        PodcastDetailMessage.Rebuilt(
+                            episodeCount = rebuilt.episodeCount,
+                            keptDownloadCount = rebuilt.keptDownloadIds.size,
+                        )
+                    },
                     onFailure = { error ->
                         PodcastDetailMessage.RebuildFailed(
                             error.message ?: error::class.simpleName.orEmpty(),
