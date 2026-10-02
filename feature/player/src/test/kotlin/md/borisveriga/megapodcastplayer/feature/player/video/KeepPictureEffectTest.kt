@@ -1,10 +1,12 @@
 package md.borisveriga.megapodcastplayer.feature.player.video
 
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -29,7 +31,7 @@ import org.robolectric.annotation.Config
 class KeepPictureEffectTest {
 
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     /** A lifecycle the test moves by hand, standing in for the activity's. */
     private class HandLifecycleOwner : LifecycleOwner {
@@ -39,8 +41,14 @@ class KeepPictureEffectTest {
 
     private val owner = HandLifecycleOwner()
     private var wanted by mutableStateOf(false)
+
+    /** Read by the content, so that changing it recomposes the effect's caller. */
+    private var recomposed by mutableIntStateOf(0)
     private var entered = 0
     private var exited = 0
+
+    /** The recomposition whose lambda was last called; what shows the effect holds the latest. */
+    private var passOfLastCall = -1
 
     /**
      * Composes the effect under [owner], with the lifecycle already at [state].
@@ -51,10 +59,19 @@ class KeepPictureEffectTest {
         owner.registry.currentState = state
         composeRule.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                // Lambdas that capture the pass they were made in, so each recomposition hands the
+                // effect a new pair — as any caller whose callbacks close over state does.
+                val pass = recomposed
                 KeepPictureEffect(
                     wanted = wanted,
-                    onEnter = { entered++ },
-                    onExit = { exited++ },
+                    onEnter = {
+                        entered++
+                        passOfLastCall = pass
+                    },
+                    onExit = {
+                        exited++
+                        passOfLastCall = pass
+                    },
                 )
             }
         }
@@ -103,11 +120,39 @@ class KeepPictureEffectTest {
         wanted = true
         setContent()
 
-        // What minimising the video screen is to this effect: nothing. The picture moves from the
-        // screen to the bar and the effect, keyed on neither, does not hand back to sound between.
+        // What minimising the video screen is to this effect: a recomposition of its caller, with
+        // new lambdas, and nothing else. The picture moves from the screen to the bar and the
+        // effect, keyed on neither, neither hands back to sound nor asks again.
+        recomposed++
+        composeRule.waitForIdle()
+        recomposed++
         composeRule.waitForIdle()
 
         assertEquals(1, entered)
+        assertEquals(0, exited)
+
+        // And when it does end, it is the caller's latest lambda that is told, not the one the
+        // effect started with.
+        wanted = false
+        composeRule.waitForIdle()
+        assertEquals(1, exited)
+        assertEquals(2, passOfLastCall)
+    }
+
+    @Test
+    fun `a rotation does not hand back to sound`() {
+        wanted = true
+        // Under the activity's own lifecycle this time, because the activity is what is recreated.
+        composeRule.setContent {
+            KeepPictureEffect(wanted = wanted, onEnter = { entered++ }, onExit = { exited++ })
+        }
+        composeRule.waitForIdle()
+        assertEquals(1, entered)
+
+        composeRule.activityRule.scenario.recreate()
+
+        // The old activity stopped and was destroyed, and said it was changing configurations on
+        // the way. The picture has to survive that: a hand-back here is a re-buffer per rotation.
         assertEquals(0, exited)
     }
 

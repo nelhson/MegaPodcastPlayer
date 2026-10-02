@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
@@ -58,6 +59,7 @@ class VideoViewModelTest {
     private val qualitySource: VideoQualitySource = mockk()
     private val crashReporter: CrashReporter = mockk(relaxed = true)
     private val downloadRepository: DownloadRepository = mockk(relaxed = true)
+    private val networkStatus: NetworkStatus = mockk()
     private val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
 
     /** Unconfined, so a launched command has run by the time the call returns. */
@@ -73,6 +75,7 @@ class VideoViewModelTest {
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeVideoQuality() } returns preferredQuality
         every { downloadRepository.observeVideoDownloads() } returns videoDownloads
+        every { networkStatus.isOnline() } returns true
         coEvery { downloadRepository.downloadVideo(any(), any()) } returns true
         coEvery { qualitySource.qualitiesOf(any()) } returns
             listOf(VideoQuality(720), VideoQuality(1080))
@@ -82,6 +85,7 @@ class VideoViewModelTest {
             playbackRepository = playbackRepository,
             qualitySource = qualitySource,
             downloadRepository = downloadRepository,
+            networkStatus = networkStatus,
             crashReporter = crashReporter,
             applicationScope = applicationScope,
         )
@@ -147,6 +151,34 @@ class VideoViewModelTest {
         // showing would be saying something no longer true.
         assertFalse(viewModel.uiState.value.refused)
         coVerify(exactly = 2) { connection.enterVideo(VideoQuality.DEFAULT) }
+    }
+
+    @Test
+    fun `offline, a picture that is not on the device is not asked for`() = runTest {
+        // The ask is not free: the video flavour is one merged source, so a picture that cannot
+        // be fetched takes the sound down until the player gives up on it. The bar asks every time
+        // the app comes forward, so offline that would interrupt a downloaded episode per visit.
+        every { networkStatus.isOnline() } returns false
+        playbackState.value = watching()
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.enter()
+
+        coVerify(exactly = 0) { connection.enterVideo(any()) }
+        // Said rather than dropped: on the video screen this is why there is no picture.
+        assertTrue(viewModel.uiState.value.refused)
+    }
+
+    @Test
+    fun `offline, a downloaded video is still shown`() = runTest {
+        every { networkStatus.isOnline() } returns false
+        playbackState.value = watching()
+        videoDownloads.value = mapOf("ep-$VIDEO_ID" to downloaded(VideoQuality(480)))
+
+        viewModel.enter()
+
+        // It is on the device, at its own rendition; the network has nothing to do with it.
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480)) }
     }
 
     @Test

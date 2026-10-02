@@ -116,7 +116,11 @@ fun PlayerSheetScaffold(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     KeepPictureEffect(
-        wanted = uiState.opensAsVideo,
+        // Somewhere to draw it, as well as the mode: the video screen, or the bar at rest. An
+        // expanded sheet has neither — a player in video can be found there when an episode with a
+        // picture arrives under a sheet that was opened on one without — and a picture asked for
+        // then would be fetched and decoded for nobody.
+        wanted = uiState.opensAsVideo && (hidden || !sheetState.isExpanded),
         onEnter = videoViewModel::enter,
         onExit = videoViewModel::exit,
     )

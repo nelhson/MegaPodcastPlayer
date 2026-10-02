@@ -174,8 +174,8 @@ sealed interface PodcastDetailMessage {
      * The episode list was deleted and imported again.
      *
      * Separate from [Refreshed] because the number means something different: a refresh reports
-     * what it *found*, a rebuild reports how much of the show there now is — which is the one
-     * figure that says whether the rebuild fixed anything.
+     * what it *found*, a rebuild reports how much the feed lists — which is the one figure that
+     * says whether the rebuild fixed anything.
      *
      * @property episodeCount episodes the feed yielded.
      * @property keptDownloadCount downloaded episodes the feed no longer lists, which stay in the
@@ -573,6 +573,11 @@ class PodcastDetailViewModel @Inject constructor(
      * re-issued under new GUIDs, a playlist whose stored order has drifted — where every further
      * refresh merges into the same wrong list. Episodes the feed still lists keep their progress,
      * played flag and download; a hand-made order is replaced by the feed's.
+     *
+     * One of those it now repairs in two steps rather than one. A feed re-issued under new GUIDs
+     * makes every stored episode one the feed no longer lists, and the downloaded ones are kept
+     * beside their re-issued twins until their downloads are deleted. Keeping a download nobody
+     * asked to lose is worth a duplicate row that says why it is there.
      *
      * No download is deleted, whatever the feed withdrew. It used to free the downloads of the
      * episodes it dropped, which made taking a video off a playlist the way to lose the copy on

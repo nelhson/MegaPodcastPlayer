@@ -24,7 +24,8 @@ import androidx.lifecycle.compose.LifecycleStartEffect
  * A rotation or a fold is neither. The activity is recreated, the effect leaves and returns, and the
  * picture is not touched in between.
  *
- * @param wanted whether the player is in video on an episode that has a picture.
+ * @param wanted whether the player is in video on an episode that has a picture, with one of the
+ *   picture's two homes on screen to draw it.
  * @param onEnter asks for the picture; called when it becomes wanted, and on every return to the
  *   front while it is.
  * @param onExit hands back to sound.

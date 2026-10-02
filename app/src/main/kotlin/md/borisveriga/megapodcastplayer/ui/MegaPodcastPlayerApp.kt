@@ -143,7 +143,13 @@ fun MegaPodcastPlayerApp(
     // Opens the audio player and makes audio the player's face: an episode started as sound, or
     // *Switch to audio* on the video screen. The mode is what a later tap on the bar goes by, so an
     // episode the user chose to listen to must not come back as a picture.
+    //
+    // The picture is told directly as well, without waiting for the mode to be stored and read
+    // back. With a video minimised in the bar, the episode just started would otherwise be asked
+    // for its picture the moment it loaded and be handed back to sound a moment later: two
+    // re-buffers at the start of something the user chose to listen to.
     val openAudio: () -> Unit = {
+        videoViewModel.exit()
         playerViewModel.setPlayerMode(PlayerMode.AUDIO)
         scope.launch { playerSheetState.expand() }
     }

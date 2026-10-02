@@ -100,11 +100,11 @@ internal fun Player.enterVideoMode(quality: VideoQuality): VideoModeOutcome {
 
 /**
  * Goes back to sound only, which is where every episode starts and where playback continues once
- * the video screen is gone.
+ * the picture is no longer wanted: the player was switched to audio, or the app left the front.
  *
- * Every item in the playlist, not only the current one. While the screen is up the queue moves on
+ * Every item in the playlist, not only the current one. While the picture is on the queue moves on
  * — an episode ends, the user presses next — and the item left behind stays in video flavour.
- * Played again later from the mini player it would stream a picture nobody sees, and a downloaded
+ * Played again later as sound it would stream a picture nobody sees, and a downloaded
  * episode would fail offline unless its picture had been downloaded too. Items other than the current
  * one are replaced in place: the playhead is not on them, so there is no position to keep.
  *

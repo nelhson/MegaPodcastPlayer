@@ -10,7 +10,8 @@ import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
  * The video flavour is one merged source, so a picture that cannot be fetched — the video has no
  * playable rendition, or its URL keeps being refused — stops the sound with it. Sound is what the
  * user came for, so on an error while the current item is in video flavour this swaps it back and
- * lets playback carry on. The video screen sees the drop to sound and says so.
+ * lets playback carry on. The video screen sees the drop to sound and says so; the collapsed bar,
+ * where the picture may be instead, goes back to the episode's artwork and says nothing.
  *
  * An error on the sound itself is left alone: the item is then already in audio flavour, which is
  * also what stops a failing sound from bouncing back and forth.

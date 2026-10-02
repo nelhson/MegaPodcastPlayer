@@ -27,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
+import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
@@ -112,6 +113,7 @@ sealed interface VideoDownloadMessage {
  * @property playbackRepository the skip intervals and the remembered rendition.
  * @property qualitySource asks the extractor which renditions a video comes in.
  * @property downloadRepository keeps a video on the device, and says which one is there.
+ * @property networkStatus says whether a picture that is not on the device could be fetched.
  * @property crashReporter where a failed lookup goes; the picker shows a sentence, the report
  *   keeps the cause.
  * @property applicationScope where leaving runs. The screen's own scope dies with the screen, and
@@ -124,6 +126,7 @@ class VideoViewModel @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val qualitySource: VideoQualitySource,
     private val downloadRepository: DownloadRepository,
+    private val networkStatus: NetworkStatus,
     private val crashReporter: CrashReporter,
     @ApplicationScope private val applicationScope: CoroutineScope,
 ) : ViewModel() {
@@ -224,10 +227,10 @@ class VideoViewModel @Inject constructor(
     )
 
     init {
-        // Follow the episode. When the queue moves on while the screen is up — the episode ended,
-        // or the user pressed next — the next one arrives as sound, because that is how every
-        // episode is stored; if it has a picture, show it too. The first value is the episode the
-        // screen opened on, which `enter` already handles.
+        // Follow the episode. When the queue moves on while the picture is wanted — the episode
+        // ended, or the user pressed next — the next one arrives as sound, because that is how
+        // every episode is stored; if it has a picture, show it too. The first value is whatever
+        // was loaded when this view model was made, which is `enter`'s to handle if it is wanted.
         viewModelScope.launch {
             connection.playbackState
                 .map { it.youTubeVideoId }
@@ -443,6 +446,13 @@ class VideoViewModel @Inject constructor(
      * At the downloaded rendition when the episode has a finished video download, else at the
      * remembered one. A download is filed under its rendition, so asking for any other would
      * stream a picture that is already on the device — or, offline, fail to show it at all.
+     *
+     * Not asked at all for a picture that is neither on the device nor fetchable. The video flavour
+     * is one merged source, so asking takes the sound down until the player gives up on the picture
+     * and falls back — and this is asked on its own every time the app comes forward in video, not
+     * only when the user says "watch". Offline with the audio downloaded, that would be an
+     * interruption per visit to the app. It is said as a refusal instead, which the video screen
+     * words if it is up and the bar lets pass.
      */
     private suspend fun showPicture() {
         val episodeId = connection.playbackState.value.episodeId
@@ -453,6 +463,10 @@ class VideoViewModel @Inject constructor(
         val quality = downloaded ?: playbackRepository.observeVideoQuality().first()
         // The screen may have gone while the rendition was being read; see [pendingEnter].
         if (!watching) return
+        if (downloaded == null && !networkStatus.isOnline()) {
+            refusedState.value = true
+            return
+        }
         if (!connection.enterVideo(quality)) refusedState.value = true
     }
 

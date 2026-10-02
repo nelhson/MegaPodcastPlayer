@@ -132,7 +132,7 @@
     <!-- %1$s is the failure reason. -->
     <string name="podcast_message_refresh_failed">Couldn\'t refresh: %1$s</string>
     <!--
-        A rebuild counts what the show now has rather than what arrived, so unlike a refresh there
+        A rebuild counts what the feed lists rather than what arrived, so unlike a refresh there
         is no "nothing new" case: zero here means the feed published nothing at all.
     -->
     <plurals name="podcast_message_rebuilt">

@@ -322,7 +322,9 @@ class PlayerSheetTest {
     }
 
     @Test
-    fun `the picture in the bar does not take the tap that opens the video`() {
+    fun `a tap on the picture's frame opens the video, like a tap anywhere else on the bar`() {
+        // A stand-in box, so this pins the bar's own wiring: the frame is inside the one tap
+        // target. That a real texture view lets the touch through is checked on a device.
         var watched = 0
         setContent(PlayerSheetValue.Collapsed, uiState = watching, onWatch = { watched++ })
 

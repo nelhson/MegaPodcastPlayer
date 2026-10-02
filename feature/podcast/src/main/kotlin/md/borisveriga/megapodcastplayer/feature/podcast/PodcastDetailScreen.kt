@@ -1364,7 +1364,7 @@ private const val SHARE_MIME_TYPE = "text/plain"
  * @param resources resolved from the composition by the caller.
  * @return the text to show.
  */
-private fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
+internal fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
     is PodcastDetailMessage.Refreshed -> if (newEpisodeCount == 0) {
         resources.getString(R.string.podcast_message_no_new_episodes)
     } else {
