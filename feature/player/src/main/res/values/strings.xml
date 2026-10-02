@@ -246,13 +246,21 @@
     -->
     <string name="player_watch">Watch the video</string>
     <!--
-      Leaving keeps the episode playing, as sound. The label says where the tap goes rather than
-      "close", because nothing is closed: the same episode carries on in the player behind.
+      What a tap on the collapsed bar does while the episode is being watched: the bar is then the
+      video put away, and the tap brings the picture back rather than opening the audio player.
     -->
-    <string name="video_back">Back to the player</string>
+    <string name="player_show_video">Show the video</string>
     <!--
-      Spoken labels for the tap that shows and hides the overlaid controls in landscape, which a
-      screen reader cannot see happening.
+      The two ways out of the video screen. Minimising keeps the episode playing behind the
+      collapsed bar, and a tap on the bar comes back; the label says what happens to the video
+      rather than "close", because nothing is closed. Switching to audio changes which player the
+      episode is in: it is the mirror of "Watch the video" on the audio player.
+    -->
+    <string name="video_collapse">Minimise the video</string>
+    <string name="video_listen">Switch to audio</string>
+    <!--
+      Spoken labels for the tap that shows and hides everything but the picture, which a screen
+      reader cannot see happening.
     -->
     <string name="video_show_controls">Show the controls</string>
     <string name="video_hide_controls">Hide the controls</string>

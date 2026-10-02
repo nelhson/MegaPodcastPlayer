@@ -10,6 +10,7 @@ import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailScreenInPanePreview
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailScreenPreview
+import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailScreenYouTubePreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +51,11 @@ class PodcastDetailScreenshotTest(private val variant: ScreenshotVariant) {
     @Test
     fun podcastDetailInPane() =
         capture("podcast-detail-in-pane") { PodcastDetailScreenInPanePreview() }
+
+    /** A playlist's rows, which carry a second button: the 200 % variant is where two buttons bite. */
+    @Test
+    fun podcastDetailYouTube() =
+        capture("podcast-detail-youtube") { PodcastDetailScreenYouTubePreview() }
 
     companion object {
         @JvmStatic

@@ -13,6 +13,7 @@ import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.After
@@ -273,5 +274,14 @@ class DefaultPlaybackRepositoryTest {
         repository.setVideoQuality(VideoQuality(1080))
 
         assertEquals(VideoQuality(1080), repository.observeVideoQuality().first())
+    }
+
+    @Test
+    fun `the player mode defaults to audio and then round trips`() = runTest {
+        assertEquals(PlayerMode.AUDIO, repository.observePlayerMode().first())
+
+        repository.setPlayerMode(PlayerMode.VIDEO)
+
+        assertEquals(PlayerMode.VIDEO, repository.observePlayerMode().first())
     }
 }

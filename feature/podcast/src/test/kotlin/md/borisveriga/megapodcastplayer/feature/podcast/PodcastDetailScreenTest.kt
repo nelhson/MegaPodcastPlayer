@@ -272,6 +272,27 @@ class PodcastDetailScreenTest {
     }
 
     @Test
+    fun `a YouTube episode's row has a second button that plays it as video`() {
+        var watched: String? = null
+        setScreen(
+            listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8"))),
+            source = PodcastSource.YOUTUBE,
+            onEpisodeWatch = { watched = it },
+        )
+
+        composeRule.onNodeWithContentDescription("Play video").performClick()
+
+        assertEquals("a", watched)
+    }
+
+    @Test
+    fun `a feed episode's row has no video button`() {
+        setScreen(listOf(episode("a")))
+
+        composeRule.onNodeWithContentDescription("Play video").assertDoesNotExist()
+    }
+
+    @Test
     fun `an episode that is only sound gets one play and one download, no video`() {
         var played: String? = null
         var toggled: String? = null

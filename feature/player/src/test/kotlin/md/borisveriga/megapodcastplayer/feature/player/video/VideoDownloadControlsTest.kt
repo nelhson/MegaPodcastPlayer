@@ -53,7 +53,6 @@ class VideoDownloadControlsTest {
                     ),
                     surface = { modifier -> Box(modifier = modifier) },
                     actions = VideoActions(onOpenDownload = onOpenDownload),
-                    onBack = {},
                 )
             }
         }

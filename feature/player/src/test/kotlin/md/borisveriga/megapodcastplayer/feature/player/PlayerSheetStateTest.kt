@@ -188,6 +188,43 @@ class PlayerSheetStateTest {
     }
 
     @Test
+    fun `a sheet that may not expand ignores an upward drag`() = runTest {
+        // The bar of an episode being watched: a tap on it opens the video screen, so a drag must
+        // not open the audio player the tap would not.
+        val sheet = state()
+
+        sheet.dragBy(deltaPx = -500f, sheetTravelPx = travelPx, canExpand = false)
+
+        assertEquals(0f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
+    fun `a part-open sheet that may no longer expand can still be dragged shut`() = runTest {
+        // The queue moved on to an episode being watched while the bar was half-way up.
+        val sheet = state()
+        sheet.dragBy(deltaPx = -800f, sheetTravelPx = travelPx)
+
+        sheet.dragBy(deltaPx = -400f, sheetTravelPx = travelPx, canExpand = false)
+        assertEquals(0.4f, sheet.progress, TOLERANCE)
+
+        sheet.dragBy(deltaPx = 800f, sheetTravelPx = travelPx, canExpand = false)
+        assertEquals(0f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
+    fun `a sheet that may not expand still follows the dismiss pull`() = runTest {
+        val sheet = state()
+
+        sheet.dragBy(deltaPx = 70f, sheetTravelPx = travelPx, canExpand = false)
+        assertEquals(70f, sheet.pullDownPx, TOLERANCE)
+
+        // Past paying the pull back, the rest of the movement goes nowhere.
+        sheet.dragBy(deltaPx = -300f, sheetTravelPx = travelPx, canExpand = false)
+        assertEquals(0f, sheet.pullDownPx, TOLERANCE)
+        assertEquals(0f, sheet.progress, TOLERANCE)
+    }
+
+    @Test
     fun `dragging down on a collapsed sheet accumulates a dismiss pull`() = runTest {
         val sheet = state()
 

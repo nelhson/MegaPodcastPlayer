@@ -23,6 +23,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.Moment
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Before
 import org.junit.Rule
@@ -52,6 +53,7 @@ abstract class PlayerViewModelFixture {
     protected val lastPlayedEpisodeId = MutableStateFlow<String?>(null)
     protected val currentEpisode = MutableStateFlow<Episode?>(null)
     protected val episodeMoments = MutableStateFlow(emptyList<Moment>())
+    protected val playerMode = MutableStateFlow(PlayerMode.AUDIO)
 
     protected lateinit var connection: PlaybackConnection
     protected lateinit var playbackRepository: PlaybackRepository
@@ -134,6 +136,7 @@ abstract class PlayerViewModelFixture {
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeQueue() } returns queue
         every { playbackRepository.observeLastPlayedEpisodeId() } returns lastPlayedEpisodeId
+        every { playbackRepository.observePlayerMode() } returns playerMode
         every { podcastRepository.observeEpisode(any()) } returns currentEpisode
         every { momentsRepository.observeForEpisode(any()) } returns episodeMoments
 

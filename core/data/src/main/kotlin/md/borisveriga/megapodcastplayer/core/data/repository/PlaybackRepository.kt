@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.core.data.repository
 import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
 /**
@@ -41,6 +42,14 @@ interface PlaybackRepository {
      * all of them for a number none of them draws.
      */
     fun observeVideoQuality(): Flow<VideoQuality>
+
+    /**
+     * Observes which face the player was last put in, [PlayerMode.AUDIO] until a video is watched.
+     *
+     * Apart from [observePlaybackSettings] for the reason [observeVideoQuality] is: it is not a
+     * setting the user tunes, it is where they left the player.
+     */
+    fun observePlayerMode(): Flow<PlayerMode>
 
     /**
      * Loads one episode with its show details.
@@ -96,6 +105,9 @@ interface PlaybackRepository {
 
     /** Records the video rendition the user chose, so the next video opens at it. */
     suspend fun setVideoQuality(quality: VideoQuality)
+
+    /** Records which face the player is in, so it is found the same way after a relaunch. */
+    suspend fun setPlayerMode(mode: PlayerMode)
 
     /**
      * Enables or disables advancing to the next queued episode when one finishes.

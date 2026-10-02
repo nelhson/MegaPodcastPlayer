@@ -17,6 +17,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.LibrarySort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.ShowSettingsCodec
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
@@ -159,6 +160,16 @@ class UserPreferencesDataSource @Inject constructor(
             ?.takeIf { it > 0 }
             ?.let(::VideoQuality)
             ?: VideoQuality.DEFAULT
+    }
+
+    /**
+     * Observes which face the player was last put in, [PlayerMode.AUDIO] until a video is watched.
+     *
+     * Stored as one boolean rather than the enum's name: there are two faces and there will not be
+     * a third, and a boolean cannot hold a spelling that no longer parses.
+     */
+    val playerMode: Flow<PlayerMode> = dataStore.data.map { preferences ->
+        if (preferences[Keys.PLAYER_VIDEO_MODE] == true) PlayerMode.VIDEO else PlayerMode.AUDIO
     }
 
     /**
@@ -350,6 +361,15 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Records which face the player is in, so the next launch finds it the same way.
+     *
+     * @param mode the face the user just chose.
+     */
+    suspend fun setPlayerMode(mode: PlayerMode) {
+        dataStore.edit { it[Keys.PLAYER_VIDEO_MODE] = mode == PlayerMode.VIDEO }
+    }
+
+    /**
      * Records that a backup was exported successfully.
      *
      * @param exportedAtMs when the export was written, epoch milliseconds.
@@ -431,6 +451,7 @@ class UserPreferencesDataSource @Inject constructor(
         val SHOW_SETTINGS = stringPreferencesKey("show_settings")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val VIDEO_QUALITY_HEIGHT = intPreferencesKey("video_quality_height")
+        val PLAYER_VIDEO_MODE = booleanPreferencesKey("player_video_mode")
     }
 
     private companion object {

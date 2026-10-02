@@ -54,8 +54,8 @@ import md.borisveriga.megapodcastplayer.navigation.rememberDetailPaneGraph
  *   the screen it closes the show; otherwise it is handed to the list pane, which scrolls (NAV-4).
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the shell
  *   can expand the sheet.
- * @param onEpisodeWatching invoked once an episode the sheet's *Play video* started is loaded, so
- *   the shell can open the video screen.
+ * @param onEpisodeWatching invoked once an episode started as video — by the sheet's *Play video*
+ *   or a row's video button — is loaded, so the shell can open the video screen.
  * @param modifier layout modifier.
  * @param paneNavigator decides how many panes there is room for and which one is in front;
  *   injected for tests.

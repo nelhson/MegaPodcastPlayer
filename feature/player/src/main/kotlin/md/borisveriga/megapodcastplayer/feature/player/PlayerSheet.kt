@@ -73,8 +73,9 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 /**
  * The app shell's player layer: content, then the sheet on top of it.
  *
- * Owns the player's view model so that the shell above it needs nothing but a [PlayerSheetState],
- * and reserves the height of the collapsed bar in [content]'s padding so a list's last row is not
+ * Draws from the player's view model, so that the shell above it needs little more than a
+ * [PlayerSheetState] — it holds the same view model only to say which face the player is in — and
+ * reserves the height of the collapsed bar in [content]'s padding so a list's last row is not
  * left permanently underneath it — which is what the sheet's predecessor, a sibling in a `Column`,
  * got for free and an overlay does not.
  *
@@ -301,7 +302,9 @@ fun PlayerSheetScaffold(
  * @param onMarkMoment saves a moment at the playhead.
  * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
- * @param onWatch opens the video screen; offered only for an episode with a picture.
+ * @param onWatch opens the video screen; offered only for an episode with a picture. Also what
+ *   the collapsed bar does instead of opening the sheet while the episode is being watched; see
+ *   [PlayerUiState.opensAsVideo].
  * @param onDismiss stops playback and puts the player away; what a downward pull on the collapsed
  *   bar commits to, what the bar's spoken action does, and what the expanded sheet's close button
  *   presses.
@@ -374,6 +377,11 @@ fun PlayerSheet(
         val flingPx = with(density) { FlingThreshold.toPx() }
         val dismissPx = with(density) { DismissThreshold.toPx() }
 
+        // While an episode is being watched the bar is the video screen put away, not the sheet:
+        // a tap on it goes back to the picture, and the sheet does not follow a drag. Only at
+        // rest, though — a sheet that is open must still be able to be dragged shut.
+        val barOpensVideo = uiState.opensAsVideo && !sheetState.isExpanded
+
         // The back gesture drags the sheet down instead of dismissing it, and letting go mid-way
         // puts it back — which is the whole point of predictive back, and only possible because
         // the sheet is a fraction rather than a destination.
@@ -394,7 +402,7 @@ fun PlayerSheet(
         // cancel it; the sheet would then stop wherever the finger left it, half open.
         val dragState = rememberDraggableState { delta ->
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                sheetState.dragBy(delta, travelPx)
+                sheetState.dragBy(delta, travelPx, canExpand = !barOpensVideo)
             }
         }
 
@@ -422,10 +430,19 @@ fun PlayerSheet(
                     // animation is suspended in, stranding the sheet part-open.
                     onDragStopped = { velocity ->
                         scope.launch {
-                            if (sheetState.consumePullDown(dismissPx)) {
-                                onDismiss()
-                            } else {
-                                sheetState.settle(velocity, flingPx)
+                            when {
+                                sheetState.consumePullDown(dismissPx) -> onDismiss()
+
+                                // The flick that would have opened the sheet opens what the tap
+                                // opens. The sheet itself goes back to the bar either way: it is
+                                // normally there already, but the bar can become the video's
+                                // mid-drag, with the sheet part-way up and nothing else to settle it.
+                                barOpensVideo -> {
+                                    if (velocity < -flingPx) onWatch()
+                                    if (sheetState.progress > 0f) sheetState.collapse()
+                                }
+
+                                else -> sheetState.settle(velocity, flingPx)
                             }
                         }
                     },
@@ -441,8 +458,12 @@ fun PlayerSheet(
                     } else {
                         Modifier
                             .clickable(
-                                onClickLabel = stringResource(R.string.player_expand),
-                                onClick = { scope.launch { sheetState.expand() } },
+                                onClickLabel = stringResource(
+                                    if (barOpensVideo) R.string.player_show_video else R.string.player_expand,
+                                ),
+                                onClick = {
+                                    if (barOpensVideo) onWatch() else scope.launch { sheetState.expand() }
+                                },
                             )
                             // The pull's spoken twin. A gesture without one is a control a
                             // TalkBack user does not have, and dismissing is the only way to stop
@@ -495,6 +516,7 @@ fun PlayerSheet(
                             onPlayPause = onPlayPause,
                             onSkipBack = onSkipBack,
                             onSkipForward = onSkipForward,
+                            video = uiState.opensAsVideo,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .height(collapsedHeight)

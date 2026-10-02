@@ -7,6 +7,8 @@ import android.content.res.Resources
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,10 +17,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.ArrowDownward
@@ -32,6 +36,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -66,10 +72,12 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -117,6 +125,7 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
 import md.borisveriga.megapodcastplayer.core.model.orderedBy
 import md.borisveriga.megapodcastplayer.core.model.showShareText
+import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
@@ -125,8 +134,8 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * @param onBack invoked when the user navigates back, and automatically once the show is removed.
  * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the caller
  *   can open the full player.
- * @param onEpisodeWatching invoked once an episode the sheet's *Play video* started is loaded, so
- *   the caller can open the video screen.
+ * @param onEpisodeWatching invoked once an episode started as video — by the sheet's *Play video*
+ *   or a row's video button — is loaded, so the caller can open the video screen.
  * @param modifier layout modifier.
  * @param showBackButton false when the screen is rendered as the detail pane of a two-pane layout,
  *   where the list is still on screen and a back arrow would be misleading.
@@ -511,6 +520,13 @@ fun PodcastDetailScreen(
                                 nowPlaying = uiState.nowPlaying,
                                 onClick = { onEpisodeClick(episode.id) },
                                 onPlay = { onEpisodePlay(episode.id) },
+                                // Only a YouTube episode has a picture; any other row keeps its
+                                // one button.
+                                onWatch = if (youTubeVideoIdOrNull(episode.audioUrl) != null) {
+                                    { onEpisodeWatch(episode.id) }
+                                } else {
+                                    null
+                                },
                                 onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
                                 onPlayNext = { onEpisodePlayNext(episode.id) },
                             )
@@ -551,6 +567,8 @@ fun PodcastDetailScreen(
  * @param nowPlaying which episode the player has loaded, so the row's own control can show it.
  * @param onClick opens the episode's sheet.
  * @param onPlay plays it, or pauses it when it is the one already playing.
+ * @param onWatch plays it as video, or null for an episode with no picture, which draws no second
+ *   button at all.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
  * @param onPlayNext queues it to play after whatever is playing now.
@@ -568,6 +586,7 @@ private fun EpisodeListRow(
     nowPlaying: NowPlaying,
     onClick: () -> Unit,
     onPlay: () -> Unit,
+    onWatch: (() -> Unit)?,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
 ) {
@@ -667,7 +686,39 @@ private fun EpisodeListRow(
                         MaterialTheme.colorScheme.onSecondaryContainer
                     },
                 )
+                // The second way to take the episode, and second in the row: listening is what a
+                // podcast app is for, and the play button stays the first thing the thumb meets.
+                onWatch?.let { watch -> WatchButton(onClick = watch) }
             },
+        )
+    }
+}
+
+/**
+ * The row's second button, on a YouTube episode only: plays it as video.
+ *
+ * The play button's twin rather than a stock icon button — the same circle at the same size, so the
+ * two read as a pair of ways to start the one episode — in the tertiary container, which keeps it
+ * a step apart from the control that is also the now-playing mark.
+ *
+ * @param onClick plays the episode and opens the video screen.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun WatchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(WatchButtonSize)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.SmartDisplay,
+            contentDescription = stringResource(R.string.episode_play_video),
+            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            modifier = Modifier.size(WatchGlyphSize),
         )
     }
 }
@@ -1402,6 +1453,12 @@ private fun PodcastDetailMessage.toText(resources: Resources): String = when (th
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
 
+/** The watch button's side: the row's play button's, so the two sit as a pair. */
+private val WatchButtonSize = 40.dp
+
+/** The watch button's glyph, the size of the play button's. */
+private val WatchGlyphSize = 22.dp
+
 private const val HEADER_KEY = "header"
 private const val FILTERS_KEY = "filters"
 private const val FILTER_EMPTY_KEY = "filter-empty"
@@ -1513,6 +1570,48 @@ internal fun PodcastDetailScreenInPanePreview() {
             onDownloadAndExport = { _, _ -> },
             onMessageShown = {},
             showBackButton = false,
+        )
+    }
+}
+
+/**
+ * A YouTube playlist, whose rows carry the second button: play as video.
+ *
+ * The same state as the other two with the show and its episode turned into YouTube ones, so the
+ * golden differs from `podcast-detail` by the things a playlist changes and nothing else. At 200 %
+ * text as well: the title now shares its row with two buttons rather than one.
+ */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+internal fun PodcastDetailScreenYouTubePreview() {
+    val state = previewUiState()
+    MegaPodcastPlayerTheme {
+        PodcastDetailScreen(
+            uiState = state.copy(
+                podcast = state.podcast?.copy(source = PodcastSource.YOUTUBE),
+                episodes = state.episodes.map { it.copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8")) },
+            ),
+            onBack = {},
+            onEpisodeClick = {},
+            onEpisodeDownloadToggle = {},
+            onEpisodePlay = {},
+            onEpisodePlayFrom = { _, _ -> },
+            onEpisodeWatch = {},
+            onEpisodeSheetDismiss = {},
+            onEpisodePlayNext = {},
+            onVideoQualitiesRequest = {},
+            onVideoDownload = { _, _ -> },
+            onVideoDownloadRemove = {},
+            onEpisodeMove = { _, _, _ -> },
+            onFilterChange = {},
+            onSortChange = {},
+            onShowSettingsChange = {},
+            onRefresh = {},
+            onRebuild = {},
+            onRemove = {},
+            onDownloadAndExport = { _, _ -> },
+            onMessageShown = {},
         )
     }
 }
