@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +55,9 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
  * @param onSkipBack skip-back handler.
  * @param onSkipForward skip-ahead handler.
  * @param modifier layout modifier.
+ * @param video true while the bar is the video screen put away rather than the sheet. It then
+ *   carries a small screen glyph beside the show's name: the bar looks the same either way, and
+ *   without the mark a tap that opens a picture instead of the sheet would be a surprise.
  */
 @Composable
 fun CollapsedPlayer(
@@ -61,6 +67,7 @@ fun CollapsedPlayer(
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
     modifier: Modifier = Modifier,
+    video: Boolean = false,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         // A thin progress line rather than a scrubber: the bar is a status indicator, and precise
@@ -93,13 +100,27 @@ fun CollapsedPlayer(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = playback.showTitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
+                ) {
+                    if (video) {
+                        // Decorative: the bar's own click label says what the tap opens.
+                        Icon(
+                            imageVector = Icons.Rounded.SmartDisplay,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(VideoMarkSize),
+                        )
+                    }
+                    Text(
+                        text = playback.showTitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             IconButton(onClick = onSkipBack) {
@@ -154,6 +175,9 @@ fun collapsedPlayerHeight(): Dp {
 
 /** The bar never shrinks below the touch-target-plus-padding it was designed at. */
 private val CollapsedPlayerMinHeight: Dp = 64.dp
+
+/** The video mark's side; small enough to sit inside the show line's own height at any scale. */
+private val VideoMarkSize: Dp = 14.dp
 
 /** Height of the hairline progress line at the top of the bar. */
 internal val collapsedProgressHeight: Dp = 4.dp
@@ -233,6 +257,27 @@ internal fun CollapsedPlayerPreview() {
             onSkipBack = {},
             onSkipForward = {},
             modifier = Modifier.height(collapsedPlayerHeight()),
+        )
+    }
+}
+
+/**
+ * The bar of an episode being watched: the same bar, with the mark that says a tap opens the
+ * picture. At 200 % text too, where the mark has to stay inside a line that has grown around it.
+ */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+internal fun CollapsedPlayerVideoPreview() {
+    MegaPodcastPlayerTheme {
+        CollapsedPlayer(
+            playback = previewPlayback.copy(youTubeVideoId = "niTJ2221aS8"),
+            settings = PlaybackSettings(),
+            onPlayPause = {},
+            onSkipBack = {},
+            onSkipForward = {},
+            modifier = Modifier.height(collapsedPlayerHeight()),
+            video = true,
         )
     }
 }

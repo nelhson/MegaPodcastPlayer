@@ -6,6 +6,7 @@ import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -14,20 +15,25 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +49,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -56,9 +63,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +87,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseBut
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -92,19 +102,29 @@ import md.borisveriga.megapodcastplayer.feature.player.previewPlayback
 /**
  * The video screen: the picture of the YouTube episode playing, with the transport under it.
  *
- * It is a place the episode is *shown*, not a second player. The service keeps playing the same
+ * It is the player's other face rather than a second player. The service keeps playing the same
  * episode at the same position before, during and after; what this screen adds is a surface, and
  * two commands that bracket its time on screen — show the picture on the way in, go back to sound
- * on the way out. Back, home and the screen going off all count as the way out. A rotation or a
- * fold does not: the activity is recreated, the surface is made again, and the picture carries on.
+ * on the way out. Minimising, back, home and the screen going off all count as the way out: with
+ * no surface to draw on there is no picture worth streaming. A rotation or a fold does not: the
+ * activity is recreated, the surface is made again, and the picture carries on.
  *
- * @param onBack leaves the screen; playback carries on as sound.
+ * There are two ways to leave and they mean different things. *Minimise* puts the video away: the
+ * episode carries on behind the collapsed bar, and a tap on the bar comes back here. *Switch to
+ * audio* changes what the player is: the caller opens the audio player in its place. Which of the
+ * two the player is in is the caller's to remember; this screen only reports the choice.
+ *
+ * A tap on the picture hides everything but the picture, and a tap anywhere brings it back.
+ *
+ * @param onCollapse puts the video away; playback carries on, and the bar reopens this screen.
+ * @param onListen leaves for the audio player.
  * @param modifier layout modifier.
  * @param viewModel injected by Hilt.
  */
 @Composable
 fun VideoRoute(
-    onBack: () -> Unit,
+    onCollapse: () -> Unit,
+    onListen: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: VideoViewModel = hiltViewModel(),
 ) {
@@ -124,7 +144,7 @@ fun VideoRoute(
     // one, or has emptied, there is nothing left here to show. Not before the service has answered:
     // the first frame reads as "nothing loaded" and would send the user straight back out.
     LaunchedEffect(uiState.playback.isConnected, uiState.canWatch) {
-        if (uiState.playback.isConnected && !uiState.canWatch) onBack()
+        if (uiState.playback.isConnected && !uiState.canWatch) onCollapse()
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -183,7 +203,18 @@ fun VideoRoute(
         )
     }
 
-    FullscreenEffects(landscape = isLandscape(), keepScreenOn = uiState.playback.isPlaying)
+    // Whether the names, the transport and the buttons are on screen, or only the picture. Saved,
+    // so it survives the Fold opening — but keyed on the shape, so a turn starts over with them
+    // showing. Landscape hides them on a timer, and turning back to portrait to find a black page
+    // where the player was would read as the screen having broken.
+    val landscape = isLandscape()
+    var controlsVisible by rememberSaveable(landscape) { mutableStateOf(true) }
+
+    FullscreenEffects(
+        landscape = landscape,
+        immersive = landscape || !controlsVisible,
+        keepScreenOn = uiState.playback.isPlaying,
+    )
 
     VideoScreen(
         uiState = uiState,
@@ -204,15 +235,18 @@ fun VideoRoute(
             onOpenSpeed = { speedOpen = true },
             onOpenQuality = { qualityOpen = true },
             onOpenDownload = { downloadOpen = true },
+            onCollapse = onCollapse,
+            onListen = onListen,
         ),
-        onBack = onBack,
-        snackbarHostState = snackbarHostState,
         modifier = modifier,
+        controlsVisible = controlsVisible,
+        onControlsVisibleChange = { controlsVisible = it },
+        snackbarHostState = snackbarHostState,
     )
 }
 
 /**
- * Everything the transport on the video screen can do, gathered so the layouts take one thing.
+ * Everything the controls on the video screen can do, gathered so the layouts take one thing.
  *
  * @property onPlayPause play/pause handler.
  * @property onSeek absolute-seek handler.
@@ -223,6 +257,8 @@ fun VideoRoute(
  * @property onOpenSpeed opens the speed sheet.
  * @property onOpenQuality opens the quality sheet.
  * @property onOpenDownload opens the download sheet.
+ * @property onCollapse puts the video away behind the collapsed bar.
+ * @property onListen leaves for the audio player.
  */
 data class VideoActions(
     val onPlayPause: () -> Unit = {},
@@ -234,6 +270,8 @@ data class VideoActions(
     val onOpenSpeed: () -> Unit = {},
     val onOpenQuality: () -> Unit = {},
     val onOpenDownload: () -> Unit = {},
+    val onCollapse: () -> Unit = {},
+    val onListen: () -> Unit = {},
 )
 
 /**
@@ -259,18 +297,20 @@ private fun videoDownloadMessageText(message: VideoDownloadMessage): String = wh
  * The screen, in whichever of its two shapes the window calls for.
  *
  * Portrait is a page: the episode's name under the top bar, the picture centred in the room
- * between that and the transport at the bottom, the system bars where they always are. Landscape
- * is the picture and nothing else, with the transport laid over it and hidden again a few seconds
- * after the last touch.
+ * between that and the transport at the bottom. Landscape is the picture and nothing else, with
+ * the transport laid over it and hidden again a few seconds after the last touch.
+ *
+ * In both, [controlsVisible] says whether anything but the picture is drawn, and a tap flips it.
  *
  * The surface is a slot rather than drawn here, so a preview — and the golden — can put a plain
  * box where a `SurfaceView` bound to the player would be.
  *
  * @param uiState what to render.
  * @param surface draws the player's picture into the modifier it is given.
- * @param actions the transport.
- * @param onBack leaves the screen.
+ * @param actions the controls.
  * @param modifier layout modifier.
+ * @param controlsVisible false when only the picture is to be shown.
+ * @param onControlsVisibleChange asks for the controls to be shown or hidden; a tap does.
  * @param snackbarHostState where a refusal is shown.
  */
 @Composable
@@ -278,16 +318,26 @@ internal fun VideoScreen(
     uiState: VideoUiState,
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    controlsVisible: Boolean = true,
+    onControlsVisibleChange: (Boolean) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
+    val controls = ControlsVisibility(controlsVisible, onControlsVisibleChange)
     if (isLandscape()) {
-        LandscapeVideo(uiState, surface, actions, onBack, snackbarHostState, modifier)
+        LandscapeVideo(uiState, surface, actions, controls, snackbarHostState, modifier)
     } else {
-        PortraitVideo(uiState, surface, actions, onBack, snackbarHostState, modifier)
+        PortraitVideo(uiState, surface, actions, controls, snackbarHostState, modifier)
     }
 }
+
+/**
+ * Whether the controls are shown, and the way to change that, passed to the layouts as one thing.
+ *
+ * @property visible false when only the picture is drawn.
+ * @property onChange asks for the controls to be shown or hidden.
+ */
+private class ControlsVisibility(val visible: Boolean, val onChange: (Boolean) -> Unit)
 
 /** Whether the window is wider than it is tall, which is what chooses the screen's shape. */
 @Composable
@@ -297,59 +347,123 @@ private fun isLandscape(): Boolean =
 /**
  * The page shape.
  *
+ * A tap on the picture clears the page: the top bar, the names and the transport fade out and the
+ * ground under them goes to black, leaving the picture where it was. Faded rather than removed, and
+ * laid out against insets that ignore the system bars coming and going, so that nothing the picture
+ * is measured against changes — a picture that jumped as its surroundings left would be the most
+ * visible thing about the gesture. While cleared, the whole screen is one target that brings
+ * everything back.
+ *
+ * Nothing hides on a timer here, unlike landscape: the page's controls are beside the picture, not
+ * over it, so they are only in the way when the user says they are.
+ *
  * @param uiState what to render.
  * @param surface draws the picture.
- * @param actions the transport.
- * @param onBack leaves the screen.
+ * @param actions the controls.
+ * @param controls whether the page is cleared, and the way to change it.
  * @param snackbarHostState where a refusal is shown.
  * @param modifier layout modifier.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+// systemBarsIgnoringVisibility is the experimental half: it is the only inset that stays put while
+// the bars hide, which is the whole of why it is used.
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PortraitVideo(
     uiState: VideoUiState,
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
-    onBack: () -> Unit,
+    controls: ControlsVisibility,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
-    Scaffold(
-        modifier = modifier,
-        topBar = { TopAppBar(title = {}, navigationIcon = { BackButton(onBack) }) },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Column(
+    // One number for the whole change, read only in draw, so the fade costs no recomposition.
+    val shown = animateFloatAsState(
+        targetValue = if (controls.visible) 1f else 0f,
+        animationSpec = Motion.fade(),
+        label = "video controls",
+    )
+    // Furniture that has faded out is also taken out of the spoken tree: a button nobody can see
+    // is not one a screen reader should land on.
+    val furniture = Modifier
+        .graphicsLayer { alpha = shown.value }
+        .then(if (controls.visible) Modifier else Modifier.clearAndSetSemantics { })
+    val steadyBars = WindowInsets.systemBarsIgnoringVisibility
+
+    Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
+        // The black the page fades to, under the page rather than a colour animated through it.
+        Box(
             modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-        ) {
-            EpisodeTitles(
-                playback = uiState.playback,
+                .matchParentSize()
+                .graphicsLayer { alpha = 1f - shown.value }
+                .background(Color.Black),
+        )
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            contentWindowInsets = steadyBars,
+            topBar = {
+                TopAppBar(
+                    title = {},
+                    modifier = furniture,
+                    navigationIcon = { CollapseButton(actions.onCollapse) },
+                    actions = { ListenButton(actions.onListen) },
+                    windowInsets = steadyBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+        ) { padding ->
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal),
-            )
-            // The picture floats in whatever is left between the names and the transport, rather
-            // than sitting against the top bar: on a tall screen that puts it near the middle,
-            // where the eye already is.
+                    .padding(padding)
+                    .fillMaxSize(),
+            ) {
+                EpisodeTitles(
+                    playback = uiState.playback,
+                    modifier = furniture
+                        .fillMaxWidth()
+                        .padding(horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal),
+                )
+                // The picture floats in whatever is left between the names and the transport,
+                // rather than sitting against the top bar: on a tall screen that puts it near the
+                // middle, where the eye already is. The whole of that room takes the tap, not only
+                // the picture: the black beside a narrow picture is as much "the video" to a thumb.
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClickLabel = stringResource(R.string.video_hide_controls),
+                        ) { controls.onChange(false) }
+                        .padding(vertical = MegaPodcastPlayerTheme.spacing.md),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VideoFrame(playback = uiState.playback, surface = surface, modifier = Modifier.fillMaxWidth())
+                }
+                VideoControls(
+                    uiState = uiState,
+                    actions = actions,
+                    modifier = furniture.padding(
+                        start = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                        end = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                        bottom = MegaPodcastPlayerTheme.spacing.lg,
+                    ),
+                )
+            }
+        }
+        if (!controls.visible) {
+            // Over everything, so a tap where a faded button still sits shows the controls rather
+            // than pressing something invisible.
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = MegaPodcastPlayerTheme.spacing.md),
-                contentAlignment = Alignment.Center,
-            ) {
-                VideoFrame(playback = uiState.playback, surface = surface, modifier = Modifier.fillMaxWidth())
-            }
-            VideoControls(
-                uiState = uiState,
-                actions = actions,
-                modifier = Modifier.padding(
-                    start = MegaPodcastPlayerTheme.spacing.screenHorizontal,
-                    end = MegaPodcastPlayerTheme.spacing.screenHorizontal,
-                    bottom = MegaPodcastPlayerTheme.spacing.lg,
-                ),
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClickLabel = stringResource(R.string.video_show_controls),
+                    ) { controls.onChange(true) },
             )
         }
     }
@@ -364,8 +478,8 @@ private fun PortraitVideo(
  *
  * @param uiState what to render.
  * @param surface draws the picture.
- * @param actions the transport.
- * @param onBack leaves the screen.
+ * @param actions the controls.
+ * @param controls whether the overlay is up, and the way to change it.
  * @param snackbarHostState where a refusal is shown.
  * @param modifier layout modifier.
  */
@@ -374,15 +488,15 @@ private fun LandscapeVideo(
     uiState: VideoUiState,
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
-    onBack: () -> Unit,
+    controls: ControlsVisibility,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
-    var controlsVisible by rememberSaveable { mutableStateOf(true) }
+    val controlsVisible = controls.visible
     LaunchedEffect(controlsVisible, uiState.playback.isPlaying) {
         if (controlsVisible && uiState.playback.isPlaying) {
             delay(CONTROLS_TIMEOUT_MS)
-            controlsVisible = false
+            controls.onChange(false)
         }
     }
     val toggleLabel = stringResource(
@@ -399,7 +513,7 @@ private fun LandscapeVideo(
                 // visible thing on the screen.
                 indication = null,
                 onClickLabel = toggleLabel,
-            ) { controlsVisible = !controlsVisible },
+            ) { controls.onChange(!controlsVisible) },
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             VideoFrame(playback = uiState.playback, surface = surface)
@@ -424,12 +538,13 @@ private fun LandscapeVideo(
                         .padding(horizontal = MegaPodcastPlayerTheme.spacing.md),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        BackButton(onBack)
+                        CollapseButton(actions.onCollapse)
                         EpisodeTitles(
                             playback = uiState.playback,
                             modifier = Modifier.weight(1f),
                             compact = true,
                         )
+                        ListenButton(actions.onListen)
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     VideoControls(
@@ -665,16 +780,34 @@ private fun DownloadButton(download: VideoDownload?, onClick: () -> Unit) {
 }
 
 /**
- * The way out, which keeps the episode playing.
+ * Puts the video away, which keeps the episode playing behind the collapsed bar.
  *
- * @param onBack leaves the screen.
+ * A downward chevron rather than a back arrow: it is the glyph the audio player closes with, and
+ * what it does here is the same thing — the player shrinks to its bar, it does not go anywhere.
+ *
+ * @param onCollapse puts the video away.
  */
 @Composable
-private fun BackButton(onBack: () -> Unit) {
-    IconButton(onClick = onBack) {
+private fun CollapseButton(onCollapse: () -> Unit) {
+    IconButton(onClick = onCollapse) {
         Icon(
-            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-            contentDescription = stringResource(R.string.video_back),
+            imageVector = Icons.Rounded.KeyboardArrowDown,
+            contentDescription = stringResource(R.string.video_collapse),
+        )
+    }
+}
+
+/**
+ * Leaves for the audio player: the mirror of the *Watch* button there.
+ *
+ * @param onListen switches the player to audio.
+ */
+@Composable
+private fun ListenButton(onListen: () -> Unit) {
+    IconButton(onClick = onListen) {
+        Icon(
+            imageVector = Icons.Rounded.Headphones,
+            contentDescription = stringResource(R.string.video_listen),
         )
     }
 }
@@ -707,17 +840,19 @@ private fun VideoSurface(
 /**
  * What the screen does to the window and the activity for as long as it is up.
  *
- * Three things, each undone on the way out. The screen stays on while the picture moves. The
+ * Four things, each undone on the way out. The screen stays on while the picture moves. The
  * orientation follows the sensor even with auto-rotate off, because turning the phone is how a
  * video is made big — and it is undone on leaving so the rest of the app is back under the user's
- * setting. And in landscape the system bars go, coming back with a swipe, while the picture is let
- * run under the cutout; there is no content there to lose to it.
+ * setting. The system bars go whenever only the picture is wanted — always in landscape, and in
+ * portrait once the controls have been tapped away — coming back with a swipe. And in landscape
+ * the picture is let run under the cutout; there is no content there to lose to it.
  *
  * @param landscape whether the window is currently wider than tall.
+ * @param immersive whether the system bars should be out of the picture's way.
  * @param keepScreenOn whether the picture is moving.
  */
 @Composable
-private fun FullscreenEffects(landscape: Boolean, keepScreenOn: Boolean) {
+private fun FullscreenEffects(landscape: Boolean, immersive: Boolean, keepScreenOn: Boolean) {
     val view = LocalView.current
     val activity = LocalActivity.current
 
@@ -741,19 +876,24 @@ private fun FullscreenEffects(landscape: Boolean, keepScreenOn: Boolean) {
         }
     }
 
-    DisposableEffect(activity, view, landscape) {
+    DisposableEffect(activity, view, immersive) {
         val window = activity?.window
-        if (window == null || !landscape) return@DisposableEffect onDispose {}
+        if (window == null || !immersive) return@DisposableEffect onDispose {}
         val controller = WindowInsetsControllerCompat(window, view)
-        val previousCutoutMode = window.attributes.layoutInDisplayCutoutMode
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+
+    DisposableEffect(activity, landscape) {
+        val window = activity?.window
+        if (window == null || !landscape) return@DisposableEffect onDispose {}
+        val previousCutoutMode = window.attributes.layoutInDisplayCutoutMode
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         onDispose {
-            controller.show(WindowInsetsCompat.Type.systemBars())
             window.attributes = window.attributes.apply {
                 layoutInDisplayCutoutMode = previousCutoutMode
             }
@@ -797,7 +937,6 @@ internal fun VideoScreenPreview() {
             ),
             surface = { surfaceModifier -> Box(modifier = surfaceModifier.background(Color.DarkGray)) },
             actions = VideoActions(),
-            onBack = {},
         )
     }
 }

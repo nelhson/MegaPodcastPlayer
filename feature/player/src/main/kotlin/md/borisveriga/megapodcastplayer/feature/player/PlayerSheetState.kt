@@ -127,8 +127,11 @@ class PlayerSheetState internal constructor(initialValue: PlayerSheetValue) {
      * @param deltaPx vertical movement since the last event; negative is upward, which opens.
      * @param sheetTravelPx how far the sheet moves between its two rest positions, so the same
      *   finger movement means the same fraction on any screen.
+     * @param canExpand false while the bar opens something other than this sheet — the video
+     *   screen, for an episode being watched. The dismiss pull still follows the finger; the sheet
+     *   itself stays where it is, so a drag never opens a player the tap would not.
      */
-    suspend fun dragBy(deltaPx: Float, sheetTravelPx: Float) {
+    suspend fun dragBy(deltaPx: Float, sheetTravelPx: Float, canExpand: Boolean = true) {
         if (isSettling || sheetTravelPx <= 0f) return
 
         // Downward movement against a fully collapsed sheet becomes the dismiss pull. Upward
@@ -141,6 +144,7 @@ class PlayerSheetState internal constructor(initialValue: PlayerSheetValue) {
             pullDownPx = pulled
             if (remaining == 0f) return
         }
+        if (!canExpand) return
 
         expansion.snapTo((expansion.value - remaining / sheetTravelPx).coerceIn(0f, 1f))
     }

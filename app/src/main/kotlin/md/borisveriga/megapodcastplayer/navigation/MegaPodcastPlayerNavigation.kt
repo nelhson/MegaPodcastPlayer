@@ -121,9 +121,11 @@ sealed interface Route {
      *
      * The one full-screen destination: the navigation bar and the player sheet both step aside for
      * it, because the sheet *is* the episode it shows and a second copy of the transport under the
-     * picture would be two players for one thing. The player itself is still not a route; only
-     * the surface is. It is reached from the expanded player, and backing out of it lands on the
-     * screen the player was opened over, with the episode carrying on as sound.
+     * picture would be two players for one thing. The audio player is still not a route; only this
+     * face of it is, because a picture needs the whole window and the back stack is what gives it
+     * one. It is reached from the expanded player, from an episode's *Play video*, and from the
+     * collapsed bar while the player is in video mode; minimising it, or backing out, lands on the
+     * screen it was opened over with the episode carrying on behind the bar.
      */
     @Serializable
     data object Video : Route

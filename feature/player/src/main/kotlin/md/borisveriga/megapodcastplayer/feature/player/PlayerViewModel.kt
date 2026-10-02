@@ -13,11 +13,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import md.borisveriga.megapodcastplayer.core.data.chapters.ChapterResolver
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
@@ -33,6 +35,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.Moment
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import md.borisveriga.megapodcastplayer.core.model.chapters.indexOfCurrent
 import md.borisveriga.megapodcastplayer.core.model.chapters.nextStartAfter
@@ -73,6 +76,7 @@ data class SleepChapterOption(val index: Int, val title: String)
  *   not been shown yet; cleared via [PlayerViewModel.onDismissMessageShown]. A flag rather than the
  *   queue it emptied, for the same reason [message] is: the UI state stays data a test can compare,
  *   and the payload lives with the view model that will replay it.
+ * @property mode which face the player was last put in; see [opensAsVideo] for what it decides.
  */
 data class PlayerUiState(
     val playback: PlaybackState = PlaybackState(),
@@ -86,7 +90,17 @@ data class PlayerUiState(
     val momentSaved: SavedMoment? = null,
     val chapters: List<Chapter> = emptyList(),
     val dismissed: Boolean = false,
+    val mode: PlayerMode = PlayerMode.AUDIO,
 ) {
+
+    /**
+     * Whether opening the player means opening the video screen.
+     *
+     * Both halves are needed. The mode alone is not enough, because it outlives the episode it was
+     * chosen on: a feed episode loaded while the player is still "in video" has no picture, and
+     * the only player it has is the sheet.
+     */
+    val opensAsVideo: Boolean get() = mode == PlayerMode.VIDEO && playback.canWatch
 
     /**
      * The chapter the playhead is inside, or null.
@@ -469,8 +483,14 @@ class PlayerViewModel @Inject constructor(
         currentDownload,
         messageState,
         moments,
-        combine(momentSavedState, dismissedState, chapters, ::Triple),
-    ) { core, download, message, episodeMoments, (momentSaved, dismissed, episodeChapters) ->
+        combine(
+            momentSavedState,
+            dismissedState,
+            chapters,
+            playbackRepository.observePlayerMode(),
+            ::PlayerExtras,
+        ),
+    ) { core, download, message, episodeMoments, extras ->
         PlayerUiState(
             playback = core.playback,
             settings = core.settings,
@@ -480,9 +500,10 @@ class PlayerViewModel @Inject constructor(
             download = download,
             sleep = core.sleep,
             moments = episodeMoments,
-            momentSaved = momentSaved,
-            chapters = episodeChapters,
-            dismissed = dismissed,
+            momentSaved = extras.momentSaved,
+            chapters = extras.chapters,
+            dismissed = extras.dismissed,
+            mode = extras.mode,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -494,6 +515,40 @@ class PlayerViewModel @Inject constructor(
         // A cold start finds an empty player; put the user's queue back so the mini player shows
         // what they were listening to. Idempotent, so several screens asking costs nothing.
         viewModelScope.launch { episodePlayer.restoreQueue() }
+    }
+
+    /**
+     * Puts the player in one of its two faces and remembers it.
+     *
+     * Called by the shell at the moment the user chooses: *Watch* on the sheet or on an episode
+     * makes it video, starting an episode as sound or pressing *Listen* on the video screen makes
+     * it audio. Collapsing either face does not come through here — a player put away is still the
+     * player it was.
+     *
+     * @param mode the face chosen.
+     */
+    fun setPlayerMode(mode: PlayerMode) {
+        viewModelScope.launch { playbackRepository.setPlayerMode(mode) }
+    }
+
+    /**
+     * Whether opening the player right now should open the video screen, asked of the sources
+     * rather than of [uiState].
+     *
+     * For the shell's one caller that cannot wait for a frame: a tap on the media notification can
+     * be what starts the process, and [uiState] then still holds its initial value — audio, nothing
+     * loaded — for the first moments. So this reads the stored mode, and gives the service a short
+     * while to say what is loaded. When it does not answer in time the player opens as the sheet,
+     * which is never wrong, only less than was hoped for.
+     *
+     * @return true when the player is in video mode and the loaded episode has a picture.
+     */
+    suspend fun awaitOpensAsVideo(): Boolean {
+        if (playbackRepository.observePlayerMode().first() != PlayerMode.VIDEO) return false
+        val loaded = withTimeoutOrNull(LOADED_TIMEOUT_MS) {
+            connection.playbackState.first { it.isConnected && !it.isIdle }
+        }
+        return loaded?.canWatch == true
     }
 
     /** Starts or pauses playback. */
@@ -898,6 +953,24 @@ class PlayerViewModel @Inject constructor(
     )
 
     /**
+     * The parts of [PlayerUiState] that come from neither the service nor the queue.
+     *
+     * Exists for the reason [PlayerCore] does: `combine` takes five flows, and these four are
+     * folded into one of the five.
+     *
+     * @property momentSaved a saved moment waiting to be acknowledged.
+     * @property dismissed whether a dismissal waits to be offered back.
+     * @property chapters the loaded episode's chapters.
+     * @property mode which face the player was last put in.
+     */
+    private data class PlayerExtras(
+        val momentSaved: SavedMoment?,
+        val dismissed: Boolean,
+        val chapters: List<Chapter>,
+        val mode: PlayerMode,
+    )
+
+    /**
      * Everything needed to reverse one queue gesture.
      *
      * Two shapes, because the two gestures take away different things. A swipe takes episodes out
@@ -947,6 +1020,14 @@ class PlayerViewModel @Inject constructor(
     private companion object {
         /** Keeps the controller attached across a rotation or a fold. */
         const val STOP_TIMEOUT_MS = 5_000L
+
+        /**
+         * How long [awaitOpensAsVideo] gives the service to say what is loaded.
+         *
+         * A cold start binds a controller and restores the queue in well under a second; this is
+         * that with room to spare, and still short enough that a tap is not left unanswered.
+         */
+        const val LOADED_TIMEOUT_MS = 2_000L
 
         /**
          * How much a shake adds to the sleep timer.

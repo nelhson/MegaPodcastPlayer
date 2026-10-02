@@ -8,6 +8,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
@@ -42,6 +43,16 @@ class UserPreferencesDataSourceTest {
         assertEquals(PlaybackSettings(), settings)
         assertNull(dataSource.lastPlayedEpisodeId.first())
         assertEquals(VideoQuality.DEFAULT, dataSource.videoQuality.first())
+        assertEquals(PlayerMode.AUDIO, dataSource.playerMode.first())
+    }
+
+    @Test
+    fun `the player mode round trips, both ways`() = runTest {
+        dataSource.setPlayerMode(PlayerMode.VIDEO)
+        assertEquals(PlayerMode.VIDEO, dataSource.playerMode.first())
+
+        dataSource.setPlayerMode(PlayerMode.AUDIO)
+        assertEquals(PlayerMode.AUDIO, dataSource.playerMode.first())
     }
 
     @Test

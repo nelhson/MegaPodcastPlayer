@@ -16,6 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -24,10 +25,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.feature.downloads.DownloadsRoute
 import md.borisveriga.megapodcastplayer.feature.moments.MomentsRoute
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetScaffold
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetState
+import md.borisveriga.megapodcastplayer.feature.player.PlayerViewModel
 import md.borisveriga.megapodcastplayer.feature.player.QueueRoute
 import md.borisveriga.megapodcastplayer.feature.player.rememberPlayerSheetState
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoRoute
@@ -70,6 +73,9 @@ import md.borisveriga.megapodcastplayer.navigation.pushExit
  * @param navController navigation controller; injected for tests.
  * @param playerSheetState how open the player is; hoisted here because the navigation bar and
  *   every "now playing" hand-off react to it.
+ * @param playerViewModel the player's view model, the same instance the sheet draws from. The
+ *   shell holds it for one thing: which face the player is in is decided here, where the two
+ *   faces — the sheet and the video screen — are told apart.
  */
 // LibraryListDetail's pane navigator is an adaptive type, and it is a parameter of that composable
 // so tests can drive it; naming it here is the whole of the opt-in.
@@ -88,13 +94,15 @@ fun MegaPodcastPlayerApp(
     onPendingShortcutHandled: () -> Unit = {},
     navController: NavHostController = rememberNavController(),
     playerSheetState: PlayerSheetState = rememberPlayerSheetState(),
+    playerViewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
     val scope = rememberCoroutineScope()
 
     // The one destination that is itself the player: the navigation bar and the sheet both step
-    // aside for it, because the episode it shows is the one the sheet would be showing.
+    // aside for it, because the episode it shows is the one the sheet would be showing. It is the
+    // player's second face, and which face a tap on the bar opens is the remembered `PlayerMode`.
     val onVideo = currentDestination?.hasRoute(Route.Video::class) == true
 
     LaunchedEffect(pendingPodcastId, pendingEpisodeId) {
@@ -116,16 +124,41 @@ fun MegaPodcastPlayerApp(
         onPendingSharedLinkHandled()
     }
 
+    // Opens the video screen and makes video the player's face: from the player's watch button,
+    // an episode's *Play video*, or a tap on the bar of an episode being watched. The screen hides
+    // the sheet the moment it arrives, so the collapse need not be waited for: it runs behind the
+    // picture, and the sheet is a bar again by the time the user is back.
+    val openVideo: () -> Unit = {
+        playerViewModel.setPlayerMode(PlayerMode.VIDEO)
+        scope.launch { playerSheetState.collapse() }
+        navController.navigate(Route.Video) { launchSingleTop = true }
+    }
+
+    // Opens the audio player and makes audio the player's face: an episode started as sound, or
+    // *Switch to audio* on the video screen. The mode is what a later tap on the bar goes by, so an
+    // episode the user chose to listen to must not come back as a picture.
+    val openAudio: () -> Unit = {
+        playerViewModel.setPlayerMode(PlayerMode.AUDIO)
+        scope.launch { playerSheetState.expand() }
+    }
+
     // A tap on the media notification lands *at* the player. The card that was tapped was already
     // showing the episode, the artwork and the transport controls; arriving at a list of shows with
     // a collapsed bar at the bottom asks the user to find their way back to what they were looking
     // at a moment ago.
     LaunchedEffect(pendingOpenPlayer) {
         if (!pendingOpenPlayer) return@LaunchedEffect
-        // The video screen hides the sheet, so expanding it there would open nothing. The tap asked
-        // for the player; leave the picture and give them the player.
-        if (onVideo) navController.popBackStack()
-        playerSheetState.expand()
+        when {
+            // Already at the player: the video screen is one of its two faces.
+            onVideo -> Unit
+
+            // The player was left as video, so that is the player the tap asked for. Asked of the
+            // view model rather than read off its state, because this tap can be what started the
+            // process and the state has not been filled in yet.
+            playerViewModel.awaitOpensAsVideo() -> openVideo()
+
+            else -> playerSheetState.expand()
+        }
         onPendingOpenPlayerHandled()
     }
 
@@ -148,14 +181,6 @@ fun MegaPodcastPlayerApp(
     var reTapCount by rememberSaveable { mutableIntStateOf(0) }
 
     val navigationSuiteState = rememberNavigationSuiteScaffoldState()
-
-    // Opens the video screen, from the player's watch button or an episode sheet's *Play video*.
-    // The screen hides the sheet the moment it arrives, so the collapse need not be waited for: it
-    // runs behind the picture, and the sheet is a bar again by the time the user is back.
-    val openVideo: () -> Unit = {
-        scope.launch { playerSheetState.collapse() }
-        navController.navigate(Route.Video) { launchSingleTop = true }
-    }
 
     LaunchedEffect(playerSheetState.isExpanded, onVideo) {
         if (playerSheetState.isExpanded || onVideo) {
@@ -198,6 +223,7 @@ fun MegaPodcastPlayerApp(
             onWatch = openVideo,
             hidden = onVideo,
             modifier = Modifier.fillMaxSize(),
+            viewModel = playerViewModel,
         ) { playerPadding ->
             NavHost(
                 navController = navController,
@@ -221,15 +247,15 @@ fun MegaPodcastPlayerApp(
                         // screen may read the clipboard on arrival.
                         onSearchClick = { navController.navigate(Route.Search()) },
                         onOpenSettings = { navController.navigate(Route.Settings) },
-                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
-                        onEpisodeWatching = { openVideo() },
+                        onEpisodePlaying = openAudio,
+                        onEpisodeWatching = openVideo,
                         scrollToTopSignal = reTapCount,
                     )
                 }
 
                 composable<Route.Downloads> {
                     DownloadsRoute(
-                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
+                        onEpisodePlaying = openAudio,
                         onBrowseLibrary = {
                             navController.navigateToTopLevel(TopLevelDestination.LIBRARY)
                         },
@@ -271,8 +297,8 @@ fun MegaPodcastPlayerApp(
                     entry.toRoute<Route.PodcastDetail>()
                     PodcastDetailRoute(
                         onBack = { navController.popBackStack() },
-                        onEpisodePlaying = { scope.launch { playerSheetState.expand() } },
-                        onEpisodeWatching = { openVideo() },
+                        onEpisodePlaying = openAudio,
+                        onEpisodeWatching = openVideo,
                     )
                 }
 
@@ -297,10 +323,20 @@ fun MegaPodcastPlayerApp(
                 }
 
                 composable<Route.Video> {
-                    // Backing out lands where the player was opened from, with the episode carrying
-                    // on as sound; the screen itself pops when the player moves on to an episode
-                    // with nothing to show.
-                    VideoRoute(onBack = { navController.popBackStack() })
+                    VideoRoute(
+                        // Minimising — and the back gesture, which is the same pop — lands where
+                        // the player was opened from, with the episode carrying on behind the bar.
+                        // The mode is left alone, so a tap on the bar comes back here. The screen
+                        // pops itself the same way when the player moves on to an episode with
+                        // nothing to show.
+                        onCollapse = { navController.popBackStack() },
+                        // The other way out changes what the player is: the picture goes, and the
+                        // audio player opens in its place over the same screen.
+                        onListen = {
+                            navController.popBackStack()
+                            openAudio()
+                        },
+                    )
                 }
             }
         }

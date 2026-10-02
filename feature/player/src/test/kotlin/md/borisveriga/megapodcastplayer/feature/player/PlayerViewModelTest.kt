@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -480,7 +481,68 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
         }
     }
 
+    @Test
+    fun `the player opens as video only in video mode on an episode with a picture`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+
+            playbackState.value = PlaybackState(episodeId = "a", youTubeVideoId = VIDEO_ID)
+            assertFalse(awaitItem().opensAsVideo)
+
+            playerMode.value = PlayerMode.VIDEO
+            assertTrue(awaitItem().opensAsVideo)
+
+            // The mode is kept when a feed episode loads, and simply does not apply to it.
+            playbackState.value = PlaybackState(episodeId = "b")
+            val feed = awaitItem()
+            assertEquals(PlayerMode.VIDEO, feed.mode)
+            assertFalse(feed.opensAsVideo)
+        }
+    }
+
+    @Test
+    fun `choosing a face for the player remembers it`() = runTest {
+        viewModel.setPlayerMode(PlayerMode.VIDEO)
+
+        coVerify { playbackRepository.setPlayerMode(PlayerMode.VIDEO) }
+    }
+
+    @Test
+    fun `asked before the state has filled in, the player still knows it opens as video`() = runTest {
+        // Nobody is collecting `uiState` here, which is the cold start the question exists for.
+        playerMode.value = PlayerMode.VIDEO
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a", youTubeVideoId = VIDEO_ID)
+
+        assertTrue(viewModel.awaitOpensAsVideo())
+    }
+
+    @Test
+    fun `in audio mode the player opens as audio without waiting on the service`() = runTest {
+        playbackState.value = PlaybackState(isConnected = false)
+
+        assertFalse(viewModel.awaitOpensAsVideo())
+    }
+
+    @Test
+    fun `a service that never says what is loaded opens the player as audio`() = runTest {
+        playerMode.value = PlayerMode.VIDEO
+        playbackState.value = PlaybackState(isConnected = false)
+
+        assertFalse(viewModel.awaitOpensAsVideo())
+    }
+
+    @Test
+    fun `video mode on a feed episode opens the player as audio`() = runTest {
+        playerMode.value = PlayerMode.VIDEO
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a")
+
+        assertFalse(viewModel.awaitOpensAsVideo())
+    }
+
     private companion object {
+        /** Any YouTube video id; only its presence matters. */
+        const val VIDEO_ID = "niTJ2221aS8"
+
         /** An episode in three parts: ten minutes, ten minutes, and the rest. */
         val THREE_CHAPTERS = listOf(
             Chapter(startMs = 0L, title = "Intro"),

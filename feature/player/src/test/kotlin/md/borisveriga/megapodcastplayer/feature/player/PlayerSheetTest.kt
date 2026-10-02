@@ -15,6 +15,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.SleepTimerState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -59,6 +60,12 @@ class PlayerSheetTest {
             queueEpisodeIds = listOf("e1"),
         ),
         settings = PlaybackSettings(),
+    )
+
+    /** The same episode, as a YouTube one the user chose to watch. */
+    private val watching = playing.copy(
+        playback = playing.playback.copy(youTubeVideoId = "niTJ2221aS8"),
+        mode = PlayerMode.VIDEO,
     )
 
     private fun setContent(
@@ -246,6 +253,56 @@ class PlayerSheetTest {
 
         assertEquals(PlayerSheetValue.Expanded, sheetState.targetValue)
         assertEquals(1f, sheetState.progress, 0.001f)
+    }
+
+    @Test
+    fun `while an episode is being watched, a tap on the bar opens the video and not the sheet`() {
+        var watched = 0
+        val sheetState = setContent(
+            PlayerSheetValue.Collapsed,
+            uiState = watching,
+            onWatch = { watched++ },
+        )
+
+        composeRule.onNodeWithText("Podlodka #400").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, watched)
+        assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
+    }
+
+    @Test
+    fun `while an episode is being watched, a swipe up opens the video and not the sheet`() {
+        var watched = 0
+        val sheetState = setContent(
+            PlayerSheetValue.Collapsed,
+            uiState = watching,
+            onWatch = { watched++ },
+        )
+
+        composeRule.onNodeWithText("Podlodka #400").performTouchInput { swipeUp() }
+        composeRule.waitForIdle()
+
+        assertEquals(1, watched)
+        assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
+        assertEquals(0f, sheetState.progress, 0.001f)
+    }
+
+    @Test
+    fun `video mode on an episode with no picture leaves the bar opening the sheet`() {
+        // The mode outlives the episode it was chosen on. A feed episode has only the one player.
+        var watched = 0
+        val sheetState = setContent(
+            PlayerSheetValue.Collapsed,
+            uiState = playing.copy(mode = PlayerMode.VIDEO),
+            onWatch = { watched++ },
+        )
+
+        composeRule.onNodeWithText("Podlodka #400").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(0, watched)
+        assertEquals(PlayerSheetValue.Expanded, sheetState.targetValue)
     }
 
     @Test

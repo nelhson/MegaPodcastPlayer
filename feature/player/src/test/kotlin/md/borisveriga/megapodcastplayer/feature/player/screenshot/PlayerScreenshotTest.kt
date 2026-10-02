@@ -10,6 +10,7 @@ import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS_WIDE
 import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
 import md.borisveriga.megapodcastplayer.feature.player.CollapsedPlayerPreview
+import md.borisveriga.megapodcastplayer.feature.player.CollapsedPlayerVideoPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerWidePreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenEmptyPreview
@@ -54,6 +55,10 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun collapsedPlayer() = capture("collapsed-player") { CollapsedPlayerPreview() }
+
+    /** The bar while an episode is being watched, which differs by one small mark. */
+    @Test
+    fun collapsedPlayerVideo() = capture("collapsed-player-video") { CollapsedPlayerVideoPreview() }
 
     @Test
     fun expandedPlayer() = capture("expanded-player") { ExpandedPlayerPreview() }
