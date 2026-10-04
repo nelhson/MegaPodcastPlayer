@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.view.SurfaceView
 import android.view.TextureView
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -35,7 +36,6 @@ import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
-import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -101,8 +101,10 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.feature.player.ModeSwitch
 import md.borisveriga.megapodcastplayer.feature.player.R
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyph
 import md.borisveriga.megapodcastplayer.feature.player.SpeedSheet
@@ -120,11 +122,13 @@ import md.borisveriga.megapodcastplayer.feature.player.toText
  *
  * There are two ways to leave and they mean different things. *Minimise* puts the video away: the
  * episode carries on in the collapsed bar, picture and all, and a tap on the bar comes back here.
- * *Switch to audio* changes what the player is: the picture stops, and the caller opens the audio
- * player in its place. Which of the two the player is in is the caller's to remember; this screen
- * only reports the choice.
+ * The *Audio* half of the top bar's switch changes what the player is: the picture stops, and the
+ * caller opens the audio player in its place. Which of the two the player is in is the caller's to
+ * remember; this screen only reports the choice.
  *
- * A tap on the picture hides everything but the picture, and a tap anywhere brings it back.
+ * A tap on the picture hides everything but the picture, and a tap anywhere brings it back. So
+ * does Back, on a cleared page: it returns the controls first, and minimises only from a page that
+ * has them.
  *
  * The frame is never an unexplained black box. Until the player has drawn a frame it shows the
  * episode's artwork, and when the picture cannot be shown it says so there, with the two things
@@ -402,6 +406,11 @@ private fun isLandscape(): Boolean =
  * Nothing hides on a timer here, unlike landscape: the page's controls are beside the picture, not
  * over it, so they are only in the way when the user says they are.
  *
+ * For the same reason Back, on a cleared page, brings the controls back before it does anything
+ * else. The user cleared the page and Back undoes that; minimising from a page with no minimise
+ * button in sight would be leaving a screen by a door that was not showing. Landscape does not do
+ * this: its controls go on their own, so Back there would be spent undoing something nobody did.
+ *
  * @param uiState what to render.
  * @param surface draws the picture.
  * @param actions the controls.
@@ -437,6 +446,8 @@ private fun PortraitVideo(
         .then(if (controls.visible) Modifier else Modifier.clearAndSetSemantics { })
     val steadyBars = WindowInsets.systemBarsIgnoringVisibility
 
+    BackHandler(enabled = !controls.visible) { controls.onChange(true) }
+
     Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
         // The black the page fades to, under the page rather than a colour animated through it.
         Box(
@@ -454,7 +465,14 @@ private fun PortraitVideo(
                     title = {},
                     modifier = furniture,
                     navigationIcon = { CollapseButton(actions.onCollapse) },
-                    actions = { ListenButton(actions.onListen) },
+                    actions = {
+                        ModeSwitch(
+                            selected = PlayerMode.VIDEO,
+                            onSwitch = actions.onListen,
+                            // With the bar's own inset, as far from the edge as the sheet's is.
+                            modifier = Modifier.padding(end = MegaPodcastPlayerTheme.spacing.xs),
+                        )
+                    },
                     windowInsets = steadyBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 )
@@ -600,7 +618,7 @@ private fun LandscapeVideo(
                             modifier = Modifier.weight(1f),
                             compact = true,
                         )
-                        ListenButton(actions.onListen)
+                        ModeSwitch(selected = PlayerMode.VIDEO, onSwitch = actions.onListen)
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     VideoControls(
@@ -937,21 +955,6 @@ private fun CollapseButton(onCollapse: () -> Unit) {
         Icon(
             imageVector = Icons.Rounded.KeyboardArrowDown,
             contentDescription = stringResource(R.string.video_collapse),
-        )
-    }
-}
-
-/**
- * Leaves for the audio player: the mirror of the *Watch* button there.
- *
- * @param onListen switches the player to audio.
- */
-@Composable
-private fun ListenButton(onListen: () -> Unit) {
-    IconButton(onClick = onListen) {
-        Icon(
-            imageVector = Icons.Rounded.Headphones,
-            contentDescription = stringResource(R.string.video_listen),
         )
     }
 }

@@ -12,7 +12,9 @@ import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
 import md.borisveriga.megapodcastplayer.feature.player.CollapsedPlayerPreview
 import md.borisveriga.megapodcastplayer.feature.player.CollapsedPlayerVideoPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerPreview
+import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerVideoPreview
 import md.borisveriga.megapodcastplayer.feature.player.ExpandedPlayerWidePreview
+import md.borisveriga.megapodcastplayer.feature.player.ModeSwitchPreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenEmptyPreview
 import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyphsPreview
@@ -63,6 +65,25 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun expandedPlayer() = capture("expanded-player") { ExpandedPlayerPreview() }
+
+    /**
+     * The player on an episode with a picture: the same sheet with the Audio | Video control in
+     * its header.
+     *
+     * The large-font variant is the one with something to say. The control is as wide as its two
+     * labels, and at 200 % it reaches the grabber in the middle of the strip, which gives way.
+     */
+    @Test
+    fun expandedPlayerVideo() = capture("expanded-player-video") { ExpandedPlayerVideoPreview() }
+
+    /**
+     * The Audio | Video control alone, once on each face.
+     *
+     * Which half is selected is told by a fill and a text colour; this is the image that says the
+     * two still differ by more than hue, in both schemes.
+     */
+    @Test
+    fun modeSwitch() = capture("mode-switch") { ModeSwitchPreview() }
 
     /**
      * The one golden recorded on a second device.

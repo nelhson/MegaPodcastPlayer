@@ -163,11 +163,16 @@ fun MegaPodcastPlayerApp(
     // moment it arrives, so the collapse need not be waited for: it runs behind the picture, and
     // the sheet is a bar again by the time the user is back. A remembered face changes no mode —
     // it is the mode being read, not set.
+    //
+    // Becoming sound is a step of its own because the minimised video takes it alone: *Switch to
+    // audio* on the bar stops the picture and leaves the bar a bar, where the same words on the
+    // video screen go on to open the sheet in the screen's place.
+    val becomeAudio: () -> Unit = {
+        videoViewModel.exit()
+        playerViewModel.setPlayerMode(PlayerMode.AUDIO)
+    }
     val openPlayerNow: suspend (String?, OpenPlayerAs) -> Unit = { episodeId, openAs ->
-        if (openAs == OpenPlayerAs.AUDIO) {
-            videoViewModel.exit()
-            playerViewModel.setPlayerMode(PlayerMode.AUDIO)
-        }
+        if (openAs == OpenPlayerAs.AUDIO) becomeAudio()
         when (playerViewModel.faceFor(episodeId, openAs)) {
             PlayerMode.VIDEO -> {
                 playerViewModel.setPlayerMode(PlayerMode.VIDEO)
@@ -258,9 +263,10 @@ fun MegaPodcastPlayerApp(
                     navController.navigateToTopLevel(TopLevelDestination.QUEUE)
                 }
             },
-            // The sheet's *Watch* and a tap on the bar of an episode being watched: the episode is
-            // the one already loaded.
+            // The *Video* half of the sheet's switch and a tap on the bar of an episode being
+            // watched: the episode is the one already loaded.
             onWatch = { openPlayer(null, OpenPlayerAs.VIDEO) },
+            onSwitchToAudio = becomeAudio,
             hidden = onVideo,
             modifier = Modifier.fillMaxSize(),
             viewModel = playerViewModel,

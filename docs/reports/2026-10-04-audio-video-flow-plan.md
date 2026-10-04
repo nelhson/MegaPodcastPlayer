@@ -11,7 +11,7 @@ This is a plan only, written on 2026-10-04. No code is written until a phase is 
 |---|---|
 | 1 — The black picture | **Done** on branch `video-black-picture`, 2026-10-04. Checked on the `Pixel_9a_2` emulator: rotation ×4, minimise and reopen, paused minimise, home and back, full screen. |
 | 2 — Coming back after the app was closed | **Done**, 2026-10-04: 2.1–2.5 and 2.7 committed on `video-black-picture` (83a62f9), 2.6 and 2.8 in 21f6414. Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. For 2.6, each with the process killed in the background (`run-as … kill -9`, new pid) and the app reopened: the expanded sheet comes back expanded; the video screen comes back as the video screen, poster, paused at 0:15 where it was left, session state `NONE` (nothing prepared), and Play carries on with the picture from there; a minimised video comes back as the bar with its poster. |
-| 3 — Switching modes | **In progress**, 2026-10-04. Done: 3.1 (21f6414) and 3.2 (the commit after it, *Switch an episode the player holds…*), both on `video-black-picture`. **Next: step 3.3.** Checked on `Pixel_9a_2`, for 3.1: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. For 3.2: *Play audio* on the episode playing as video opens the sheet and it keeps playing (0:04 to 0:18 across the switch); *Play video* on the episode playing as audio opens the video screen with the position carrying on (81.8 s, 85.8 s, 92.0 s around the tap); with Wi-Fi and data off, *Play video* on a video that is not downloaded is disabled with its reason under it and the row's video button is dimmed, and both come back when the network does. |
+| 3 — Switching modes | **In progress**, 2026-10-05. Committed on `video-black-picture`: 3.1 (21f6414) and 3.2 (84b5885). **Done and not committed: 3.3, 3.4, 3.5** (2026-10-05; `detekt`, `testDebugUnitTest test` and `lintDebug` pass). **Next: step 3.6.** Checked on `Pixel_9a_2`, for 3.1: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. For 3.2: *Play audio* on the episode playing as video opens the sheet and it keeps playing (0:04 to 0:18 across the switch); *Play video* on the episode playing as audio opens the video screen with the position carrying on (81.8 s, 85.8 s, 92.0 s around the tap); with Wi-Fi and data off, *Play video* on a video that is not downloaded is disabled with its reason under it and the row's video button is dimmed, and both come back when the network does. For 3.3: on the sheet of a YouTube episode the control is in the header's right corner with *Audio* selected, a tap on *Audio* does nothing, and a tap on *Video* opens the video screen still playing (180.7 s, 182.8 s, 185.8 s around the tap); on the video screen it is in the same corner with *Video* selected, a tap on *Video* does nothing, and a tap on *Audio* opens the sheet still playing (132.5 s, 134.5 s, 137.7 s). For 3.4: a long press on the minimised video opens a menu above the bar; *Switch to audio* leaves the bar a bar, without the picture or its mark, still playing (127.6 s, 130.6 s, 133.3 s); *Stop playing and hide the player* removes the bar and the session goes to `NONE`; a long press on the audio bar opens no menu. For 3.5: with the page cleared, the first Back brings the controls back and the second minimises, the picture carrying on in the bar. |
 | 4 — Downloading and managing | Not started. |
 
 ### Prompt for the next session
@@ -20,9 +20,10 @@ Paste this to carry on:
 
 > Continue the audio/video flow plan in docs/reports/2026-10-04-audio-video-flow-plan.md.
 > Read its "Status — continue from here" section first, including "Open for Boris". Phases 1 and 2
-> and steps 3.1–3.2 are committed on branch video-black-picture. Do step 3.3 (the Audio | Video
-> control), re-record the goldens it changes and open the images, then 3.4 and 3.5. Check each on
-> the Pixel_9a_2 emulator, update the status table, and don't commit until I ask.
+> and steps 3.1–3.2 are committed on branch video-black-picture; 3.3–3.5 are done in the working
+> tree and not committed. Do step 3.6 (the layout from the window size, not the orientation),
+> record its golden and open the images, then 3.7 (words and icons). Check each on the Pixel_9a_2
+> emulator, update the status table, and don't commit until I ask.
 
 Things the next session needs that are not in the steps:
 
@@ -37,9 +38,15 @@ Things the next session needs that are not in the steps:
 - The emulator's library has a feed show (Podlodka) and a YouTube one, "Uploads from Fireship",
   added from `https://www.youtube.com/playlist?list=UUsBjURrPoezykLs9EqgamOA` through a VIEW
   intent. An `@handle` link is not accepted; a playlist link is.
-- 3.3 goes through the door: `openPlayer(null, OpenPlayerAs.AUDIO | VIDEO)` in
-  `MegaPodcastPlayerApp` already switches the face without touching playback, and is what the
-  sheet's *Watch* button and the video screen's headphones icon call today.
+- The first time the video page is cleared on a fresh emulator, the system lays its own "Viewing
+  full screen" hint over the window and takes the Back key until *Got it* is tapped. Dismiss it
+  before reading anything into what Back did.
+- 3.7 has two strings waiting for it in `:feature:player`: `player_show_video` ("Show the video",
+  the minimised video's tap label, which the target behaviour retires) and `player_dismiss`
+  ("Stop playing and hide the player", which the bar's menu uses where the plan said *Stop
+  playing*). `player_watch` went with the *Watch* button in 3.3.
+- 3.6: the video screen chooses its shape in `isLandscape()` in `VideoScreen.kt`, and the same
+  function decides whether Back is spent on the controls (3.5) and whether they hide on a timer.
 
 ### Open for Boris
 
@@ -47,7 +54,16 @@ Things the next session needs that are not in the steps:
   `REMEMBERED` when a preview episode is played?
 - **Queue rows and moments now open the player when tapped.** The plan asked for it; it has not
   been tried by hand on the phone. Easy to take back for either.
-- **Still to check on the Fold 7:** fold and unfold during a video; the "Could not show the video"
+- **The bar's *Switch to audio* leaves the bar a bar** (3.4). It stops the picture and remembers
+  audio, and does not open the sheet, where the same words on the video screen do. Opening the
+  sheet from the bar would have been its own detour; say if it should.
+- **The bar's menu says *Stop playing and hide the player***, the words the close button and the
+  bar's spoken action already use, not the plan's shorter *Stop playing*. One wording for one act
+  until 3.7 settles the set.
+- **A long press is new on the bar**, and only on the minimised video's. Not tried by hand on the
+  phone: whether it gets in the way of the pull-down or the swipe up.
+- **Still to check on the Fold 7:** the Audio | Video control in the unfolded sheet's header and in
+  landscape over the picture (no golden of either); fold and unfold during a video; the "Could not show the video"
   state on a real failure; Bluetooth play after the app was swiped away; the 2.8 reconnect, which
   the emulator could not provoke.
 
@@ -134,6 +150,24 @@ Where phase 3 ended up differing from the steps below:
   again.*; that wait could not be made to run out on the emulator and rests on its test. Offline
   is `NetworkStatus.observeOnline()`, a flow beside the existing question, read as
   `PodcastDetailUiState.canPlayVideo`. Only the show page has *Play video*, so only it changed.
+
+- 3.3: the control is `ModeSwitch` in `:feature:player`, two text segments on a ground of its own,
+  since both of its homes put it over imagery nobody chose. On the sheet it is in the header strip
+  (`SheetHeader` in `PlayerSheet.kt`), not in `ExpandedPlayer`, because that corner is the
+  header's; `ExpandedPlayer` lost its *Watch* button and its `onWatch`. The header is a small
+  custom layout now: at 200 % text the control reaches the grabber, which is then not drawn. The
+  selected segment does nothing; the other is spoken as *Switch to video* / *Switch to audio*. The
+  *Switch to audio* button in the frame of a picture that cannot be shown is unchanged. Goldens:
+  `expanded-player-video` and `mode-switch` are new, `video-screen` and `video-screen-unavailable`
+  changed, and the audio-only `expanded-player` ones did not.
+- 3.4: the long press opens a `DropdownMenu` anchored on the bar, and the same two things are
+  custom accessibility actions on the bar — *Switch to audio* is new there, the stop was already
+  one. *Switch to audio* is `becomeAudio` in `MegaPodcastPlayerApp`, the first half of the door's
+  answer to `AUDIO`, without the sheet. The audio bar has no long press. The menu itself has no
+  golden (it is a popup); `PlayerSheetTest` presses it.
+- 3.5: a `BackHandler` in the page shape only, enabled while the page is cleared. Landscape is
+  left alone: its controls hide on a timer, so Back there would be spent undoing something nobody
+  did, and it minimises as before.
 
 ## Context
 

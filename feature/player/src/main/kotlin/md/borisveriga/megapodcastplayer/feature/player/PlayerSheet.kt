@@ -4,7 +4,7 @@ import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.content.res.Resources
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -51,11 +55,13 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
@@ -68,7 +74,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.rememberHaptics
 import md.borisveriga.megapodcastplayer.core.media.PlaybackError
+import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.feature.player.video.KeepPictureEffect
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoTexture
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoViewModel
@@ -93,6 +101,8 @@ import md.borisveriga.megapodcastplayer.feature.player.video.VideoViewModel
  * @param sheetState how open the sheet is; hoisted because the navigation bar reacts to it too.
  * @param onOpenQueue opens the queue screen.
  * @param onWatch opens the video screen for the episode playing.
+ * @param onSwitchToAudio turns the minimised video into sound, where it is: the picture stops and
+ *   the bar stays a bar.
  * @param modifier layout modifier.
  * @param hidden true while a screen that is itself the player — the video screen — is showing.
  *   The sheet then neither draws nor reserves its height, so the screen has the whole window;
@@ -107,6 +117,7 @@ fun PlayerSheetScaffold(
     sheetState: PlayerSheetState,
     onOpenQueue: () -> Unit,
     onWatch: () -> Unit,
+    onSwitchToAudio: () -> Unit,
     modifier: Modifier = Modifier,
     hidden: Boolean = false,
     viewModel: PlayerViewModel = hiltViewModel(),
@@ -265,6 +276,7 @@ fun PlayerSheetScaffold(
                 onOpenMoments = { momentsOpen = true },
                 onOpenQueue = onOpenQueue,
                 onWatch = onWatch,
+                onSwitchToAudio = onSwitchToAudio,
                 onDismiss = viewModel::dismiss,
                 modifier = Modifier.fillMaxSize(),
                 picture = { pictureModifier ->
@@ -325,9 +337,11 @@ fun PlayerSheetScaffold(
  * @param onMarkMoment saves a moment at the playhead.
  * @param onOpenMoments opens the list of this episode's moments.
  * @param onOpenQueue opens the queue screen.
- * @param onWatch opens the video screen; offered only for an episode with a picture. Also what
- *   the collapsed bar does instead of opening the sheet while the episode is being watched; see
- *   [PlayerUiState.opensAsVideo].
+ * @param onWatch opens the video screen; what the header's [ModeSwitch] asks for, on an episode
+ *   with a picture. Also what the collapsed bar does instead of opening the sheet while the
+ *   episode is being watched; see [PlayerUiState.opensAsVideo].
+ * @param onSwitchToAudio turns the minimised video into sound without opening anything; offered by
+ *   a long press on that bar, and as a spoken action on it.
  * @param onDismiss stops playback and puts the player away; what a downward pull on the collapsed
  *   bar commits to, what the bar's spoken action does, and what the expanded sheet's close button
  *   presses.
@@ -353,6 +367,7 @@ fun PlayerSheet(
     onOpenMoments: () -> Unit,
     onOpenQueue: () -> Unit,
     onWatch: () -> Unit,
+    onSwitchToAudio: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     picture: @Composable (Modifier) -> Unit = {},
@@ -360,7 +375,6 @@ fun PlayerSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val collapsedHeight = collapsedPlayerHeight()
-    val dismissLabel = stringResource(R.string.player_dismiss)
 
     // One tick each time the sheet commits to an end, whether it got there by a drag, a fling, a
     // tap or the back gesture. Keyed on the intent rather than the fraction: the sheet is settling
@@ -408,6 +422,11 @@ fun PlayerSheet(
         // a tap on it goes back to the picture, and the sheet does not follow a drag. Only at
         // rest, though — a sheet that is open must still be able to be dragged shut.
         val barOpensVideo = uiState.opensAsVideo && !sheetState.isExpanded
+
+        // Whether the minimised video's menu is up. It belongs to that bar alone, so it is keyed
+        // on the bar being one: forgotten when it stops, or it would be found open the next time
+        // a video is minimised, by someone who had asked for nothing.
+        var barMenuOpen by remember(barOpensVideo) { mutableStateOf(false) }
 
         // The back gesture drags the sheet down instead of dismissing it, and letting go mid-way
         // puts it back — which is the whole point of predictive back, and only possible because
@@ -483,26 +502,15 @@ fun PlayerSheet(
                     if (sheetState.isExpanded) {
                         Modifier
                     } else {
-                        Modifier
-                            .clickable(
-                                onClickLabel = stringResource(
-                                    if (barOpensVideo) R.string.player_show_video else R.string.player_expand,
-                                ),
-                                onClick = {
-                                    if (barOpensVideo) onWatch() else scope.launch { sheetState.expand() }
-                                },
-                            )
-                            // The pull's spoken twin. A gesture without one is a control a
-                            // TalkBack user does not have, and dismissing is the only way to stop
-                            // playback from the bar.
-                            .semantics {
-                                customActions = listOf(
-                                    CustomAccessibilityAction(dismissLabel) {
-                                        onDismiss()
-                                        true
-                                    },
-                                )
-                            }
+                        Modifier.barGestures(
+                            opensVideo = barOpensVideo,
+                            onOpen = {
+                                if (barOpensVideo) onWatch() else scope.launch { sheetState.expand() }
+                            },
+                            onOpenMenu = { barMenuOpen = true },
+                            onSwitchToAudio = onSwitchToAudio,
+                            onDismiss = onDismiss,
+                        )
                     },
                 ),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -513,6 +521,22 @@ fun PlayerSheet(
             tonalElevation = SheetTonalElevation,
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                // Composed whatever the bar is: only a long press on the minimised video opens
+                // it, and shut it is nothing but an anchor.
+                BarMenu(
+                    expanded = barMenuOpen,
+                    onSwitchToAudio = {
+                        barMenuOpen = false
+                        onSwitchToAudio()
+                    },
+                    onStop = {
+                        barMenuOpen = false
+                        onDismiss()
+                    },
+                    onDismissRequest = { barMenuOpen = false },
+                    modifier = Modifier.matchParentSize(),
+                )
+
                 if (progress > 0f) {
                     // The cover, blurred into a wash behind everything else. Outside the inset
                     // padding, so the wash reaches the status bar the way a full-screen player's
@@ -569,7 +593,6 @@ fun PlayerSheet(
                             onMarkMoment = onMarkMoment,
                             onOpenMoments = onOpenMoments,
                             onOpenQueue = onOpenQueue,
-                            onWatch = onWatch,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer { alpha = expandedAlpha(progress) },
@@ -577,11 +600,16 @@ fun PlayerSheet(
 
                         SheetHeader(
                             onClose = onDismiss,
+                            // Only for an episode with a picture, which today means a YouTube one.
+                            // A feed episode has one face, and a switch with nothing on its other
+                            // side would be a question with no answer.
+                            canWatch = uiState.playback.canWatch,
+                            onWatch = onWatch,
                             // Only once fully open. The header is composed from the first pixel of
                             // travel but stays transparent until the bar has faded, and a close
                             // button that took taps while invisible would stop playback for a tap
                             // meant for the bar's artwork corner mid-transition.
-                            closeEnabled = progress == 1f,
+                            enabled = progress == 1f,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .graphicsLayer { alpha = expandedAlpha(progress) }
@@ -693,7 +721,8 @@ private fun TravellingArtwork(
 }
 
 /**
- * The expanded player's grab strip: the grabber, the drag target it advertises, and a close button.
+ * The expanded player's grab strip: the grabber, the drag target it advertises, a close button, and
+ * — for an episode with a picture — the switch to the player's other face.
  *
  * Carries no title. The show's name is already under the artwork a few dp below, and repeating it
  * here would be the second of two labels a screen reader has to walk past to reach the controls.
@@ -705,45 +734,183 @@ private fun TravellingArtwork(
  * bar back. A cross rather than an arrow,
  * so it does not read as "go back" on a surface that has nowhere to go back to.
  *
+ * The [ModeSwitch] sits in the opposite corner, which is the corner the video screen keeps it in.
+ * Its width is its two labels, so at a large font it reaches the middle of the strip, and the
+ * grabber then steps aside rather than be half covered: a handle cut in two reads as a rendering
+ * fault, and the strip is as draggable without it.
+ *
  * @param onClose stops playback and puts the player away.
- * @param closeEnabled whether the close button takes taps; false while the sheet is part-open.
+ * @param canWatch whether the episode has a picture, and so a second face to switch to.
+ * @param onWatch opens the video screen.
+ * @param enabled whether the buttons take taps; false while the sheet is part-open.
  * @param modifier layout modifier, carrying the drag gesture.
  */
 @Composable
 private fun SheetHeader(
     onClose: () -> Unit,
-    closeEnabled: Boolean,
+    canWatch: Boolean,
+    onWatch: () -> Unit,
+    enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    Layout(
+        content = {
+            IconButton(
+                onClick = onClose,
+                enabled = enabled,
+                modifier = Modifier.padding(start = MegaPodcastPlayerTheme.spacing.xs),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    // Says what happens rather than "close": playback stops as well.
+                    contentDescription = stringResource(R.string.player_dismiss),
+                )
+            }
+
+            Box(
+                // The pill is inset from the very top rather than tucked under it: a grabber
+                // pressed against the status bar looks like an artefact of the cutout, not a handle.
+                modifier = Modifier
+                    .padding(top = GrabberTopPadding)
+                    .size(width = GrabberWidth, height = GrabberHeight)
+                    .clip(MegaPodcastPlayerTheme.shapes.pill)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = GRABBER_ALPHA)),
+            )
+
+            if (canWatch) {
+                ModeSwitch(
+                    selected = PlayerMode.AUDIO,
+                    onSwitch = onWatch,
+                    enabled = enabled,
+                    modifier = Modifier.padding(end = MegaPodcastPlayerTheme.spacing.sm),
+                )
+            }
+        },
         modifier = modifier
             .fillMaxWidth()
             .height(expandedHeaderHeight),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        IconButton(
-            onClick = onClose,
-            enabled = closeEnabled,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = MegaPodcastPlayerTheme.spacing.xs),
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val close = measurables[0].measure(loose)
+        val grabber = measurables[1].measure(loose)
+        val switch = measurables.getOrNull(2)?.measure(loose)
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+
+        layout(width, height) {
+            close.placeRelative(x = 0, y = (height - close.height) / 2)
+            // Rounded as `Alignment.TopCenter` rounds, so the handle sits on the pixel it always has.
+            val grabberLeft = ((width - grabber.width) / 2f).roundToInt()
+            val switchLeft = switch?.let { width - it.width }
+            if (switchLeft == null || switchLeft >= grabberLeft + grabber.width) {
+                grabber.placeRelative(x = grabberLeft, y = 0)
+            }
+            if (switch != null && switchLeft != null) {
+                switch.placeRelative(x = switchLeft, y = (height - switch.height) / 2)
+            }
+        }
+    }
+}
+
+/**
+ * What the collapsed bar does when touched, and the same things as a screen reader is offered them.
+ *
+ * A tap opens the player, as whichever face the bar belongs to. Only the minimised video answers a
+ * long press: its tap opens the picture, so switching to audio and stopping were both a trip
+ * through the video screen, while the audio bar's tap opens the sheet, which has both in it
+ * already.
+ *
+ * The custom actions are the gestures' spoken twins. A gesture without one is a control a TalkBack
+ * user does not have: dismissing is the only way to stop playback from the bar, and the menu's
+ * other entry is offered beside it rather than behind a long press a screen reader has to find.
+ *
+ * @param opensVideo true while the bar is the video screen put away.
+ * @param onOpen opens the player; what a tap does.
+ * @param onOpenMenu opens the minimised video's menu; what a long press on that bar does.
+ * @param onSwitchToAudio turns the minimised video into sound, where it is.
+ * @param onDismiss stops playback and puts the player away.
+ */
+@Composable
+private fun Modifier.barGestures(
+    opensVideo: Boolean,
+    onOpen: () -> Unit,
+    onOpenMenu: () -> Unit,
+    onSwitchToAudio: () -> Unit,
+    onDismiss: () -> Unit,
+): Modifier {
+    val dismissLabel = stringResource(R.string.player_dismiss)
+    val switchToAudioLabel = stringResource(R.string.video_listen)
+
+    return this
+        .combinedClickable(
+            onClickLabel = stringResource(
+                if (opensVideo) R.string.player_show_video else R.string.player_expand,
+            ),
+            onLongClickLabel = if (opensVideo) stringResource(R.string.player_bar_actions) else null,
+            onLongClick = if (opensVideo) onOpenMenu else null,
+            onClick = onOpen,
+        )
+        .semantics {
+            customActions = buildList {
+                if (opensVideo) {
+                    add(
+                        CustomAccessibilityAction(switchToAudioLabel) {
+                            onSwitchToAudio()
+                            true
+                        },
+                    )
+                }
+                add(
+                    CustomAccessibilityAction(dismissLabel) {
+                        onDismiss()
+                        true
+                    },
+                )
+            }
+        }
+}
+
+/**
+ * The menu a long press on the minimised video opens.
+ *
+ * Two entries, and both are things that bar could otherwise only do through the video screen its
+ * tap opens: go on as sound, and stop. Each is offered to a screen reader as an action on the bar
+ * itself, in the same words.
+ *
+ * The anchor is the whole bar, so the menu opens clear of it — above, wherever there is no room
+ * below — rather than over the title it is about.
+ *
+ * @param expanded whether the menu is up.
+ * @param onSwitchToAudio turns the video into sound, where it is.
+ * @param onStop stops playback and puts the player away.
+ * @param onDismissRequest closes the menu with nothing chosen.
+ * @param modifier layout modifier; sizes the anchor.
+ */
+@Composable
+private fun BarMenu(
+    expanded: Boolean,
+    onSwitchToAudio: () -> Unit,
+    onStop: () -> Unit,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            // In from the window's edge by the bar's own side padding, so the menu's entries
+            // start where the bar's content does rather than against the bezel.
+            offset = DpOffset(x = collapsedHorizontalPadding, y = 0.dp),
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Close,
-                // Says what happens rather than "close": playback stops as well.
-                contentDescription = stringResource(R.string.player_dismiss),
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.video_listen)) },
+                onClick = onSwitchToAudio,
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.player_dismiss)) },
+                onClick = onStop,
             )
         }
-
-        Box(
-            // The pill is inset from the very top rather than tucked under it: a grabber pressed
-            // against the status bar looks like an artefact of the cutout, not a handle.
-            modifier = Modifier
-                .padding(top = GrabberTopPadding)
-                .size(width = GrabberWidth, height = GrabberHeight)
-                .clip(MegaPodcastPlayerTheme.shapes.pill)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = GRABBER_ALPHA)),
-        )
     }
 }
 
@@ -828,13 +995,31 @@ internal fun ExpandedPlayerWidePreview() {
     OpenPlayerSheet()
 }
 
-/** The sheet, open, on the sample episode; the body both expanded previews render. */
+/**
+ * The player open on an episode that has a picture, which is what puts the Audio | Video control
+ * in the header.
+ *
+ * At three font scales, because the control is as wide as its labels: at 200 % it reaches the
+ * middle of the strip, and what this shows then is the grabber having stepped aside for it.
+ */
+@ThemePreviews
+@FontScalePreviews
 @Composable
-private fun OpenPlayerSheet() {
+internal fun ExpandedPlayerVideoPreview() {
+    OpenPlayerSheet(playback = previewPlayback.copy(youTubeVideoId = "niTJ2221aS8"))
+}
+
+/**
+ * The sheet, open; the body every expanded preview renders.
+ *
+ * @param playback what is playing; the sample episode unless a preview is about another.
+ */
+@Composable
+private fun OpenPlayerSheet(playback: PlaybackState = previewPlayback) {
     MegaPodcastPlayerTheme {
         PlayerSheet(
             uiState = PlayerUiState(
-                playback = previewPlayback,
+                playback = playback,
                 settings = PlaybackSettings(),
                 moments = emptyList(),
             ),
@@ -852,6 +1037,7 @@ private fun OpenPlayerSheet() {
             onOpenMoments = {},
             onOpenQueue = {},
             onWatch = {},
+            onSwitchToAudio = {},
             onDismiss = {},
             modifier = Modifier.fillMaxSize(),
         )

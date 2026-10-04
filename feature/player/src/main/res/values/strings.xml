@@ -24,6 +24,12 @@
         rather than "close", because playback stops as well as the bar disappearing.
     -->
     <string name="player_dismiss">Stop playing and hide the player</string>
+    <!--
+        What a long press on the bar of a minimised video is spoken as. The press opens a menu of
+        the two things that bar could otherwise only do through the video screen: switch to audio,
+        and stop. A screen reader is offered both directly, as actions on the bar.
+    -->
+    <string name="player_bar_actions">More actions</string>
 
     <string name="player_idle_title">Nothing playing</string>
     <string name="player_idle_description">Pick an episode from one of your shows and it will appear here.</string>
@@ -237,11 +243,15 @@
     <!--
       The video screen: a YouTube episode's picture, shown on a screen of its own.
 
-      The way in is one button on the expanded player, drawn only for an episode that has a picture
-      to show. It says "the video" rather than "video" because the episode *is* a video already
-      playing — the button does not start anything, it shows what is there.
+      The way between the two faces is one control of two segments, in the same corner of both,
+      drawn only for an episode that has a picture. The segments are the two nouns, because the
+      control shows which face this is as well as changing it. Spoken, the segment that is not
+      selected says what a tap does, with the verb that changes a player already playing: "Switch
+      to", where starting an episode says "Play".
     -->
-    <string name="player_watch">Watch the video</string>
+    <string name="player_mode_audio">Audio</string>
+    <string name="player_mode_video">Video</string>
+    <string name="player_switch_to_video">Switch to video</string>
     <!--
       What a tap on the collapsed bar does while the episode is being watched: the bar is then the
       video put away, and the tap brings the picture back rather than opening the audio player.
@@ -251,7 +261,8 @@
       The two ways out of the video screen. Minimising keeps the episode playing behind the
       collapsed bar, and a tap on the bar comes back; the label says what happens to the video
       rather than "close", because nothing is closed. Switching to audio changes which player the
-      episode is in: it is the mirror of "Watch the video" on the audio player.
+      episode is in. It is what the Audio segment of the control above is spoken as, the button in
+      the frame of a picture that cannot be shown, and the first entry of the minimised video's menu.
     -->
     <string name="video_collapse">Minimise the video</string>
     <string name="video_listen">Switch to audio</string>
