@@ -19,6 +19,7 @@ import md.borisveriga.megapodcastplayer.feature.player.SkipGlyphsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SpeedControlsPreview
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenPreview
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenUnavailablePreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -119,6 +120,16 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
      */
     @Test
     fun videoScreen() = capture("video-screen") { VideoScreenPreview() }
+
+    /**
+     * The video screen with no picture to show: the poster, the sentence, and its two buttons.
+     *
+     * The frame's height comes from its proportions, not its contents, so the large-font variant is
+     * the check that the sentence and the buttons still fit inside it.
+     */
+    @Test
+    fun videoScreenUnavailable() =
+        capture("video-screen-unavailable") { VideoScreenUnavailablePreview() }
 
     companion object {
         @JvmStatic

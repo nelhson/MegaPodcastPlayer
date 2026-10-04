@@ -187,7 +187,6 @@ private fun MiniPicture(
     picture: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val measured = playback.videoAspectRatio
     Box(
         modifier = modifier
             .size(
@@ -198,8 +197,10 @@ private fun MiniPicture(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
-        picture(Modifier.aspectRatio(measured ?: MINI_PICTURE_ASPECT_RATIO))
-        if (!playback.isVideo || measured == null) {
+        picture(Modifier.aspectRatio(playback.videoAspectRatio ?: MINI_PICTURE_ASPECT_RATIO))
+        // By the first frame drawn on this texture, not by the decoder's size, which is still
+        // there from the video screen when the picture has only just been handed to the bar.
+        if (!playback.pictureReady) {
             PodcastArtwork(
                 url = playback.artworkUrl,
                 modifier = Modifier.fillMaxSize(),
@@ -347,6 +348,7 @@ internal fun CollapsedPlayerVideoPreview() {
                 videoQuality = VideoQuality(PREVIEW_PICTURE_HEIGHT),
                 videoWidth = PREVIEW_PICTURE_WIDTH,
                 videoHeight = PREVIEW_PICTURE_HEIGHT,
+                pictureReady = true,
             ),
             settings = PlaybackSettings(),
             onPlayPause = {},

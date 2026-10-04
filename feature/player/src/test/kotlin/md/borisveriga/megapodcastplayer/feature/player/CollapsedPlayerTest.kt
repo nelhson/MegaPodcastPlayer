@@ -71,6 +71,7 @@ class CollapsedPlayerTest {
         videoQuality = VideoQuality(720),
         videoWidth = width,
         videoHeight = height,
+        pictureReady = true,
     )
 
     /**

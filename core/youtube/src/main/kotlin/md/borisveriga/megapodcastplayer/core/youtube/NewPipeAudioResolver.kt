@@ -63,11 +63,14 @@ internal class NewPipeBootstrap @Inject constructor(
  *
  * @property bootstrap one-time NewPipe initialisation.
  * @property clock injected so cache expiry is deterministic in tests.
+ * @property decoders says which picture codecs this device can decode, so that a rendition it
+ *   cannot is never the one chosen.
  */
 @Singleton
 internal class NewPipeAudioResolver @Inject constructor(
     private val bootstrap: NewPipeBootstrap,
     private val clock: Clock,
+    private val decoders: VideoDecoderCheck,
 ) : YouTubeAudioResolver, YouTubeVideoResolver {
 
     /**
@@ -208,8 +211,12 @@ internal class NewPipeAudioResolver @Inject constructor(
             requestHeaders = mapOf("User-Agent" to YOUTUBE_USER_AGENT),
         )
         // The picture is optional here: a video with sound and no playable picture is still an
-        // episode. Only `resolveVideo` turns an empty list into a failure.
-        val video = playableVideoCandidates(info.videoOnlyStreams.orEmpty())
+        // episode. Only `resolveVideo` turns an empty list into a failure. Filtered by what the
+        // device can decode once, here, so the renditions offered and the one chosen agree.
+        val video = decodableVideoCandidates(
+            playableVideoCandidates(info.videoOnlyStreams.orEmpty()),
+            decoders,
+        )
         return ExtractedStreams(
             audio = audio,
             video = video,
@@ -319,13 +326,16 @@ internal fun selectAudioStream(streams: List<AudioStream>): AudioStream? {
  * @property url the direct URL of the stream.
  * @property height the frame height in pixels.
  * @property fps the frame rate, or `0` when the extractor does not say.
- * @property isMp4 whether the container is MP4, which every phone decodes in hardware.
+ * @property isMp4 whether the container is MP4, the one the audio it is merged with is in.
+ * @property codec the codec family the picture is encoded in; the container does not say, since
+ *   YouTube ships both H.264 and AV1 as MP4.
  */
 internal data class VideoCandidate(
     val url: String,
     val height: Int,
     val fps: Int,
     val isMp4: Boolean,
+    val codec: VideoCodec = VideoCodec.UNKNOWN,
 )
 
 /**
@@ -357,6 +367,7 @@ internal fun playableVideoCandidates(streams: List<VideoStream>): List<VideoCand
             height = stream.height,
             fps = stream.fps,
             isMp4 = stream.format == MediaFormat.MPEG_4,
+            codec = videoCodecOf(stream.codec),
         )
     }
 
@@ -366,9 +377,10 @@ internal fun playableVideoCandidates(streams: List<VideoStream>): List<VideoCand
  * In order of preference: the exact height asked for; the tallest below it that is still at least
  * [VideoQuality.PREFERRED_MIN_HEIGHT]; the shortest above it; and, when the video offers nothing
  * that tall at all, the best it has — an old 480p upload plays at 480p rather than refusing. Among
- * renditions of one height, MP4 wins over WebM because every phone decodes H.264 in hardware and
- * the audio it is merged with is already in an MP4 container; then the lower frame rate, because
- * a talking head at 60 frames a second is twice the data for nothing anyone can see.
+ * renditions of one height, the codec decides first, in [VideoCodec]'s order — H.264 before VP9
+ * before AV1, cheapest to decode first; then MP4 wins over WebM because the audio it is merged with
+ * is already in an MP4 container; then the lower frame rate, because a talking head at 60 frames a
+ * second is twice the data for nothing anyone can see.
  *
  * Extracted as a top-level function so every one of those choices is testable without a network.
  *
@@ -396,7 +408,11 @@ internal fun selectVideoCandidate(
     }
     return candidates
         .filter { it.height == chosenHeight }
-        .minWith(compareBy<VideoCandidate> { if (it.isMp4) 0 else 1 }.thenBy { it.fps })
+        .minWith(
+            compareBy<VideoCandidate> { it.codec.ordinal }
+                .thenBy { if (it.isMp4) 0 else 1 }
+                .thenBy { it.fps },
+        )
 }
 
 /**

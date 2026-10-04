@@ -280,10 +280,18 @@
     <string name="video_quality_none">This video has no picture the app can play.</string>
     <string name="video_quality_unavailable">Could not find out which qualities this video comes in. Try again in a moment.</string>
     <!--
-      Snackbar when the service would not show the picture. It says what did *not* change — the
-      sound — because a black screen with a message could otherwise read as playback having stopped.
+      Said in the picture's frame, over the episode's artwork, when the picture cannot be shown. It
+      says what did *not* change — the sound — because a frame with no picture could otherwise read
+      as playback having stopped. The two buttons under it are asking again and "Switch to audio".
     -->
     <string name="video_refused">Could not show the video. It keeps playing as audio.</string>
+    <string name="video_retry">Try again</string>
+    <!--
+      The button that holds the picture in landscape, and lets it go. Spoken only; the button is an
+      icon. The screen otherwise turns when the phone's own auto-rotate says so.
+    -->
+    <string name="video_fullscreen_enter">Fill the screen</string>
+    <string name="video_fullscreen_exit">Leave full screen</string>
 
     <!--
       Downloading the video, beside the quality button. The picker lists the same qualities the

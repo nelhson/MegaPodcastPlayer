@@ -30,6 +30,11 @@ internal const val SESSION_COMMAND_EXIT_VIDEO =
 /** Integer argument of [SESSION_COMMAND_ENTER_VIDEO]: the rendition height wanted. */
 internal const val EXTRA_VIDEO_HEIGHT = "height"
 
+/**
+ * Optional string argument of [SESSION_COMMAND_ENTER_VIDEO]: the episode the picture is wanted for.
+ */
+internal const val EXTRA_VIDEO_EPISODE_ID = "episodeId"
+
 /** The YouTube video id behind this item, whichever flavour it is in, or null for a feed episode. */
 val MediaItem.youTubeVideoId: String?
     get() = localConfiguration?.uri?.toString()?.let(::youTubeAnyVideoIdOrNull)
@@ -79,6 +84,9 @@ enum class VideoModeOutcome {
 
     /** Nothing is loaded. */
     NOTHING_LOADED,
+
+    /** The player has moved on from the episode the picture was asked for; nothing was touched. */
+    SUPERSEDED,
 }
 
 /**
@@ -88,14 +96,29 @@ enum class VideoModeOutcome {
  * rendition must not cost a second re-buffer.
  *
  * @param quality the rendition height.
+ * @param expectedEpisodeId the episode the caller decided this for, or null to take whichever is
+ *   playing. The caller reads what is playing, then asks; an episode that ended in between must
+ *   not have its successor switched to picture on the strength of a stale ask.
  * @return what was done.
  */
-internal fun Player.enterVideoMode(quality: VideoQuality): VideoModeOutcome {
+internal fun Player.enterVideoMode(
+    quality: VideoQuality,
+    expectedEpisodeId: String? = null,
+): VideoModeOutcome {
     val current = currentMediaItem ?: return VideoModeOutcome.NOTHING_LOADED
-    if (current.videoQualityOrNull == quality) return VideoModeOutcome.UNCHANGED
-    val flavour = current.toVideoFlavour(quality) ?: return VideoModeOutcome.NOT_YOUTUBE
-    swapCurrentItem(flavour)
-    return VideoModeOutcome.SWAPPED
+    val flavour = current.toVideoFlavour(quality)
+    return when {
+        expectedEpisodeId != null && current.episodeId != expectedEpisodeId -> VideoModeOutcome.SUPERSEDED
+
+        current.videoQualityOrNull == quality -> VideoModeOutcome.UNCHANGED
+
+        flavour == null -> VideoModeOutcome.NOT_YOUTUBE
+
+        else -> {
+            swapCurrentItem(flavour)
+            VideoModeOutcome.SWAPPED
+        }
+    }
 }
 
 /**

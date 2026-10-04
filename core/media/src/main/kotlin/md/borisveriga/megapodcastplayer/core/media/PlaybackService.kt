@@ -435,7 +435,7 @@ class PlaybackService : MediaSessionService() {
                     if (height <= 0) {
                         return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                     }
-                    player.enterVideoMode(VideoQuality(height))
+                    player.enterVideoMode(VideoQuality(height), args.getString(EXTRA_VIDEO_EPISODE_ID))
                 }
 
                 SESSION_COMMAND_EXIT_VIDEO -> player.exitVideoMode()
@@ -446,6 +446,7 @@ class PlaybackService : MediaSessionService() {
                 VideoModeOutcome.SWAPPED, VideoModeOutcome.UNCHANGED -> SessionResult.RESULT_SUCCESS
                 VideoModeOutcome.NOT_YOUTUBE -> SessionError.ERROR_BAD_VALUE
                 VideoModeOutcome.NOTHING_LOADED -> SessionError.ERROR_INVALID_STATE
+                VideoModeOutcome.SUPERSEDED -> SessionResult.RESULT_INFO_SKIPPED
             }
             return Futures.immediateFuture(SessionResult(code))
         }

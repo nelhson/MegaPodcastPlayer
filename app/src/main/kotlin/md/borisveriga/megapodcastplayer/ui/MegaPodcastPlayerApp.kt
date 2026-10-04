@@ -9,8 +9,10 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.rememberNavigationSuiteScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -109,7 +111,17 @@ fun MegaPodcastPlayerApp(
     // The one destination that is itself the player: the navigation bar and the sheet both step
     // aside for it, because the episode it shows is the one the sheet would be showing. It is the
     // player's second face, and which face a tap on the bar opens is the remembered `PlayerMode`.
-    val onVideo = currentDestination?.hasRoute(Route.Video::class) == true
+    //
+    // Remembered across a recreation, because the back stack cannot be asked on the first frame
+    // after one: the entry arrives as state, a frame late, while the NavHost below restores and
+    // composes the video screen at once. For that frame the shell used to believe it was not on
+    // video, and drew the bar, with a picture of its own, under the screen.
+    var wasOnVideo by rememberSaveable { mutableStateOf(false) }
+    val onVideo = resolveOnVideo(
+        known = currentDestination?.hasRoute(Route.Video::class),
+        remembered = wasOnVideo,
+    )
+    SideEffect { if (currentDestination != null) wasOnVideo = onVideo }
 
     LaunchedEffect(pendingPodcastId, pendingEpisodeId) {
         val podcastId = pendingPodcastId ?: return@LaunchedEffect
@@ -360,3 +372,13 @@ fun MegaPodcastPlayerApp(
         }
     }
 }
+
+/**
+ * Whether the video screen is the current destination, when the back stack may not have said yet.
+ *
+ * @param known what the back stack says, or null while it has not reported an entry — the first
+ *   frame of a composition, including the first after the activity was recreated.
+ * @param remembered what it said the last time it did, saved across the recreation.
+ * @return [known] when there is an answer, else [remembered].
+ */
+internal fun resolveOnVideo(known: Boolean?, remembered: Boolean): Boolean = known ?: remembered

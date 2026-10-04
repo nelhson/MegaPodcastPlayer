@@ -4,8 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
 import android.os.Bundle
-import android.view.SurfaceView
-import android.view.TextureView
 import androidx.core.os.bundleOf
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -83,6 +81,15 @@ class PlaybackConnection @Inject constructor(
     private val commandErrors = MutableStateFlow<String?>(null)
 
     /**
+     * Whether the player has drawn a frame of the current picture on the current output.
+     *
+     * Kept here rather than read off the controller, which has no such property: Media3 only
+     * *announces* a first frame. Set by that announcement and cleared by whatever makes the next
+     * frame a new first one — another item, another output. Touched on the main thread only.
+     */
+    private var pictureReady = false
+
+    /**
      * The current playback state, re-emitted on every player event and, while playing, every
      * [POSITION_TICK_MS] so the scrubber advances.
      *
@@ -99,18 +106,28 @@ class PlaybackConnection @Inject constructor(
             }
 
         val listener = object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // A swap between sound and picture is a transition too, which is the point: the
+                // frame on the surface belongs to the item that just left.
+                pictureReady = false
+            }
+
+            override fun onRenderedFirstFrame() {
+                pictureReady = true
+            }
+
             override fun onEvents(player: Player, events: Player.Events) {
-                trySend(mediaController.snapshot(commandErrors.value))
+                trySend(mediaController.snapshot(commandErrors.value, pictureReady))
             }
         }
         mediaController.addListener(listener)
-        send(mediaController.snapshot(commandErrors.value))
+        send(mediaController.snapshot(commandErrors.value, pictureReady))
 
         val ticker = launch {
             while (isActive) {
                 kotlinx.coroutines.delay(POSITION_TICK_MS)
                 if (mediaController.isPlaying) {
-                    trySend(mediaController.snapshot(commandErrors.value))
+                    trySend(mediaController.snapshot(commandErrors.value, pictureReady))
                 }
             }
         }
@@ -406,13 +423,18 @@ class PlaybackConnection @Inject constructor(
      * lets the video screen ask on every start without a rotation costing a re-buffer.
      *
      * @param quality the rendition height wanted; the resolver settles for the nearest the video has.
-     * @return true when the episode is showing, or already was; false when it has no picture to
-     *   show, when nothing is loaded, or when the service could not be reached.
+     * @param episodeId the episode the picture is wanted for, or null for whichever is playing.
+     *   The ask is decided before it is sent and the queue can move in between; named, the service
+     *   leaves another episode alone instead of showing a picture nobody asked for.
+     * @return true when the episode is showing, already was, or is no longer the one playing;
+     *   false when it has no picture to show, when nothing is loaded, or when the service could
+     *   not be reached.
      */
-    suspend fun enterVideo(quality: VideoQuality): Boolean = sendSessionCommand(
-        SESSION_COMMAND_ENTER_VIDEO,
-        bundleOf(EXTRA_VIDEO_HEIGHT to quality.height),
-    )
+    suspend fun enterVideo(quality: VideoQuality, episodeId: String? = null): Boolean =
+        sendSessionCommand(
+            SESSION_COMMAND_ENTER_VIDEO,
+            bundleOf(EXTRA_VIDEO_HEIGHT to quality.height, EXTRA_VIDEO_EPISODE_ID to episodeId),
+        )
 
     /**
      * Goes back to sound only, keeping the position. Playback carries on; only the picture stops.
@@ -423,51 +445,62 @@ class PlaybackConnection @Inject constructor(
     suspend fun exitVideo(): Boolean = sendSessionCommand(SESSION_COMMAND_EXIT_VIDEO, Bundle.EMPTY)
 
     /**
-     * Gives the player a surface to draw the picture on.
+     * Draws the picture on [output], or on nothing when it is null.
      *
-     * The controller forwards it to the service's player, so the picture is decoded where the
-     * sound is and the two cannot drift. Cleared with [detachVideoSurface] before the view goes.
+     * The controller forwards the view to the service's player, so the picture is decoded where
+     * the sound is and the two cannot drift. A `SurfaceView` is a hole in the window with the
+     * picture behind it, so it cannot be clipped to rounded corners, faded, or moved with what it
+     * sits in; a `TextureView` is drawn like any other view, at the cost of a copy that a picture
+     * the size of a thumbnail does not notice. Hence one of each: the screen's and the bar's.
      *
-     * @param view the surface to draw on.
+     * The caller says where the picture goes *now*, every time that changes, rather than attaching
+     * and detaching views one by one. Media3 keeps a single output: setting a second takes the
+     * picture from the first and clearing the second leaves the player with none, so two holders
+     * each managing their own view left the screen black after a rotation.
+     *
+     * Tried twice. The first failure is usually a service that went away, which the second attempt
+     * reconnects to; a second failure is recorded, because nothing on screen will say why the
+     * picture is missing.
+     *
+     * @param output where to draw, or null to stop drawing.
+     * @return true when the player took it.
      */
-    suspend fun attachVideoSurface(view: SurfaceView) = onController { player ->
-        player.setVideoSurfaceView(view)
+    suspend fun showVideoOn(output: VideoOutput?): Boolean {
+        var failure: Throwable? = null
+        repeat(OUTPUT_ATTEMPTS) {
+            val attempt = suspendRunCatching {
+                withContext(Dispatchers.Main.immediate) {
+                    val player = controller()
+                    // Whatever was on the last output is not on this one until a frame is drawn.
+                    pictureReady = false
+                    when (output) {
+                        is VideoOutput.Screen -> player.setVideoSurfaceView(output.view)
+                        is VideoOutput.Bar -> player.setVideoTextureView(output.view)
+                        null -> player.clearVideoSurface()
+                    }
+                }
+            }
+            if (attempt.isSuccess) return true
+            failure = attempt.exceptionOrNull()
+        }
+        failure?.let { crashReporter.recordNonFatal(NON_FATAL_VIDEO_OUTPUT, it) }
+        return false
     }
 
     /**
-     * Takes [view] back from the player, if it is the one drawing.
+     * Takes [output] back from the player, if it is the one drawing.
      *
-     * @param view the surface handed over by [attachVideoSurface].
+     * A no-op when the picture has since been given somewhere else to go, which is what makes this
+     * safe to call late: it is how a holder that is going away lets go without taking the picture
+     * from whoever came after it.
+     *
+     * @param output the output handed over by [showVideoOn].
      */
-    suspend fun detachVideoSurface(view: SurfaceView) = onController { player ->
-        player.clearVideoSurfaceView(view)
-    }
-
-    /**
-     * Gives the player a texture to draw the picture on, in place of whatever it was drawing on.
-     *
-     * The same hand-over as [attachVideoSurface], for a picture that is part of a layout rather
-     * than a screen of its own. A `SurfaceView` is a hole in the window with the picture behind it,
-     * so it cannot be clipped to rounded corners, faded, or moved with what it sits in; a
-     * `TextureView` is drawn like any other view, at the cost of a copy that a picture the size of
-     * a thumbnail does not notice.
-     *
-     * @param view the texture to draw on.
-     */
-    suspend fun attachVideoTexture(view: TextureView) = onController { player ->
-        player.setVideoTextureView(view)
-    }
-
-    /**
-     * Takes [view] back from the player, if it is the one drawing.
-     *
-     * A no-op when the picture has since been given somewhere else to go, which is what makes the
-     * hand-over between the bar and the video screen safe in either order.
-     *
-     * @param view the texture handed over by [attachVideoTexture].
-     */
-    suspend fun detachVideoTexture(view: TextureView) = onController { player ->
-        player.clearVideoTextureView(view)
+    suspend fun releaseVideoOutput(output: VideoOutput) = onController { player ->
+        when (output) {
+            is VideoOutput.Screen -> player.clearVideoSurfaceView(output.view)
+            is VideoOutput.Bar -> player.clearVideoTextureView(output.view)
+        }
     }
 
     /**
@@ -485,7 +518,11 @@ class PlaybackConnection @Inject constructor(
                 controller().sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args).await()
             }
         }
-            .map { result -> result.resultCode == SessionResult.RESULT_SUCCESS }
+            .map { result ->
+                // Skipped is the service declining an ask that events overtook, not a refusal.
+                result.resultCode == SessionResult.RESULT_SUCCESS ||
+                    result.resultCode == SessionResult.RESULT_INFO_SKIPPED
+            }
             .getOrElse { error ->
                 commandErrors.value = error.message ?: error::class.simpleName
                 false
@@ -505,7 +542,8 @@ class PlaybackConnection @Inject constructor(
      * reached, which reads as "nothing is playing" and is the right answer in that case.
      */
     suspend fun currentState(): PlaybackState = withContext(Dispatchers.Main.immediate) {
-        suspendRunCatching { controller().snapshot(commandErrors.value) }.getOrElse { PlaybackState() }
+        suspendRunCatching { controller().snapshot(commandErrors.value, pictureReady) }
+            .getOrElse { PlaybackState() }
     }
 
     /**
@@ -548,6 +586,12 @@ class PlaybackConnection @Inject constructor(
 
         /** Past this point, "previous" restarts the episode instead of leaving it. */
         const val RESTART_THRESHOLD_MS = 3_000L
+
+        /** How many times an output is offered to the player before giving up; see [showVideoOn]. */
+        const val OUTPUT_ATTEMPTS = 2
+
+        /** One message for the failure kind, fixed, so each groups into one report. */
+        const val NON_FATAL_VIDEO_OUTPUT = "Video output refused by the player"
     }
 }
 
@@ -580,8 +624,10 @@ internal fun AudioManager.applyMediaVolume(level: Int): Boolean {
  * Flattens the controller's current state into a [PlaybackState].
  *
  * @param errorMessage the last failed command's message, folded in so the UI reads one object.
+ * @param firstFrameRendered whether a frame of the current picture has been drawn; see
+ *   [PlaybackState.pictureReady].
  */
-private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
+private fun MediaController.snapshot(errorMessage: String?, firstFrameRendered: Boolean): PlaybackState {
     val metadata = mediaMetadata
     // Media3 forbids reading either of these unless the command is available, and it is absent on
     // a player built without device-volume control. Both then stay zero, which is the same thing
@@ -614,6 +660,9 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
         videoQuality = currentMediaItem?.videoQualityOrNull,
         videoWidth = videoSize.width,
         videoHeight = videoSize.height,
+        // Only ever true of an item that is showing its picture: a frame left over from before a
+        // fall back to sound is not a picture of what is playing now.
+        pictureReady = firstFrameRendered && currentMediaItem?.videoQualityOrNull != null,
     )
 }
 

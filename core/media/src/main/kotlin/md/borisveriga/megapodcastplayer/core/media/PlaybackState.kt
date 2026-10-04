@@ -43,6 +43,10 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
  * @property videoQuality the rendition the episode is showing, or null while it plays as sound only.
  * @property videoWidth the picture's width in pixels once the decoder has reported it, else `0`.
  * @property videoHeight the picture's height, likewise.
+ * @property pictureReady true once the player has drawn a frame of this episode's picture on the
+ *   output it currently has. The size above says a picture was *decoded*, which stays true when
+ *   the output is taken away or changed; this says one is *on screen*, which is what decides
+ *   whether a poster still has to cover it.
  */
 data class PlaybackState(
     val isConnected: Boolean = false,
@@ -66,6 +70,7 @@ data class PlaybackState(
     val videoQuality: VideoQuality? = null,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    val pictureReady: Boolean = false,
 ) {
 
     /** True when there is nothing loaded, i.e. the mini player should be hidden. */

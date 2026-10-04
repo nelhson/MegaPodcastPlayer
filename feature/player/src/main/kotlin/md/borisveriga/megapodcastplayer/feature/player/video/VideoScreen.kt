@@ -33,10 +33,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -65,13 +68,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
@@ -87,6 +93,7 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LabelledWaveScrubber
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
@@ -100,6 +107,7 @@ import md.borisveriga.megapodcastplayer.feature.player.R
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyph
 import md.borisveriga.megapodcastplayer.feature.player.SpeedSheet
 import md.borisveriga.megapodcastplayer.feature.player.previewPlayback
+import md.borisveriga.megapodcastplayer.feature.player.toText
 
 /**
  * The video screen: the picture of the YouTube episode playing, with the transport under it.
@@ -117,6 +125,10 @@ import md.borisveriga.megapodcastplayer.feature.player.previewPlayback
  * only reports the choice.
  *
  * A tap on the picture hides everything but the picture, and a tap anywhere brings it back.
+ *
+ * The frame is never an unexplained black box. Until the player has drawn a frame it shows the
+ * episode's artwork, and when the picture cannot be shown it says so there, with the two things
+ * that can be done about it.
  *
  * @param onCollapse puts the video away; playback carries on, and the bar reopens this screen.
  * @param onListen leaves for the audio player.
@@ -155,11 +167,15 @@ fun VideoRoute(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val refusedText = stringResource(R.string.video_refused)
-    LaunchedEffect(uiState.refused) {
-        if (!uiState.refused) return@LaunchedEffect
-        snackbarHostState.showSnackbar(refusedText)
-        viewModel.onRefusalShown()
+    // A playback error is said here while this screen is up: the sheet that usually says it is
+    // hidden behind the picture, and an error nobody is shown reads as the app having frozen.
+    // LocalResources rather than the context's, so a configuration change invalidates the read.
+    val resources = LocalResources.current
+    LaunchedEffect(uiState.playback.error) {
+        val playback = uiState.playback
+        val error = playback.error ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(error.toText(resources, playback.errorMessage))
+        viewModel.onErrorShown()
     }
 
     val downloadMessage = uiState.downloadMessage?.let { videoDownloadMessageText(it) }
@@ -219,10 +235,16 @@ fun VideoRoute(
     var hiddenInLandscape by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val controlsVisible = hiddenInLandscape != landscape
 
+    // Whether the user asked for the picture to fill the screen, which holds the window in
+    // landscape whichever way the phone is held. Saved, because asking is what recreates the
+    // activity.
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+
     FullscreenEffects(
         landscape = landscape,
         immersive = landscape || !controlsVisible,
         keepScreenOn = uiState.playback.isPlaying,
+        lockLandscape = fullscreen,
     )
 
     VideoScreen(
@@ -251,8 +273,11 @@ fun VideoRoute(
                 viewModel.exit()
                 onListen()
             },
+            onRetry = viewModel::enter,
+            onToggleFullscreen = { fullscreen = !fullscreen },
         ),
         modifier = modifier,
+        fullscreen = fullscreen,
         controlsVisible = controlsVisible,
         onControlsVisibleChange = { visible -> hiddenInLandscape = if (visible) null else landscape },
         snackbarHostState = snackbarHostState,
@@ -273,6 +298,8 @@ fun VideoRoute(
  * @property onOpenDownload opens the download sheet.
  * @property onCollapse puts the video away behind the collapsed bar.
  * @property onListen leaves for the audio player.
+ * @property onRetry asks for the picture again, after it could not be shown.
+ * @property onToggleFullscreen holds the window in landscape, or lets it go again.
  */
 data class VideoActions(
     val onPlayPause: () -> Unit = {},
@@ -286,6 +313,8 @@ data class VideoActions(
     val onOpenDownload: () -> Unit = {},
     val onCollapse: () -> Unit = {},
     val onListen: () -> Unit = {},
+    val onRetry: () -> Unit = {},
+    val onToggleFullscreen: () -> Unit = {},
 )
 
 /**
@@ -323,9 +352,10 @@ private fun videoDownloadMessageText(message: VideoDownloadMessage): String = wh
  * @param surface draws the player's picture into the modifier it is given.
  * @param actions the controls.
  * @param modifier layout modifier.
+ * @param fullscreen true while the window is held in landscape at the user's asking.
  * @param controlsVisible false when only the picture is to be shown.
  * @param onControlsVisibleChange asks for the controls to be shown or hidden; a tap does.
- * @param snackbarHostState where a refusal is shown.
+ * @param snackbarHostState where a playback error or a download message is shown.
  */
 @Composable
 internal fun VideoScreen(
@@ -333,15 +363,16 @@ internal fun VideoScreen(
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
     modifier: Modifier = Modifier,
+    fullscreen: Boolean = false,
     controlsVisible: Boolean = true,
     onControlsVisibleChange: (Boolean) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val controls = ControlsVisibility(controlsVisible, onControlsVisibleChange)
     if (isLandscape()) {
-        LandscapeVideo(uiState, surface, actions, controls, snackbarHostState, modifier)
+        LandscapeVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
     } else {
-        PortraitVideo(uiState, surface, actions, controls, snackbarHostState, modifier)
+        PortraitVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
     }
 }
 
@@ -375,7 +406,8 @@ private fun isLandscape(): Boolean =
  * @param surface draws the picture.
  * @param actions the controls.
  * @param controls whether the page is cleared, and the way to change it.
- * @param snackbarHostState where a refusal is shown.
+ * @param fullscreen true while the window is held in landscape at the user's asking.
+ * @param snackbarHostState where a playback error or a download message is shown.
  * @param modifier layout modifier.
  */
 // systemBarsIgnoringVisibility is the experimental half: it is the only inset that stays put while
@@ -387,6 +419,7 @@ private fun PortraitVideo(
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
     controls: ControlsVisibility,
+    fullscreen: Boolean,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
@@ -455,11 +488,17 @@ private fun PortraitVideo(
                         .padding(vertical = MegaPodcastPlayerTheme.spacing.md),
                     contentAlignment = Alignment.Center,
                 ) {
-                    VideoFrame(playback = uiState.playback, surface = surface, modifier = Modifier.fillMaxWidth())
+                    VideoFrame(
+                        uiState = uiState,
+                        surface = surface,
+                        actions = actions,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 VideoControls(
                     uiState = uiState,
                     actions = actions,
+                    fullscreen = fullscreen,
                     modifier = furniture.padding(
                         start = MegaPodcastPlayerTheme.spacing.screenHorizontal,
                         end = MegaPodcastPlayerTheme.spacing.screenHorizontal,
@@ -495,7 +534,8 @@ private fun PortraitVideo(
  * @param surface draws the picture.
  * @param actions the controls.
  * @param controls whether the overlay is up, and the way to change it.
- * @param snackbarHostState where a refusal is shown.
+ * @param fullscreen true while the window is held in landscape at the user's asking.
+ * @param snackbarHostState where a playback error or a download message is shown.
  * @param modifier layout modifier.
  */
 @Composable
@@ -504,6 +544,7 @@ private fun LandscapeVideo(
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
     controls: ControlsVisibility,
+    fullscreen: Boolean,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
@@ -531,7 +572,7 @@ private fun LandscapeVideo(
             ) { controls.onChange(!controlsVisible) },
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            VideoFrame(playback = uiState.playback, surface = surface)
+            VideoFrame(uiState = uiState, surface = surface, actions = actions)
         }
 
         AnimatedVisibility(
@@ -565,6 +606,7 @@ private fun LandscapeVideo(
                     VideoControls(
                         uiState = uiState,
                         actions = actions,
+                        fullscreen = fullscreen,
                         modifier = Modifier.padding(bottom = MegaPodcastPlayerTheme.spacing.sm),
                     )
                 }
@@ -585,38 +627,93 @@ private fun LandscapeVideo(
  *
  * The box takes the picture's measured proportions once the decoder has reported them, and 16:9
  * until then — every YouTube rendition this app plays is 16:9, so the guess is right far more often
- * than not and a box of the wrong shape never jumps. Black under and over the surface until the
- * first frame, so nothing of what was behind shows through the hole a `SurfaceView` punches.
+ * than not and a box of the wrong shape never jumps.
  *
- * @param playback what the player is doing; the shape, the shutter and the spinner come from it.
+ * What the box holds is one of three things, and never nothing. Until the player has drawn a frame
+ * on this surface, the episode's artwork covers it — for a YouTube episode that is the video's own
+ * thumbnail, so it is the poster it looks like — with a spinner while the picture is on its way.
+ * Once there is a frame, the picture. And when the picture was asked for and cannot be shown, the
+ * poster stays and says so, with a way to ask again and a way to stop asking.
+ *
+ * The cover goes by the first frame *drawn*, not by the size the decoder reported: the size
+ * outlives the surface it was measured on, and a cover lifted on its say-so showed an empty
+ * surface after a rotation, playing sound under a black box.
+ *
+ * @param uiState what the player is doing and whether the picture was refused.
  * @param surface draws the picture.
+ * @param actions the controls; the unavailable state uses two of them.
  * @param modifier layout modifier; the caller decides which edge the box fills.
  */
 @Composable
 private fun VideoFrame(
-    playback: PlaybackState,
+    uiState: VideoUiState,
     surface: @Composable (Modifier) -> Unit,
+    actions: VideoActions,
     modifier: Modifier = Modifier,
 ) {
-    val measured = playback.videoAspectRatio
+    val playback = uiState.playback
     Box(
         modifier = modifier
-            .aspectRatio(measured ?: DEFAULT_ASPECT_RATIO)
+            .aspectRatio(playback.videoAspectRatio ?: DEFAULT_ASPECT_RATIO)
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
         surface(Modifier.fillMaxSize())
-        if (!playback.isVideo || measured == null) {
-            // The shutter: over the surface, which draws whatever it last held until the picture
-            // starts — including a frame of the previous episode.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black),
+        if (!playback.pictureReady) {
+            // The poster: over the surface, which draws whatever it last held until the picture
+            // starts — including a frame of the previous episode. The frame is a rectangle, so the
+            // artwork's own rounded mask would show the surface at its corners.
+            PodcastArtwork(
+                url = playback.artworkUrl,
+                modifier = Modifier.fillMaxSize(),
+                shape = RectangleShape,
             )
         }
-        if (playback.isBuffering || !playback.isVideo) {
-            CircularProgressIndicator(color = Color.White)
+        when {
+            uiState.refused && !playback.pictureReady ->
+                PictureUnavailable(onRetry = actions.onRetry, onListen = actions.onListen)
+
+            // Not while a ready picture sits paused: a spinner there would promise something.
+            playback.isBuffering || !playback.isVideo -> CircularProgressIndicator(color = Color.White)
+        }
+    }
+}
+
+/**
+ * What the frame says when the picture cannot be shown.
+ *
+ * In the frame rather than in a snackbar, because it is the answer to "why is there no picture"
+ * and stays true for as long as there is none. It says what did *not* change — the sound — and
+ * offers the two ways on: ask again, or stop asking and listen.
+ *
+ * @param onRetry asks for the picture again.
+ * @param onListen leaves for the audio player.
+ */
+@Composable
+private fun PictureUnavailable(onRetry: () -> Unit, onListen: () -> Unit) {
+    // White on a scrim whatever the theme, like the landscape overlay: this sits on a poster.
+    val onPoster = ButtonDefaults.textButtonColors(contentColor = Color.White)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SCRIM)
+            .padding(horizontal = MegaPodcastPlayerTheme.spacing.md),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = stringResource(R.string.video_refused),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm)) {
+            TextButton(onClick = onRetry, colors = onPoster) {
+                Text(text = stringResource(R.string.video_retry))
+            }
+            TextButton(onClick = onListen, colors = onPoster) {
+                Text(text = stringResource(R.string.video_listen))
+            }
         }
     }
 }
@@ -661,16 +758,18 @@ private fun EpisodeTitles(
 }
 
 /**
- * The scrubber, the transport and the two settings buttons, stacked.
+ * The scrubber, the transport and the settings buttons, stacked.
  *
  * @param uiState what to render.
  * @param actions the transport.
+ * @param fullscreen true while the window is held in landscape at the user's asking.
  * @param modifier layout modifier.
  */
 @Composable
 private fun VideoControls(
     uiState: VideoUiState,
     actions: VideoActions,
+    fullscreen: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val playback = uiState.playback
@@ -752,7 +851,37 @@ private fun VideoControls(
             }
 
             DownloadButton(download = uiState.videoDownload, onClick = actions.onOpenDownload)
+
+            // Offered where it does something. In landscape that the phone was simply turned
+            // into, the way back is to turn it again; a button there could only fight the sensor.
+            if (fullscreen || !isLandscape()) {
+                FullscreenButton(fullscreen = fullscreen, onClick = actions.onToggleFullscreen)
+            }
         }
+    }
+}
+
+/**
+ * Makes the picture fill the screen, or lets it go back to the page.
+ *
+ * Turning the phone does the same with auto-rotate on. This is for when it is off — the screen then
+ * stays as the user set it until they ask — and for watching lying down, where the sensor is wrong.
+ *
+ * @param fullscreen true while the window is held in landscape.
+ * @param onClick flips it.
+ */
+@Composable
+private fun FullscreenButton(fullscreen: Boolean, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+    ) {
+        Icon(
+            imageVector = if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+            contentDescription = stringResource(
+                if (fullscreen) R.string.video_fullscreen_exit else R.string.video_fullscreen_enter,
+            ),
+        )
     }
 }
 
@@ -881,18 +1010,26 @@ internal fun VideoTexture(
  * What the screen does to the window and the activity for as long as it is up.
  *
  * Four things, each undone on the way out. The screen stays on while the picture moves. The
- * orientation follows the sensor even with auto-rotate off, because turning the phone is how a
- * video is made big — and it is undone on leaving so the rest of the app is back under the user's
- * setting. The system bars go whenever only the picture is wanted — always in landscape, and in
- * portrait once the controls have been tapped away — coming back with a swipe. And in landscape
- * the picture is let run under the cutout; there is no content there to lose to it.
+ * orientation is left to the user's own auto-rotate setting unless they ask for full screen, which
+ * holds the window in landscape until they ask again or leave — it used to follow the sensor
+ * regardless, which turned the screen on people who had told the phone not to, and recreated the
+ * activity under a video that had only just started. The system bars go whenever only the picture
+ * is wanted — always in landscape, and in portrait once the controls have been tapped away —
+ * coming back with a swipe. And in landscape the picture is let run under the cutout; there is no
+ * content there to lose to it.
  *
  * @param landscape whether the window is currently wider than tall.
  * @param immersive whether the system bars should be out of the picture's way.
  * @param keepScreenOn whether the picture is moving.
+ * @param lockLandscape whether the user asked for the picture to fill the screen.
  */
 @Composable
-private fun FullscreenEffects(landscape: Boolean, immersive: Boolean, keepScreenOn: Boolean) {
+private fun FullscreenEffects(
+    landscape: Boolean,
+    immersive: Boolean,
+    keepScreenOn: Boolean,
+    lockLandscape: Boolean,
+) {
     val view = LocalView.current
     val activity = LocalActivity.current
 
@@ -902,16 +1039,18 @@ private fun FullscreenEffects(landscape: Boolean, immersive: Boolean, keepScreen
     }
 
     // The orientation found on arrival, saved so it survives the activity being recreated by the
-    // very rotation this screen allows; read again after one, it would be this screen's own SENSOR.
+    // very rotation full screen asks for; read again after one, it would be this screen's own.
     val arrivalOrientation = rememberSaveable {
         activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
-    DisposableEffect(activity) {
-        val host = activity ?: return@DisposableEffect onDispose {}
-        host.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+    DisposableEffect(activity, lockLandscape) {
+        val host = activity
+        if (host == null || !lockLandscape) return@DisposableEffect onDispose {}
+        // Either landscape, so the phone can still be turned the other way up.
+        host.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         onDispose {
-            // Only on the way out. Restoring on a rotation would ask the dying activity for the
-            // old orientation for a moment, and with auto-rotate off could turn the screen back.
+            // Only when the lock ends or the screen goes. Restoring on the rotation the lock
+            // itself caused would ask the dying activity to turn straight back.
             if (!host.isChangingConfigurations) host.requestedOrientation = arrivalOrientation
         }
     }
@@ -971,9 +1110,33 @@ internal fun VideoScreenPreview() {
                     videoQuality = VideoQuality(PREVIEW_HEIGHT),
                     videoWidth = PREVIEW_WIDTH,
                     videoHeight = PREVIEW_HEIGHT,
+                    pictureReady = true,
                 ),
                 settings = PlaybackSettings(),
                 qualities = listOf(VideoQuality(PREVIEW_HEIGHT), VideoQuality(1080)),
+            ),
+            surface = { surfaceModifier -> Box(modifier = surfaceModifier.background(Color.DarkGray)) },
+            actions = VideoActions(),
+        )
+    }
+}
+
+/**
+ * The video screen when the picture could not be shown: the poster, the sentence, the two ways on.
+ *
+ * At three font scales because the frame's height is fixed by its proportions and the sentence and
+ * its buttons have to fit inside it.
+ */
+@ThemePreviews
+@FontScalePreviews
+@Composable
+internal fun VideoScreenUnavailablePreview() {
+    MegaPodcastPlayerTheme {
+        VideoScreen(
+            uiState = VideoUiState(
+                playback = previewPlayback.copy(youTubeVideoId = "niTJ2221aS8"),
+                settings = PlaybackSettings(),
+                refused = true,
             ),
             surface = { surfaceModifier -> Box(modifier = surfaceModifier.background(Color.DarkGray)) },
             actions = VideoActions(),

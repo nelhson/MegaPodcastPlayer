@@ -131,9 +131,12 @@ fun PlayerSheetScaffold(
     // invalidates the read. Resolved here because `LaunchedEffect` runs outside composition.
     val resources = LocalResources.current
 
-    LaunchedEffect(uiState.playback.error) {
+    // Not while hidden. The host below is not drawn then, so the message would wait unseen and
+    // come out stale when the bar returned; the video screen says the error itself meanwhile.
+    LaunchedEffect(uiState.playback.error, hidden) {
         val playback = uiState.playback
         val error = playback.error ?: return@LaunchedEffect
+        if (hidden) return@LaunchedEffect
         snackbarHostState.showSnackbar(error.toText(resources, playback.errorMessage))
         viewModel.onErrorShown()
     }
@@ -624,7 +627,7 @@ fun PlayerSheet(
  * @param detail the player's own message, for the unknown case.
  * @return the text to show.
  */
-private fun PlaybackError.toText(resources: Resources, detail: String?): String = when (this) {
+internal fun PlaybackError.toText(resources: Resources, detail: String?): String = when (this) {
     PlaybackError.NO_CONNECTION -> resources.getString(R.string.player_error_no_connection)
 
     PlaybackError.EPISODE_GONE -> resources.getString(R.string.player_error_episode_gone)

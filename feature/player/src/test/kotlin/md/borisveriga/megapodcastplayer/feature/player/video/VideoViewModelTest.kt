@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.player.video
 
+import android.view.SurfaceView
 import android.view.TextureView
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -22,6 +23,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.media.VideoOutput
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
@@ -70,8 +72,9 @@ class VideoViewModelTest {
     @Before
     fun setUp() {
         every { connection.playbackState } returns playbackState
-        coEvery { connection.enterVideo(any()) } returns true
+        coEvery { connection.enterVideo(any(), any()) } returns true
         coEvery { connection.exitVideo() } returns true
+        coEvery { connection.showVideoOn(any()) } returns true
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeVideoQuality() } returns preferredQuality
         every { downloadRepository.observeVideoDownloads() } returns videoDownloads
@@ -108,7 +111,7 @@ class VideoViewModelTest {
 
         viewModel.enter()
 
-        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(1080)) }
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(1080), any()) }
     }
 
     @Test
@@ -122,35 +125,46 @@ class VideoViewModelTest {
     }
 
     @Test
-    fun `a refusal is shown once`() = runTest {
-        coEvery { connection.enterVideo(any()) } returns false
+    fun `the picture is asked for the episode that was playing when it was wanted`() = runTest {
+        // Named, so that the service can leave alone an episode the queue moved on to meanwhile.
+        playbackState.value = watching()
+
+        viewModel.enter()
+
+        coVerify(exactly = 1) { connection.enterVideo(any(), "ep-$VIDEO_ID") }
+    }
+
+    @Test
+    fun `a refusal stands for as long as there is no picture`() = runTest {
+        // It is what the frame says in place of the picture, so it must not expire like a message.
+        coEvery { connection.enterVideo(any(), any()) } returns false
         playbackState.value = watching()
         backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
 
         viewModel.enter()
         assertTrue(viewModel.uiState.value.refused)
 
-        viewModel.onRefusalShown()
-        assertFalse(viewModel.uiState.value.refused)
+        playbackState.value = watching(positionMs = 9_000L)
+        assertTrue(viewModel.uiState.value.refused)
     }
 
     @Test
     fun `asking again while the picture is wanted is the retry for a refusal`() = runTest {
         // The shell asks when the player is put in video and the screen asks each time it starts,
         // so two asks in a row are the ordinary case. The service answers a repeat by doing nothing.
-        coEvery { connection.enterVideo(any()) } returns false
+        coEvery { connection.enterVideo(any(), any()) } returns false
         playbackState.value = watching()
         backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
         viewModel.enter()
         assertTrue(viewModel.uiState.value.refused)
 
-        coEvery { connection.enterVideo(any()) } returns true
+        coEvery { connection.enterVideo(any(), any()) } returns true
         viewModel.enter()
 
         // The refusal belonged to the ask this one replaced; saying it over a picture that is now
         // showing would be saying something no longer true.
         assertFalse(viewModel.uiState.value.refused)
-        coVerify(exactly = 2) { connection.enterVideo(VideoQuality.DEFAULT) }
+        coVerify(exactly = 2) { connection.enterVideo(VideoQuality.DEFAULT, any()) }
     }
 
     @Test
@@ -164,7 +178,7 @@ class VideoViewModelTest {
 
         viewModel.enter()
 
-        coVerify(exactly = 0) { connection.enterVideo(any()) }
+        coVerify(exactly = 0) { connection.enterVideo(any(), any()) }
         // Said rather than dropped: on the video screen this is why there is no picture.
         assertTrue(viewModel.uiState.value.refused)
     }
@@ -178,8 +192,10 @@ class VideoViewModelTest {
         viewModel.enter()
 
         // It is on the device, at its own rendition; the network has nothing to do with it.
-        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480)) }
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480), any()) }
     }
+
+    // --- where the picture is drawn -----------------------------------------
 
     @Test
     fun `the bar's texture is handed to the player and taken back`() = runTest {
@@ -189,9 +205,61 @@ class VideoViewModelTest {
         viewModel.detachTexture(texture)
 
         coVerifyOrder {
-            connection.attachVideoTexture(texture)
-            connection.detachVideoTexture(texture)
+            connection.showVideoOn(VideoOutput.Bar(texture))
+            connection.showVideoOn(null)
         }
+    }
+
+    @Test
+    fun `the screen gets the picture back when a bar drawn over it for a frame goes`() = runTest {
+        // The black picture after a rotation. The recreated shell composes the video screen and,
+        // for one frame, the bar as well; the bar's texture takes the player's output, and when
+        // the bar is disposed the player is left with none. The screen's surface was only ever
+        // attached once, when it was made — so nothing gave it the picture back.
+        val surface: SurfaceView = mockk()
+        val texture: TextureView = mockk()
+
+        viewModel.attachSurface(surface)
+        viewModel.attachTexture(texture)
+        viewModel.detachTexture(texture)
+
+        coVerifyOrder {
+            connection.showVideoOn(VideoOutput.Screen(surface))
+            connection.showVideoOn(VideoOutput.Bar(texture))
+            connection.showVideoOn(VideoOutput.Screen(surface))
+        }
+        coVerify(exactly = 0) { connection.showVideoOn(null) }
+    }
+
+    @Test
+    fun `minimising moves the picture to the bar and the screen leaving changes nothing`() = runTest {
+        // The bar arrives while the screen is still animating out; the screen's surface goes last.
+        val surface: SurfaceView = mockk()
+        val texture: TextureView = mockk()
+        viewModel.attachSurface(surface)
+
+        viewModel.attachTexture(texture)
+        viewModel.detachSurface(surface)
+
+        coVerifyOrder {
+            connection.showVideoOn(VideoOutput.Screen(surface))
+            connection.showVideoOn(VideoOutput.Bar(texture))
+        }
+        coVerify(exactly = 1) { connection.showVideoOn(VideoOutput.Bar(texture)) }
+        coVerify(exactly = 0) { connection.showVideoOn(null) }
+    }
+
+    @Test
+    fun `a rotation's old surface leaving after the new one arrived does not take the picture`() = runTest {
+        val old: SurfaceView = mockk()
+        val new: SurfaceView = mockk()
+        viewModel.attachSurface(old)
+
+        viewModel.attachSurface(new)
+        viewModel.detachSurface(old)
+
+        coVerify(exactly = 1) { connection.showVideoOn(VideoOutput.Screen(new)) }
+        coVerify(exactly = 0) { connection.showVideoOn(null) }
     }
 
     @Test
@@ -222,7 +290,7 @@ class VideoViewModelTest {
         viewModel.exit()
         slowDisk.emit(VideoQuality(1080))
 
-        coVerify(exactly = 0) { connection.enterVideo(any()) }
+        coVerify(exactly = 0) { connection.enterVideo(any(), any()) }
         coVerify(exactly = 1) { connection.exitVideo() }
     }
 
@@ -271,7 +339,7 @@ class VideoViewModelTest {
         // rendition the user just turned away from.
         coVerifyOrder {
             playbackRepository.setVideoQuality(VideoQuality(1080))
-            connection.enterVideo(VideoQuality(1080))
+            connection.enterVideo(VideoQuality(1080), any())
         }
     }
 
@@ -284,7 +352,7 @@ class VideoViewModelTest {
 
         playbackState.value = watching(videoId = "bbbbbbbbbbb")
 
-        coVerify(exactly = 2) { connection.enterVideo(any()) }
+        coVerify(exactly = 2) { connection.enterVideo(any(), any()) }
     }
 
     @Test
@@ -294,7 +362,7 @@ class VideoViewModelTest {
 
         playbackState.value = PlaybackState(isConnected = true, episodeId = "feed-1")
 
-        coVerify(exactly = 1) { connection.enterVideo(any()) }
+        coVerify(exactly = 1) { connection.enterVideo(any(), any()) }
     }
 
     @Test
@@ -305,7 +373,7 @@ class VideoViewModelTest {
 
         playbackState.value = watching(videoId = "bbbbbbbbbbb")
 
-        coVerify(exactly = 1) { connection.enterVideo(any()) }
+        coVerify(exactly = 1) { connection.enterVideo(any(), any()) }
     }
 
     @Test
@@ -315,7 +383,7 @@ class VideoViewModelTest {
 
         playbackState.value = watching(positionMs = 1_500L)
 
-        coVerify(exactly = 1) { connection.enterVideo(any()) }
+        coVerify(exactly = 1) { connection.enterVideo(any(), any()) }
     }
 
     // --- the renditions -----------------------------------------------------
@@ -376,7 +444,7 @@ class VideoViewModelTest {
 
         viewModel.enter()
 
-        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480)) }
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(480), any()) }
     }
 
     @Test
@@ -389,7 +457,7 @@ class VideoViewModelTest {
 
         viewModel.enter()
 
-        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(1080)) }
+        coVerify(exactly = 1) { connection.enterVideo(VideoQuality(1080), any()) }
     }
 
     @Test

@@ -73,12 +73,63 @@ class NewPipeAudioResolverTest {
         every { isVideoOnly() } returns videoOnly
     }
 
-    private fun candidate(height: Int, fps: Int = 30, mp4: Boolean = true) = VideoCandidate(
-        url = "https://rr3.googlevideo.com/videoplayback?h=$height&fps=$fps&mp4=$mp4",
+    private fun candidate(
+        height: Int,
+        fps: Int = 30,
+        mp4: Boolean = true,
+        codec: VideoCodec = VideoCodec.UNKNOWN,
+    ) = VideoCandidate(
+        url = "https://rr3.googlevideo.com/videoplayback?h=$height&fps=$fps&mp4=$mp4&c=$codec",
         height = height,
         fps = fps,
         isMp4 = mp4,
+        codec = codec,
     )
+
+    // --- which codec the picture is in ---------------------------------------
+
+    @Test
+    fun `the codec family is read from the part before the first dot`() {
+        assertEquals(VideoCodec.AVC, videoCodecOf("avc1.64001F"))
+        assertEquals(VideoCodec.VP9, videoCodecOf("vp9"))
+        assertEquals(VideoCodec.VP9, videoCodecOf("vp09.00.40.08"))
+        assertEquals(VideoCodec.AV1, videoCodecOf("av01.0.08M.08"))
+        assertEquals(VideoCodec.UNKNOWN, videoCodecOf("hev1.1.6.L93.B0"))
+        assertEquals(VideoCodec.UNKNOWN, videoCodecOf(null))
+        assertEquals(VideoCodec.UNKNOWN, videoCodecOf(""))
+    }
+
+    @Test
+    fun `a rendition the phone cannot decode is not offered`() {
+        // YouTube ships AV1 in an MP4 container; chosen on the container alone, it played as sound
+        // under a black frame on a phone with no AV1 decoder.
+        val avc = candidate(720, codec = VideoCodec.AVC)
+        val av1 = candidate(720, codec = VideoCodec.AV1)
+
+        val kept = decodableVideoCandidates(listOf(av1, avc)) { mimeType, _ -> mimeType != "video/av01" }
+
+        assertEquals(listOf(avc), kept)
+    }
+
+    @Test
+    fun `a rendition of unknown codec is kept, and so is everything when nothing passes`() {
+        val unknown = candidate(720)
+        val av1 = candidate(1080, codec = VideoCodec.AV1)
+
+        assertEquals(listOf(unknown), decodableVideoCandidates(listOf(unknown, av1)) { _, _ -> false })
+        // Refusing every rendition would claim the video has no picture; the player is let try.
+        assertEquals(listOf(av1), decodableVideoCandidates(listOf(av1)) { _, _ -> false })
+    }
+
+    @Test
+    fun `at one height the cheaper codec to decode wins, before the container`() {
+        val av1Mp4 = candidate(720, codec = VideoCodec.AV1)
+        val vp9Webm = candidate(720, mp4 = false, codec = VideoCodec.VP9)
+        val avcMp4 = candidate(720, codec = VideoCodec.AVC)
+
+        assertSame(avcMp4, selectVideoCandidate(listOf(av1Mp4, vp9Webm, avcMp4), VideoQuality(720)))
+        assertSame(vp9Webm, selectVideoCandidate(listOf(av1Mp4, vp9Webm), VideoQuality(720)))
+    }
 
     // --- the resolution cache ---------------------------------------------
 
@@ -109,7 +160,7 @@ class NewPipeAudioResolverTest {
             }
             every { StreamInfo.getInfo(any<String>()) } returns info
 
-            block(NewPipeAudioResolver(mockk(relaxed = true), CLOCK))
+            block(NewPipeAudioResolver(mockk(relaxed = true), CLOCK) { _, _ -> true })
         } finally {
             unmockkStatic(StreamInfo::class)
         }

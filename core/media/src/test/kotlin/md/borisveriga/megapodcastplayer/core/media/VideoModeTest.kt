@@ -136,6 +136,28 @@ class VideoModeTest {
     }
 
     @Test
+    fun `a picture asked for an episode the player has left is not shown on its successor`() {
+        // The ask is decided, then sent; the queue can move on in between.
+        val player = playerAt(index = 0, positionMs = 5_000L, current = audio)
+
+        assertEquals(
+            VideoModeOutcome.SUPERSEDED,
+            player.enterVideoMode(VideoQuality(720), expectedEpisodeId = "another-episode"),
+        )
+        verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
+    }
+
+    @Test
+    fun `a picture asked for the episode playing is shown`() {
+        val player = playerAt(index = 0, positionMs = 5_000L, current = audio)
+
+        assertEquals(
+            VideoModeOutcome.SWAPPED,
+            player.enterVideoMode(VideoQuality(720), expectedEpisodeId = "ep-1"),
+        )
+    }
+
+    @Test
     fun `a feed episode cannot enter video`() {
         val player = playerAt(index = 0, positionMs = 5_000L, current = feed)
 
