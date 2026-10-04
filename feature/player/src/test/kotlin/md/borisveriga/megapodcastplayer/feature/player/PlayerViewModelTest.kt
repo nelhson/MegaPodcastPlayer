@@ -5,10 +5,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
@@ -38,6 +41,25 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
 
         coVerify(exactly = 0) { connection.setQueue(any(), any(), any(), any()) }
         coVerify(exactly = 0) { episodePlayer.resume() }
+    }
+
+    @Test
+    fun `before the player has been heard from the state is restoring, not emptied`() {
+        // The value the first frame is drawn from. Emptied is what shuts the sheet, and a sheet
+        // restored open with the activity must still be open when its episode arrives.
+        val first = viewModel.uiState.value
+
+        assertTrue(first.isIdle)
+        assertFalse(first.isEmptied)
+    }
+
+    @Test
+    fun `a player that says it holds nothing is emptied`() = runTest {
+        playbackState.value = PlaybackState(isConnected = true)
+
+        viewModel.uiState.test {
+            assertTrue(awaitItem().isEmptied)
+        }
     }
 
     @Test
@@ -277,10 +299,24 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
     }
 
     @Test
-    fun `tapping a queued episode plays it`() = runTest {
-        viewModel.playQueued("c")
+    fun `tapping a queued episode plays it, and says so once the player has it`() = runTest {
+        coEvery { episodePlayer.play("c") } returns true
+        var opened = false
+
+        viewModel.playQueued("c") { opened = true }
 
         coVerify { episodePlayer.play("c") }
+        assertTrue(opened)
+    }
+
+    @Test
+    fun `a queued episode that has gone opens nothing`() = runTest {
+        coEvery { episodePlayer.play("c") } returns false
+        var opened = false
+
+        viewModel.playQueued("c") { opened = true }
+
+        assertFalse(opened)
     }
 
     @Test
@@ -513,40 +549,108 @@ class PlayerViewModelTest : PlayerViewModelFixture() {
         coVerify { playbackRepository.setPlayerMode(PlayerMode.VIDEO) }
     }
 
+    // --- the one door into the player: which face an ask opens ---------------
+
     @Test
-    fun `asked before the state has filled in, the player still knows it opens as video`() = runTest {
+    fun `asked for sound, the player opens as the sheet without waiting on the service`() = runTest {
+        playerMode.value = PlayerMode.VIDEO
+        playbackState.value = PlaybackState(isConnected = false)
+
+        assertEquals(PlayerMode.AUDIO, viewModel.faceFor("a", OpenPlayerAs.AUDIO))
+        // Not a moment of the timeout spent: the ask alone answered.
+        assertEquals(0L, currentTime)
+    }
+
+    @Test
+    fun `asked for the picture of the episode loaded, the player opens as video`() = runTest {
+        // Whatever the mode was: the ask is what sets it.
+        playerMode.value = PlayerMode.AUDIO
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a", youTubeVideoId = VIDEO_ID)
+
+        assertEquals(PlayerMode.VIDEO, viewModel.faceFor("a", OpenPlayerAs.VIDEO))
+        assertEquals(PlayerMode.VIDEO, viewModel.faceFor(null, OpenPlayerAs.VIDEO))
+    }
+
+    @Test
+    fun `asked for a picture, the player waits for the episode it was asked for`() = runTest {
+        // Another episode with a picture is still loaded; opening on that would show its picture.
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "old", youTubeVideoId = VIDEO_ID)
+        var face: PlayerMode? = null
+        val asking = launch { face = viewModel.faceFor("a", OpenPlayerAs.VIDEO) }
+        runCurrent()
+        assertTrue(asking.isActive)
+
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a", youTubeVideoId = VIDEO_ID)
+        asking.join()
+
+        assertEquals(PlayerMode.VIDEO, face)
+    }
+
+    @Test
+    fun `a picture asked for an episode the player never loads opens nothing`() = runTest {
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "old", youTubeVideoId = VIDEO_ID)
+
+        assertEquals(null, viewModel.faceFor("a", OpenPlayerAs.VIDEO))
+        // It did wait, and gave up.
+        assertTrue(currentTime > 0L)
+    }
+
+    @Test
+    fun `a picture asked for an episode that has none opens the sheet`() = runTest {
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a")
+
+        assertEquals(PlayerMode.AUDIO, viewModel.faceFor("a", OpenPlayerAs.VIDEO))
+    }
+
+    @Test
+    fun `asked before the state has filled in, the player still knows it was left as video`() = runTest {
         // Nobody is collecting `uiState` here, which is the cold start the question exists for.
         playerMode.value = PlayerMode.VIDEO
         playbackState.value = PlaybackState(isConnected = true, episodeId = "a", youTubeVideoId = VIDEO_ID)
 
-        assertTrue(viewModel.awaitOpensAsVideo())
+        assertEquals(PlayerMode.VIDEO, viewModel.faceFor(null, OpenPlayerAs.REMEMBERED))
     }
 
     @Test
-    fun `in audio mode the player opens as audio without waiting on the service`() = runTest {
+    fun `left in audio, the player opens as the sheet without waiting on the service`() = runTest {
         playbackState.value = PlaybackState(isConnected = false)
 
-        assertFalse(viewModel.awaitOpensAsVideo())
+        assertEquals(PlayerMode.AUDIO, viewModel.faceFor(null, OpenPlayerAs.REMEMBERED))
         // Not a moment of the timeout spent: the mode alone answered.
         assertEquals(0L, currentTime)
     }
 
     @Test
-    fun `a service that never says what is loaded opens the player as audio`() = runTest {
+    fun `left in video, a service that never says what is loaded opens the sheet`() = runTest {
         playerMode.value = PlayerMode.VIDEO
         playbackState.value = PlaybackState(isConnected = false)
 
-        assertFalse(viewModel.awaitOpensAsVideo())
+        assertEquals(PlayerMode.AUDIO, viewModel.faceFor(null, OpenPlayerAs.REMEMBERED))
         // It did wait, and gave up: the answer came from the timeout, not from the mode.
         assertTrue(currentTime > 0L)
     }
 
     @Test
-    fun `video mode on a feed episode opens the player as audio`() = runTest {
+    fun `left in video, a feed episode opens the sheet`() = runTest {
         playerMode.value = PlayerMode.VIDEO
         playbackState.value = PlaybackState(isConnected = true, episodeId = "a")
 
-        assertFalse(viewModel.awaitOpensAsVideo())
+        assertEquals(PlayerMode.AUDIO, viewModel.faceFor("a", OpenPlayerAs.REMEMBERED))
+    }
+
+    @Test
+    fun `a remembered face waits for the episode just started, not the one before it`() = runTest {
+        // A queue row tapped while a feed episode plays, with the player left in video.
+        playerMode.value = PlayerMode.VIDEO
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "old")
+        var face: PlayerMode? = null
+        val asking = launch { face = viewModel.faceFor("a", OpenPlayerAs.REMEMBERED) }
+        runCurrent()
+
+        playbackState.value = PlaybackState(isConnected = true, episodeId = "a", youTubeVideoId = VIDEO_ID)
+        asking.join()
+
+        assertEquals(PlayerMode.VIDEO, face)
     }
 
     private companion object {

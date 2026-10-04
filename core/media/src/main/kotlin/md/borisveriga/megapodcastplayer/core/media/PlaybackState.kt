@@ -48,6 +48,11 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
  *   output it currently has. The size above says a picture was *decoded*, which stays true when
  *   the output is taken away or changed; this says one is *on screen*, which is what decides
  *   whether a poster still has to cover it.
+ * @property isRestoring true until the playback service has been heard from for the first time —
+ *   and again while a connection that dropped is being rebuilt. Nothing is loaded *yet*, which is
+ *   not the same as nothing being loaded: the service puts the persisted queue back as it starts,
+ *   and a screen that treated the wait as an empty player would close the face it was restored on
+ *   a moment before the episode arrived. Never true together with [isConnected].
  */
 data class PlaybackState(
     val isConnected: Boolean = false,
@@ -72,10 +77,19 @@ data class PlaybackState(
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
     val pictureReady: Boolean = false,
+    val isRestoring: Boolean = false,
 ) {
 
     /** True when there is nothing loaded, i.e. the mini player should be hidden. */
     val isIdle: Boolean get() = episodeId == null
+
+    /**
+     * True when the player is known to hold nothing: idle, and not merely not heard from yet.
+     *
+     * What a screen that closes itself over an empty player goes by; [isIdle] alone is also true
+     * for the moments before the service has put the queue back.
+     */
+    val isEmptied: Boolean get() = isIdle && !isRestoring
 
     /** True when the loaded episode has a picture the video screen could show. */
     val canWatch: Boolean get() = youTubeVideoId != null

@@ -118,6 +118,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
@@ -132,10 +133,9 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * Podcast detail screen: the show's header and its episode list.
  *
  * @param onBack invoked when the user navigates back, and automatically once the show is removed.
- * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the caller
- *   can open the full player.
- * @param onEpisodeWatching invoked once an episode started as video — by the sheet's *Play video*
- *   or a row's video button — is loaded, so the caller can open the video screen.
+ * @param onOpenPlayer invoked once an episode has been handed to the player, so the shell can
+ *   open the player on it: as sound for the play button and a chapter, as picture for the sheet's
+ *   *Play video* and a row's video button.
  * @param modifier layout modifier.
  * @param showBackButton false when the screen is rendered as the detail pane of a two-pane layout,
  *   where the list is still on screen and a back arrow would be misleading.
@@ -144,8 +144,7 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 @Composable
 fun PodcastDetailRoute(
     onBack: () -> Unit,
-    onEpisodePlaying: () -> Unit,
-    onEpisodeWatching: () -> Unit,
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
     viewModel: PodcastDetailViewModel = hiltViewModel(),
@@ -171,11 +170,15 @@ fun PodcastDetailRoute(
         // A tap opens the episode; the row's own play button plays it. See the sheet's KDoc for
         // why an episode had to become readable before it could become one tap away.
         onEpisodeClick = viewModel::openEpisode,
-        onEpisodePlay = { episodeId -> viewModel.togglePlay(episodeId, onEpisodePlaying) },
-        onEpisodePlayFrom = { episodeId, positionMs ->
-            viewModel.playFrom(episodeId, positionMs, onEpisodePlaying)
+        onEpisodePlay = { episodeId ->
+            viewModel.togglePlay(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
         },
-        onEpisodeWatch = { episodeId -> viewModel.watchEpisode(episodeId, onEpisodeWatching) },
+        onEpisodePlayFrom = { episodeId, positionMs ->
+            viewModel.playFrom(episodeId, positionMs) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+        },
+        onEpisodeWatch = { episodeId ->
+            viewModel.watchEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.VIDEO) }
+        },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onEpisodePlayNext = viewModel::playNext,

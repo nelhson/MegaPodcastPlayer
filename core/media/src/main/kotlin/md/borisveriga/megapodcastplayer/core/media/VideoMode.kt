@@ -161,6 +161,8 @@ internal fun Player.exitVideoMode(): VideoModeOutcome {
  * The two timeline changes it causes both list the same episode, which is why
  * [PlaybackPersistenceListener] de-duplicates the queue it mirrors.
  *
+ * Whether the player is prepared is left as it was found, except after a failure; see below.
+ *
  * @param replacement the item to put in the current one's place.
  */
 internal fun Player.swapCurrentItem(replacement: MediaItem) {
@@ -170,5 +172,7 @@ internal fun Player.swapCurrentItem(replacement: MediaItem) {
     seekTo(index + 1, position)
     removeMediaItem(index)
     // A player that had stopped on an error needs preparing again before the replacement loads.
-    if (playbackState == Player.STATE_IDLE) prepare()
+    // Only that one: a player that is idle because its queue was restored and never started has
+    // not failed, and preparing it would open a stream nobody has pressed play on.
+    if (playbackState == Player.STATE_IDLE && playerError != null) prepare()
 }

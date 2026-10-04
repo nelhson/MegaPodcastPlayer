@@ -135,6 +135,24 @@ class VideoViewModelTest {
     }
 
     @Test
+    fun `a picture wanted before the queue is back is asked for once it is`() = runTest {
+        // The video screen restored with the activity, ahead of the service's restore. Asked of an
+        // empty player the answer would be a refusal, shown over an episode about to arrive.
+        playbackState.value = PlaybackState(isRestoring = true)
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.enter()
+
+        coVerify(exactly = 0) { connection.enterVideo(any(), any()) }
+        assertFalse(viewModel.uiState.value.refused)
+
+        playbackState.value = watching()
+
+        coVerify(exactly = 1) { connection.enterVideo(any(), "ep-$VIDEO_ID") }
+        assertFalse(viewModel.uiState.value.refused)
+    }
+
+    @Test
     fun `a refusal stands for as long as there is no picture`() = runTest {
         // It is what the frame says in place of the picture, so it must not expire like a message.
         coEvery { connection.enterVideo(any(), any()) } returns false

@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.feature.library.LibraryRoute
 import md.borisveriga.megapodcastplayer.feature.podcast.PodcastDetailRoute
 import md.borisveriga.megapodcastplayer.navigation.ReturnToListOnReTapEffect
@@ -52,10 +53,8 @@ import md.borisveriga.megapodcastplayer.navigation.rememberDetailPaneGraph
  * @param onOpenSettings opens settings, likewise.
  * @param scrollToTopSignal how many times the Library tab has been re-tapped. With a show filling
  *   the screen it closes the show; otherwise it is handed to the list pane, which scrolls (NAV-4).
- * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the shell
- *   can expand the sheet.
- * @param onEpisodeWatching invoked once an episode started as video — by the sheet's *Play video*
- *   or a row's video button — is loaded, so the shell can open the video screen.
+ * @param onOpenPlayer invoked once an episode of the show in the detail pane has been handed to
+ *   the player, so the shell can open the player on it, as sound or as picture.
  * @param modifier layout modifier.
  * @param paneNavigator decides how many panes there is room for and which one is in front;
  *   injected for tests.
@@ -66,8 +65,7 @@ import md.borisveriga.megapodcastplayer.navigation.rememberDetailPaneGraph
 fun LibraryListDetail(
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
-    onEpisodePlaying: () -> Unit,
-    onEpisodeWatching: () -> Unit,
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
     paneNavigator: ThreePaneScaffoldNavigator<Nothing> =
@@ -127,8 +125,7 @@ fun LibraryListDetail(
                         }
                     }
                 },
-                onEpisodePlaying = onEpisodePlaying,
-                onEpisodeWatching = onEpisodeWatching,
+                onOpenPlayer = onOpenPlayer,
                 showBackButton = !isListPaneVisible,
             )
         }

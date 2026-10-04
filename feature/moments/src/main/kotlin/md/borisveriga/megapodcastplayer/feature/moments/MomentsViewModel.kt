@@ -206,10 +206,14 @@ class MomentsViewModel @Inject constructor(
      * [md.borisveriga.megapodcastplayer.core.model.Moment.resumePositionMs].
      *
      * @param moment the moment to play.
+     * @param onPlaying invoked once playback has been handed to the player, so the caller can open
+     *   the player. Not called when the episode has gone.
      */
-    fun play(moment: MomentWithEpisode) {
+    fun play(moment: MomentWithEpisode, onPlaying: () -> Unit = {}) {
         viewModelScope.launch {
-            episodePlayer.playFrom(moment.moment.episodeId, moment.moment.resumePositionMs)
+            if (episodePlayer.playFrom(moment.moment.episodeId, moment.moment.resumePositionMs)) {
+                onPlaying()
+            }
         }
     }
 

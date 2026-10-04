@@ -25,6 +25,8 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -77,6 +79,16 @@ class PlaybackConnection @Inject constructor(
 
     private var controller: MediaController? = null
 
+    /**
+     * How many controllers have been disconnected, which is only ever read as "one just was".
+     *
+     * A controller says it has been disconnected through the listener it was built with, and the
+     * flow following it is elsewhere; this is the line between them. A count rather than a flag so
+     * that every disconnection is a new value, and a state rather than an event so that a follower
+     * that starts late still checks its controller once.
+     */
+    private val disconnections = MutableStateFlow(0)
+
     /** Set when a command fails, so the UI can explain why nothing happened. */
     private val commandErrors = MutableStateFlow<String?>(null)
 
@@ -96,14 +108,32 @@ class PlaybackConnection @Inject constructor(
      * Sharing is [SharingStarted.WhileSubscribed] with a grace period: rotating the device or
      * navigating from the mini player to the full player must not tear the connection down.
      */
-    val playbackState: StateFlow<PlaybackState> = callbackFlow {
-        val mediaController = suspendRunCatching { controller() }
-            .getOrElse { error ->
-                // No service means no playback, but the UI must still render — as idle, not as a
-                // crash. A cancelled collector is not a failure and never reaches here.
-                send(PlaybackState(isConnected = false, errorMessage = error.message))
-                return@callbackFlow
-            }
+    val playbackState: StateFlow<PlaybackState> = followSession(::controller, ::statesOf)
+        .flowOn(Dispatchers.Main.immediate)
+        .stateIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            // Not heard from yet, which is not the same as holding nothing.
+            initialValue = PlaybackState(isRestoring = true),
+        )
+
+    /**
+     * The states of one controller, from the restored queue until the controller is disconnected.
+     *
+     * Nothing is sent before the service has finished putting the persisted queue back. A
+     * controller connects to a service whose player is still empty, and a snapshot taken then says
+     * "nothing loaded" a moment before something is: the player sheet and the video screen both
+     * close themselves on that, and a face restored with the activity would be gone before the
+     * episode it belongs to arrived.
+     *
+     * Completes when the controller is disconnected — the session was released, or the service
+     * died — which is [followSession]'s cue to connect again.
+     *
+     * @param mediaController a connected controller.
+     */
+    private fun statesOf(mediaController: MediaController): Flow<PlaybackState> = callbackFlow {
+        // An unanswered wait is not held against the snapshot: it then says what the player holds.
+        suspendRunCatching { mediaController.awaitRestore() }
 
         val listener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -125,24 +155,25 @@ class PlaybackConnection @Inject constructor(
 
         val ticker = launch {
             while (isActive) {
-                kotlinx.coroutines.delay(POSITION_TICK_MS)
+                delay(POSITION_TICK_MS)
                 if (mediaController.isPlaying) {
                     trySend(mediaController.snapshot(commandErrors.value, pictureReady))
                 }
             }
         }
 
+        // Checked on arrival as well as on every disconnection, since this one may have gone
+        // during the wait above.
+        val watchdog = launch {
+            disconnections.collect { if (!mediaController.isConnected) close() }
+        }
+
         awaitClose {
             ticker.cancel()
+            watchdog.cancel()
             mediaController.removeListener(listener)
         }
     }
-        .flowOn(Dispatchers.Main.immediate)
-        .stateIn(
-            scope = scope,
-            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
-            initialValue = PlaybackState(),
-        )
 
     /**
      * Plays [episode] now, keeping the rest of the queue.
@@ -541,13 +572,8 @@ class PlaybackConnection @Inject constructor(
      * @return true once the restore has finished; false when the service could not be reached.
      */
     suspend fun awaitRestored(): Boolean =
-        suspendRunCatching {
-            withContext(Dispatchers.Main.immediate) {
-                controller()
-                    .sendCustomCommand(SessionCommand(SESSION_COMMAND_AWAIT_RESTORE, Bundle.EMPTY), Bundle.EMPTY)
-                    .await()
-            }
-        }.map { result -> result.resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
+        suspendRunCatching { withContext(Dispatchers.Main.immediate) { controller().awaitRestore() } }
+            .getOrDefault(false)
 
     /** Clears the last command error once the UI has shown it. */
     fun clearError() {
@@ -579,11 +605,14 @@ class PlaybackConnection @Inject constructor(
     }
 
     /**
-     * Returns the connected controller, connecting on first use.
+     * Returns the connected controller, connecting on first use and again after a disconnection.
      *
      * The controller is kept for the process's lifetime: it binds the service without starting it,
      * and Media3 only promotes the service to the foreground while audio is actually playing, so an
      * idle connection costs nothing.
+     *
+     * Each one is built with a listener for its own disconnection, which is what tells
+     * [playbackState] that the session it was following has gone.
      */
     private suspend fun controller(): MediaController =
         withContext(Dispatchers.Main.immediate) {
@@ -591,9 +620,26 @@ class PlaybackConnection @Inject constructor(
                 controller?.takeIf { it.isConnected } ?: MediaController.Builder(
                     context,
                     SessionToken(context, ComponentName(context, PlaybackService::class.java)),
-                ).buildAsync().await().also { controller = it }
+                )
+                    .setListener(DisconnectionListener())
+                    .buildAsync()
+                    .await()
+                    .also { controller = it }
             }
         }
+
+    /**
+     * Notes a controller's disconnection, on the main thread, where Media3 reports it.
+     *
+     * The controller is of no further use — Media3 has released it — so it is forgotten here
+     * rather than left for the next command to find disconnected.
+     */
+    private inner class DisconnectionListener : MediaController.Listener {
+        override fun onDisconnected(disconnected: MediaController) {
+            if (controller === disconnected) controller = null
+            disconnections.value += 1
+        }
+    }
 
     private companion object {
         /** Full volume: what the player runs at whenever the sleep timer is not fading it out. */
@@ -640,6 +686,16 @@ internal fun AudioManager.applyMediaVolume(level: Int): Boolean {
     setStreamVolume(AudioManager.STREAM_MUSIC, level.coerceIn(range), /* flags = */ 0)
     return true
 }
+
+/**
+ * Waits until the service has put the persisted queue back, or found none to put back.
+ *
+ * @return true once the restore has finished; false when the service answered anything else.
+ */
+private suspend fun MediaController.awaitRestore(): Boolean =
+    sendCustomCommand(SessionCommand(SESSION_COMMAND_AWAIT_RESTORE, Bundle.EMPTY), Bundle.EMPTY)
+        .await()
+        .resultCode == SessionResult.RESULT_SUCCESS
 
 /**
  * Flattens the controller's current state into a [PlaybackState].

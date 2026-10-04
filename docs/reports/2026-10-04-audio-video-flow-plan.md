@@ -10,8 +10,8 @@ This is a plan only, written on 2026-10-04. No code is written until a phase is 
 | Phase | State |
 |---|---|
 | 1 — The black picture | **Done** on branch `video-black-picture`, 2026-10-04. Checked on the `Pixel_9a_2` emulator: rotation ×4, minimise and reopen, paused minimise, home and back, full screen. |
-| 2 — Coming back after the app was closed | **In progress**, committed on `video-black-picture`, 2026-10-04. Done: 2.1, 2.2, 2.3, 2.4, 2.5, 2.7. **Next: step 2.6, then 2.8.** Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. |
-| 3 — Switching modes | Not started. |
+| 2 — Coming back after the app was closed | **Done**, 2026-10-04: 2.1–2.5 and 2.7 committed on `video-black-picture` (83a62f9); 2.6 and 2.8 written and checked, **not committed**. Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. For 2.6, each with the process killed in the background (`run-as … kill -9`, new pid) and the app reopened: the expanded sheet comes back expanded; the video screen comes back as the video screen, poster, paused at 0:15 where it was left, session state `NONE` (nothing prepared), and Play carries on with the picture from there; a minimised video comes back as the bar with its poster. |
+| 3 — Switching modes | **In progress**, 2026-10-04. Done: 3.1, **not committed**. **Next: step 3.2.** Checked on `Pixel_9a_2`: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. |
 | 4 — Downloading and managing | Not started. |
 
 Where phase 1 ended up differing from the steps below:
@@ -56,9 +56,37 @@ Where phase 2 ended up differing from the steps below:
   with `kill -9` and the system restarted it at once (new pid) before the key was sent, so it shows
   a fresh process resuming from a media key, not that the receiver was what started it. Still to do
   on the Fold 7: Bluetooth play after the app was swiped away.
+- 2.6: the state is `PlaybackState.isRestoring`, true until the service has answered
+  `AWAIT_RESTORE` for the first time; `PlaybackConnection` sends no snapshot before that. The sheet
+  shuts on `isEmptied` (idle and not restoring), and `VideoViewModel` holds its ask for the picture
+  until the restore is in. The face that comes back is the one the *activity* saved, so this covers
+  a process the system took in the background; after a swipe-away or a force-stop there is no saved
+  state, and the app opens on the library with the bar, whose tap opens the remembered mode. The
+  face is not persisted. Showing the poster without the network needed one more thing: a swap to
+  the picture's flavour no longer prepares an idle player unless it stopped on an error.
 - 2.7: `playbackSettings` is de-duplicated in `UserPreferencesDataSource`, and the service follows
   the speed apart from the other settings, so a changed skip interval or auto-play switch does not
   put the app's speed back over a show's either.
+- 2.8: one loop, `followSession` in `:core:media`: a failed connect is said as disconnected and
+  tried again after 1 s, doubling to 30 s, for as long as anything collects the state; a
+  controller that is disconnected ends its flow, the state goes back to restoring, and the next
+  connect recreates the service, which restores. Before this a failed first connect also ended
+  the `callbackFlow` without `awaitClose`. **Not seen on the emulator**: the app's own controller
+  keeps the service bound, so neither a failed connect nor a disconnection could be provoked
+  (`am stopservice` leaves it up). It rests on `SessionFollowingTest`.
+
+Where phase 3 ended up differing from the steps below:
+
+- 3.1: the door is `openPlayer(episodeId, OpenPlayerAs)` in `MegaPodcastPlayerApp`, and the
+  decision behind it is `PlayerViewModel.faceFor`, which replaces `awaitOpensAsVideo`. The screens
+  still start the episode themselves and then say how to open the player; the door does not play.
+  Queue and Moments, which opened nothing before, now open the player as `REMEMBERED` — a visible
+  change: a tap on a queue row or a moment brings the player up. Downloads stays `AUDIO` until 4.3.
+  **Search is not through the door**: its preview plays from inside the preview sheet with nothing
+  stored, and opening the player over that sheet was not something to decide in passing. A picture
+  asked for an episode that turns out to have none now opens the sheet instead of the video screen
+  that then left. Queue rows were not tapped on the emulator (nothing was queued); the same path
+  was checked through Moments.
 
 ## Context
 

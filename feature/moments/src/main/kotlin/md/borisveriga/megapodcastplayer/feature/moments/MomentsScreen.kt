@@ -85,6 +85,7 @@ import md.borisveriga.megapodcastplayer.core.model.MomentGroup
 import md.borisveriga.megapodcastplayer.core.model.MomentShow
 import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
 import md.borisveriga.megapodcastplayer.core.model.MomentsFilter
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.groupedByShow
 import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
 
@@ -95,6 +96,8 @@ import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
  * activity result registry, and none exists under `createComposeRule`, which is what the stateless
  * screen is tested with.
  *
+ * @param onOpenPlayer invoked once a moment's episode has been handed to the player, so the shell
+ *   can open the player on it — as it was last used, since a moment asks for neither face.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
  *   at the top (NAV-4).
@@ -103,6 +106,7 @@ import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
  */
 @Composable
 fun MomentsRoute(
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
@@ -116,7 +120,9 @@ fun MomentsRoute(
 
     MomentsScreen(
         uiState = uiState,
-        onPlay = viewModel::play,
+        onPlay = { moment ->
+            viewModel.play(moment) { onOpenPlayer(moment.moment.episodeId, OpenPlayerAs.REMEMBERED) }
+        },
         onEdit = viewModel::edit,
         onDelete = viewModel::delete,
         onExport = { exportLauncher.launch(viewModel.suggestedFileName()) },

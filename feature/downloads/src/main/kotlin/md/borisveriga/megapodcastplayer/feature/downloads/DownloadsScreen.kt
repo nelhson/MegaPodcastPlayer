@@ -96,6 +96,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
@@ -104,8 +105,8 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  * Downloads screen: everything the download stack is tracking, across all shows — finished
  * episodes, transfers in progress, downloads waiting their turn, and failures.
  *
- * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the
- *   caller can open the full player.
+ * @param onOpenPlayer invoked once a tapped episode has been handed to the player, so the shell
+ *   can open the player on it. A row here is played as sound.
  * @param onBrowseLibrary invoked from the empty state, to send the user somewhere they can download
  *   something.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
@@ -117,7 +118,7 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  */
 @Composable
 fun DownloadsRoute(
-    onEpisodePlaying: () -> Unit,
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     onBrowseLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
@@ -132,7 +133,9 @@ fun DownloadsRoute(
 
     DownloadsScreen(
         uiState = uiState,
-        onEpisodeClick = { episodeId -> viewModel.play(episodeId, onEpisodePlaying) },
+        onEpisodeClick = { episodeId ->
+            viewModel.play(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+        },
         onEpisodeRetry = viewModel::retry,
         onEpisodeDownloadNow = viewModel::downloadNow,
         onEpisodeRemove = viewModel::remove,

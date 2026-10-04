@@ -529,10 +529,15 @@ class VideoViewModel @Inject constructor(
      * the queue can move on in between; the service then leaves the newcomer alone, and the
      * collector that follows the episode asks again for it.
      *
+     * Nor before the service has said what it holds. The video screen can be restored with the
+     * activity, ahead of the queue the service is still putting back, and asking then is asking an
+     * empty player: the answer is a refusal, said in the frame of an episode that is about to
+     * arrive and show its picture.
+     *
      * @param chosen the rendition the user just picked, or null to work it out.
      */
     private suspend fun showPicture(chosen: VideoQuality? = null) {
-        val episodeId = connection.playbackState.value.episodeId
+        val episodeId = connection.playbackState.first { !it.isRestoring }.episodeId
         val downloaded = episodeId
             ?.let { downloadRepository.observeVideoDownloads().first()[it] }
             ?.takeIf { it.isComplete }

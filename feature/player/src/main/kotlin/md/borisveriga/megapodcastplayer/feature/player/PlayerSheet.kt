@@ -144,8 +144,12 @@ fun PlayerSheetScaffold(
     // The queue can empty while the player is open — the last episode finishes, or the user
     // removes it. The sheet then stops being composed, and without this the state it left behind
     // would keep the navigation bar hidden with nothing on screen to bring it back.
-    LaunchedEffect(uiState.isIdle) {
-        if (uiState.isIdle) sheetState.collapse()
+    //
+    // Emptied, not merely idle. Every launch starts idle, until the service has put the queue
+    // back, and a sheet that was open when the system took the process is restored open: shut on
+    // that first frame, it would come back as a bar under an episode that was left full screen.
+    LaunchedEffect(uiState.isEmptied) {
+        if (uiState.isEmptied) sheetState.collapse()
     }
 
     // Whether the list of this episode's moments is open. Held here, like the sleep timer's, for
