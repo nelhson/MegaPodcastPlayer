@@ -839,12 +839,12 @@ private fun Modifier.barGestures(
     onDismiss: () -> Unit,
 ): Modifier {
     val dismissLabel = stringResource(R.string.player_dismiss)
-    val switchToAudioLabel = stringResource(R.string.video_listen)
+    val switchToAudioLabel = stringResource(R.string.player_switch_to_audio)
 
     return this
         .combinedClickable(
             onClickLabel = stringResource(
-                if (opensVideo) R.string.player_show_video else R.string.player_expand,
+                if (opensVideo) R.string.player_open_video else R.string.player_expand,
             ),
             onLongClickLabel = if (opensVideo) stringResource(R.string.player_bar_actions) else null,
             onLongClick = if (opensVideo) onOpenMenu else null,
@@ -903,7 +903,7 @@ private fun BarMenu(
             offset = DpOffset(x = collapsedHorizontalPadding, y = 0.dp),
         ) {
             DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.video_listen)) },
+                text = { Text(text = stringResource(R.string.player_switch_to_audio)) },
                 onClick = onSwitchToAudio,
             )
             DropdownMenuItem(

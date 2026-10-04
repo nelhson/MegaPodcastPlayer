@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import kotlin.math.roundToInt
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
@@ -135,7 +136,7 @@ internal fun DownloadVideoOptions(
 @Composable
 private fun downloadSubtitle(download: VideoDownload?): String {
     if (download == null) return stringResource(R.string.video_download_description)
-    val quality = stringResource(R.string.video_quality_label, download.quality.height)
+    val quality = formatVideoQuality(download.quality.height)
     return when (download.state) {
         DownloadState.COMPLETED -> stringResource(R.string.video_download_completed, quality)
 
@@ -162,7 +163,7 @@ private fun DeleteVideoDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val label = stringResource(R.string.video_quality_label, quality.height)
+    val label = formatVideoQuality(quality.height)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.video_download_delete_title, label)) },

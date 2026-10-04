@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
@@ -110,7 +111,7 @@ internal fun QualityOptions(
                     FilterChip(
                         selected = isSelected,
                         onClick = { onSelect(quality) },
-                        label = { Text(stringResource(R.string.video_quality_label, quality.height)) },
+                        label = { Text(formatVideoQuality(quality.height)) },
                         leadingIcon = if (isSelected) {
                             {
                                 // The chip's own selected state is what a screen reader announces;

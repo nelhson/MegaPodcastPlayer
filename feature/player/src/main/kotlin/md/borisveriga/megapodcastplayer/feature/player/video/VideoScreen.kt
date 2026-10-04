@@ -1,7 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.player.video
 
 import android.content.pm.ActivityInfo
-import android.content.res.Configuration
 import android.view.SurfaceView
 import android.view.TextureView
 import android.view.WindowManager
@@ -70,26 +69,32 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.window.core.layout.WindowSizeClass
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LabelledWaveScrubber
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
@@ -230,23 +235,23 @@ fun VideoRoute(
         )
     }
 
-    // Whether the names, the transport and the buttons are on screen, or only the picture — kept
-    // as *the shape they were hidden in*, or null while they show. Saved, so a cleared picture
-    // survives the Fold opening; but a turn recreates the activity and restores whatever was
-    // saved, and landscape hides its controls on a timer, so a plain flag would turn back to
-    // portrait as a black page where the player was. Hidden in the other shape reads as showing.
-    val landscape = isLandscape()
-    var hiddenInLandscape by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    val controlsVisible = hiddenInLandscape != landscape
-
     // Whether the user asked for the picture to fill the screen, which holds the window in
     // landscape whichever way the phone is held. Saved, because asking is what recreates the
     // activity.
     var fullscreen by rememberSaveable { mutableStateOf(false) }
 
+    // Whether the names, the transport and the buttons are on screen, or only the picture — kept
+    // as *the shape they were hidden in*, or null while they show. Saved, so a cleared picture
+    // survives the Fold opening; but a turn recreates the activity and restores whatever was
+    // saved, and the overlay hides its controls on a timer, so a plain flag would turn back to
+    // the page as a black one where the player was. Hidden in the other shape reads as showing.
+    val overlay = showsOverlay(fullscreen)
+    var hiddenInOverlay by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    val controlsVisible = hiddenInOverlay != overlay
+
     FullscreenEffects(
-        landscape = landscape,
-        immersive = landscape || !controlsVisible,
+        overlay = overlay,
+        immersive = overlay || !controlsVisible,
         keepScreenOn = uiState.playback.isPlaying,
         lockLandscape = fullscreen,
     )
@@ -283,7 +288,7 @@ fun VideoRoute(
         modifier = modifier,
         fullscreen = fullscreen,
         controlsVisible = controlsVisible,
-        onControlsVisibleChange = { visible -> hiddenInLandscape = if (visible) null else landscape },
+        onControlsVisibleChange = { visible -> hiddenInOverlay = if (visible) null else overlay },
         snackbarHostState = snackbarHostState,
     )
 }
@@ -330,7 +335,7 @@ data class VideoActions(
 private fun videoDownloadMessageText(message: VideoDownloadMessage): String = when (message) {
     is VideoDownloadMessage.Queued -> stringResource(
         R.string.video_download_message_queued,
-        stringResource(R.string.video_quality_label, message.quality.height),
+        formatVideoQuality(message.quality.height),
     )
 
     VideoDownloadMessage.Deleted -> stringResource(R.string.video_download_message_deleted)
@@ -343,9 +348,12 @@ private fun videoDownloadMessageText(message: VideoDownloadMessage): String = wh
 /**
  * The screen, in whichever of its two shapes the window calls for.
  *
- * Portrait is a page: the episode's name under the top bar, the picture centred in the room
- * between that and the transport at the bottom. Landscape is the picture and nothing else, with
- * the transport laid over it and hidden again a few seconds after the last touch.
+ * A window with the height for it gets a page: the episode's name under the top bar, the picture
+ * centred in the room between that and the transport at the bottom. A window too short for one —
+ * a phone on its side — and any window the user asked to fill, gets the picture and nothing else,
+ * with the transport laid over it and hidden again a few seconds after the last touch. Which of
+ * the two is [videoShowsOverlay]'s to say, from the window's size and not from which way it is
+ * turned: the Fold opened out is wider than it is tall and has all the room a page wants.
  *
  * In both, [controlsVisible] says whether anything but the picture is drawn, and a tap flips it.
  *
@@ -373,10 +381,10 @@ internal fun VideoScreen(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val controls = ControlsVisibility(controlsVisible, onControlsVisibleChange)
-    if (isLandscape()) {
-        LandscapeVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
+    if (showsOverlay(fullscreen)) {
+        OverlayVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
     } else {
-        PortraitVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
+        PageVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
     }
 }
 
@@ -388,10 +396,45 @@ internal fun VideoScreen(
  */
 private class ControlsVisibility(val visible: Boolean, val onChange: (Boolean) -> Unit)
 
-/** Whether the window is wider than it is tall, which is what chooses the screen's shape. */
+/**
+ * Whether this window gets the overlay rather than the page; see [videoShowsOverlay].
+ *
+ * Read from the window rather than from the configuration's orientation, and in one place, so the
+ * route's effects and the screen's layout cannot come to different answers about the same window.
+ *
+ * @param fullscreen true while the user has asked for the picture to fill the screen.
+ */
 @Composable
-private fun isLandscape(): Boolean =
-    LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+private fun showsOverlay(fullscreen: Boolean): Boolean {
+    val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+    return videoShowsOverlay(windowHeight = windowHeight, fullscreen = fullscreen)
+}
+
+/**
+ * Which of its two shapes the video screen takes: the overlay, or the page.
+ *
+ * The page needs height: a top bar, two lines of names, the picture and three rows of transport,
+ * stacked. A window shorter than Material's medium height has no room for that under a picture of
+ * any size, and gets the overlay — which is every phone on its side, and a phone's half of a split
+ * screen. Everything taller gets the page, however wide: the Fold opened out is a landscape window
+ * by its proportions and used to get the overlay for it, a picture with its controls hidden on a
+ * timer on the one screen with room to show both.
+ *
+ * Asking for full screen is asking for the overlay, on any window. On a phone the window turns as
+ * well and would be short enough anyway; on a large one nothing turns, and without this the button
+ * would do nothing at all.
+ *
+ * Pure, so the windows this app meets can be asserted without a screenshot of each.
+ *
+ * @param windowHeight how tall the window is.
+ * @param fullscreen true while the user has asked for the picture to fill the screen.
+ * @return true for the overlay, false for the page.
+ */
+internal fun videoShowsOverlay(windowHeight: Dp, fullscreen: Boolean): Boolean =
+    fullscreen || windowHeight < PageMinHeight
+
+/** The least window height the page is laid out in: Material 3's medium height breakpoint. */
+private val PageMinHeight: Dp = WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND.dp
 
 /**
  * The page shape.
@@ -403,12 +446,12 @@ private fun isLandscape(): Boolean =
  * visible thing about the gesture. While cleared, the whole screen is one target that brings
  * everything back.
  *
- * Nothing hides on a timer here, unlike landscape: the page's controls are beside the picture, not
+ * Nothing hides on a timer here, unlike the overlay: the page's controls are beside the picture, not
  * over it, so they are only in the way when the user says they are.
  *
  * For the same reason Back, on a cleared page, brings the controls back before it does anything
  * else. The user cleared the page and Back undoes that; minimising from a page with no minimise
- * button in sight would be leaving a screen by a door that was not showing. Landscape does not do
+ * button in sight would be leaving a screen by a door that was not showing. The overlay does not do
  * this: its controls go on their own, so Back there would be spent undoing something nobody did.
  *
  * @param uiState what to render.
@@ -423,7 +466,7 @@ private fun isLandscape(): Boolean =
 // the bars hide, which is the whole of why it is used.
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun PortraitVideo(
+private fun PageVideo(
     uiState: VideoUiState,
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
@@ -506,17 +549,16 @@ private fun PortraitVideo(
                         .padding(vertical = MegaPodcastPlayerTheme.spacing.md),
                     contentAlignment = Alignment.Center,
                 ) {
-                    VideoFrame(
-                        uiState = uiState,
-                        surface = surface,
-                        actions = actions,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    // As large as the room allows in both directions. On a phone held upright
+                    // that is the full width; on a wide window the height runs out first, and a
+                    // frame told to fill the width would be squeezed out of its proportions.
+                    VideoFrame(uiState = uiState, surface = surface, actions = actions)
                 }
                 VideoControls(
                     uiState = uiState,
                     actions = actions,
                     fullscreen = fullscreen,
+                    overlay = false,
                     modifier = furniture.padding(
                         start = MegaPodcastPlayerTheme.spacing.screenHorizontal,
                         end = MegaPodcastPlayerTheme.spacing.screenHorizontal,
@@ -557,7 +599,7 @@ private fun PortraitVideo(
  * @param modifier layout modifier.
  */
 @Composable
-private fun LandscapeVideo(
+private fun OverlayVideo(
     uiState: VideoUiState,
     surface: @Composable (Modifier) -> Unit,
     actions: VideoActions,
@@ -625,6 +667,7 @@ private fun LandscapeVideo(
                         uiState = uiState,
                         actions = actions,
                         fullscreen = fullscreen,
+                        overlay = true,
                         modifier = Modifier.padding(bottom = MegaPodcastPlayerTheme.spacing.sm),
                     )
                 }
@@ -730,7 +773,7 @@ private fun PictureUnavailable(onRetry: () -> Unit, onListen: () -> Unit) {
                 Text(text = stringResource(R.string.video_retry))
             }
             TextButton(onClick = onListen, colors = onPoster) {
-                Text(text = stringResource(R.string.video_listen))
+                Text(text = stringResource(R.string.player_switch_to_audio))
             }
         }
     }
@@ -781,6 +824,7 @@ private fun EpisodeTitles(
  * @param uiState what to render.
  * @param actions the transport.
  * @param fullscreen true while the window is held in landscape at the user's asking.
+ * @param overlay true when laid over the picture rather than under it on the page.
  * @param modifier layout modifier.
  */
 @Composable
@@ -788,6 +832,7 @@ private fun VideoControls(
     uiState: VideoUiState,
     actions: VideoActions,
     fullscreen: Boolean,
+    overlay: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val playback = uiState.playback
@@ -859,7 +904,7 @@ private fun VideoControls(
                 Text(text = speed)
             }
 
-            val quality = stringResource(R.string.video_quality_label, uiState.qualityShown.height)
+            val quality = formatVideoQuality(uiState.qualityShown.height)
             val qualityDescription = stringResource(R.string.video_quality_button, quality)
             TextButton(
                 onClick = actions.onOpenQuality,
@@ -870,9 +915,10 @@ private fun VideoControls(
 
             DownloadButton(download = uiState.videoDownload, onClick = actions.onOpenDownload)
 
-            // Offered where it does something. In landscape that the phone was simply turned
-            // into, the way back is to turn it again; a button there could only fight the sensor.
-            if (fullscreen || !isLandscape()) {
+            // Offered where it does something. Over a picture the phone was simply turned on its
+            // side for, the way back is to turn it again; a button there could only fight the
+            // sensor.
+            if (fullscreen || !overlay) {
                 FullscreenButton(fullscreen = fullscreen, onClick = actions.onToggleFullscreen)
             }
         }
@@ -915,7 +961,7 @@ private fun FullscreenButton(fullscreen: Boolean, onClick: () -> Unit) {
  */
 @Composable
 private fun DownloadButton(download: VideoDownload?, onClick: () -> Unit) {
-    val quality = download?.let { stringResource(R.string.video_quality_label, it.quality.height) }
+    val quality = download?.let { formatVideoQuality(it.quality.height) }
     val (icon, description) = when {
         download == null || quality == null ->
             Icons.Rounded.Download to stringResource(R.string.video_download_button)
@@ -1017,18 +1063,18 @@ internal fun VideoTexture(
  * holds the window in landscape until they ask again or leave — it used to follow the sensor
  * regardless, which turned the screen on people who had told the phone not to, and recreated the
  * activity under a video that had only just started. The system bars go whenever only the picture
- * is wanted — always in landscape, and in portrait once the controls have been tapped away —
- * coming back with a swipe. And in landscape the picture is let run under the cutout; there is no
- * content there to lose to it.
+ * is wanted — always in the overlay, and on the page once the controls have been tapped away —
+ * coming back with a swipe. And in the overlay the picture is let run under the cutout; there is
+ * no content there to lose to it.
  *
- * @param landscape whether the window is currently wider than tall.
+ * @param overlay whether the screen is the picture with its controls laid over it.
  * @param immersive whether the system bars should be out of the picture's way.
  * @param keepScreenOn whether the picture is moving.
  * @param lockLandscape whether the user asked for the picture to fill the screen.
  */
 @Composable
 private fun FullscreenEffects(
-    landscape: Boolean,
+    overlay: Boolean,
     immersive: Boolean,
     keepScreenOn: Boolean,
     lockLandscape: Boolean,
@@ -1068,9 +1114,9 @@ private fun FullscreenEffects(
         onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
     }
 
-    DisposableEffect(activity, landscape) {
+    DisposableEffect(activity, overlay) {
         val window = activity?.window
-        if (window == null || !landscape) return@DisposableEffect onDispose {}
+        if (window == null || !overlay) return@DisposableEffect onDispose {}
         val previousCutoutMode = window.attributes.layoutInDisplayCutoutMode
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -1086,7 +1132,7 @@ private fun FullscreenEffects(
 /** The shape assumed until the decoder reports one; every YouTube rendition here is 16:9. */
 private const val DEFAULT_ASPECT_RATIO = 16f / 9f
 
-/** How long the landscape controls stay after the last touch while the picture is moving. */
+/** How long the overlay's controls stay after the last touch while the picture is moving. */
 private const val CONTROLS_TIMEOUT_MS = 3_000L
 
 /** The overlay's darkening at the top and bottom edges, where the controls sit over the picture. */
@@ -1122,6 +1168,20 @@ internal fun VideoScreenPreview() {
             actions = VideoActions(),
         )
     }
+}
+
+/**
+ * The video screen on a window wider than it is tall and tall enough for the page: the Fold 7
+ * opened out, near enough.
+ *
+ * Its own preview because what it shows is a decision — that this window gets the page and not the
+ * overlay its proportions used to earn it — and a picture sized by the height it was left rather
+ * than by the width it could have had.
+ */
+@Preview(name = "Unfolded", showBackground = true, widthDp = 882, heightDp = 830)
+@Composable
+internal fun VideoScreenWidePreview() {
+    VideoScreenPreview()
 }
 
 /**

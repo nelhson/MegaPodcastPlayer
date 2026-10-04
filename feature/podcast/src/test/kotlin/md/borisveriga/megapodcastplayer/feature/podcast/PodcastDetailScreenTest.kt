@@ -3,7 +3,9 @@ package md.borisveriga.megapodcastplayer.feature.podcast
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
@@ -283,6 +286,19 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithContentDescription("Play video").performClick()
 
         assertEquals("a", watched)
+    }
+
+    @Test
+    fun `the row's video button is a full touch target`() {
+        setScreen(
+            listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8"))),
+            source = PodcastSource.YOUTUBE,
+        )
+
+        // Drawn at the play button's 40 dp beside it, and touched at 48 round that.
+        composeRule.onNodeWithContentDescription("Play video")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test

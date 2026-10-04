@@ -120,8 +120,15 @@
 
     <!--
         Badges at the end of a finished row, naming what of the episode is on the phone: its sound,
-        its picture, or both. %1$d is the video's height in pixels, e.g. 720.
+        its picture, or both. %1$s is the video's quality, already formatted, e.g. "720p".
     -->
     <string name="downloads_badge_audio">Audio</string>
-    <string name="downloads_badge_video">Video · %1$dp</string>
+    <string name="downloads_badge_video">Video · %1$s</string>
+    <!--
+        The same two, spoken. Drawn, a pill at the end of a row in Downloads says "on this phone" by
+        where it is; read out, a bare "Audio" after an episode's title says nothing, so the spoken
+        form says it.
+    -->
+    <string name="downloads_badge_audio_spoken">Audio on this phone</string>
+    <string name="downloads_badge_video_spoken">Video on this phone, %1$s</string>
 </resources>

@@ -6,22 +6,28 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,7 +56,7 @@ class VideoScreenControlsTest {
     private lateinit var backDispatcher: OnBackPressedDispatcher
 
     /** The video screen on a YouTube episode, holding its own cleared-or-not flag. */
-    private fun setScreen(actions: VideoActions = VideoActions()) {
+    private fun setScreen(actions: VideoActions = VideoActions(), fullscreen: Boolean = false) {
         composeRule.setContent {
             backDispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current).onBackPressedDispatcher
             MegaPodcastPlayerTheme {
@@ -67,6 +73,7 @@ class VideoScreenControlsTest {
                     ),
                     surface = { modifier -> Box(modifier = modifier) },
                     actions = actions,
+                    fullscreen = fullscreen,
                     controlsVisible = controlsVisible,
                     onControlsVisibleChange = { controlsVisible = it },
                 )
@@ -178,5 +185,66 @@ class VideoScreenControlsTest {
         setScreen()
 
         assertEquals(false, backDispatcher.hasEnabledCallbacks())
+    }
+
+    /**
+     * The Fold opened out: a landscape window by its proportions, with the height of a page. The
+     * way to tell the page from the overlay here is the button only the page offers unasked.
+     */
+    @Test
+    @Config(qualifiers = "w882dp-h830dp-land-xxhdpi")
+    fun `a wide window tall enough for it gets the page, not the overlay`() {
+        setScreen()
+
+        composeRule.onNodeWithContentDescription("Fill the screen").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Minimise the video").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w882dp-h830dp-land-xxhdpi")
+    fun `on a wide window the picture keeps its proportions in the room it is left`() {
+        composeRule.setContent {
+            MegaPodcastPlayerTheme {
+                VideoScreen(
+                    uiState = VideoUiState(
+                        playback = PlaybackState(
+                            isConnected = true,
+                            episodeId = "e1",
+                            title = "Episode",
+                            showTitle = "A playlist",
+                            youTubeVideoId = "niTJ2221aS8",
+                            durationMs = 60_000L,
+                        ),
+                    ),
+                    surface = { modifier -> Box(modifier = modifier.testTag("surface")) },
+                    actions = VideoActions(),
+                )
+            }
+        }
+
+        val picture = composeRule.onNodeWithTag("surface", useUnmergedTree = true)
+            .getBoundsInRoot()
+        val names = composeRule.onNodeWithText("A playlist", useUnmergedTree = true).getBoundsInRoot()
+        val scrubber = composeRule.onNodeWithContentDescription("Playback position").getBoundsInRoot()
+
+        // 16:9, and in the room between the names and the transport rather than over either: a
+        // frame told only to fill the width takes whatever height that comes to.
+        assertEquals(16f / 9f, picture.width / picture.height, 0.02f)
+        assertTrue(picture.top >= names.bottom)
+        assertTrue(picture.bottom <= scrubber.top)
+    }
+
+    @Test
+    @Config(qualifiers = "w882dp-h830dp-land-xxhdpi")
+    fun `asking for full screen on a wide window gets the overlay`() {
+        // Nothing turns on a window this size, so the ask has to be what changes the shape. The
+        // overlay is told by Back: it is never spent on the controls there.
+        controlsVisible = false
+        setScreen(fullscreen = true)
+
+        assertEquals(false, backDispatcher.hasEnabledCallbacks())
+        tapLabelled("Show the controls").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Leave full screen").assertIsDisplayed()
     }
 }

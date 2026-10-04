@@ -3,6 +3,7 @@ package md.borisveriga.megapodcastplayer.feature.player
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -405,6 +406,23 @@ class PlayerSheetTest {
 
         // The video screen put away is still a video: the picture carries on in the bar.
         picture().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the minimised video's mark is spoken, and the audio bar has none`() {
+        setContent(PlayerSheetValue.Collapsed, uiState = watching)
+
+        // The only thing telling this bar from an audio one, and so why its tap opens a picture.
+        composeRule.onNodeWithContentDescription("Playing as video", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Podlodka #400").assertHasClickAction()
+    }
+
+    @Test
+    fun `an audio bar says nothing about a picture`() {
+        setContent(PlayerSheetValue.Collapsed)
+
+        composeRule.onNodeWithContentDescription("Playing as video", useUnmergedTree = true)
+            .assertDoesNotExist()
     }
 
     @Test

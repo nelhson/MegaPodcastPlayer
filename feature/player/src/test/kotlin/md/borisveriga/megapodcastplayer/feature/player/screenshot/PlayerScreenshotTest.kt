@@ -22,6 +22,7 @@ import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SpeedControlsPreview
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenPreview
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenUnavailablePreview
+import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenWidePreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -141,6 +142,17 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
      */
     @Test
     fun videoScreen() = capture("video-screen") { VideoScreenPreview() }
+
+    /**
+     * The video screen on the Fold 7 opened out: the second golden recorded on the second device.
+     *
+     * It earns the exception the way the wide player does. The window is wider than it is tall,
+     * which used to make this the overlay; it is the page now, with the picture sized by the
+     * height left for it, and neither fact shows in an image of a phone.
+     */
+    @Test
+    @Config(qualifiers = SCREENSHOT_QUALIFIERS_WIDE)
+    fun videoScreenWide() = capture("video-screen-wide") { VideoScreenWidePreview() }
 
     /**
      * The video screen with no picture to show: the poster, the sentence, and its two buttons.

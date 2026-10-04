@@ -67,7 +67,7 @@ fun ModeSwitch(
     ) {
         Segment(
             label = stringResource(R.string.player_mode_audio),
-            switchLabel = stringResource(R.string.video_listen),
+            switchLabel = stringResource(R.string.player_switch_to_audio),
             selected = selected == PlayerMode.AUDIO,
             enabled = enabled,
             onSwitch = onSwitch,

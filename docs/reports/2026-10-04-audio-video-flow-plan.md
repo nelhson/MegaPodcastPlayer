@@ -11,19 +11,19 @@ This is a plan only, written on 2026-10-04. No code is written until a phase is 
 |---|---|
 | 1 — The black picture | **Done** on branch `video-black-picture`, 2026-10-04. Checked on the `Pixel_9a_2` emulator: rotation ×4, minimise and reopen, paused minimise, home and back, full screen. |
 | 2 — Coming back after the app was closed | **Done**, 2026-10-04: 2.1–2.5 and 2.7 committed on `video-black-picture` (83a62f9), 2.6 and 2.8 in 21f6414. Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. For 2.6, each with the process killed in the background (`run-as … kill -9`, new pid) and the app reopened: the expanded sheet comes back expanded; the video screen comes back as the video screen, poster, paused at 0:15 where it was left, session state `NONE` (nothing prepared), and Play carries on with the picture from there; a minimised video comes back as the bar with its poster. |
-| 3 — Switching modes | **In progress**, 2026-10-05. Committed on `video-black-picture`: 3.1 (21f6414) and 3.2 (84b5885). **Done and not committed: 3.3, 3.4, 3.5** (2026-10-05; `detekt`, `testDebugUnitTest test` and `lintDebug` pass). **Next: step 3.6.** Checked on `Pixel_9a_2`, for 3.1: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. For 3.2: *Play audio* on the episode playing as video opens the sheet and it keeps playing (0:04 to 0:18 across the switch); *Play video* on the episode playing as audio opens the video screen with the position carrying on (81.8 s, 85.8 s, 92.0 s around the tap); with Wi-Fi and data off, *Play video* on a video that is not downloaded is disabled with its reason under it and the row's video button is dimmed, and both come back when the network does. For 3.3: on the sheet of a YouTube episode the control is in the header's right corner with *Audio* selected, a tap on *Audio* does nothing, and a tap on *Video* opens the video screen still playing (180.7 s, 182.8 s, 185.8 s around the tap); on the video screen it is in the same corner with *Video* selected, a tap on *Video* does nothing, and a tap on *Audio* opens the sheet still playing (132.5 s, 134.5 s, 137.7 s). For 3.4: a long press on the minimised video opens a menu above the bar; *Switch to audio* leaves the bar a bar, without the picture or its mark, still playing (127.6 s, 130.6 s, 133.3 s); *Stop playing and hide the player* removes the bar and the session goes to `NONE`; a long press on the audio bar opens no menu. For 3.5: with the page cleared, the first Back brings the controls back and the second minimises, the picture carrying on in the bar. |
-| 4 — Downloading and managing | Not started. |
+| 3 — Switching modes | **Done**, 2026-10-05. Committed on `video-black-picture`: 3.1 (21f6414), 3.2 (84b5885), and 3.3–3.5 (ba89671). **Done and not committed: 3.6 and 3.7** (`detekt`, `testDebugUnitTest test` and `lintDebug` pass). Checked on `Pixel_9a_2`, for 3.1: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. For 3.2: *Play audio* on the episode playing as video opens the sheet and it keeps playing (0:04 to 0:18 across the switch); *Play video* on the episode playing as audio opens the video screen with the position carrying on (81.8 s, 85.8 s, 92.0 s around the tap); with Wi-Fi and data off, *Play video* on a video that is not downloaded is disabled with its reason under it and the row's video button is dimmed, and both come back when the network does. For 3.3: on the sheet of a YouTube episode the control is in the header's right corner with *Audio* selected, a tap on *Audio* does nothing, and a tap on *Video* opens the video screen still playing (180.7 s, 182.8 s, 185.8 s around the tap); on the video screen it is in the same corner with *Video* selected, a tap on *Video* does nothing, and a tap on *Audio* opens the sheet still playing (132.5 s, 134.5 s, 137.7 s). For 3.4: a long press on the minimised video opens a menu above the bar; *Switch to audio* leaves the bar a bar, without the picture or its mark, still playing (127.6 s, 130.6 s, 133.3 s); *Stop playing and hide the player* removes the bar and the session goes to `NONE`; a long press on the audio bar opens no menu. For 3.5: with the page cleared, the first Back brings the controls back and the second minimises, the picture carrying on in the bar. For 3.6, with the emulator's display set to the unfolded Fold's window (`wm size 1764x1660`, `wm density 320`, so 882×830 dp): the video screen is the page, with the picture in its proportions between the names and the transport; *Fill the screen* there gives the overlay and *Leave full screen* the page again. At the phone's own size nothing moved: the page upright, the overlay on its side. For 3.7: the show page's rows draw the video button as before and the episode sheet has the download arrow on both *Download audio* and *Download video*, with the screen glyph on *Play video* only; the minimised video's bar exposes its mark as "Playing as video". |
+| 4 — Downloading and managing | Not started. **Next: step 4.1.** |
 
 ### Prompt for the next session
 
 Paste this to carry on:
 
 > Continue the audio/video flow plan in docs/reports/2026-10-04-audio-video-flow-plan.md.
-> Read its "Status — continue from here" section first, including "Open for Boris". Phases 1 and 2
-> and steps 3.1–3.2 are committed on branch video-black-picture; 3.3–3.5 are done in the working
-> tree and not committed. Do step 3.6 (the layout from the window size, not the orientation),
-> record its golden and open the images, then 3.7 (words and icons). Check each on the Pixel_9a_2
-> emulator, update the status table, and don't commit until I ask.
+> Read its "Status — continue from here" section first, including "Open for Boris". Phases 1–3
+> are done on branch video-black-picture (3.6 and 3.7 may still be uncommitted — check
+> `git status`). Start phase 4 with step 4.1 (one video-download picker), re-record the goldens it
+> changes and open the images. Check each step on the Pixel_9a_2 emulator, update the status
+> table, and don't commit until I ask.
 
 Things the next session needs that are not in the steps:
 
@@ -41,12 +41,14 @@ Things the next session needs that are not in the steps:
 - The first time the video page is cleared on a fresh emulator, the system lays its own "Viewing
   full screen" hint over the window and takes the Back key until *Got it* is tapped. Dismiss it
   before reading anything into what Back did.
-- 3.7 has two strings waiting for it in `:feature:player`: `player_show_video` ("Show the video",
-  the minimised video's tap label, which the target behaviour retires) and `player_dismiss`
-  ("Stop playing and hide the player", which the bar's menu uses where the plan said *Stop
-  playing*). `player_watch` went with the *Watch* button in 3.3.
-- 3.6: the video screen chooses its shape in `isLandscape()` in `VideoScreen.kt`, and the same
-  function decides whether Back is spent on the controls (3.5) and whether they hide on a timer.
+- 4.1 merges `VideoDownloadDialog` (`:feature:podcast`) and `DownloadVideoSheet` (`:feature:player`).
+  Both now take their "720p" from `formatVideoQuality` in `:core:common` (3.7), and both still
+  carry their own copy of the description and the delete question — that duplication is what 4.1
+  removes.
+- A wide window can be had on the phone emulator: `adb shell wm size 1764x1660` and
+  `wm density 320` make it 882×830 dp, the Fold opened out; `wm size reset` and `wm density reset`
+  put it back. The emulator's auto-rotate was turned off for the 3.6 check and left off
+  (`settings put system accelerometer_rotation 0`); turn it with `user_rotation 1` / `0`.
 
 ### Open for Boris
 
@@ -62,7 +64,17 @@ Things the next session needs that are not in the steps:
   until 3.7 settles the set.
 - **A long press is new on the bar**, and only on the minimised video's. Not tried by hand on the
   phone: whether it gets in the way of the pull-down or the swipe up.
-- **Still to check on the Fold 7:** the Audio | Video control in the unfolded sheet's header and in
+- **Full screen on a large window is the overlay, without a turn** (3.6). *Fill the screen* on the
+  unfolded Fold now changes the screen's shape as well as asking for landscape; before, on a window
+  that size, it could only ask for a turn. Whether the Fold then turns at all is the system's.
+- **The library's YouTube badge still wears the screen glyph** (`SourceBadge` in
+  `:core:designsystem`). 3.7 says that glyph means watching only; the badge names where a show
+  comes from, and the library is outside this plan, so it was left. A different glyph there changes
+  the library's goldens.
+- **The bar's menu keeps *Stop playing and hide the player*** (3.7 kept it): it is the close
+  button's and the bar's spoken action's wording, and one act has one name.
+- **Still to check on the Fold 7:** the video page unfolded, and *Fill the screen* there (seen only
+  on a resized emulator); the Audio | Video control in the unfolded sheet's header and in
   landscape over the picture (no golden of either); fold and unfold during a video; the "Could not show the video"
   state on a real failure; Bluetooth play after the app was swiped away; the 2.8 reconnect, which
   the emulator could not provoke.
@@ -168,6 +180,33 @@ Where phase 3 ended up differing from the steps below:
 - 3.5: a `BackHandler` in the page shape only, enabled while the page is cleared. Landscape is
   left alone: its controls hide on a timer, so Back there would be spent undoing something nobody
   did, and it minimises as before.
+
+- 3.6: the rule is `videoShowsOverlay(windowHeight, fullscreen)` in `VideoScreen.kt`: the overlay
+  when the window is shorter than Material's medium height (480 dp) or full screen was asked for,
+  the page otherwise. Height alone, not width against height, so a phone's half of a split screen
+  gets the overlay too. The window is read from `LocalWindowInfo`, once, for the route's effects
+  and the layout both. Asking for full screen had to become part of the rule: on a window that is
+  already large nothing turns, and the button would have done nothing. The page's picture is no
+  longer told to fill the width; it takes the largest 16:9 that fits the room, which on a phone is
+  the same frame as before (the phone goldens did not change) and on the unfolded Fold at 200 %
+  text is narrower than the window. `PortraitVideo` and `LandscapeVideo` are `PageVideo` and
+  `OverlayVideo`. New golden: `video-screen-wide`, the second recorded at 882×830 dp. The sheet
+  already chose its shape from the measured width, so only the video screen changed.
+
+- 3.7: the verbs are *Play audio* / *Play video* to start, *Switch to audio* / *Switch to video*
+  to change, and *Open the video* for the minimised video's tap (it starts and changes nothing,
+  so it takes the audio bar's *Open the player* verb); "Show the video" is gone, and
+  `video_listen` is `player_switch_to_audio`. The glyphs: the screen (`SmartDisplay`) is on the
+  three things that play a picture — *Play video* in the sheet, the row's video button, and the
+  minimised bar's mark — and the Downloads badge for a kept video is a film (`OndemandVideo`)
+  instead. The episode sheet's *Download video* wore the film and *Download audio* a
+  `FileDownload` arrow; both are the `Download` arrow now, the video one in the three states the
+  video screen's button already used. One quality label: `formatVideoQuality` in `:core:common`,
+  a numeric format like `formatSpeed`, replacing three `%1$dp` resources. The row's video button
+  keeps its 40 dp circle inside a 48 dp target. Spoken labels: the bar's mark is "Playing as
+  video", and the Downloads badges are "Audio on this phone" / "Video on this phone, 720p".
+  Goldens changed: `podcast-detail-youtube` (the button's target) and `downloads` light and dark
+  (the badge glyph). The code's own names (`onWatch`, `WatchButton`, `canWatch`) were left.
 
 ## Context
 

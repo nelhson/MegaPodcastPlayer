@@ -86,6 +86,7 @@ import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.common.format.toPlainText
 import md.borisveriga.megapodcastplayer.core.data.export.ExportProgress
 import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
@@ -720,6 +721,10 @@ private fun EpisodeListRow(
  * to show it right now, and a button that vanished offline would move the row's other controls.
  * The reason is spoken with it, since a dimmed circle says nothing to a screen reader.
  *
+ * The circle is drawn at the play button's size and touched at a full touch target round it, the
+ * bargain a Material icon button makes: a 40 dp target at the end of a row was the one control
+ * there a thumb could miss.
+ *
  * @param onClick plays the episode and opens the video screen.
  * @param modifier layout modifier.
  * @param enabled false when the picture could not be shown: offline, and not downloaded.
@@ -729,20 +734,27 @@ private fun WatchButton(onClick: () -> Unit, modifier: Modifier = Modifier, enab
     val offline = stringResource(R.string.episode_play_video_offline)
     Box(
         modifier = modifier
-            .size(WatchButtonSize)
+            .size(WatchTargetSize)
             .clip(CircleShape)
-            .alpha(if (enabled) 1f else DISABLED_ALPHA)
-            .background(MaterialTheme.colorScheme.tertiaryContainer)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .then(if (enabled) Modifier else Modifier.semantics { stateDescription = offline }),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.SmartDisplay,
-            contentDescription = stringResource(R.string.episode_play_video),
-            tint = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.size(WatchGlyphSize),
-        )
+        Box(
+            modifier = Modifier
+                .size(WatchButtonSize)
+                .clip(CircleShape)
+                .alpha(if (enabled) 1f else DISABLED_ALPHA)
+                .background(MaterialTheme.colorScheme.tertiaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.SmartDisplay,
+                contentDescription = stringResource(R.string.episode_play_video),
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.size(WatchGlyphSize),
+            )
+        }
     }
 }
 
@@ -1461,7 +1473,7 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
     is PodcastDetailMessage.VideoDownloadQueued -> resources.getString(
         R.string.podcast_message_video_download_queued,
         title,
-        resources.getString(R.string.episode_video_quality, quality.height),
+        formatVideoQuality(quality.height),
     )
 
     is PodcastDetailMessage.VideoDownloadRemoved -> resources.getString(
@@ -1504,8 +1516,11 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
 
-/** The watch button's side: the row's play button's, so the two sit as a pair. */
+/** The watch button's drawn side: the row's play button's, so the two sit as a pair. */
 private val WatchButtonSize = 40.dp
+
+/** The watch button's touch target round its circle: Material's minimum. */
+private val WatchTargetSize = 48.dp
 
 /** How much of the watch button is left when it cannot be pressed: Material's disabled content. */
 private const val DISABLED_ALPHA = 0.38f

@@ -28,8 +28,8 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -74,6 +74,7 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatBytes
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
@@ -621,7 +622,7 @@ internal fun downloadedKinds(audio: DownloadState, video: VideoDownload?): List<
     )
 
 /**
- * A small pill naming one downloaded half: *Audio*, or *Video · 720p*.
+ * A small pill naming one downloaded half: *Audio*, or *Video · 720p*, and spoken as where it is.
  *
  * Shaped like the library's source badge — a pill on the highest surface container, a glyph and a
  * word — because it is the same kind of fact: what this row is, not something to tap.
@@ -631,16 +632,24 @@ internal fun downloadedKinds(audio: DownloadState, video: VideoDownload?): List<
  */
 @Composable
 private fun DownloadedKindBadge(kind: DownloadedKind, modifier: Modifier = Modifier) {
-    val (icon, label) = when (kind) {
-        DownloadedKind.Audio ->
-            Icons.Rounded.Headphones to stringResource(R.string.downloads_badge_audio)
+    val quality = (kind as? DownloadedKind.Video)?.let { formatVideoQuality(it.download.quality.height) }
+    val (icon, label, spoken) = when {
+        quality == null -> Triple(
+            Icons.Rounded.Headphones,
+            stringResource(R.string.downloads_badge_audio),
+            stringResource(R.string.downloads_badge_audio_spoken),
+        )
 
-        is DownloadedKind.Video ->
-            Icons.Rounded.SmartDisplay to
-                stringResource(R.string.downloads_badge_video, kind.download.quality.height)
+        // A film, not the screen glyph: that one means watching, and this is a fact about a file.
+        else -> Triple(
+            Icons.Rounded.OndemandVideo,
+            stringResource(R.string.downloads_badge_video, quality),
+            stringResource(R.string.downloads_badge_video_spoken, quality),
+        )
     }
     Row(
         modifier = modifier
+            .clearAndSetSemantics { contentDescription = spoken }
             .clip(MegaPodcastPlayerTheme.shapes.pill)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(

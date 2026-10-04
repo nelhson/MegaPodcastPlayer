@@ -22,6 +22,8 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -94,6 +96,7 @@ class DownloadsScreenTest {
         onExportList: () -> Unit = {},
         scrollToTopSignal: Int = 0,
         deleteAfterPlaying: Boolean = false,
+        videoDownloads: Map<String, VideoDownload> = emptyMap(),
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -110,6 +113,7 @@ class DownloadsScreenTest {
                         freeBytes = 4_000_000_000L,
                         unmeteredOnly = unmeteredOnly,
                         deleteAfterPlaying = deleteAfterPlaying,
+                        videoDownloads = videoDownloads,
                         isLoading = false,
                     ),
                     onEpisodeClick = onEpisodeClick,
@@ -127,6 +131,25 @@ class DownloadsScreenTest {
                 )
             }
         }
+    }
+
+    /**
+     * The badges are pills at the end of the row, and where they are is half of what they say.
+     * Read out after an episode's title, a bare "Audio" says none of it.
+     */
+    @Test
+    fun `the downloaded badges are spoken as what is on the phone`() {
+        setScreen(
+            listOf(download("a")),
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithContentDescription("Audio on this phone", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithContentDescription("Video on this phone, 720p", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithContentDescription("Video on this phone, 720p", useUnmergedTree = true)
+            .assertIsDisplayed()
     }
 
     /**

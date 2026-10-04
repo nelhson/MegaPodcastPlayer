@@ -255,8 +255,17 @@
     <!--
       What a tap on the collapsed bar does while the episode is being watched: the bar is then the
       video put away, and the tap brings the picture back rather than opening the audio player.
+      "Open", the verb the audio bar's tap uses ("Open the player"): it changes nothing about what
+      is playing, so it is neither a start ("Play") nor a change ("Switch to"). It replaced "Show
+      the video", the last of the old verbs.
     -->
-    <string name="player_show_video">Show the video</string>
+    <string name="player_open_video">Open the video</string>
+    <!--
+      Spoken for the small screen glyph on that bar, which a screen reader cannot see: it is the
+      only thing telling a minimised video's bar from an audio one, and so why its tap opens a
+      picture. A state, so it says what is, not what a tap does.
+    -->
+    <string name="player_bar_video_mark">Playing as video</string>
     <!--
       The two ways out of the video screen. Minimising keeps the episode playing behind the
       collapsed bar, and a tap on the bar comes back; the label says what happens to the video
@@ -265,7 +274,7 @@
       the frame of a picture that cannot be shown, and the first entry of the minimised video's menu.
     -->
     <string name="video_collapse">Minimise the video</string>
-    <string name="video_listen">Switch to audio</string>
+    <string name="player_switch_to_audio">Switch to audio</string>
     <!--
       Spoken labels for the tap that shows and hides everything but the picture, which a screen
       reader cannot see happening.
@@ -276,12 +285,11 @@
     <!--
       The quality picker. The button's label is the height alone — "720p" is how every video
       service names a rendition and needs no word beside it — and its description supplies what the
-      label lacks, in the shape the speed button's does.
+      label lacks, in the shape the speed button's does. The "720p" itself is not here: it is a
+      numeric format, `formatVideoQuality` in :core:common, like a rate's "1.5x".
     -->
     <string name="video_quality_title">Video quality</string>
     <string name="video_quality_description">Applies to every video you watch, until you change it. A video that has nothing this sharp plays at the best it has.</string>
-    <!-- %1$d is the rendition's height in pixels. -->
-    <string name="video_quality_label">%1$dp</string>
     <!-- %1$s is an already-formatted rendition, e.g. "720p". -->
     <string name="video_quality_button">Video quality, %1$s; tap to change it</string>
     <!--

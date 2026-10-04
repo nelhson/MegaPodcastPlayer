@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLine
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
@@ -195,7 +196,7 @@ private fun QualityRow(quality: VideoQuality, selected: Boolean, onClick: () -> 
     ) {
         // Null: the row is the control, and a second target inside it would be read out twice.
         RadioButton(selected = selected, onClick = null)
-        Text(text = stringResource(R.string.episode_video_quality, quality.height))
+        Text(text = formatVideoQuality(quality.height))
     }
 }
 

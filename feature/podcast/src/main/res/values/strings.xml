@@ -222,8 +222,6 @@
     <string name="episode_cancel_audio_and_video_download">Cancel audio and video downloads</string>
     <string name="episode_delete_audio_and_video_download">Delete audio and video downloads</string>
     <string name="episode_download_video">Download video</string>
-    <!-- A rendition height, e.g. "720p". %1$d is the height in pixels. -->
-    <string name="episode_video_quality">%1$dp</string>
     <!-- The video button once a download exists; the tap opens the dialog to change or delete it. -->
     <string name="episode_video_download_waiting">Video waiting to download · %1$s</string>
     <!-- %1$s is the quality, %2$d the percentage done. -->

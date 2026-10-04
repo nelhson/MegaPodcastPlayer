@@ -38,9 +38,10 @@ Recorded at 411×891 dp, mdpi. That is the Fold 7 closed, at one pixel per dp: n
 subpixel rendering, and it keeps a hundred-odd images to well under a megabyte.
 
 **One window, with one exception.** A suite recorded at every size is a suite nobody re-records, so
-the default stands for every golden but those whose *subject* is a second size. Today that is
-`expanded-player-wide`, the side-by-side player PL-11 built, recorded at 882×830 dp — the Fold 7
-opened out — through a method-level `@Config(qualifiers = SCREENSHOT_QUALIFIERS_WIDE)`. A screen
+the default stands for every golden but those whose *subject* is a second size. Today that is two:
+`expanded-player-wide`, the side-by-side player PL-11 built, and `video-screen-wide`, the video
+screen as a page on a window that is wider than it is tall. Both are recorded at 882×830 dp — the
+Fold 7 opened out — through a method-level `@Config(qualifiers = SCREENSHOT_QUALIFIERS_WIDE)`. A screen
 that merely reflows at a second size does not qualify; one that becomes a different layout does.
 
 ## Recording

@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -127,10 +128,11 @@ fun CollapsedPlayer(
                     horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
                 ) {
                     if (video) {
-                        // Decorative: the bar's own click label says what the tap opens.
+                        // Spoken as well as drawn. The bar's click label says what a tap opens,
+                        // but only this says why: it is what tells a minimised video from sound.
                         Icon(
                             imageVector = Icons.Rounded.SmartDisplay,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.player_bar_video_mark),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(VideoMarkSize),
                         )

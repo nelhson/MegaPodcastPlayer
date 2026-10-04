@@ -13,9 +13,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Button
@@ -48,6 +49,7 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
+import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
@@ -334,7 +336,7 @@ private fun EpisodeActions(
 
         if (video != null) {
             ActionButton(
-                icon = Icons.Rounded.OndemandVideo,
+                icon = videoDownloadIcon(video.download),
                 label = videoDownloadLabel(video.download),
                 onClick = {
                     videoActions.onRequestQualities()
@@ -420,6 +422,22 @@ private fun Episode.playLabel(): String {
 }
 
 /**
+ * The glyph for the *Download video* button: the download arrow, in the three shapes the video
+ * screen's own download button takes — nothing kept or failed, on its way, here.
+ *
+ * The arrow and nothing else, because a download button wears the download glyph: this one used to
+ * wear a film reel, and the screen glyph beside it means watching, so a button that fetched a file
+ * looked like a second way to play.
+ *
+ * @param download the episode's downloaded video, if any.
+ */
+private fun videoDownloadIcon(download: VideoDownload?): ImageVector = when (download?.state) {
+    null, DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.Download
+    DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Downloading
+    DownloadState.COMPLETED -> Icons.Rounded.DownloadDone
+}
+
+/**
  * What the *Download video* button says: the action while there is no video, its state once there
  * is one — the tap opens the dialog either way, where it can be changed or deleted.
  *
@@ -427,7 +445,7 @@ private fun Episode.playLabel(): String {
  */
 @Composable
 private fun videoDownloadLabel(download: VideoDownload?): String {
-    val quality = download?.let { stringResource(R.string.episode_video_quality, it.quality.height) }
+    val quality = download?.let { formatVideoQuality(it.quality.height) }
     return when (download?.state) {
         null, DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
             stringResource(R.string.episode_download_video)
@@ -559,7 +577,7 @@ private fun Episode.metadataLine(now: Instant): String {
 private fun Episode.downloadIcon(): ImageVector = when (downloadState) {
     DownloadState.COMPLETED -> Icons.Rounded.Delete
     DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Close
-    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.FileDownload
+    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.Download
 }
 
 /**
