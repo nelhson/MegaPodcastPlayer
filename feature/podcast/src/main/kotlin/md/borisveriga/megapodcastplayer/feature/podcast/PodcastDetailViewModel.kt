@@ -32,6 +32,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
+import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
@@ -39,12 +40,16 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
+import md.borisveriga.megapodcastplayer.core.model.PlayControl
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.PlayerCommand
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
+import md.borisveriga.megapodcastplayer.core.model.playTransition
 import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
@@ -85,6 +90,7 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  *   asked for with [PodcastDetailViewModel.loadVideoQualities]; null while not yet known.
  * @property videoQualitiesFailed true when that lookup failed, so the dialog can say so rather
  *   than wait forever.
+ * @property isOnline whether there is a network to fetch a picture over; see [canPlayVideo].
  */
 data class PodcastDetailUiState(
     val podcast: Podcast? = null,
@@ -105,7 +111,20 @@ data class PodcastDetailUiState(
     val videoDownloads: Map<String, VideoDownload> = emptyMap(),
     val videoQualities: List<VideoQuality>? = null,
     val videoQualitiesFailed: Boolean = false,
+    val isOnline: Boolean = true,
 ) {
+    /**
+     * Whether an episode's picture could be shown right now: there is a network to stream it
+     * over, or the video is on the phone.
+     *
+     * What *Play video* is enabled by. Pressed without either, it opened a video screen that could
+     * only say the picture was unavailable; the button now says why before it is pressed.
+     *
+     * @param episodeId the episode asked about.
+     */
+    fun canPlayVideo(episodeId: String): Boolean =
+        isOnline || videoDownloads[episodeId]?.isComplete == true
+
     /** The episode the sheet is about, or null when it is closed or the episode has gone. */
     val openEpisode: Episode? get() = episodes.firstOrNull { it.id == openEpisodeId }
 
@@ -137,6 +156,22 @@ data class NowPlaying(
     val episodeId: String? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
+)
+
+/**
+ * What surrounds the show's own rows on this page, combined into one for the same reason as
+ * [ShowPreferences].
+ *
+ * @property transient the screen's own short-lived state.
+ * @property export a *Download and export* of this show, if one was started.
+ * @property videoDownloads every episode's downloaded video, by episode id.
+ * @property isOnline whether there is a network to fetch a picture over.
+ */
+private data class Surroundings(
+    val transient: PodcastDetailViewModel.TransientState,
+    val export: ExportRun?,
+    val videoDownloads: Map<String, VideoDownload>,
+    val isOnline: Boolean,
 )
 
 /**
@@ -201,6 +236,14 @@ sealed interface PodcastDetailMessage {
      * landing, so the message says that rather than blaming the network.
      */
     data object EpisodeUnavailable : PodcastDetailMessage
+
+    /**
+     * *Play video* was pressed and the player did not take the episode in time.
+     *
+     * Nothing is opened in that case — the video screen would show whatever was loaded before —
+     * and a press that visibly does nothing reads as a button that is broken.
+     */
+    data object VideoNotStarted : PodcastDetailMessage
 
     /**
      * An episode was put at the head of the queue.
@@ -303,6 +346,7 @@ class PodcastDetailViewModel @Inject constructor(
     private val downloadExporter: DownloadExporter,
     private val videoQualitySource: VideoQualitySource,
     private val crashReporter: CrashReporter,
+    private val networkStatus: NetworkStatus,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -355,7 +399,8 @@ class PodcastDetailViewModel @Inject constructor(
             transientState,
             downloadExporter.observe(podcastId),
             downloadRepository.observeVideoDownloads(),
-            ::Triple,
+            networkStatus.observeOnline(),
+            ::Surroundings,
         ),
         nowPlaying,
         combine(
@@ -364,7 +409,8 @@ class PodcastDetailViewModel @Inject constructor(
             downloadRepository.observeDownloadSettings(),
             ::ShowPreferences,
         ),
-    ) { podcast, episodes, (transient, export, videoDownloads), playing, preferences ->
+    ) { podcast, episodes, surroundings, playing, preferences ->
+        val transient = surroundings.transient
         PodcastDetailUiState(
             podcast = podcast,
             episodes = episodes,
@@ -380,10 +426,11 @@ class PodcastDetailViewModel @Inject constructor(
             settings = preferences.show,
             appSpeed = preferences.playback.speed,
             appAutoDownload = preferences.downloads.autoDownloadNewEpisodes,
-            exportProgress = (export as? ExportRun.Running)?.progress,
-            videoDownloads = videoDownloads,
+            exportProgress = (surroundings.export as? ExportRun.Running)?.progress,
+            videoDownloads = surroundings.videoDownloads,
             videoQualities = transient.videoQualities,
             videoQualitiesFailed = transient.videoQualitiesFailed,
+            isOnline = surroundings.isOnline,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -633,32 +680,95 @@ class PodcastDetailViewModel @Inject constructor(
     }
 
     /**
+     * Plays an episode as sound — what *Play audio* on its sheet does, and the sheet's one play
+     * button on an episode with no picture.
+     *
+     * Not the row button's toggle, which it used to share: on the episode already playing that
+     * paused it, and on one playing as video the user had asked for sound and got silence. The
+     * episode the player holds is left running and only the player's face changes; see
+     * [playTransition].
+     *
+     * @param episodeId the episode to listen to.
+     * @param onPlaying invoked once the player has the episode, so the caller can open the audio
+     *   player. Not called when the episode has gone.
+     */
+    fun listenToEpisode(episodeId: String, onPlaying: () -> Unit) =
+        press(PlayControl.PLAY_AUDIO, episodeId, onPlaying)
+
+    /**
      * Plays a YouTube episode and hands over to the video screen once the player holds it.
+     *
+     * The episode the player already holds is not started again: it carries on from where it is,
+     * and the caller switches the player's face in place. See [playTransition].
      *
      * Waits for the player to report the episode as loaded before calling [onWatching]: the video
      * screen leaves at once when the episode loaded has no picture, and until the swap lands that
      * is still whatever was playing before. The wait is bounded, and when it runs out nothing is
-     * opened: the episode loaded is then some other one, and a video screen would show its
-     * picture instead.
+     * opened — the episode loaded is then some other one, and a video screen would show its
+     * picture instead — and the screen says the video did not start.
      *
      * @param episodeId the episode to watch.
      * @param onWatching invoked once the player holds the episode, so the caller can open the
      *   video screen. Not called when the episode has gone or the player never loaded it.
      */
-    fun watchEpisode(episodeId: String, onWatching: () -> Unit) {
+    fun watchEpisode(episodeId: String, onWatching: () -> Unit) =
+        press(PlayControl.PLAY_VIDEO, episodeId, onWatching)
+
+    /**
+     * Does what pressing [control] on an episode means: the one path behind the three controls.
+     *
+     * @param control the control pressed.
+     * @param episodeId the episode it belongs to.
+     * @param onOpenPlayer invoked when the press opens the player, once the player has the
+     *   episode. Which face is the control's own, and the caller's to pass on.
+     */
+    private fun press(control: PlayControl, episodeId: String, onOpenPlayer: () -> Unit) {
+        val transition = playTransition(
+            control = control,
+            isLoaded = uiState.value.nowPlaying.episodeId == episodeId,
+        )
         viewModelScope.launch {
-            if (!episodePlayer.play(episodeId)) {
-                transientState.value = transientState.value.copy(
-                    message = PodcastDetailMessage.EpisodeUnavailable,
-                )
-                return@launch
+            val started = when (transition.command) {
+                PlayerCommand.START -> episodePlayer.play(episodeId)
+
+                PlayerCommand.CARRY_ON -> {
+                    connection.play()
+                    true
+                }
+
+                PlayerCommand.TOGGLE -> {
+                    connection.togglePlayPause()
+                    true
+                }
             }
-            val loaded = withTimeoutOrNull(WATCH_LOAD_TIMEOUT_MS) {
-                connection.playbackState.first { it.episodeId == episodeId }
+            val message = when {
+                !started -> PodcastDetailMessage.EpisodeUnavailable
+
+                transition.openAs == null -> null
+
+                // A picture is only opened on the episode it was asked for.
+                transition.openAs == OpenPlayerAs.VIDEO && !awaitLoaded(episodeId) ->
+                    PodcastDetailMessage.VideoNotStarted
+
+                else -> {
+                    onOpenPlayer()
+                    null
+                }
             }
-            if (loaded != null) onWatching()
+            if (message != null) transientState.value = transientState.value.copy(message = message)
         }
     }
+
+    /**
+     * Waits, for a bounded while, for the player to say it holds [episodeId].
+     *
+     * @param episodeId the episode just handed to the player.
+     * @return true once the player reports it; false when the wait ran out first.
+     */
+    private suspend fun awaitLoaded(episodeId: String): Boolean =
+        withTimeoutOrNull(WATCH_LOAD_TIMEOUT_MS) {
+            connection.playbackState.first { it.episodeId == episodeId }
+        } != null
 
     /**
      * Asks which renditions an episode's video comes in, for the *Download video* dialog.
@@ -764,13 +874,8 @@ class PodcastDetailViewModel @Inject constructor(
      * @param onPlaying invoked when a *new* episode was started, so the caller can open the player.
      *   Not invoked for a pause or a resume of the loaded episode: the player is already showing it.
      */
-    fun togglePlay(episodeId: String, onPlaying: () -> Unit) {
-        if (uiState.value.nowPlaying.episodeId == episodeId) {
-            viewModelScope.launch { connection.togglePlayPause() }
-            return
-        }
-        playEpisode(episodeId, onPlaying)
-    }
+    fun togglePlay(episodeId: String, onPlaying: () -> Unit) =
+        press(PlayControl.ROW_BUTTON, episodeId, onPlaying)
 
     /**
      * Opens the episode sheet.
@@ -915,7 +1020,7 @@ class PodcastDetailViewModel @Inject constructor(
         transientState.value = transientState.value.copy(message = null)
     }
 
-    private data class TransientState(
+    internal data class TransientState(
         val openEpisodeId: String? = null,
         val chapters: EpisodeChapters = EpisodeChapters(),
         val isChaptersLoading: Boolean = false,

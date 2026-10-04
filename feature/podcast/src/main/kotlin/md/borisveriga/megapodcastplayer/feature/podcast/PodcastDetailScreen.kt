@@ -64,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -179,6 +180,9 @@ fun PodcastDetailRoute(
         onEpisodeWatch = { episodeId ->
             viewModel.watchEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.VIDEO) }
         },
+        onEpisodeListen = { episodeId ->
+            viewModel.listenToEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+        },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onEpisodePlayNext = viewModel::playNext,
@@ -212,6 +216,8 @@ fun PodcastDetailRoute(
  * @param onEpisodePlay plays an episode, or pauses the one already playing.
  * @param onEpisodePlayFrom plays an episode from a position — what a chapter tap does.
  * @param onEpisodeWatch plays a YouTube episode and opens it as video.
+ * @param onEpisodeListen plays an episode as sound — the sheet's *Play audio*, which unlike the
+ *   row's button never pauses. Defaults to [onEpisodePlay] for callers that draw no sheet.
  * @param onEpisodeSheetDismiss closes the episode sheet.
  * @param onVideoQualitiesRequest asks which renditions an episode's video comes in.
  * @param onVideoDownload downloads an episode's video at a rendition.
@@ -261,6 +267,7 @@ fun PodcastDetailScreen(
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
+    onEpisodeListen: (String) -> Unit = onEpisodePlay,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
@@ -318,6 +325,7 @@ fun PodcastDetailScreen(
             // Only a YouTube episode has a picture; any other gets no video actions at all.
             video = if (youTubeVideoIdOrNull(episode.audioUrl) != null) {
                 EpisodeVideo(
+                    canPlay = uiState.canPlayVideo(episode.id),
                     download = uiState.openVideoDownload,
                     qualities = uiState.videoQualities,
                     qualitiesFailed = uiState.videoQualitiesFailed,
@@ -327,7 +335,7 @@ fun PodcastDetailScreen(
             },
             onPlay = {
                 onEpisodeSheetDismiss()
-                onEpisodePlay(episode.id)
+                onEpisodeListen(episode.id)
             },
             onPlayChapter = { chapter ->
                 onEpisodeSheetDismiss()
@@ -530,6 +538,7 @@ fun PodcastDetailScreen(
                                 } else {
                                     null
                                 },
+                                canWatch = uiState.canPlayVideo(episode.id),
                                 onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
                                 onPlayNext = { onEpisodePlayNext(episode.id) },
                             )
@@ -572,6 +581,8 @@ fun PodcastDetailScreen(
  * @param onPlay plays it, or pauses it when it is the one already playing.
  * @param onWatch plays it as video, or null for an episode with no picture, which draws no second
  *   button at all.
+ * @param canWatch false when the picture could not be shown right now — offline, and the video not
+ *   downloaded — which draws the second button disabled.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
  * @param onPlayNext queues it to play after whatever is playing now.
@@ -590,6 +601,7 @@ private fun EpisodeListRow(
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onWatch: (() -> Unit)?,
+    canWatch: Boolean,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
 ) {
@@ -691,7 +703,7 @@ private fun EpisodeListRow(
                 )
                 // The second way to take the episode, and second in the row: listening is what a
                 // podcast app is for, and the play button stays the first thing the thumb meets.
-                onWatch?.let { watch -> WatchButton(onClick = watch) }
+                onWatch?.let { watch -> WatchButton(onClick = watch, enabled = canWatch) }
             },
         )
     }
@@ -704,17 +716,25 @@ private fun EpisodeListRow(
  * two read as a pair of ways to start the one episode — in the tertiary container, which keeps it
  * a step apart from the control that is also the now-playing mark.
  *
+ * Disabled, it stays where it is, dimmed: the episode still has a picture, there is only no way
+ * to show it right now, and a button that vanished offline would move the row's other controls.
+ * The reason is spoken with it, since a dimmed circle says nothing to a screen reader.
+ *
  * @param onClick plays the episode and opens the video screen.
  * @param modifier layout modifier.
+ * @param enabled false when the picture could not be shown: offline, and not downloaded.
  */
 @Composable
-private fun WatchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun WatchButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val offline = stringResource(R.string.episode_play_video_offline)
     Box(
         modifier = modifier
             .size(WatchButtonSize)
             .clip(CircleShape)
+            .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .background(MaterialTheme.colorScheme.tertiaryContainer)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .then(if (enabled) Modifier else Modifier.semantics { stateDescription = offline }),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -1360,15 +1380,13 @@ internal fun Context.shareShow(podcast: Podcast, chooserTitle: String) {
 private const val SHARE_MIME_TYPE = "text/plain"
 
 /**
- * Turns a [PodcastDetailMessage] into snackbar text.
- *
- * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ * What a finished refresh says: how many episodes it brought, or that it brought none.
  *
  * @param resources resolved from the composition by the caller.
  * @return the text to show.
  */
-internal fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
-    is PodcastDetailMessage.Refreshed -> if (newEpisodeCount == 0) {
+private fun PodcastDetailMessage.Refreshed.toText(resources: Resources): String =
+    if (newEpisodeCount == 0) {
         resources.getString(R.string.podcast_message_no_new_episodes)
     } else {
         resources.getQuantityString(
@@ -1377,6 +1395,17 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
             newEpisodeCount,
         )
     }
+
+/**
+ * Turns a [PodcastDetailMessage] into snackbar text.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+internal fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
+    is PodcastDetailMessage.Refreshed -> toText(resources)
 
     is PodcastDetailMessage.RefreshFailed ->
         resources.getString(R.string.podcast_message_refresh_failed, reason)
@@ -1410,6 +1439,9 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
 
     PodcastDetailMessage.EpisodeUnavailable ->
         resources.getString(R.string.podcast_message_episode_unavailable)
+
+    PodcastDetailMessage.VideoNotStarted ->
+        resources.getString(R.string.podcast_message_video_not_started)
 
     is PodcastDetailMessage.DownloadQueued -> resources.getString(
         if (waitingForWifi) {
@@ -1474,6 +1506,9 @@ private const val DRAG_ELEVATION = 8f
 
 /** The watch button's side: the row's play button's, so the two sit as a pair. */
 private val WatchButtonSize = 40.dp
+
+/** How much of the watch button is left when it cannot be pressed: Material's disabled content. */
+private const val DISABLED_ALPHA = 0.38f
 
 /** The watch button's glyph, the size of the play button's. */
 private val WatchGlyphSize = 22.dp

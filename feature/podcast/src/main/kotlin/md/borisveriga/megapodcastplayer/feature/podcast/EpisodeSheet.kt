@@ -220,11 +220,14 @@ private fun EpisodeIdentity(
 /**
  * What the sheet knows about an episode's picture.
  *
+ * @property canPlay false when the picture could not be shown right now: there is no connection,
+ *   and the video is not on the phone. *Play video* is then disabled and says why.
  * @property download the video kept on the phone, or on its way; null when there is none.
  * @property qualities the renditions on offer, lowest first; null until asked for and answered.
  * @property qualitiesFailed true when asking for them failed.
  */
 data class EpisodeVideo(
+    val canPlay: Boolean = true,
     val download: VideoDownload? = null,
     val qualities: List<VideoQuality>? = null,
     val qualitiesFailed: Boolean = false,
@@ -302,7 +305,17 @@ private fun EpisodeActions(
                     label = stringResource(R.string.episode_play_video),
                     onClick = videoActions.onPlay,
                     filled = true,
+                    enabled = video.canPlay,
                     modifier = Modifier.weight(1f),
+                )
+            }
+            if (!video.canPlay) {
+                // Under the pair rather than in a snackbar: it is why one of the two is grey, and
+                // it stays true for as long as the button stays grey.
+                Text(
+                    text = stringResource(R.string.episode_play_video_offline),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -358,6 +371,7 @@ private fun EpisodeActions(
  * @param onClick the handler.
  * @param modifier layout modifier.
  * @param filled true for a play button, which is filled; downloads are tonal, a step quieter.
+ * @param enabled false when the action cannot be taken right now; the caller says why beside it.
  */
 @Composable
 private fun ActionButton(
@@ -366,6 +380,7 @@ private fun ActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     filled: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val content: @Composable () -> Unit = {
         Icon(imageVector = icon, contentDescription = null)
@@ -377,9 +392,9 @@ private fun ActionButton(
         )
     }
     if (filled) {
-        Button(onClick = onClick, modifier = modifier) { content() }
+        Button(onClick = onClick, modifier = modifier, enabled = enabled) { content() }
     } else {
-        FilledTonalButton(onClick = onClick, modifier = modifier) { content() }
+        FilledTonalButton(onClick = onClick, modifier = modifier, enabled = enabled) { content() }
     }
 }
 

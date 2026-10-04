@@ -10,9 +10,46 @@ This is a plan only, written on 2026-10-04. No code is written until a phase is 
 | Phase | State |
 |---|---|
 | 1 — The black picture | **Done** on branch `video-black-picture`, 2026-10-04. Checked on the `Pixel_9a_2` emulator: rotation ×4, minimise and reopen, paused minimise, home and back, full screen. |
-| 2 — Coming back after the app was closed | **Done**, 2026-10-04: 2.1–2.5 and 2.7 committed on `video-black-picture` (83a62f9); 2.6 and 2.8 written and checked, **not committed**. Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. For 2.6, each with the process killed in the background (`run-as … kill -9`, new pid) and the app reopened: the expanded sheet comes back expanded; the video screen comes back as the video screen, poster, paused at 0:15 where it was left, session state `NONE` (nothing prepared), and Play carries on with the picture from there; a minimised video comes back as the bar with its poster. |
-| 3 — Switching modes | **In progress**, 2026-10-04. Done: 3.1, **not committed**. **Next: step 3.2.** Checked on `Pixel_9a_2`: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. |
+| 2 — Coming back after the app was closed | **Done**, 2026-10-04: 2.1–2.5 and 2.7 committed on `video-black-picture` (83a62f9), 2.6 and 2.8 in 21f6414. Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. For 2.6, each with the process killed in the background (`run-as … kill -9`, new pid) and the app reopened: the expanded sheet comes back expanded; the video screen comes back as the video screen, poster, paused at 0:15 where it was left, session state `NONE` (nothing prepared), and Play carries on with the picture from there; a minimised video comes back as the bar with its poster. |
+| 3 — Switching modes | **In progress**, 2026-10-04. Done: 3.1 (21f6414) and 3.2 (the commit after it, *Switch an episode the player holds…*), both on `video-black-picture`. **Next: step 3.3.** Checked on `Pixel_9a_2`, for 3.1: *Play* on a show's row opens the sheet; *Play video* opens the video screen; the media notification opens the video screen when the player was left in video and the sheet when it was left in audio; a moment tapped opens the sheet in audio, and the video screen when a video was minimised, at the moment's position. For 3.2: *Play audio* on the episode playing as video opens the sheet and it keeps playing (0:04 to 0:18 across the switch); *Play video* on the episode playing as audio opens the video screen with the position carrying on (81.8 s, 85.8 s, 92.0 s around the tap); with Wi-Fi and data off, *Play video* on a video that is not downloaded is disabled with its reason under it and the row's video button is dimmed, and both come back when the network does. |
 | 4 — Downloading and managing | Not started. |
+
+### Prompt for the next session
+
+Paste this to carry on:
+
+> Continue the audio/video flow plan in docs/reports/2026-10-04-audio-video-flow-plan.md.
+> Read its "Status — continue from here" section first, including "Open for Boris". Phases 1 and 2
+> and steps 3.1–3.2 are committed on branch video-black-picture. Do step 3.3 (the Audio | Video
+> control), re-record the goldens it changes and open the images, then 3.4 and 3.5. Check each on
+> the Pixel_9a_2 emulator, update the status table, and don't commit until I ask.
+
+Things the next session needs that are not in the steps:
+
+- `feature/search/.../SearchScreen.kt` has Boris's uncommitted edit with two stray backticks (lines
+  339 and 345) that stop `:feature:search` compiling, so `assembleDebug` fails with it in place.
+  Until he fixes it: copy the file aside, `git checkout` it, build, and copy it back unchanged.
+  Never commit it or `.idea/inspectionProfiles/Project_Default.xml`.
+- The emulator has no root and `am kill` does nothing while the playback service is in the
+  foreground. To kill the process with the activity's saved state kept: Home, then
+  `adb shell run-as md.borisveriga.megapodcastplayer kill -9 <pid>`. Always pass
+  `-s emulator-5554`: the Fold is usually connected too.
+- The emulator's library has a feed show (Podlodka) and a YouTube one, "Uploads from Fireship",
+  added from `https://www.youtube.com/playlist?list=UUsBjURrPoezykLs9EqgamOA` through a VIEW
+  intent. An `@handle` link is not accepted; a playlist link is.
+- 3.3 goes through the door: `openPlayer(null, OpenPlayerAs.AUDIO | VIDEO)` in
+  `MegaPodcastPlayerApp` already switches the face without touching playback, and is what the
+  sheet's *Watch* button and the video screen's headphones icon call today.
+
+### Open for Boris
+
+- **Search is not through the door** (see 3.1 below). Leave it, or open the player as
+  `REMEMBERED` when a preview episode is played?
+- **Queue rows and moments now open the player when tapped.** The plan asked for it; it has not
+  been tried by hand on the phone. Easy to take back for either.
+- **Still to check on the Fold 7:** fold and unfold during a video; the "Could not show the video"
+  state on a real failure; Bluetooth play after the app was swiped away; the 2.8 reconnect, which
+  the emulator could not provoke.
 
 Where phase 1 ended up differing from the steps below:
 
@@ -87,6 +124,16 @@ Where phase 3 ended up differing from the steps below:
   asked for an episode that turns out to have none now opens the sheet instead of the video screen
   that then left. Queue rows were not tapped on the emulator (nothing was queued); the same path
   was checked through Moments.
+- 3.2: the table is `playTransition(control, isLoaded)` in `:core:model`, with `PlayTransitionTest`
+  as the parameterised test, and the show page's three controls all go through one `press` in
+  `PodcastDetailViewModel`. An episode the player holds is never started again: *Play audio* and
+  *Play video* on it send `play()` — so a paused one starts — and change the face. The sheet's
+  play button no longer shares the row button's toggle, which also changes a feed episode's
+  sheet: *Continue* on the episode playing used to pause it and now opens the player. The row's
+  own play button is still its pause. The unstarted video says *Couldn't start the video. Try
+  again.*; that wait could not be made to run out on the emulator and rests on its test. Offline
+  is `NetworkStatus.observeOnline()`, a flow beside the existing question, read as
+  `PodcastDetailUiState.canPlayVideo`. Only the show page has *Play video*, so only it changed.
 
 ## Context
 

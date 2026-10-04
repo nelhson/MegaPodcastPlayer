@@ -66,6 +66,120 @@ class PodcastDetailVideoTest : PodcastDetailViewModelFixture() {
     }
 
     @Test
+    fun `play video that never starts says so instead of doing nothing`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        coEvery { episodePlayer.play("a") } returns true
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.watchEpisode("a") {}
+        advanceTimeBy(WAIT_PAST_TIMEOUT_MS)
+        runCurrent()
+
+        viewModel.uiState.test {
+            assertEquals(PodcastDetailMessage.VideoNotStarted, awaitItem().message)
+        }
+    }
+
+    // --- the episode the player already holds: switched, never started again ---
+
+    @Test
+    fun `play video on the episode playing as audio switches in place`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        playbackState.value = PlaybackState(episodeId = "a", isPlaying = true, positionMs = 90_000L)
+        var watching = false
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.watchEpisode("a") { watching = true }
+        runCurrent()
+
+        // Started again it would go back to its stored position, up to five seconds behind.
+        coVerify(exactly = 0) { episodePlayer.play(any()) }
+        coVerify(exactly = 1) { connection.play() }
+        assertTrue(watching)
+    }
+
+    @Test
+    fun `play audio on the episode playing as video switches to audio without pausing`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        playbackState.value = PlaybackState(
+            episodeId = "a",
+            isPlaying = true,
+            youTubeVideoId = VIDEO_ID,
+            videoQuality = VideoQuality(720),
+        )
+        var listening = false
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.listenToEpisode("a") { listening = true }
+        runCurrent()
+
+        // It shared the row button's toggle, and asking for sound paused the episode.
+        coVerify(exactly = 0) { connection.togglePlayPause() }
+        coVerify(exactly = 0) { episodePlayer.play(any()) }
+        assertTrue(listening)
+    }
+
+    @Test
+    fun `play audio on another episode starts it and opens the player`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        coEvery { episodePlayer.play("a") } returns true
+        var listening = false
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.listenToEpisode("a") { listening = true }
+        runCurrent()
+
+        coVerify(exactly = 1) { episodePlayer.play("a") }
+        assertTrue(listening)
+    }
+
+    @Test
+    fun `the row button on the episode playing is still its pause, and opens nothing`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        playbackState.value = PlaybackState(episodeId = "a", isPlaying = true)
+        var opened = false
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.togglePlay("a") { opened = true }
+        runCurrent()
+
+        coVerify(exactly = 1) { connection.togglePlayPause() }
+        assertFalse(opened)
+    }
+
+    // --- whether the picture could be shown at all ---------------------------
+
+    @Test
+    fun `offline, a video that is not on the phone cannot be played`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"), youTubeEpisode("b"))
+        videoDownloads.value = mapOf(
+            "b" to VideoDownload(quality = VideoQuality(720), state = DownloadState.COMPLETED, percent = 100f),
+        )
+        online.value = false
+
+        viewModel.uiState.test {
+            val state = awaitItem()
+            assertFalse(state.canPlayVideo("a"))
+            // The one that is on the phone plays without a network.
+            assertTrue(state.canPlayVideo("b"))
+        }
+    }
+
+    @Test
+    fun `online, any video can be played, and the answer follows the network back`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        online.value = false
+
+        viewModel.uiState.test {
+            assertFalse(awaitItem().canPlayVideo("a"))
+
+            online.value = true
+
+            assertTrue(awaitItem().canPlayVideo("a"))
+        }
+    }
+
+    @Test
     fun `play video on an episode that has gone says so and opens nothing`() = runTest {
         episodes.value = listOf(youTubeEpisode("a"))
         coEvery { episodePlayer.play("a") } returns false

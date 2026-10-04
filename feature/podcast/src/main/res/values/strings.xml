@@ -152,6 +152,7 @@
     <!-- %1$s is the failure reason. Says the list survived, because that is the useful half. -->
     <string name="podcast_message_rebuild_failed">Couldn\'t reload: %1$s. Your episodes are unchanged.</string>
     <string name="podcast_message_episode_unavailable">That episode is no longer in your library</string>
+    <string name="podcast_message_video_not_started">Couldn\'t start the video. Try again.</string>
     <string name="podcast_message_download_waiting_for_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>
     <string name="podcast_message_download_removed">Deleted \"%1$s\" from this device</string>
@@ -212,6 +213,8 @@
     -->
     <string name="episode_play_audio">Play audio</string>
     <string name="episode_play_video">Play video</string>
+    <!-- Under a Play video button that is disabled: offline, and the video is not on the phone. -->
+    <string name="episode_play_video_offline">No connection, and this video isn\'t downloaded</string>
     <string name="episode_download_audio">Download audio</string>
     <string name="episode_cancel_audio_download">Cancel audio download</string>
     <string name="episode_delete_audio_download">Delete audio download</string>
