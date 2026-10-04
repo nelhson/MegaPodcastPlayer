@@ -19,8 +19,9 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
  * @property isPlaying true only while audio is actually coming out; false while buffering or paused.
  * @property isBuffering true while the player is loading and cannot produce audio yet.
  * @property positionMs playback position at the time of the snapshot.
- * @property durationMs total duration in milliseconds, or `0` until the player has read it. Media3's
- *   own `C.TIME_UNSET` is normalised away here so that nothing outside this module has to know it.
+ * @property durationMs total duration in milliseconds: the player's measurement once it has one,
+ *   the feed's figure until then, and `0` when neither is known. Media3's own `C.TIME_UNSET` is
+ *   normalised away here so that nothing outside this module has to know it.
  * @property bufferedPositionMs how far ahead the buffer reaches, for the secondary scrubber track.
  * @property speed the current playback rate.
  * @property queueEpisodeIds every episode in the player's queue, in play order, including the

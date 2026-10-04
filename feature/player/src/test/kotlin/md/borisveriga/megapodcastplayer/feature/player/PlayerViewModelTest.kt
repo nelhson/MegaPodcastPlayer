@@ -31,8 +31,13 @@ import org.junit.Test
 class PlayerViewModelTest : PlayerViewModelFixture() {
 
     @Test
-    fun `the persisted queue is restored as soon as the player is on screen`() = runTest {
-        coVerify { episodePlayer.restoreQueue() }
+    fun `the view model leaves restoring the queue to the service`() = runTest {
+        // A restore from here could land after a widget, a headset or the watch had started
+        // something, and replace it with a paused queue.
+        viewModel.uiState.test { cancelAndIgnoreRemainingEvents() }
+
+        coVerify(exactly = 0) { connection.setQueue(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { episodePlayer.resume() }
     }
 
     @Test

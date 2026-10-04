@@ -64,6 +64,8 @@ class PlaybackPersistenceListenerTest {
 
     @Test
     fun `a seek marks nothing played`() {
+        loaded(episodeId = "ep-1", positionMs = 0L, durationMs = 90_000L)
+
         listener.onPositionDiscontinuity(
             positionInfo("ep-1"),
             positionInfo("ep-1"),
@@ -84,6 +86,72 @@ class PlaybackPersistenceListenerTest {
         )
 
         assertTrue(recorder.completed.isEmpty())
+    }
+
+    @Test
+    fun `a seek stores where it landed, playing or not`() {
+        // Nothing else writes this while paused: the ticker only runs while playing, and the pause
+        // flush has already happened.
+        loaded(episodeId = "ep-1", positionMs = 600_000L, durationMs = 900_000L)
+
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1", positionMs = 12_000L),
+            positionInfo("ep-1", positionMs = 600_000L),
+            Player.DISCONTINUITY_REASON_SEEK,
+        )
+
+        assertEquals(listOf(Position("ep-1", 600_000L, 900_000L)), recorder.positions)
+    }
+
+    @Test
+    fun `a seek the player adjusted stores the adjusted position`() {
+        loaded(episodeId = "ep-1", positionMs = 598_000L, durationMs = 900_000L)
+
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1", positionMs = 600_000L),
+            positionInfo("ep-1", positionMs = 598_000L),
+            Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT,
+        )
+
+        assertEquals(listOf(Position("ep-1", 598_000L, 900_000L)), recorder.positions)
+    }
+
+    @Test
+    fun `skipping to another episode stores where the one left had got to`() {
+        // The player is already on ep-2, so its duration is not ep-1's and is not written; and
+        // ep-2's own stored place is not replaced by the zero it happens to start at.
+        loaded(episodeId = "ep-2", positionMs = 0L, durationMs = 900_000L)
+
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1", positionMs = 47_000L),
+            positionInfo("ep-2", positionMs = 0L),
+            Player.DISCONTINUITY_REASON_SEEK,
+        )
+
+        assertEquals(listOf(Position("ep-1", 47_000L, null)), recorder.positions)
+    }
+
+    @Test
+    fun `an automatic transition stores no position`() {
+        // The episode finished; recordCompleted resets its position and this must not undo that.
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1", positionMs = 900_000L),
+            positionInfo("ep-2"),
+            Player.DISCONTINUITY_REASON_AUTO_TRANSITION,
+        )
+
+        assertTrue(recorder.positions.isEmpty())
+    }
+
+    @Test
+    fun `a removed item stores no position`() {
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1", positionMs = 47_000L),
+            positionInfo("ep-2"),
+            Player.DISCONTINUITY_REASON_REMOVE,
+        )
+
+        assertTrue(recorder.positions.isEmpty())
     }
 
     @Test
@@ -241,14 +309,17 @@ class PlaybackPersistenceListenerTest {
     private fun mediaItem(episodeId: String): MediaItem =
         MediaItem.Builder().setMediaId(episodeId).build()
 
-    private fun positionInfo(episodeId: String): Player.PositionInfo = Player.PositionInfo(
+    private fun positionInfo(
+        episodeId: String,
+        positionMs: Long = 0L,
+    ): Player.PositionInfo = Player.PositionInfo(
         /* windowUid = */ null,
         /* mediaItemIndex = */ 0,
         mediaItem(episodeId),
         /* periodUid = */ null,
         /* periodIndex = */ 0,
-        /* positionMs = */ 0L,
-        /* contentPositionMs = */ 0L,
+        /* positionMs = */ positionMs,
+        /* contentPositionMs = */ positionMs,
         /* adGroupIndex = */ C.INDEX_UNSET,
         /* adIndexInAdGroup = */ C.INDEX_UNSET,
     )

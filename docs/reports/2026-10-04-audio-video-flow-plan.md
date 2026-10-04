@@ -10,7 +10,7 @@ This is a plan only, written on 2026-10-04. No code is written until a phase is 
 | Phase | State |
 |---|---|
 | 1 — The black picture | **Done** on branch `video-black-picture`, 2026-10-04. Checked on the `Pixel_9a_2` emulator: rotation ×4, minimise and reopen, paused minimise, home and back, full screen. |
-| 2 — Coming back after the app was closed | **Next. Start at step 2.1.** |
+| 2 — Coming back after the app was closed | **In progress**, committed on `video-black-picture`, 2026-10-04. Done: 2.1, 2.2, 2.3, 2.4, 2.5, 2.7. **Next: step 2.6, then 2.8.** Checked on `Pixel_9a_2`: play #493, Play on #496, kill, reopen and #496 is in the bar; a skip made while paused is still there after a kill (58.0 s before and after); the session comes back with both queue entries, #496 current, with no restore from the UI; an offline cold start shows the bar at the saved position with no error, and Play starts from there once online; a media play key after the process was killed resumes at the saved position. |
 | 3 — Switching modes | Not started. |
 | 4 — Downloading and managing | Not started. |
 
@@ -32,8 +32,33 @@ Seen on the way, not part of any phase yet:
   reopens the search screen with the shared link.
 - In full screen on the emulator the transport sits right of the picture's centre; not checked
   whether that is the cutout or the layout.
-- The cold start still restores the head of the queue instead of the episode that was playing
-  (step 2.1), seen again on 2026-10-04.
+- `feature/search/.../SearchScreen.kt` has an uncommitted indentation change that fails
+  `:feature:search:detekt`; it is not part of any phase.
+
+Where phase 2 ended up differing from the steps below:
+
+- 2.1: `resumePoint()` replaces `resumableQueue()` on `PlaybackQueueSource` rather than sitting
+  beside it, and returns a `ResumePoint` (in `:core:media`) whose `keeping` re-resolves the index
+  when the service drops an unplayable entry.
+- 2.2: a seek within an episode stores where it landed; a seek to another episode (next, previous,
+  a tap in the queue, Play on another row) stores where the one being left had got to and does not
+  write the one arrived at, so its stored place is not replaced by the zero it starts at.
+- 2.3: the service restores in `onCreate` (`restoreIfEmpty` in `QueueRestore.kt`), every time it is
+  created with an empty player, not once per process. `PlayerViewModel` no longer asks for anything;
+  `EpisodePlayer.restoreQueue` is gone, and `resume()` waits on a new session command,
+  `AWAIT_RESTORE`, before pressing play. Not closed: a *Play* on a row that reaches the player
+  before the database read returns still wins over the restore, and the stored queue is then
+  replaced by that one episode. It was so before as well.
+- 2.4: the restore does not call `prepare()`. `PlaybackState.durationMs` falls back to the feed's
+  duration (already on the item's metadata) until the player has measured one, so the scrubber is
+  drawn and enabled on an unprepared player. The system's session state is `NONE` until Play.
+- 2.5: the receiver is declared in `:core:media`'s manifest. The emulator check killed the process
+  with `kill -9` and the system restarted it at once (new pid) before the key was sent, so it shows
+  a fresh process resuming from a media key, not that the receiver was what started it. Still to do
+  on the Fold 7: Bluetooth play after the app was swiped away.
+- 2.7: `playbackSettings` is de-duplicated in `UserPreferencesDataSource`, and the service follows
+  the speed apart from the other settings, so a changed skip interval or auto-play switch does not
+  put the app's speed back over a show's either.
 
 ## Context
 

@@ -43,7 +43,7 @@ internal class TogglePlayPauseAction : ActionCallback {
  *
  * The same call the launcher's *Resume* shortcut makes, for the reason that shortcut's own KDoc
  * gives: resolving "the last episode" a second way would be a second answer to a question
- * `resumableQueue` already answers, and the two would disagree the first time one of them changed.
+ * `resumePoint` already answers, and the two would disagree the first time one of them changed.
  *
  * Nothing to resume does nothing at all, which cannot happen from the widget — the button is only
  * drawn when the snapshot found something to draw it for.

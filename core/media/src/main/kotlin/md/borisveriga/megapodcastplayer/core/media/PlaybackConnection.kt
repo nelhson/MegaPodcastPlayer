@@ -175,13 +175,13 @@ class PlaybackConnection @Inject constructor(
     /**
      * Replaces the whole queue and starts playing.
      *
-     * Used when restoring a persisted queue on a cold start, and when the user plays a list.
+     * Used when putting back a queue the user cleared, and when the user plays a list.
      *
      * @param episodes the new queue, in play order.
      * @param startIndex which entry to start on.
      * @param startPositionMs where in that entry to start.
-     * @param playWhenReady false to load the queue without making noise, which is what a cold start
-     *   does so the mini player appears without ambushing the user.
+     * @param playWhenReady false to load the queue without making noise, which is what undoing a
+     *   cleared queue does.
      */
     suspend fun setQueue(
         episodes: List<PlayableEpisode>,
@@ -528,6 +528,27 @@ class PlaybackConnection @Inject constructor(
                 false
             }
 
+    /**
+     * Waits until the service has put the persisted queue back, or found none to put back.
+     *
+     * The service restores by itself when it is created; binding to it is all it takes to start
+     * that. This is for the caller that has to act on the result — *Resume* presses play on whatever
+     * came back — and would otherwise be reading a player the restore has not reached yet.
+     *
+     * An unreachable service is not reported as a command error: nothing was asked of the player,
+     * and the caller's next reading of it says "nothing loaded" by itself.
+     *
+     * @return true once the restore has finished; false when the service could not be reached.
+     */
+    suspend fun awaitRestored(): Boolean =
+        suspendRunCatching {
+            withContext(Dispatchers.Main.immediate) {
+                controller()
+                    .sendCustomCommand(SessionCommand(SESSION_COMMAND_AWAIT_RESTORE, Bundle.EMPTY), Bundle.EMPTY)
+                    .await()
+            }
+        }.map { result -> result.resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
+
     /** Clears the last command error once the UI has shown it. */
     fun clearError() {
         commandErrors.value = null
@@ -537,7 +558,7 @@ class PlaybackConnection @Inject constructor(
      * Reads the player's state directly, once.
      *
      * [playbackState] only reflects the player while something collects it, so a caller that needs
-     * to know what is loaded *before* subscribing — the cold-start queue restore, for one — has to
+     * to know what is loaded *before* subscribing — the launcher's *Resume*, for one — has to
      * ask the controller itself. Returns a disconnected [PlaybackState] if the service cannot be
      * reached, which reads as "nothing is playing" and is the right answer in that case.
      */
@@ -642,7 +663,7 @@ private fun MediaController.snapshot(errorMessage: String?, firstFrameRendered: 
         isPlaying = isPlaying,
         isBuffering = playbackState == Player.STATE_BUFFERING,
         positionMs = currentPosition.coerceAtLeast(0L),
-        durationMs = knownDurationMs() ?: 0L,
+        durationMs = durationToShowMs(measuredMs = knownDurationMs(), publishedMs = metadata.durationMs),
         bufferedPositionMs = bufferedPosition.coerceAtLeast(0L),
         speed = playbackParameters.speed,
         queueEpisodeIds = (0 until mediaItemCount).mapNotNull { getMediaItemAt(it).episodeId },

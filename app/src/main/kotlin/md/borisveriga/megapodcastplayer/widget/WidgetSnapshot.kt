@@ -57,7 +57,7 @@ internal data class WidgetSnapshot(
  * makes a widget that is blank whenever it is worth looking at. It could invent an answer to "what
  * would you carry on with", which is a third answer to a question the launcher shortcut and the
  * system's own resumption tile already answer through
- * [resumableQueue][md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource.resumableQueue].
+ * [resumePoint][md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource.resumePoint].
  * So it shows *that* answer: the same episode, resumed by the same call, and the two cannot
  * disagree because there is only one of them.
  *
@@ -71,7 +71,7 @@ internal data class WidgetSnapshot(
  * would spend most of its life showing the same cover twice.
  *
  * @param playback the live player.
- * @param resumable what the app would carry on with; the head of the durable queue.
+ * @param resumable what the app would carry on with; the episode that was last playing.
  * @param inProgress the *Continue listening* shelf, newest first.
  * @param shelfLimit how many the shelf may hold, after the episode above it has been removed.
  * @return the snapshot to draw.

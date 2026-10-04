@@ -493,11 +493,9 @@ class PlayerViewModel @Inject constructor(
         initialValue = PlayerUiState(),
     )
 
-    init {
-        // A cold start finds an empty player; put the user's queue back so the mini player shows
-        // what they were listening to. Idempotent, so several screens asking costs nothing.
-        viewModelScope.launch { episodePlayer.restoreQueue() }
-    }
+    // Nothing here restores the queue on a cold start. Collecting [uiState] binds the playback
+    // service, and the service puts the queue back itself as it starts; the mini player appears
+    // when the player says it has an episode, like any other change of state.
 
     /**
      * Puts the player in one of its two faces and remembers it.

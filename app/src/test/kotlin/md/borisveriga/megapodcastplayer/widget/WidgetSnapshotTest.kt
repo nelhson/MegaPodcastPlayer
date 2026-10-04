@@ -90,7 +90,7 @@ class WidgetSnapshotTest {
     @Test
     fun `with nothing loaded the widget offers what the app would carry on with`() {
         // The state a home screen finds this app in most of the time: the process is not running,
-        // so there is no player to ask, and `resumableQueue` is the same answer the launcher's
+        // so there is no player to ask, and `resumePoint` is the same answer the launcher's
         // Resume shortcut gives.
         val snapshot = widgetSnapshot(
             PlaybackState(),

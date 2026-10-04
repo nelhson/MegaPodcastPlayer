@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
@@ -36,7 +37,14 @@ class UserPreferencesDataSource @Inject constructor(
     private val dataStore: DataStore<Preferences>,
 ) {
 
-    /** Observes the current playback settings, falling back to [PlaybackSettings]'s defaults. */
+    /**
+     * Observes the current playback settings, falling back to [PlaybackSettings]'s defaults.
+     *
+     * Emits only when one of them changes. The store holds every preference in one file and
+     * re-emits the whole of it on any write — the last played episode is written on every change of
+     * episode — and the playback service applies what this emits to the player, so an emission
+     * that changed nothing was the app's speed being put back over a show's own.
+     */
     val playbackSettings: Flow<PlaybackSettings> = dataStore.data.map { preferences ->
         PlaybackSettings(
             // Clamped on read as well as on write so that a corrupt file can never hand ExoPlayer
@@ -49,7 +57,7 @@ class UserPreferencesDataSource @Inject constructor(
                 ?: PlaybackSettings.DEFAULT_SKIP_BACK_MS,
             autoPlayNext = preferences[Keys.AUTO_PLAY_NEXT] ?: true,
         )
-    }
+    }.distinctUntilChanged()
 
     /**
      * Observes the download rules, falling back to [DownloadSettings]'s defaults.
