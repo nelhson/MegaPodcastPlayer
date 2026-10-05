@@ -1,5 +1,6 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -691,6 +692,28 @@ class PodcastDetailScreenTest {
         composeRule.onAllNodesWithText("Delete").onLast().performClick()
 
         assertEquals(listOf("a"), toggled)
+    }
+
+    @Test
+    fun `a question whose transfer failed meanwhile closes rather than download on confirm`() {
+        val toggled = mutableListOf<String>()
+        // A list the test can change under the open question, as the database would.
+        val episodes = mutableStateListOf(episode("a", downloadState = DownloadState.DOWNLOADING))
+        setScreen(
+            episodes = episodes,
+            onEpisodeDownloadToggle = { toggled += it },
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.QUEUED, 0f)),
+        )
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityAction("Cancel audio and video downloads")
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertExists()
+
+        episodes[0] = episode("a", downloadState = DownloadState.FAILED)
+        composeRule.waitForIdle()
+
+        // On a failed copy the toggle downloads: the opposite of what the question asked.
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertDoesNotExist()
+        assertEquals(emptyList<String>(), toggled)
     }
 
     @Test

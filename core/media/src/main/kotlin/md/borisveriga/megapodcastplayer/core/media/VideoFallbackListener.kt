@@ -48,13 +48,17 @@ internal class VideoFallbackListener(
      * Swaps a video item whose picture the player found but cannot decode back to sound.
      *
      * Only when the tracks say so outright: a video track is listed and none of them is playable
-     * here. An empty list is the moment before the source has been read, not a verdict.
+     * here. An empty list is the moment before the source has been read, not a verdict. A track
+     * the decoder reports as beyond what it advertises still counts as playable, because the track
+     * selector plays it anyway — a 60 fps rendition on a decoder that claims 30 is usually fine,
+     * and sending it back to sound would refuse a picture this phone could have shown.
      *
      * @param tracks what the current item turned out to contain.
      */
     override fun onTracksChanged(tracks: Tracks) {
         if (player.currentMediaItem?.isVideoFlavour != true) return
-        if (!tracks.containsType(C.TRACK_TYPE_VIDEO) || tracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) return
+        val playable = tracks.isTypeSupported(C.TRACK_TYPE_VIDEO, /* allowExceedsCapabilities = */ true)
+        if (!tracks.containsType(C.TRACK_TYPE_VIDEO) || playable) return
         crashReporter.recordNonFatal(
             NON_FATAL_VIDEO_UNDECODABLE,
             IllegalStateException("no decoder for the video track on offer"),

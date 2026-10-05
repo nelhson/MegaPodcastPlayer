@@ -856,7 +856,9 @@ private fun Episode.downloadSwipeAction(
  * Removing the audio takes the video with it, so such a removal asks first, naming both and what
  * comes back; one of sound alone carries on as it always has, straight from the swipe or the
  * sheet's button. The episode waiting on the answer is held by id and saved, so a fold does not
- * lose the question, and one whose episode has gone resolves to no dialog at all.
+ * lose the question, and one whose episode has gone resolves to no dialog at all. So does one whose
+ * delete no longer takes a video — a transfer that failed while the question was up: the confirm
+ * runs the toggle, which reads the state afresh, and on a failed copy that toggle downloads.
  *
  * @param uiState the episodes and their video downloads.
  * @param onToggle the view model's toggle, called at once or once the question is answered.
@@ -869,7 +871,12 @@ private fun rememberAskingDownloadToggle(
 ): (String) -> Unit {
     val resources = LocalResources.current
     var pendingDeleteId by rememberSaveable { mutableStateOf<String?>(null) }
-    uiState.episodes.firstOrNull { it.id == pendingDeleteId }?.let { episode ->
+    val pending = uiState.episodes.firstOrNull { it.id == pendingDeleteId }
+        ?.takeIf { removalTakesVideo(it.downloadState, uiState.videoDownloads[it.id]) }
+    LaunchedEffect(pending == null) {
+        if (pending == null) pendingDeleteId = null
+    }
+    pending?.let { episode ->
         val video = uiState.videoDownloads[episode.id]
         DeleteDownloadDialog(
             episodeTitle = episode.title,

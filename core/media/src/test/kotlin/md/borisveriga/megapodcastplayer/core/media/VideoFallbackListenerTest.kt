@@ -70,10 +70,14 @@ class VideoFallbackListenerTest {
      * The tracks of an item with one video track, which this device can or cannot decode.
      *
      * @param supported whether the device has a decoder for it.
+     * @param support what the renderer reports for it; by default handled or unsupported, as
+     *   [supported] says.
      */
-    private fun videoTracks(supported: Boolean): Tracks {
+    private fun videoTracks(
+        supported: Boolean,
+        support: Int = if (supported) C.FORMAT_HANDLED else C.FORMAT_UNSUPPORTED_SUBTYPE,
+    ): Tracks {
         val format = Format.Builder().setSampleMimeType("video/av01").build()
-        val support = if (supported) C.FORMAT_HANDLED else C.FORMAT_UNSUPPORTED_SUBTYPE
         return Tracks(
             listOf(Tracks.Group(TrackGroup(format), false, intArrayOf(support), booleanArrayOf(supported))),
         )
@@ -100,6 +104,19 @@ class VideoFallbackListenerTest {
         VideoFallbackListener(player, crashReporter).onTracksChanged(videoTracks(supported = true))
 
         verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
+    }
+
+    @Test
+    fun `a picture beyond what the decoder advertises is still left playing`() {
+        // The track selector plays a track that exceeds the decoder's stated capabilities — a
+        // 60 fps rendition on a decoder that claims 30 — so this is not "cannot decode".
+        val player = playerOn(item("youtube://video-only/$VIDEO_ID?h=1080"))
+
+        VideoFallbackListener(player, crashReporter)
+            .onTracksChanged(videoTracks(supported = true, support = C.FORMAT_EXCEEDS_CAPABILITIES))
+
+        verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
+        verify(exactly = 0) { crashReporter.recordNonFatal(any(), any()) }
     }
 
     @Test

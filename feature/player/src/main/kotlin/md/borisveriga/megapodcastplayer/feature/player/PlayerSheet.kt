@@ -165,24 +165,10 @@ fun PlayerSheetScaffold(
         if (uiState.isEmptied) sheetState.collapse()
     }
 
-    // Whether the question before the current episode's download is deleted is up. Asked only when
-    // the delete takes a video too, as everywhere else; held here like the other sheets' flags.
-    var confirmingDelete by rememberSaveable { mutableStateOf(false) }
-    val toggleDownload: () -> Unit = {
-        if (uiState.download?.removalTakesVideo == true) confirmingDelete = true else viewModel.toggleCurrentDownload()
-    }
-    uiState.download?.takeIf { confirmingDelete }?.let { download ->
-        DeleteDownloadDialog(
-            episodeTitle = uiState.playback.title,
-            withVideo = download.video != null,
-            freed = formatBytes(resources, download.bytes + (download.video?.bytes ?: 0L)),
-            onConfirm = {
-                confirmingDelete = false
-                viewModel.toggleCurrentDownload()
-            },
-            onDismiss = { confirmingDelete = false },
-        )
-    }
+    val toggleDownload = rememberAskingDownloadToggle(
+        uiState = uiState,
+        onToggle = viewModel::toggleCurrentDownload,
+    )
 
     // Whether the list of this episode's moments is open. Held here, like the sleep timer's, for
     // the same reason: it is a question about this screen, and the moments themselves are saved.
@@ -324,6 +310,41 @@ fun PlayerSheetScaffold(
             )
         }
     }
+}
+
+/**
+ * The download button's toggle, with the question in front of a delete that takes a video too.
+ *
+ * The question is about one episode, held by its id, and dropped the moment that episode stops
+ * being current or its delete stops taking a video: the confirm runs the toggle, which reads the
+ * state afresh, and a question left up across an auto-advance would otherwise delete — or download
+ * — the next episode under the old one's title.
+ *
+ * @param uiState the episode playing and its download.
+ * @param onToggle the view model's toggle, called at once or once the question is answered.
+ * @return the toggle to hand to the download button.
+ */
+@Composable
+private fun rememberAskingDownloadToggle(uiState: PlayerUiState, onToggle: () -> Unit): () -> Unit {
+    val resources = LocalResources.current
+    var confirmingDeleteOf by rememberSaveable { mutableStateOf<String?>(null) }
+    val askable = uiState.currentEpisodeId.takeIf { uiState.download?.removalTakesVideo == true }
+    LaunchedEffect(askable) {
+        if (confirmingDeleteOf != askable) confirmingDeleteOf = null
+    }
+    uiState.download?.takeIf { confirmingDeleteOf != null && confirmingDeleteOf == askable }?.let { download ->
+        DeleteDownloadDialog(
+            episodeTitle = uiState.playback.title,
+            withVideo = download.video != null,
+            freed = formatBytes(resources, download.bytes + (download.video?.bytes ?: 0L)),
+            onConfirm = {
+                confirmingDeleteOf = null
+                onToggle()
+            },
+            onDismiss = { confirmingDeleteOf = null },
+        )
+    }
+    return { if (askable != null) confirmingDeleteOf = askable else onToggle() }
 }
 
 /**
