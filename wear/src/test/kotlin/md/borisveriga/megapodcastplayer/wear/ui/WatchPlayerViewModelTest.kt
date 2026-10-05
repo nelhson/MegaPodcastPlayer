@@ -709,47 +709,4 @@ class WatchPlayerViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
-
-    /**
-     * The command carries no position: the watch only ever has an extrapolation of a snapshot up
-     * to a second old, and the phone's own playhead is the one that is true.
-     */
-    @Test
-    fun `marking asks the phone to mark its own position`() = runTest {
-        val viewModel = viewModel()
-
-        viewModel.markMoment()
-
-        coVerify(exactly = 1) { client.send(WearCommand.MarkMoment) }
-    }
-
-    @Test
-    fun `a mark that reaches the phone is confirmed on the screen`() = runTest {
-        val viewModel = viewModel()
-
-        viewModel.markMoment()
-
-        viewModel.uiState.test {
-            val state = awaitItem()
-            assertTrue(state.momentSaved)
-            assertFalse(state.lastCommandFailed)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    /** A phone that cannot be reached is not playing, so there is nothing to keep for later. */
-    @Test
-    fun `a mark that cannot reach the phone is reported as a failed command`() = runTest {
-        coEvery { client.send(WearCommand.MarkMoment) } returns false
-        val viewModel = viewModel()
-
-        viewModel.markMoment()
-
-        viewModel.uiState.test {
-            val state = awaitItem()
-            assertFalse(state.momentSaved)
-            assertTrue(state.lastCommandFailed)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
 }

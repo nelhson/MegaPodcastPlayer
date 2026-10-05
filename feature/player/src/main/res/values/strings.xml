@@ -217,9 +217,9 @@
       The mark button is announced with the running count when there is one, because the number
       beside it is the only visible evidence that pressing it did anything.
 
-      "Save moment", the same two words the watch's own button uses. The two surfaces used to say
-      "Save this moment" and "Moment" for the identical action, which is how one gesture comes to
-      look like two features.
+      "Save moment": two words, the action and its object. The phone used to say "Save this
+      moment" while the watch, which no longer has the button, said "Moment" for the identical
+      action — which is how one gesture comes to look like two features.
     -->
     <string name="player_moment_mark">Save moment</string>
     <plurals name="player_moment_mark_with_count">

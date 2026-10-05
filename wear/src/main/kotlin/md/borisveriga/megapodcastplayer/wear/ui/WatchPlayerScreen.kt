@@ -1,20 +1,13 @@
 package md.borisveriga.megapodcastplayer.wear.ui
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
@@ -37,20 +30,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.BookmarkAdd
-import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Title
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -104,6 +93,7 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import androidx.wear.compose.material3.TextButtonDefaults
 import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
@@ -140,7 +130,6 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
         onSkipToNext = viewModel::skipToNext,
         onSkipToPrevious = viewModel::skipToPrevious,
         onCycleSpeed = viewModel::cycleSpeed,
-        onMarkMoment = viewModel::markMoment,
         onPlayOnPhone = viewModel::playOnPhone,
         onQueueOnPhone = viewModel::queueOnPhone,
         onRetry = viewModel::retry,
@@ -159,13 +148,12 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  *
  * Stateless so it can be previewed and screenshot-tested without a phone at the other end.
  *
- * One column, top to bottom: what is playing — flanked by the moment button and the volume toggle,
- * with the volume bar taking the title's place while it is open — then the scrubber, the transport,
- * previous, speed and next, the phone's queue, and what is downloaded on the phone. The moment and
- * the volume sit up with the title rather than in rows of their own, which is what buys the
- * transport its place on the first screen: a round face holds five rows of thumb-sized targets
- * only if the fifth is at its bottom edge, and that row is the one used sitting down. The transport
- * is the one thing here that has to be under the thumb within a second
+ * One column, top to bottom: what is playing, the scrubber, the transport, previous, speed and
+ * next, the volume, the phone's queue, and what is downloaded on the phone. The top block carries
+ * no buttons, which is what buys the transport its place on the first screen; the volume is a row
+ * of its own directly under the player's controls, a short scroll away, because it is adjusted
+ * now and then rather than pressed blind. The transport is the one thing here that has to be under
+ * the thumb within a second
  * of raising the wrist, and it is: the two lists are the only parts whose length the phone decides,
  * and they are last in the column, so however long they grow nothing above them moves. The screen
  * was once split into two pages to keep a growing list from pushing pause off the bottom; putting
@@ -179,7 +167,6 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onSkipToNext invoked by the next-episode button.
  * @param onSkipToPrevious invoked by the previous-episode button.
  * @param onCycleSpeed invoked by the speed button.
- * @param onMarkMoment invoked by the mark-a-moment button.
  * @param onPlayOnPhone invoked with the episode id when an episode row is tapped.
  * @param onQueueOnPhone invoked with the episode id by a downloaded row's queue button.
  * @param onRetry invoked when the user retries a failed connection.
@@ -189,8 +176,8 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * @param onBeginScrub invoked when the user takes hold of the progress bar.
  * @param onScrubBy invoked as they move it, with a signed offset in milliseconds.
  * @param onCommitScrub invoked when they settle, which is what actually seeks.
- * @param onBeginVolume invoked when the volume button opens the bar in the title's place.
- * @param onEndVolume invoked when the same button puts the title back.
+ * @param onBeginVolume invoked when a tap on the volume bar hands it the bezel.
+ * @param onEndVolume invoked when a second tap gives the bezel back to the list.
  * @param onSetVolume invoked with an absolute level by the bar's own minus and plus buttons.
  * @param onAdjustVolumeBy invoked with a signed number of steps as the bezel turns, or as a
  *   finger is dragged along the volume bar.
@@ -208,7 +195,6 @@ fun WatchPlayerScreen(
     onQueueOnPhone: (String) -> Unit,
     onRetry: () -> Unit,
     position: () -> PlaybackPosition = { PlaybackPosition() },
-    onMarkMoment: () -> Unit = {},
     onBeginScrub: () -> Unit = {},
     onScrubBy: (Long) -> Unit = {},
     onCommitScrub: () -> Unit = {},
@@ -227,11 +213,11 @@ fun WatchPlayerScreen(
     val listState = rememberTransformingLazyColumnState()
     val spec = rememberTransformationSpec()
 
-    // Read here rather than where it is used, which is the top block and the progress bar. Both
-    // are list items, so reading it there meant a `Settings.Global` read while composing and a
-    // ContentObserver registered and unregistered as the effect was applied and disposed — three
-    // trips to the system server, on the main thread, every time one scrolled out of view
-    // and back. It is one reading per screen, and this is where a screen's readings belong.
+    // Read here rather than where it is used, which is the progress bar. That is a list item, so
+    // reading it there meant a `Settings.Global` read while composing and a ContentObserver
+    // registered and unregistered as the effect was applied and disposed — three trips to the
+    // system server, on the main thread, every time it scrolled out of view and back. It is one
+    // reading per screen, and this is where a screen's readings belong.
     val reduceMotion = rememberReduceMotion()
 
     // A scrolling list rather than a fixed layout even for the controls alone, because at 200 %
@@ -253,16 +239,7 @@ fun WatchPlayerScreen(
 
             if (uiState.showsControls) {
                 item(key = "top", contentType = "top") {
-                    NowPlayingTop(
-                        uiState = uiState,
-                        reduceMotion = reduceMotion,
-                        onMarkMoment = onMarkMoment,
-                        onBeginVolume = onBeginVolume,
-                        onEndVolume = onEndVolume,
-                        onSetVolume = onSetVolume,
-                        onAdjustVolumeBy = onAdjustVolumeBy,
-                        modifier = Modifier.scrollTransform(this, spec),
-                    )
+                    NowPlayingTop(uiState = uiState, modifier = Modifier.scrollTransform(this, spec))
                 }
                 item(key = "progress", contentType = "progress") {
                     ProgressRow(
@@ -292,6 +269,20 @@ fun WatchPlayerScreen(
                         onCycleSpeed = onCycleSpeed,
                         modifier = Modifier.scrollTransform(this, spec),
                     )
+                }
+                // Right under the player's controls and above the lists, so it is the first thing
+                // a scroll reaches — and no row at all for a phone that gave no scale to move along.
+                if (uiState.canSetVolume) {
+                    item(key = "volume", contentType = "volume") {
+                        VolumeRow(
+                            uiState = uiState,
+                            onBeginVolume = onBeginVolume,
+                            onEndVolume = onEndVolume,
+                            onSetVolume = onSetVolume,
+                            onAdjustVolumeBy = onAdjustVolumeBy,
+                            modifier = Modifier.scrollTransform(this, spec),
+                        )
+                    }
                 }
             } else {
                 // Nothing to control means no controls: the sentence explaining the missing
@@ -437,42 +428,23 @@ private fun TransformingLazyColumnScope.phoneDownloads(
 }
 
 /**
- * What is playing, with the two buttons that are pressed without looking either side of it.
+ * What is playing: the show on one line, the episode's title under it.
  *
- * The first row is the moment button, the show and the volume toggle; under it sits the episode's
- * title — or, while the toggle is on, the volume bar in the title's place. The two share a slot
- * rather than stacking because the volume is a thing adjusted and put away, and every row it took
- * permanently was a row the transport was pushed further down the wrist. The bar is shown exactly
- * while [WatchPlayerUiState.isAdjustingVolume] is true, so the view model's own release timer is
- * what brings the title back: a turn-and-forget leaves the screen as it found it.
+ * Nothing to press here. The moment button that used to sit beside the show is gone from the
+ * watch, and the volume has a row of its own under the transport — see [VolumeRow] — so this block
+ * is only ever read, and is as short as reading it allows.
  *
- * There is no cover art and no decorative animation here on purpose; what moves — the fade between
- * title and bar, the moment button's confirmation — each says something. The art answered "which
- * show is this" badly — third-party imagery behind a title needs a scrim heavy enough that little
- * of the picture survives — and a colour answers it at the same glance for nothing; see
- * [showAccent]. Whether the phone is playing is said by the progress bar's glint, where the eye
- * already goes for "how far".
+ * There is no cover art and no decorative animation here on purpose. The art answered "which show
+ * is this" badly — third-party imagery behind a title needs a scrim heavy enough that little of the
+ * picture survives — and a colour answers it at the same glance for nothing; see [showAccent].
+ * Whether the phone is playing is said by the progress bar's glint, where the eye already goes for
+ * "how far".
  *
  * @param uiState what to draw.
- * @param reduceMotion whether the wearer has asked for no animations; read once above the list.
- * @param onMarkMoment marks a moment at the phone's playhead.
- * @param onBeginVolume opens the volume bar and hands it the bezel.
- * @param onEndVolume closes it, giving the bezel back to the list.
- * @param onSetVolume sets an absolute level; what the bar's own buttons report.
- * @param onAdjustVolumeBy moves by whole steps; what the bezel and a drag report.
  * @param modifier applied to the block; carries the column's scroll transformation.
  */
 @Composable
-private fun NowPlayingTop(
-    uiState: WatchPlayerUiState,
-    reduceMotion: Boolean,
-    onMarkMoment: () -> Unit,
-    onBeginVolume: () -> Unit,
-    onEndVolume: () -> Unit,
-    onSetVolume: (Int) -> Unit,
-    onAdjustVolumeBy: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun NowPlayingTop(uiState: WatchPlayerUiState, modifier: Modifier = Modifier) {
     val accent = showAccent(uiState.snapshot.showTitle)
     // Remembered rather than rebuilt each composition: a brush is a shader's cache key, and a new
     // instance every time is a new shader every time.
@@ -487,250 +459,41 @@ private fun NowPlayingTop(
             ),
         )
     }
-    val volumeOpen = uiState.isAdjustingVolume && uiState.canSetVolume
-    val focusRequester = remember { FocusRequester() }
-    val haptics = LocalHapticFeedback.current
-    // Rotary arrives as scroll pixels, not as detents, so the pixels are banked until they add up
-    // to a step. Kept outside composition: a turn moves the volume, and must not also recompose
-    // the block that is reading it.
-    val turned = remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(volumeOpen) {
-        if (!volumeOpen) return@LaunchedEffect
-        // A new hold starts from nothing: what the last one left over was a turn that has ended.
-        turned.floatValue = 0f
-        // Rotary events go to whatever holds focus, so opening the bar claims it.
-        focusRequester.requestFocus()
-    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // The bezel's volume handler is on this block rather than on the bar, and that is what
-            // gives the bezel back to the list. The bar leaves composition when it closes, and a
-            // focused node that leaves takes the screen's focus with it: nothing would be focused,
-            // and every turn after that would go nowhere. This block stays, keeps the focus, and
-            // passes each turn up to the list while the bar is shut — as the scrubber does.
-            .focusRequester(focusRequester)
-            .focusable()
-            .onRotaryScrollEvent { event ->
-                // Also false through the bar's fade-out, so a turn after closing moves the list and
-                // not the volume the wearer has just put away.
-                if (!volumeOpen) return@onRotaryScrollEvent false
-                val banked = bankVolumeSteps(
-                    bankedPx = turned.floatValue + event.verticalScrollPixels,
-                    pixelsPerStep = ROTARY_PIXELS_PER_VOLUME_STEP,
-                )
-                turned.floatValue = banked.remainderPx
-                if (banked.steps != 0) {
-                    // Same sign as the scrubber, which turns the same bezel on the same screen:
-                    // forward is later there and louder here. Two controls that answered one turn
-                    // in opposite directions would be a coin toss.
-                    onAdjustVolumeBy(banked.steps)
-                    // The slider buzzes for its own buttons; the bezel has to be given the same
-                    // tick by hand, or half the control would be silent to the hand.
-                    if (uiState.volumeWouldMove(banked.steps)) {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    }
-                }
-                true
-            }
             // The shape goes to `background` rather than to a `clip` above it: one node that draws
             // the wash within the shape, instead of a clip node the wash is then drawn through.
             .background(brush = wash, shape = MaterialTheme.shapes.large)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MomentIconButton(saved = uiState.momentSaved, reduceMotion = reduceMotion, onClick = onMarkMoment)
-
-            // The show sits between the two buttons, on the one line of the top row that would
-            // otherwise be empty: at the top of a round screen the middle is the widest part left.
+        if (uiState.snapshot.showTitle.isNotBlank()) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (uiState.snapshot.showTitle.isNotBlank()) {
-                    ShowDot(accent = accent)
-                    Text(
-                        text = uiState.snapshot.showTitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = accent,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            if (uiState.canSetVolume) {
-                VolumeToggleButton(
-                    open = volumeOpen,
-                    onOpen = onBeginVolume,
-                    onClose = onEndVolume,
-                )
-            } else {
-                // Holds the toggle's place, so the show stays centred under the screen's middle
-                // rather than under the middle of whatever is left beside the moment button.
-                Spacer(modifier = Modifier.size(IconButtonDefaults.SmallButtonSize))
-            }
-        }
-
-        AnimatedContent(
-            targetState = volumeOpen,
-            transitionSpec = {
-                if (reduceMotion) {
-                    // `using null` as well: the default size transform would still slide the
-                    // transport up and down as the slot changes height.
-                    EnterTransition.None togetherWith ExitTransition.None using null
-                } else {
-                    fadeIn() togetherWith fadeOut()
-                }
-            },
-            label = "title-or-volume",
-        ) { showVolume ->
-            if (showVolume) {
-                VolumePanel(
-                    uiState = uiState,
-                    onSetVolume = onSetVolume,
-                    onAdjustVolumeBy = onAdjustVolumeBy,
-                )
-            } else {
+                ShowDot(accent = accent)
                 Text(
-                    text = uiState.snapshot.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    text = uiState.snapshot.showTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accent,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
-    }
-}
 
-/**
- * The button that keeps the spot the wearer is listening to.
- *
- * Small and in the top corner rather than a full-width row of its own: the full-width button cost
- * the transport its place on the first screen. It is still the first thing the thumb meets coming
- * off the bezel, and it keeps the standard touch target however small it is drawn.
- *
- * The icon is the confirmation. A watch has no snackbar and marking leaves nothing behind, so for
- * a few seconds the glyph turns into a saved bookmark, the button fills with the accent and gives
- * one small pop; without that the wearer presses again to check, which is why the phone folds two
- * marks a few seconds apart into one. The buzz says the same thing to a wrist nobody is looking at.
- *
- * @param saved true while the confirmation is showing.
- * @param reduceMotion whether to skip the pop; the colour and glyph still change.
- * @param onClick marks a moment at the playhead.
- * @param modifier applied to the button.
- */
-@Composable
-private fun MomentIconButton(
-    saved: Boolean,
-    reduceMotion: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val haptics = LocalHapticFeedback.current
-    val pop = remember { Animatable(1f) }
-    // Whether the confirmation showing now has already been buzzed for. Starts as `saved`: the
-    // button is in a list item, and scrolling away and back within the confirmation's few seconds
-    // composes it afresh with `saved` already true — the same save shown again, which must not
-    // buzz and pop a second time. Cleared when the confirmation ends, so the next save does.
-    var acknowledged by remember { mutableStateOf(saved) }
-    // Keyed on the confirmation rather than fired from the click, because the two are not the same
-    // event: a mark that could neither be delivered nor queued sets nothing, and a wrist that
-    // buzzed anyway would have said the moment was kept when it was not.
-    LaunchedEffect(saved) {
-        if (!saved) {
-            acknowledged = false
-            return@LaunchedEffect
-        }
-        if (acknowledged) return@LaunchedEffect
-        acknowledged = true
-        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-        if (!reduceMotion) {
-            pop.animateTo(MOMENT_POP_SCALE, animationSpec = tween(MOMENT_POP_MS))
-            pop.animateTo(1f, animationSpec = tween(MOMENT_POP_MS))
-        }
-    }
-
-    val tonal = IconButtonDefaults.filledTonalIconButtonColors()
-    val container by animateColorAsState(
-        targetValue = if (saved) MaterialTheme.colorScheme.primary else tonal.containerColor,
-        label = "moment-container",
-    )
-    val content by animateColorAsState(
-        targetValue = if (saved) MaterialTheme.colorScheme.onPrimary else tonal.contentColor,
-        label = "moment-content",
-    )
-
-    FilledTonalIconButton(
-        onClick = onClick,
-        colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = container,
-            contentColor = content,
-        ),
-        modifier = modifier
-            .touchTargetAwareSize(IconButtonDefaults.SmallButtonSize)
-            // Read in the layer block, so the pop redraws the button rather than recomposing it.
-            .graphicsLayer {
-                scaleX = pop.value
-                scaleY = pop.value
-            },
-    ) {
-        Icon(
-            imageVector = if (saved) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkAdd,
-            contentDescription = stringResource(
-                if (saved) R.string.watch_moment_saved else R.string.watch_moment_mark,
-            ),
-            modifier = Modifier.size(IconButtonDefaults.iconSizeFor(IconButtonDefaults.SmallButtonSize)),
-        )
-    }
-}
-
-/**
- * The switch between the episode's title and the volume bar that takes its place.
- *
- * One button that becomes its own way back, rather than a volume button and a close button: the
- * thumb that opened the bar is already where the way out is. While the bar is open the glyph is the
- * title's, which says what pressing it returns to rather than what is currently showing.
- *
- * @param open true while the volume bar is in the title's place.
- * @param onOpen shows the bar and hands it the bezel.
- * @param onClose puts the title back.
- * @param modifier applied to the button.
- */
-@Composable
-private fun VolumeToggleButton(
-    open: Boolean,
-    onOpen: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = if (open) {
-        IconButtonDefaults.filledIconButtonColors()
-    } else {
-        IconButtonDefaults.filledTonalIconButtonColors()
-    }
-
-    FilledTonalIconButton(
-        onClick = if (open) onClose else onOpen,
-        colors = colors,
-        modifier = modifier.touchTargetAwareSize(IconButtonDefaults.SmallButtonSize),
-    ) {
-        Icon(
-            imageVector = if (open) Icons.Rounded.Title else Icons.AutoMirrored.Rounded.VolumeUp,
-            contentDescription = stringResource(
-                if (open) R.string.watch_volume_hide else R.string.watch_volume_show,
-            ),
-            modifier = Modifier.size(IconButtonDefaults.iconSizeFor(IconButtonDefaults.SmallButtonSize)),
+        Text(
+            text = uiState.snapshot.title,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -895,7 +658,7 @@ private fun ProgressRow(
                 // Nothing is shown rather than "0:00" while the phone has not read the duration:
                 // a zero-length episode is a claim, an empty label is just an absence.
                 text = uiState.snapshot.knownDurationMs?.let(::formatPlaybackTime).orEmpty(),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -903,7 +666,12 @@ private fun ProgressRow(
 }
 
 /**
- * The phone's media volume: a bar with a step either side of it, in the title's place.
+ * The phone's media volume: a bar with a step either side of it, in a row of its own.
+ *
+ * Sits directly under the player's controls rather than up with the title. It used to share the
+ * title's slot behind a toggle, which kept it off the first screen but made it a two-step control
+ * that hid the episode while it was open; as its own row it is always there, one short scroll down,
+ * and the title never has to make way for it.
  *
  * Built on Wear Material3's [Slider], which is already the shape of this control — two 48 dp
  * buttons with a bar between them, its own detent haptics, and range semantics that let TalkBack
@@ -912,34 +680,54 @@ private fun ProgressRow(
  * — nor a drag: its bar is drawn, not held, so the finger's movement along it is added here too,
  * on the scale the bar suggests. See [bankVolumeSteps] for how either distance becomes steps.
  *
- * It is composed only while the volume is open, and opening it is what holds the bezel — but the
- * bezel's handler lives on [NowPlayingTop], which stays composed, rather than here; see there for
- * why. There is no tap-to-hold on the bar any more: the toggle is that tap, and the toggle, or a
- * few still seconds, is the way out. The buttons and the drag need neither, which is
- * what keeps the bar usable for a wearer who never discovers the bezel.
+ * The bezel is taken the way the scrubber takes it: a tap on the bar hands it over, and a second
+ * tap — or a few still seconds, which the view model times — gives it back to the list. The bar is
+ * outlined while it holds the bezel, so the mode is visible as well as spoken. The buttons and the
+ * drag need no mode at all, which is what keeps the bar usable for a wearer who never discovers
+ * the bezel.
+ *
+ * The rotary handler stays attached when the bezel is given back, and passes each turn up to the
+ * list: the row keeps the focus it claimed, and a handler that vanished with the mode would leave
+ * nothing focused to scroll with.
  *
  * The one thing it does not copy from the scrubber is the pause before the value is sent. A seek
  * is a jump to somewhere you cannot hear until you arrive; a volume change is audible while the
  * finger is still moving, so every step goes out at once and the throttling happens behind it.
  *
- * @param uiState what to draw, including the level.
+ * @param uiState what to draw, including the level and whether the bezel is held.
+ * @param onBeginVolume hands the bar the bezel.
+ * @param onEndVolume gives the bezel back to the list.
  * @param onSetVolume sets an absolute level; what the slider's own buttons report.
- * @param onAdjustVolumeBy moves by whole steps; what a drag along the bar reports.
- * @param modifier applied to the panel.
+ * @param onAdjustVolumeBy moves by whole steps; what the bezel and a drag along the bar report.
+ * @param modifier applied to the row; carries the column's scroll transformation.
  */
 @Composable
-private fun VolumePanel(
+internal fun VolumeRow(
     uiState: WatchPlayerUiState,
+    onBeginVolume: () -> Unit,
+    onEndVolume: () -> Unit,
     onSetVolume: (Int) -> Unit,
     onAdjustVolumeBy: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val engaged = uiState.isAdjustingVolume
+    val focusRequester = remember { FocusRequester() }
     val haptics = LocalHapticFeedback.current
-    // A finger's distance is banked until it adds up to a step, apart from the bezel's bank in
-    // [NowPlayingTop]: the two are worth different distances per step, and a remainder from one
-    // means nothing to the other.
+    // Rotary arrives as scroll pixels, not as detents, and a finger as a distance, so each is
+    // banked until it adds up to a step. Two banks, because the two are worth different distances
+    // per step and a remainder from one means nothing to the other. Kept outside composition: a
+    // turn moves the volume, and must not also recompose the row that is reading it.
+    val turned = remember { mutableFloatStateOf(0f) }
     val dragged = remember { mutableFloatStateOf(0f) }
     var rowWidthPx by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(engaged) {
+        if (!engaged) return@LaunchedEffect
+        // A new hold starts from nothing: what the last one left over was a turn that has ended.
+        turned.floatValue = 0f
+        // Rotary events go to whatever holds focus, so taking the bezel claims it.
+        focusRequester.requestFocus()
+    }
 
     // Dragging the length of the bar covers the phone's whole scale, so the fill follows the
     // finger — which is what the bar suggests and what the scrubber already does with an episode.
@@ -949,13 +737,45 @@ private fun VolumePanel(
     val barWidthPx = (rowWidthPx - buttonsPx).coerceAtLeast(0f)
     val dragPixelsPerStep: Float = if (maxVolume > 0) barWidthPx / maxVolume else 0f
 
-    val volumeLabel = stringResource(R.string.watch_volume_active)
+    val volumeLabel = stringResource(
+        if (engaged) R.string.watch_volume_active else R.string.watch_volume,
+    )
+    // An outline rather than a fill: the slider paints its own opaque container, so a tint behind
+    // it would never be seen.
+    val outline = if (engaged) MaterialTheme.colorScheme.primary else Color.Transparent
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().padding(top = 4.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .onSizeChanged { rowWidthPx = it.width }
+                .border(width = VOLUME_HELD_OUTLINE, color = outline, shape = CircleShape)
+                .semantics { contentDescription = volumeLabel }
+                // The slider's own buttons consume their taps, so this hears only the bar between
+                // them — the part that has no job of its own.
+                .clickable { if (engaged) onEndVolume() else onBeginVolume() }
+                .focusRequester(focusRequester)
+                .focusable()
+                .onRotaryScrollEvent { event ->
+                    if (!engaged) return@onRotaryScrollEvent false
+                    val banked = bankVolumeSteps(
+                        bankedPx = turned.floatValue + event.verticalScrollPixels,
+                        pixelsPerStep = ROTARY_PIXELS_PER_VOLUME_STEP,
+                    )
+                    turned.floatValue = banked.remainderPx
+                    if (banked.steps != 0) {
+                        // Same sign as the scrubber, which turns the same bezel on the same screen:
+                        // forward is later there and louder here. Two controls that answered one
+                        // turn in opposite directions would be a coin toss.
+                        onAdjustVolumeBy(banked.steps)
+                        // The slider buzzes for its own buttons; the bezel has to be given the same
+                        // tick by hand, or half the control would be silent to the hand.
+                        if (uiState.volumeWouldMove(banked.steps)) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                    }
+                    true
+                }
                 // The slider draws a bar and does not let a finger move it: it is two buttons and
                 // a picture. A bar that looks draggable and is not reads as broken, so the drag is
                 // added here.
@@ -977,8 +797,7 @@ private fun VolumePanel(
                     // A new drag starts from nothing: what the last one left over was distance
                     // along a gesture that has ended.
                     onDragStarted = { dragged.floatValue = 0f },
-                )
-                .semantics { contentDescription = volumeLabel },
+                ),
         ) {
             Slider(
                 value = uiState.volumeLevel,
@@ -1119,7 +938,7 @@ internal fun ProgressGlintFrame(
 private fun PositionLabel(position: () -> PlaybackPosition, isScrubbing: Boolean) {
     Text(
         text = formatPlaybackTime(position().positionMs),
-        style = MaterialTheme.typography.labelSmall,
+        style = MaterialTheme.typography.labelMedium,
         color = if (isScrubbing) {
             MaterialTheme.colorScheme.primary
         } else {
@@ -1179,11 +998,14 @@ private fun TransportRow(
     val bufferingLabel = stringResource(R.string.watch_buffering)
 
     Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(TRANSPORT_GAP, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledTonalIconButton(onClick = onSkipBack) {
+        FilledTonalIconButton(
+            onClick = onSkipBack,
+            modifier = Modifier.touchTargetAwareSize(SKIP_BUTTON_SIZE),
+        ) {
             SkipGlyph(skipMs = uiState.snapshot.skipBackMs, forward = false)
         }
 
@@ -1200,7 +1022,7 @@ private fun TransportRow(
 
             FilledIconButton(
                 onClick = onTogglePlayPause,
-                modifier = Modifier.size(PLAY_BUTTON_SIZE),
+                modifier = Modifier.touchTargetAwareSize(PLAY_BUTTON_SIZE),
             ) {
                 Icon(
                     imageVector = if (uiState.snapshot.isPlaying) {
@@ -1215,7 +1037,10 @@ private fun TransportRow(
             }
         }
 
-        FilledTonalIconButton(onClick = onSkipForward) {
+        FilledTonalIconButton(
+            onClick = onSkipForward,
+            modifier = Modifier.touchTargetAwareSize(SKIP_BUTTON_SIZE),
+        ) {
             SkipGlyph(skipMs = uiState.snapshot.skipForwardMs, forward = true)
         }
     }
@@ -1244,18 +1069,28 @@ private fun SecondaryRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onSkipToPrevious) {
+        IconButton(
+            onClick = onSkipToPrevious,
+            modifier = Modifier.touchTargetAwareSize(IconButtonDefaults.SmallButtonSize),
+        ) {
             Icon(
                 imageVector = Icons.Rounded.SkipPrevious,
                 contentDescription = stringResource(R.string.watch_previous_episode),
             )
         }
 
-        TextButton(onClick = onCycleSpeed) {
+        TextButton(
+            onClick = onCycleSpeed,
+            modifier = Modifier.touchTargetAwareSize(TextButtonDefaults.SmallButtonSize),
+        ) {
             Text(text = formatSpeed(uiState.snapshot.speed))
         }
 
-        IconButton(onClick = onSkipToNext, enabled = uiState.snapshot.hasNext) {
+        IconButton(
+            onClick = onSkipToNext,
+            enabled = uiState.snapshot.hasNext,
+            modifier = Modifier.touchTargetAwareSize(IconButtonDefaults.SmallButtonSize),
+        ) {
             Icon(
                 imageVector = Icons.Rounded.SkipNext,
                 contentDescription = stringResource(R.string.watch_next_episode),
@@ -1513,20 +1348,36 @@ private const val SKIP_NUMERAL_DROP = 0.08f
 
 private const val MILLIS_PER_SECOND = 1_000L
 
-/** The play button is deliberately larger than its neighbours: it is the one pressed blind. */
-private val PLAY_BUTTON_SIZE = 60.dp
+/**
+ * The play button: still larger than its neighbours, because it is the one pressed blind, but by a
+ * step rather than by a size class. At 60 dp beside two 52 dp skips the transport outweighed the
+ * episode and the bar above it, and ran off the bottom of a small round face.
+ */
+private val PLAY_BUTTON_SIZE = 52.dp
+
+/**
+ * The skip buttons, drawn smaller than Wear's default and kept at its 48 dp touch target by
+ * `touchTargetAwareSize`: the target is what the thumb needs, the drawn size is what the eye weighs.
+ */
+private val SKIP_BUTTON_SIZE = 44.dp
+
+/** The gap between the three transport buttons; the smaller buttons leave room for more air. */
+private val TRANSPORT_GAP = 10.dp
 
 /** Sized to clear the play button so the ring reads as around it rather than on it. */
-private val BUFFERING_RING_SIZE = 72.dp
+private val BUFFERING_RING_SIZE = 62.dp
 
-/** The bar at rest: thin, because it is only being read. */
-private val PROGRESS_BAR_HEIGHT = 6.dp
+/**
+ * The bar at rest. Thick enough to read at a glance — at 6 dp it was a hairline under buttons
+ * several times its weight — and still plainly a bar rather than a button.
+ */
+private val PROGRESS_BAR_HEIGHT = 10.dp
 
 /** The bar while scrubbing: thick enough to be a target for a fingertip. */
-private val SCRUB_BAR_HEIGHT = 14.dp
+private val SCRUB_BAR_HEIGHT = 18.dp
 
 /** The thumb on that bar. As tall as the bar, so it reads as a grip on it and not a dot above it. */
-private val SCRUB_THUMB_SIZE = 14.dp
+private val SCRUB_THUMB_SIZE = 18.dp
 
 /** The glint's width along the bar: long enough to read as light, short enough not to be a marker. */
 private val GLINT_WIDTH = 28.dp
@@ -1537,9 +1388,8 @@ private const val GLINT_PERIOD_MS = 1_800
 /** The glint's strength at its brightest, over the bar's fill. */
 private const val GLINT_ALPHA = 0.5f
 
-/** How far the moment button swells when a save is confirmed, and how long each half of it takes. */
-private const val MOMENT_POP_SCALE = 1.15f
-private const val MOMENT_POP_MS = 140
+/** The outline around the volume bar while it holds the bezel: enough to read as a mode. */
+private val VOLUME_HELD_OUTLINE = 2.dp
 
 /** Half: centres the glint on its position and rounds the bar's ends. */
 private const val HALF = 0.5f

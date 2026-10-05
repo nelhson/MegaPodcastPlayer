@@ -79,9 +79,6 @@ class WatchPlayerViewModel internal constructor(
     /** When the last `SetVolume` went out, which is what the throttle measures against. */
     private var lastVolumeSentAtElapsedMs = 0L
 
-    /** True for a few seconds after a moment is marked; see [WatchPlayerUiState.momentSaved]. */
-    private val momentSaved = MutableStateFlow(false)
-
     /** True while the first scrub of this watch's life is being explained; see [WatchHints]. */
     private val scrubHintVisible = MutableStateFlow(false)
 
@@ -95,7 +92,7 @@ class WatchPlayerViewModel internal constructor(
      * sources, and these are the same kind of thing — a sentence the screen shows for a moment
      * and then takes away.
      */
-    private val cues = combine(momentSaved, scrubHintVisible, volumeHintVisible, ::Cues)
+    private val cues = combine(scrubHintVisible, volumeHintVisible, ::Cues)
 
     /** The volume the wearer is setting, and whether the bezel is theirs to set it with. */
     private val volumeState = combine(volume, volumeEngaged, ::VolumeMode)
@@ -144,7 +141,6 @@ class WatchPlayerViewModel internal constructor(
             volume = volume.adjustment,
             playback = phone.playback,
             isAdjustingVolume = volume.engaged,
-            momentSaved = cues.momentSaved,
             showsScrubHint = cues.scrubHint,
             showsVolumeHint = cues.volumeHint,
         )
@@ -464,37 +460,6 @@ class WatchPlayerViewModel internal constructor(
     }
 
     /**
-     * Marks the moment the wearer just heard.
-     *
-     * The watch does not know where the phone's playhead is — what the bar shows is an
-     * extrapolation of a snapshot up to a second old — so it asks the phone to mark its own
-     * position rather than sending one. A phone that cannot be reached is a phone that is not
-     * playing, so there is nothing to queue for later; the failure is shown like any other.
-     */
-    fun markMoment() {
-        viewModelScope.launch {
-            val reached = client.send(WearCommand.MarkMoment)
-            lastCommandFailed.value = !reached
-            if (reached) confirmMoment()
-        }
-    }
-
-    /**
-     * Shows the "saved" confirmation for a moment, then takes it away.
-     *
-     * Held for a few seconds rather than until the next state change: everything else on this
-     * screen moves once a second, and a confirmation that outlived its press would be attached to
-     * whatever the wearer did next.
-     */
-    private fun confirmMoment() {
-        momentSaved.value = true
-        viewModelScope.launch {
-            delay(MOMENT_CONFIRM_MS)
-            momentSaved.value = false
-        }
-    }
-
-    /**
      * Plays an episode on the phone, in place of whatever is playing.
      *
      * @param episodeId the episode, as it arrived in the snapshot's queue or downloaded list.
@@ -548,12 +513,10 @@ class WatchPlayerViewModel internal constructor(
     /**
      * The transient cues drawn over the player.
      *
-     * @property momentSaved true while the mark-a-moment confirmation is up.
      * @property scrubHint true while the first-scrub explanation is up.
      * @property volumeHint true while the first-volume explanation is up.
      */
     private data class Cues(
-        val momentSaved: Boolean,
         val scrubHint: Boolean,
         val volumeHint: Boolean,
     )
@@ -576,9 +539,6 @@ class WatchPlayerViewModel internal constructor(
 
         /** How often the extrapolated position is recomputed. */
         const val POSITION_TICK_MS = 1_000L
-
-        /** How long the "moment saved" confirmation stays on the screen. */
-        const val MOMENT_CONFIRM_MS = 3_000L
 
         /**
          * The shortest gap between two `SetVolume` messages.

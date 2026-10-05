@@ -107,15 +107,12 @@ internal data class VolumeAdjustment(
  * @property volumeLevel the level the volume row draws, on the phone's `0..maxVolume` scale. Not
  *   simply the snapshot's: a level the wearer has just turned to is shown at once and held over
  *   the round trip, the way a committed scrub is.
- * @property momentSaved true for a few seconds after a moment is marked. A watch has no snackbar
- *   and the mark leaves nothing on screen, so without this the button is one the wearer presses and
- *   then presses again because they cannot tell whether the first press did anything.
  * @property showsScrubHint true while the first scrub on this watch is being explained. Taking hold
  *   of the bar is the one gesture here that leaves no trace on the screen, so the first time it is
  *   done the bar says what the bezel now does.
  * @property showsVolumeHint the same sentence for the volume bar, for the same reason. Its minus
- *   and plus buttons are visible and explain themselves; that the bezel moves it once the volume
- *   button has opened it is the part nothing on the screen says.
+ *   and plus buttons are visible and explain themselves; that the bezel moves it once a tap has
+ *   handed it over is the part nothing on the screen says.
  */
 data class WatchPlayerUiState(
     val link: PhoneLink = PhoneLink.CHECKING,
@@ -124,7 +121,6 @@ data class WatchPlayerUiState(
     val isScrubbing: Boolean = false,
     val isAdjustingVolume: Boolean = false,
     val volumeLevel: Int = 0,
-    val momentSaved: Boolean = false,
     val showsScrubHint: Boolean = false,
     val showsVolumeHint: Boolean = false,
 ) {
@@ -233,7 +229,6 @@ internal data class WatchPlayerFrame(
  * @param playback a play or pause the wearer has just asked for, which overrides the phone's
  *   `isPlaying` until it confirms — and with it whether the bar moves.
  * @param isAdjustingVolume whether the volume row currently holds the bezel.
- * @param momentSaved whether the mark-a-moment confirmation is up.
  * @param showsScrubHint whether the first-scrub explanation is up.
  * @param showsVolumeHint whether the first-volume explanation is up.
  * @return the state for the pages and the position for the bar, built from one reading of the
@@ -248,7 +243,6 @@ internal fun watchPlayerFrame(
     volume: VolumeAdjustment? = null,
     playback: PlaybackToggle? = null,
     isAdjustingVolume: Boolean = false,
-    momentSaved: Boolean = false,
     showsScrubHint: Boolean = false,
     showsVolumeHint: Boolean = false,
 ): WatchPlayerFrame {
@@ -291,7 +285,6 @@ internal fun watchPlayerFrame(
         isScrubbing = scrub != null && scrub.committedAtElapsedMs == null,
         isAdjustingVolume = isAdjustingVolume,
         volumeLevel = volumeLevel.coerceIn(0, snapshot.maxVolume),
-        momentSaved = momentSaved,
         showsScrubHint = showsScrubHint,
         showsVolumeHint = showsVolumeHint,
     )

@@ -17,7 +17,6 @@ class WearMessagesTest {
             WearCommand.SkipToPrevious,
             WearCommand.CycleSpeed,
             WearCommand.RequestState,
-            WearCommand.MarkMoment,
         )
 
         commands.forEach { command ->
