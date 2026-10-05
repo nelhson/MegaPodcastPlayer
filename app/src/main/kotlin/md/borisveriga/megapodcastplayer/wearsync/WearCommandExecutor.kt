@@ -4,7 +4,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
-import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
@@ -22,7 +21,6 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
  *
  * @property connection the phone's player.
  * @property playbackRepository the durable queue and playback preferences.
- * @property momentsRepository where a mark from the wrist is written.
  * @property episodePlayer resolves an episode id into something the player can accept.
  * @property publisher used to answer
  *   [WearCommand.RequestState] and to confirm the outcome of the rest.
@@ -31,7 +29,6 @@ import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
 internal class WearCommandExecutor @Inject constructor(
     private val connection: PlaybackConnection,
     private val playbackRepository: PlaybackRepository,
-    private val momentsRepository: MomentsRepository,
     private val episodePlayer: EpisodePlayer,
     private val publisher: NowPlayingPublisher,
 ) {
@@ -83,8 +80,6 @@ internal class WearCommandExecutor @Inject constructor(
 
             // Answered by the publish below, which every command does anyway.
             WearCommand.RequestState -> Unit
-
-            WearCommand.MarkMoment -> markMoment()
         }
 
         // The state flow would eventually carry the change to the watch on its own, but only once
@@ -97,20 +92,5 @@ internal class WearCommandExecutor @Inject constructor(
         // publish of the new level, it would be the last word the watch hears. The watch holds
         // the level it set until the phone says that level, and the state flow is what says it.
         if (command !is WearCommand.SetVolume) publisher.publishCurrent()
-    }
-
-    /**
-     * Saves a moment at the phone's own playhead.
-     *
-     * The position is read from the phone's player here rather than taken from the watch's screen:
-     * what the watch draws is an extrapolation of a snapshot that is up to a second old, and a
-     * moment is a claim about a particular second.
-     *
-     * A mark with nothing playing is dropped rather than guessed at.
-     */
-    private suspend fun markMoment() {
-        val state = connection.currentState()
-        val playing = state.episodeId ?: return
-        momentsRepository.mark(playing, state.positionMs)
     }
 }

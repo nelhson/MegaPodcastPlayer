@@ -490,12 +490,12 @@ class WatchPlayerUiStateTest {
             link = PhoneLink.CONNECTED,
             received = received,
             nowElapsedMs = 0L,
-            momentSaved = true,
             showsScrubHint = true,
+            showsVolumeHint = true,
         ).uiState
 
-        assertTrue(uiState.momentSaved)
         assertTrue(uiState.showsScrubHint)
+        assertTrue(uiState.showsVolumeHint)
     }
 
     /**

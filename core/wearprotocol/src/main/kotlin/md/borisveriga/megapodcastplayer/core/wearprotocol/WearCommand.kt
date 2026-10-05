@@ -113,20 +113,4 @@ sealed interface WearCommand {
     @Serializable
     @SerialName("queue_episode")
     data class QueueEpisode(val episodeId: String) : WearCommand
-
-    /**
-     * Marks the moment the wearer just heard.
-     *
-     * Carries no position on purpose. The watch knows nothing about where the phone really is —
-     * the position it last saw is a snapshot several seconds old, extrapolated by a clock that is
-     * not the phone's — so it sends this empty and the phone marks its own playhead, which is the
-     * only position that is true.
-     *
-     * A duplicate is harmless by construction — see `MomentsRepository.mark`, which folds a second
-     * mark within a few seconds into the first — which is what makes it safe to send this as a
-     * message that the Data Layer will never de-duplicate.
-     */
-    @Serializable
-    @SerialName("mark_moment")
-    data object MarkMoment : WearCommand
 }

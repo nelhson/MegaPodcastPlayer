@@ -1,6 +1,5 @@
 package md.borisveriga.megapodcastplayer.wearsync
 
-import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
@@ -8,10 +7,8 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
-import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
-import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.wearprotocol.WearCommand
 import org.junit.Before
@@ -22,7 +19,6 @@ class WearCommandExecutorTest {
 
     private val connection = mockk<PlaybackConnection>(relaxed = true)
     private val playbackRepository = mockk<PlaybackRepository>(relaxed = true)
-    private val momentsRepository = mockk<MomentsRepository>(relaxed = true)
     private val episodePlayer = mockk<EpisodePlayer>(relaxed = true)
     private val publisher = mockk<NowPlayingPublisher>(relaxed = true)
 
@@ -36,7 +32,6 @@ class WearCommandExecutorTest {
         executor = WearCommandExecutor(
             connection,
             playbackRepository,
-            momentsRepository,
             episodePlayer,
             publisher,
         )
@@ -153,24 +148,5 @@ class WearCommandExecutorTest {
             connection.togglePlayPause()
             publisher.publishCurrent()
         }
-    }
-
-    @Test
-    fun `a mark is written wherever the phone's own playhead is`() = runTest {
-        coEvery { connection.currentState() } returns
-            PlaybackState(episodeId = "episode-2", positionMs = 61_000L)
-
-        executor.execute(WearCommand.MarkMoment)
-
-        coVerify(exactly = 1) { momentsRepository.mark("episode-2", 61_000L) }
-    }
-
-    @Test
-    fun `a mark with nothing playing is dropped rather than guessed at`() = runTest {
-        coEvery { connection.currentState() } returns PlaybackState()
-
-        executor.execute(WearCommand.MarkMoment)
-
-        coVerify(exactly = 0) { momentsRepository.mark(any(), any(), any()) }
     }
 }

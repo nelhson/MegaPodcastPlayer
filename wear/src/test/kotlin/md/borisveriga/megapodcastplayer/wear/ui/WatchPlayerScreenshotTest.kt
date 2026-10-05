@@ -91,17 +91,20 @@ class WatchPlayerScreenshotTest {
         )
     }
 
+    /**
+     * The volume row on its own, at rest and holding the bezel.
+     *
+     * A component rather than a screen: the row sits under the transport, below the fold of the
+     * small round face, so a screen golden would be a picture of everything except it.
+     */
     @Test
-    fun volumeOpen() = capture("watch-player-volume-open") {
-        WatchPlayerScreen(
-            uiState = WatchPlayerUiState(
-                link = PhoneLink.CONNECTED,
-                snapshot = playing,
-                volumeLevel = 9,
-                isAdjustingVolume = true,
-            ),
-            position = { PlaybackPosition(positionMs = 252_000L, progress = 0.07f) },
-        )
+    fun volumeAtRest() = captureComponent("watch-volume-row") {
+        VolumeRowAtFullWidth(uiState = volumeState())
+    }
+
+    @Test
+    fun volumeHeld() = captureComponent("watch-volume-row-held") {
+        VolumeRowAtFullWidth(uiState = volumeState().copy(isAdjustingVolume = true))
     }
 
     @Test
@@ -149,6 +152,22 @@ class WatchPlayerScreenshotTest {
                 modifier = Modifier.width(160.dp).height(6.dp),
             )
         }
+    }
+
+    /** A connected phone playing [playing] at level 9 of 15, which is what the volume row draws. */
+    private fun volumeState() = WatchPlayerUiState(link = PhoneLink.CONNECTED, snapshot = playing, volumeLevel = 9)
+
+    /** Renders the volume row with no-op callbacks, padded the way the column pads it. */
+    @Composable
+    private fun VolumeRowAtFullWidth(uiState: WatchPlayerUiState) {
+        VolumeRow(
+            uiState = uiState,
+            onBeginVolume = {},
+            onEndVolume = {},
+            onSetVolume = {},
+            onAdjustVolumeBy = {},
+            modifier = Modifier.padding(horizontal = 10.dp).width(172.dp),
+        )
     }
 
     /** Renders the screen with no-op callbacks: a golden is a picture, and pictures do not tap. */
