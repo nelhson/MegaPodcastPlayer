@@ -54,4 +54,16 @@ class EpisodeDownloadLabelTest {
             episode(DownloadState.DOWNLOADING).downloadLabelRes(hasVideo = true, hasVideoDownload = true),
         )
     }
+
+    @Test
+    fun `a failed download says so and how to get it, rather than starting over at Download`() {
+        assertEquals(
+            R.string.episode_download_failed,
+            episode(DownloadState.FAILED).downloadLabelRes(hasVideo = false, hasVideoDownload = false),
+        )
+        assertEquals(
+            R.string.episode_audio_download_failed,
+            episode(DownloadState.FAILED).downloadLabelRes(hasVideo = true, hasVideoDownload = false),
+        )
+    }
 }

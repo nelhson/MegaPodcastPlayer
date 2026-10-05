@@ -64,9 +64,11 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.format.formatBytes
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DeleteDownloadDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.NoteDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
@@ -161,6 +163,25 @@ fun PlayerSheetScaffold(
     // that first frame, it would come back as a bar under an episode that was left full screen.
     LaunchedEffect(uiState.isEmptied) {
         if (uiState.isEmptied) sheetState.collapse()
+    }
+
+    // Whether the question before the current episode's download is deleted is up. Asked only when
+    // the delete takes a video too, as everywhere else; held here like the other sheets' flags.
+    var confirmingDelete by rememberSaveable { mutableStateOf(false) }
+    val toggleDownload: () -> Unit = {
+        if (uiState.download?.removalTakesVideo == true) confirmingDelete = true else viewModel.toggleCurrentDownload()
+    }
+    uiState.download?.takeIf { confirmingDelete }?.let { download ->
+        DeleteDownloadDialog(
+            episodeTitle = uiState.playback.title,
+            withVideo = download.video != null,
+            freed = formatBytes(resources, download.bytes + (download.video?.bytes ?: 0L)),
+            onConfirm = {
+                confirmingDelete = false
+                viewModel.toggleCurrentDownload()
+            },
+            onDismiss = { confirmingDelete = false },
+        )
     }
 
     // Whether the list of this episode's moments is open. Held here, like the sleep timer's, for
@@ -271,7 +292,7 @@ fun PlayerSheetScaffold(
                 onSkipToPrevious = viewModel::skipToPrevious,
                 onOpenSpeed = { speedOpen = true },
                 onOpenSleepTimer = { sleepTimerOpen = true },
-                onToggleDownload = viewModel::toggleCurrentDownload,
+                onToggleDownload = toggleDownload,
                 onMarkMoment = viewModel::markMoment,
                 onOpenMoments = { momentsOpen = true },
                 onOpenQueue = onOpenQueue,

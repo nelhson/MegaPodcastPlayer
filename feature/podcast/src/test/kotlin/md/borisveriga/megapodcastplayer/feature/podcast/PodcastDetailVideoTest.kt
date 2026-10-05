@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
@@ -247,6 +248,7 @@ class PodcastDetailVideoTest : PodcastDetailViewModelFixture() {
     @Test
     fun `downloading a video asks for the chosen rendition and names it`() = runTest {
         episodes.value = listOf(youTubeEpisode("a"))
+        downloadSettings.value = DownloadSettings(unmeteredOnly = false)
         coEvery { downloadRepository.downloadVideo("a", VideoQuality(720)) } returns true
         viewModel.uiState.test { awaitItem() }
 
@@ -257,6 +259,24 @@ class PodcastDetailVideoTest : PodcastDetailViewModelFixture() {
         viewModel.uiState.test {
             assertEquals(
                 PodcastDetailMessage.VideoDownloadQueued("Episode a", VideoQuality(720)),
+                awaitItem().message,
+            )
+        }
+    }
+
+    @Test
+    fun `a video queued behind the wi-fi rule says so, as the audio does`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        downloadSettings.value = DownloadSettings(unmeteredOnly = true)
+        coEvery { downloadRepository.downloadVideo("a", VideoQuality(720)) } returns true
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.downloadVideo("a", VideoQuality(720))
+        runCurrent()
+
+        viewModel.uiState.test {
+            assertEquals(
+                PodcastDetailMessage.VideoDownloadQueued("Episode a", VideoQuality(720), waitingForWifi = true),
                 awaitItem().message,
             )
         }

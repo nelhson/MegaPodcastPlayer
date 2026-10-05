@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -26,6 +28,8 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -116,6 +120,7 @@ class PodcastDetailScreenTest {
         onFilterChange: (EpisodeFilter) -> Unit = {},
         onSortChange: (EpisodeSort) -> Unit = {},
         description: String = podcast.description,
+        videoDownloads: Map<String, VideoDownload> = emptyMap(),
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -127,6 +132,7 @@ class PodcastDetailScreenTest {
                         isRebuilding = isRebuilding,
                         openEpisodeId = openEpisodeId,
                         settings = settings,
+                        videoDownloads = videoDownloads,
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
@@ -656,13 +662,48 @@ class PodcastDetailScreenTest {
 
         // Deleting audio, calling a transfer off and trying a failure again are three different
         // promises, and the gesture that makes them is the same one — so the label is all the
-        // user, or a screen reader, has to tell them apart.
+        // user, or a screen reader, has to tell them apart. A failure says so: it used to read
+        // "Download", as if it had never been tried.
         composeRule.onNodeWithText("Episode stored")
             .performCustomAccessibilityAction("Delete download")
         composeRule.onNodeWithText("Episode busy")
             .performCustomAccessibilityAction("Cancel download")
         composeRule.onNodeWithText("Episode broken")
-            .performCustomAccessibilityAction("Download")
+            .performCustomAccessibilityAction("Try again")
+    }
+
+    @Test
+    fun `deleting an episode whose video is downloaded too names both and asks first`() {
+        val toggled = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a", downloadState = DownloadState.COMPLETED)),
+            onEpisodeDownloadToggle = { toggled += it },
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityAction("Delete audio and video downloads")
+
+        // The swipe used to say "Delete download" and take a video nobody had mentioned.
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertExists()
+        assertEquals(emptyList<String>(), toggled)
+
+        composeRule.onAllNodesWithText("Delete").onLast().performClick()
+
+        assertEquals(listOf("a"), toggled)
+    }
+
+    @Test
+    fun `deleting sound alone carries on without a question`() {
+        val toggled = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a", downloadState = DownloadState.COMPLETED)),
+            onEpisodeDownloadToggle = { toggled += it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Delete download")
+
+        assertEquals(listOf("a"), toggled)
     }
 
     @Test

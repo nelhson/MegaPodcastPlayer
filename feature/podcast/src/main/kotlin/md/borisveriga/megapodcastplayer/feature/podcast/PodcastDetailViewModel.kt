@@ -84,6 +84,8 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * @property appAutoDownload the app-wide auto-download answer, shown for the same reason.
  * @property exportProgress how far a *Download and export* of this show has got, or null when none
  *   is running. Held so the menu can say so, rather than offering to start a second one.
+ * @property unmeteredOnly whether downloads wait for Wi-Fi, which is why a queued video has not
+ *   started; the episode sheet says so as the audio's snackbar does.
  * @property videoDownloads every YouTube episode's downloaded video, keyed by episode id; an episode
  *   without one is absent. Read by the sheet's *Download video* button.
  * @property videoQualities the renditions the open episode's video comes in, lowest first, once
@@ -109,6 +111,7 @@ data class PodcastDetailUiState(
     val appAutoDownload: Boolean = false,
     val exportProgress: ExportProgress? = null,
     val videoDownloads: Map<String, VideoDownload> = emptyMap(),
+    val unmeteredOnly: Boolean = false,
     val videoQualities: List<VideoQuality>? = null,
     val videoQualitiesFailed: Boolean = false,
     val isOnline: Boolean = true,
@@ -279,9 +282,15 @@ sealed interface PodcastDetailMessage {
      *
      * @property title the episode's title.
      * @property quality the rendition asked for.
+     * @property waitingForWifi whether it waits for an unmetered network, which the message then
+     *   says, as the audio's does: a download that does not start reads otherwise as one that
+     *   failed.
      */
-    data class VideoDownloadQueued(val title: String, val quality: VideoQuality) :
-        PodcastDetailMessage
+    data class VideoDownloadQueued(
+        val title: String,
+        val quality: VideoQuality,
+        val waitingForWifi: Boolean = false,
+    ) : PodcastDetailMessage
 
     /**
      * An episode's downloaded video was deleted, or its download called off; the audio stays.
@@ -426,6 +435,7 @@ class PodcastDetailViewModel @Inject constructor(
             settings = preferences.show,
             appSpeed = preferences.playback.speed,
             appAutoDownload = preferences.downloads.autoDownloadNewEpisodes,
+            unmeteredOnly = preferences.downloads.unmeteredOnly,
             exportProgress = (surroundings.export as? ExportRun.Running)?.progress,
             videoDownloads = surroundings.videoDownloads,
             videoQualities = transient.videoQualities,
@@ -808,7 +818,11 @@ class PodcastDetailViewModel @Inject constructor(
         viewModelScope.launch {
             transientState.value = transientState.value.copy(
                 message = if (downloadRepository.downloadVideo(episodeId, quality)) {
-                    PodcastDetailMessage.VideoDownloadQueued(episode.title, quality)
+                    PodcastDetailMessage.VideoDownloadQueued(
+                        title = episode.title,
+                        quality = quality,
+                        waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly,
+                    )
                 } else {
                     PodcastDetailMessage.EpisodeUnavailable
                 },

@@ -35,6 +35,8 @@
 
     <!-- The mark on a row that is already stored. Not a control, so it names the fact, not an action. -->
     <string name="designsystem_downloaded">Downloaded</string>
+    <!-- The second mark, beside it, when the episode's video is stored too. -->
+    <string name="designsystem_video_downloaded">Video downloaded</string>
 
     <!--
         What the mark plus a number says out loud, where a show's line shows the glyph and the count
@@ -60,6 +62,53 @@
     <string name="designsystem_choice_description">%1$s: %2$s</string>
     <string name="designsystem_chip_selected">Selected</string>
     <string name="designsystem_chip_not_selected">Not selected</string>
+
+    <!--
+        The video-download sheet, the one picker for keeping a video, from the show page and the
+        video screen alike. Its words are its own because it is one component: the two copies it
+        replaced said the same things two ways. "720p" in these is an already-formatted rendition
+        (`formatVideoQuality`), never translated.
+
+        The status line under the title says what the phone holds of the video now. A pick is not a
+        download until Download is pressed, so the lines say "pick", not "tap".
+    -->
+    <string name="designsystem_video_download_title">Download video</string>
+    <string name="designsystem_video_download_description">Keeps the video on this phone to watch without a connection. The audio downloads with it.</string>
+    <string name="designsystem_video_download_queued">Waiting to download %1$s.</string>
+    <!-- Wi-Fi only is on by default, so this is the usual reason a video has not started. -->
+    <string name="designsystem_video_download_queued_wifi">Waiting for Wi-Fi to download %1$s.</string>
+    <!-- %1$s is a formatted rendition; %2$d is the percentage done. -->
+    <string name="designsystem_video_download_progress">Downloading %1$s, %2$d%%.</string>
+    <string name="designsystem_video_download_completed">%1$s is on this phone. Pick another quality to replace it.</string>
+    <string name="designsystem_video_download_failed">Could not download %1$s. Pick a quality and try again.</string>
+    <string name="designsystem_video_download_loading">Looking for qualities</string>
+    <string name="designsystem_video_download_qualities_failed">Could not find out which qualities this video comes in. Check the connection and try again.</string>
+    <string name="designsystem_video_download_empty">This video has no quality to download.</string>
+    <string name="designsystem_video_download_confirm">Download</string>
+    <!-- COPY-2: a finished video leaves the phone and is deleted; a transfer is called off. -->
+    <string name="designsystem_video_download_delete">Delete downloaded video</string>
+    <string name="designsystem_video_download_cancel">Cancel download</string>
+    <!-- Asked before a finished video is deleted. %1$s is a formatted rendition, e.g. "720p". -->
+    <string name="designsystem_video_download_delete_title">Delete the %1$s video?</string>
+    <string name="designsystem_video_download_delete_text">The audio stays on this phone.</string>
+    <string name="designsystem_video_download_delete_confirm">Delete</string>
+    <string name="designsystem_video_download_delete_dismiss">Cancel</string>
+
+    <!--
+        The question before an episode's download is deleted, from the show page, Downloads and the
+        player alike. It names the video when the video goes too, because deleting the audio takes
+        the picture with it and a question that named only the sound undersold what was leaving.
+        %1$s is the episode title, quoted (COPY-4); in the text, %1$s is a size, e.g. "412 MB".
+    -->
+    <string name="designsystem_delete_download_title">Delete \"%1$s\"?</string>
+    <string name="designsystem_delete_download_title_with_video">Delete the audio and video of \"%1$s\"?</string>
+    <string name="designsystem_delete_download_text_freeing">This frees %1$s. The episode stays in your library and can be downloaded again.</string>
+    <string name="designsystem_delete_download_text">The episode stays in your library and can be downloaded again.</string>
+    <string name="designsystem_delete_download_confirm">Delete</string>
+    <string name="designsystem_delete_download_dismiss">Cancel</string>
+
+    <!-- The download button's finished face when deleting would take the episode's video too. -->
+    <string name="designsystem_download_remove_with_video">Audio and video downloaded, delete both from device</string>
 
     <!-- Announced as an episode row's state, in addition to its title. -->
     <string name="designsystem_state_played">Played</string>

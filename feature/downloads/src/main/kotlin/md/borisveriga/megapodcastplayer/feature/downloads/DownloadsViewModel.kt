@@ -40,6 +40,8 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  *   or has failed is not yet costing anything worth reporting.
  * @property totalBytes what the completed episodes occupy, summed from the per-episode counters
  *   Media3 writes back — so the figure needs no separate read and can never lag the list it labels.
+ *   Their finished videos count too: a picture is usually several times its sound, and a total
+ *   that left it out told the user a video-heavy phone was nearly empty.
  * @property freeBytes what is left on the volume the downloads are written to, so the screen can
  *   draw what is stored against what is still available. Zero until the first read comes back, and
  *   zero if the read fails, in which case the bar shows only the stored share.
@@ -206,7 +208,8 @@ class DownloadsViewModel @Inject constructor(
             // Only the finished episodes: a partial transfer's bytes are on disk but are not
             // storage the user can act on, and counting them would make the figure jump about
             // while a download runs.
-            totalBytes = completed.sumOf { it.episode.downloadedBytes },
+            totalBytes = completed.sumOf { it.episode.downloadedBytes } +
+                videoDownloads.values.filter { it.isComplete }.sumOf { it.bytes },
             freeBytes = free,
             unmeteredOnly = settings.unmeteredOnly,
             deleteAfterPlaying = settings.deleteAfterPlaying,
@@ -244,6 +247,18 @@ class DownloadsViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Plays a tracked episode as video: what the *Video* badge on a row with a downloaded picture
+     * does.
+     *
+     * The same start as [play]; the face is the caller's, which opens the player as video once the
+     * episode is loaded.
+     *
+     * @param episodeId the episode to play.
+     * @param onPlaying invoked once playback has been handed to the player.
+     */
+    fun playVideo(episodeId: String, onPlaying: () -> Unit) = play(episodeId, onPlaying)
 
     /**
      * Re-reads the storage figures, as the pull-to-refresh gesture.

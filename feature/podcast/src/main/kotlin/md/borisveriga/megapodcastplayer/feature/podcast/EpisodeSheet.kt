@@ -49,12 +49,12 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
-import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.component.RichText
+import md.borisveriga.megapodcastplayer.core.designsystem.component.VideoDownloadSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLine
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -62,6 +62,7 @@ import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
+import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 
 /**
  * One episode, read rather than played.
@@ -227,12 +228,15 @@ private fun EpisodeIdentity(
  * @property download the video kept on the phone, or on its way; null when there is none.
  * @property qualities the renditions on offer, lowest first; null until asked for and answered.
  * @property qualitiesFailed true when asking for them failed.
+ * @property waitingForWifi whether downloads wait for Wi-Fi, which is then why a queued video has
+ *   not started.
  */
 data class EpisodeVideo(
     val canPlay: Boolean = true,
     val download: VideoDownload? = null,
     val qualities: List<VideoQuality>? = null,
     val qualitiesFailed: Boolean = false,
+    val waitingForWifi: Boolean = false,
 )
 
 /**
@@ -337,7 +341,7 @@ private fun EpisodeActions(
         if (video != null) {
             ActionButton(
                 icon = videoDownloadIcon(video.download),
-                label = videoDownloadLabel(video.download),
+                label = videoDownloadLabel(video.download, video.waitingForWifi),
                 onClick = {
                     videoActions.onRequestQualities()
                     qualityDialogOpen = true
@@ -348,7 +352,8 @@ private fun EpisodeActions(
     }
 
     if (qualityDialogOpen && video != null) {
-        VideoDownloadDialog(
+        VideoDownloadSheet(
+            waitingForWifi = video.waitingForWifi,
             qualities = video.qualities,
             failed = video.qualitiesFailed,
             download = video.download,
@@ -356,7 +361,7 @@ private fun EpisodeActions(
                 qualityDialogOpen = false
                 videoActions.onDownload(quality)
             },
-            onRemoveDownload = {
+            onDelete = {
                 qualityDialogOpen = false
                 videoActions.onRemoveDownload()
             },
@@ -441,16 +446,28 @@ private fun videoDownloadIcon(download: VideoDownload?): ImageVector = when (dow
  * What the *Download video* button says: the action while there is no video, its state once there
  * is one — the tap opens the dialog either way, where it can be changed or deleted.
  *
+ * A failed download says so rather than going back to *Download video*, as if it had never been
+ * tried; and one waiting says what for.
+ *
  * @param download the episode's downloaded video, if any.
+ * @param waitingForWifi whether a queued download is waiting for Wi-Fi rather than in line.
  */
 @Composable
-private fun videoDownloadLabel(download: VideoDownload?): String {
+private fun videoDownloadLabel(download: VideoDownload?, waitingForWifi: Boolean): String {
     val quality = download?.let { formatVideoQuality(it.quality.height) }
     return when (download?.state) {
-        null, DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
-            stringResource(R.string.episode_download_video)
+        null, DownloadState.NOT_DOWNLOADED -> stringResource(R.string.episode_download_video)
 
-        DownloadState.QUEUED -> stringResource(R.string.episode_video_download_waiting, quality.orEmpty())
+        DownloadState.FAILED -> stringResource(R.string.episode_video_download_failed)
+
+        DownloadState.QUEUED -> stringResource(
+            if (waitingForWifi) {
+                R.string.episode_video_download_waiting_wifi
+            } else {
+                R.string.episode_video_download_waiting
+            },
+            quality.orEmpty(),
+        )
 
         DownloadState.DOWNLOADING -> stringResource(
             R.string.episode_video_download_progress,
@@ -594,8 +611,12 @@ private fun Episode.downloadIcon(): ImageVector = when (downloadState) {
  */
 internal fun Episode.downloadLabelRes(hasVideo: Boolean, hasVideoDownload: Boolean): Int =
     when (downloadState) {
-        DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
+        DownloadState.NOT_DOWNLOADED ->
             if (hasVideo) R.string.episode_download_audio else R.string.podcast_action_download
+
+        // Said as the failure it is, with the way out: the same tap asks again.
+        DownloadState.FAILED ->
+            if (hasVideo) R.string.episode_audio_download_failed else R.string.episode_download_failed
 
         DownloadState.QUEUED, DownloadState.DOWNLOADING -> when {
             hasVideoDownload -> R.string.episode_cancel_audio_and_video_download

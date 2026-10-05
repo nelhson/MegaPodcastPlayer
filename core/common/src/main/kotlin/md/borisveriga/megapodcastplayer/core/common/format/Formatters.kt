@@ -248,19 +248,3 @@ fun formatSpeed(speed: Float): String {
 
 /** The multiplier mark after a playback rate; not translated, like `x` in `1.5x`. */
 private const val SPEED_SUFFIX = "x"
-
-/**
- * Formats a video rendition by its height, as `720p`.
- *
- * The way every video service names a rendition, and a numeric format rather than copy, so it is
- * not translated — the rule [formatSpeed] follows for `1.5x`. There were three copies of it, one
- * string resource in each of the player, the show page and Downloads, which is three places for
- * the same quality to come to read two ways.
- *
- * @param height the rendition's height in pixels.
- * @return e.g. `720p`.
- */
-fun formatVideoQuality(height: Int): String = height.toString() + QUALITY_SUFFIX
-
-/** The mark after a rendition's height; not translated, like `p` in `720p`. */
-private const val QUALITY_SUFFIX = "p"

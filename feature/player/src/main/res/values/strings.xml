@@ -313,41 +313,24 @@
     <string name="video_fullscreen_exit">Leave full screen</string>
 
     <!--
-      Downloading the video, beside the quality button. The picker lists the same qualities the
-      video can be watched at, because a download is only worth having at a height the player can
-      show. The description says the audio comes along: the picture plays merged with the episode's
-      audio, so an offline video is both, and a user watching their storage should know why.
+      Downloading the video, beside the quality button. The picker it opens is the design system's
+      VideoDownloadSheet, shared with the show page, and its words live with it; what is left here
+      is the button's spoken names and the snackbars after the sheet closes.
     -->
-    <string name="video_download_title">Download video</string>
-    <string name="video_download_description">Keeps the video on this phone to watch without a connection. The audio downloads with it.</string>
-    <!-- The sheet's subtitle once a download exists. %1$s is a formatted rendition, e.g. "720p". -->
-    <string name="video_download_queued">Waiting to download %1$s. Tap another quality to download that instead.</string>
-    <!-- %1$s is a formatted rendition; %2$d is the percentage done. -->
-    <string name="video_download_progress">Downloading %1$s, %2$d%%. Tap another quality to download that instead.</string>
-    <string name="video_download_completed">%1$s is on this phone. Tap another quality to replace it.</string>
-    <string name="video_download_failed">Could not download %1$s. Tap a quality to try again.</string>
-    <!--
-      COPY-2: a finished video leaves the device, so it is deleted; a transfer has no file yet and
-      is called off instead.
-    -->
-    <string name="video_download_delete">Delete downloaded video</string>
-    <string name="video_download_cancel">Cancel download</string>
-    <!-- Asked before a finished video is deleted. %1$s is a formatted rendition, e.g. "720p". -->
-    <string name="video_download_delete_title">Delete the %1$s video?</string>
-    <string name="video_download_delete_text">The audio stays on this phone.</string>
-    <string name="video_download_delete_confirm">Delete</string>
-    <string name="video_download_delete_cancel">Cancel</string>
     <!--
       Spoken names of the download button, which is an icon. Each says what the button shows and
       what a tap does, the shape the quality button's description has.
     -->
     <string name="video_download_button">Download the video</string>
+    <string name="video_download_button_failed">Video download failed; tap to try again</string>
     <!-- %1$d is the percentage done. -->
     <string name="video_download_button_progress">Downloading the video, %1$d%%; tap to change it</string>
     <!-- %1$s is a formatted rendition, e.g. "720p". -->
     <string name="video_download_button_done">Video downloaded at %1$s; tap to change it</string>
     <!-- Snackbars after the sheet closes. %1$s is a formatted rendition, e.g. "720p". -->
     <string name="video_download_message_queued">Downloading the video at %1$s</string>
+    <!-- The same, when downloads wait for Wi-Fi: a download that does not start reads otherwise as one that failed. -->
+    <string name="video_download_message_waiting_for_wifi">The video will download on Wi-Fi, at %1$s</string>
     <string name="video_download_message_deleted">Deleted the downloaded video</string>
     <string name="video_download_message_cancelled">Cancelled the video download</string>
     <string name="video_download_message_failed">Could not download this video</string>

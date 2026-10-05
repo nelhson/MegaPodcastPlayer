@@ -94,11 +94,11 @@ import kotlinx.coroutines.delay
 import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
-import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LabelledWaveScrubber
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
+import md.borisveriga.megapodcastplayer.core.designsystem.component.VideoDownloadSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
@@ -109,6 +109,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.feature.player.ModeSwitch
 import md.borisveriga.megapodcastplayer.feature.player.R
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyph
@@ -219,7 +220,7 @@ fun VideoRoute(
         )
     }
     if (downloadOpen) {
-        DownloadVideoSheet(
+        VideoDownloadSheet(
             qualities = uiState.qualities,
             failed = uiState.qualitiesFailed,
             download = uiState.videoDownload,
@@ -334,7 +335,11 @@ data class VideoActions(
 @Composable
 private fun videoDownloadMessageText(message: VideoDownloadMessage): String = when (message) {
     is VideoDownloadMessage.Queued -> stringResource(
-        R.string.video_download_message_queued,
+        if (message.waitingForWifi) {
+            R.string.video_download_message_waiting_for_wifi
+        } else {
+            R.string.video_download_message_queued
+        },
         formatVideoQuality(message.quality.height),
     )
 
@@ -969,8 +974,9 @@ private fun DownloadButton(download: VideoDownload?, onClick: () -> Unit) {
         download.isComplete ->
             Icons.Rounded.DownloadDone to stringResource(R.string.video_download_button_done, quality)
 
+        // Said as the failure it is, not as a button that was never pressed.
         download.state == DownloadState.FAILED ->
-            Icons.Rounded.Download to stringResource(R.string.video_download_button)
+            Icons.Rounded.Download to stringResource(R.string.video_download_button_failed)
 
         else -> Icons.Rounded.Downloading to stringResource(
             R.string.video_download_button_progress,

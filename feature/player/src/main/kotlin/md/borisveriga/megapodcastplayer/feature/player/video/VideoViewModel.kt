@@ -86,8 +86,10 @@ sealed interface VideoDownloadMessage {
      * The video was queued for download.
      *
      * @property quality the rendition asked for.
+     * @property waitingForWifi whether it waits for an unmetered network, which the message then
+     *   says, as the audio's does on the show page.
      */
-    data class Queued(val quality: VideoQuality) : VideoDownloadMessage
+    data class Queued(val quality: VideoQuality, val waitingForWifi: Boolean = false) : VideoDownloadMessage
 
     /** The downloaded video was deleted; the audio stays. */
     data object Deleted : VideoDownloadMessage
@@ -404,7 +406,10 @@ class VideoViewModel @Inject constructor(
         viewModelScope.launch {
             val requested = downloadRepository.downloadVideo(episodeId, quality)
             downloadMessageState.value = if (requested) {
-                VideoDownloadMessage.Queued(quality)
+                VideoDownloadMessage.Queued(
+                    quality = quality,
+                    waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly,
+                )
             } else {
                 VideoDownloadMessage.Failed
             }

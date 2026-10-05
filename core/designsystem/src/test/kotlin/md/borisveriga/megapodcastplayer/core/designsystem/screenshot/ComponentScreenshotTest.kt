@@ -26,6 +26,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.ShowTileSele
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SortMenuChipPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SortToggleChipPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SourceBadgePreview
+import md.borisveriga.megapodcastplayer.core.designsystem.component.VideoDownloadOptionsPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WaveScrubberPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLinePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
@@ -149,6 +150,15 @@ class ComponentScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun emptyState() = capture("empty-state") { EmptyStatePreview() }
+
+    /**
+     * The one video-download picker's body, with a video part way down.
+     *
+     * Its sheet composes into a window of its own, which a capture cannot see, so this is the body
+     * alone — the part the show page and the video screen used to draw two different ways.
+     */
+    @Test
+    fun videoDownloadOptions() = capture("video-download-options") { VideoDownloadOptionsPreview() }
 
     companion object {
         @JvmStatic

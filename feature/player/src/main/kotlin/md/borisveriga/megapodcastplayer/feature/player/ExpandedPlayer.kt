@@ -647,6 +647,7 @@ private fun SecondaryActions(
                 state = download.state,
                 progressPercent = download.percent,
                 onClick = onToggleDownload,
+                removesVideo = download.video != null,
             )
         }
     }

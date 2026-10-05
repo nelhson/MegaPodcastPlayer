@@ -25,6 +25,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoOutput
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
+import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
@@ -63,6 +64,7 @@ class VideoViewModelTest {
     private val downloadRepository: DownloadRepository = mockk(relaxed = true)
     private val networkStatus: NetworkStatus = mockk()
     private val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
+    private val downloadSettings = MutableStateFlow(DownloadSettings(unmeteredOnly = false))
 
     /** Unconfined, so a launched command has run by the time the call returns. */
     private val applicationScope = CoroutineScope(UnconfinedTestDispatcher())
@@ -78,6 +80,7 @@ class VideoViewModelTest {
         every { playbackRepository.observePlaybackSettings() } returns settings
         every { playbackRepository.observeVideoQuality() } returns preferredQuality
         every { downloadRepository.observeVideoDownloads() } returns videoDownloads
+        every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         every { networkStatus.isOnline() } returns true
         coEvery { downloadRepository.downloadVideo(any(), any()) } returns true
         coEvery { qualitySource.qualitiesOf(any()) } returns
@@ -501,6 +504,20 @@ class VideoViewModelTest {
 
         assertFalse(viewModel.uiState.value.qualitiesFailed)
         assertEquals(listOf(VideoQuality(720)), viewModel.uiState.value.qualities)
+    }
+
+    @Test
+    fun `a video queued behind the wi-fi rule says it is waiting for wi-fi`() = runTest {
+        downloadSettings.value = DownloadSettings(unmeteredOnly = true)
+        backgroundScope.launch(mainDispatcherRule.dispatcher) { viewModel.uiState.collect {} }
+        playbackState.value = watching()
+
+        viewModel.downloadVideo(VideoQuality(720))
+
+        assertEquals(
+            VideoDownloadMessage.Queued(VideoQuality(720), waitingForWifi = true),
+            viewModel.uiState.value.downloadMessage,
+        )
     }
 
     @Test

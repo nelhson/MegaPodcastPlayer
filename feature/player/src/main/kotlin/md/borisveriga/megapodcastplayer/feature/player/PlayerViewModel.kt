@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -26,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.designsystem.component.removalTakesVideo
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
@@ -37,6 +39,7 @@ import md.borisveriga.megapodcastplayer.core.model.Moment
 import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import md.borisveriga.megapodcastplayer.core.model.chapters.indexOfCurrent
 import md.borisveriga.megapodcastplayer.core.model.chapters.nextStartAfter
@@ -288,11 +291,20 @@ data class PlayerUiState(
  * @property state the five-way download state the button draws a face for.
  * @property percent progress in `0f..100f`; only meaningful while [state] is
  *   [DownloadState.DOWNLOADING].
+ * @property bytes how much of the sound is on the phone; with [video]'s, what deleting frees.
+ * @property video the episode's video download, finished or not, which removing the sound takes
+ *   with it; null for none.
  */
 data class EpisodeDownload(
     val state: DownloadState,
     val percent: Float,
-)
+    val bytes: Long = 0L,
+    val video: VideoDownload? = null,
+) {
+
+    /** Whether the button's tap removes the copy and takes a video with it, so must ask first. */
+    val removalTakesVideo: Boolean get() = removalTakesVideo(state, video)
+}
 
 /**
  * A moment that has just been saved, waiting to be acknowledged.
@@ -418,10 +430,25 @@ class PlayerViewModel @Inject constructor(
         .map { it.playback.episodeId ?: it.lastPlayedEpisodeId }
         .distinctUntilChanged()
         .flatMapLatest { episodeId ->
-            episodeId?.let(podcastRepository::observeEpisode) ?: flowOf(null)
-        }
-        .map { episode ->
-            episode?.let { EpisodeDownload(it.downloadState, it.downloadPercent) }
+            val episode = episodeId?.let(podcastRepository::observeEpisode) ?: flowOf(null)
+            // The video too, because removing the sound takes it: the button has to say so and
+            // ask first. Only the current episode's entry is kept, so another episode's video
+            // progress does not reach the sheet.
+            // Starting from "none", so the sheet never waits on the download index to draw.
+            val video = downloadRepository.observeVideoDownloads()
+                .map<Map<String, VideoDownload>, VideoDownload?> { downloads -> episodeId?.let(downloads::get) }
+                .onStart { emit(null) }
+                .distinctUntilChanged()
+            combine(episode, video) { current, currentVideo ->
+                current?.let {
+                    EpisodeDownload(
+                        state = it.downloadState,
+                        percent = it.downloadPercent,
+                        bytes = it.downloadedBytes,
+                        video = currentVideo,
+                    )
+                }
+            }
         }
         .distinctUntilChanged()
 

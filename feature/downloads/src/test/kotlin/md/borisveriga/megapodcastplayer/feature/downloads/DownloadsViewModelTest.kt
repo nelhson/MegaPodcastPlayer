@@ -12,7 +12,6 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
@@ -23,6 +22,8 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,6 +50,7 @@ class DownloadsViewModelTest {
 
     private val downloads = MutableStateFlow(emptyList<EpisodeWithShow>())
     private val downloadSettings = MutableStateFlow(DownloadSettings())
+    private val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
 
     private lateinit var downloadRepository: DownloadRepository
     private lateinit var episodePlayer: EpisodePlayer
@@ -88,7 +90,7 @@ class DownloadsViewModelTest {
         episodePlayer = mockk(relaxed = true)
         every { downloadRepository.observeDownloads() } returns downloads
         // Combined into the state; a relaxed mock's flow never emits and would freeze it.
-        every { downloadRepository.observeVideoDownloads() } returns flowOf(emptyMap())
+        every { downloadRepository.observeVideoDownloads() } returns videoDownloads
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.freeBytes() } returns FREE_BYTES
         viewModel = DownloadsViewModel(
@@ -174,6 +176,22 @@ class DownloadsViewModelTest {
             assertEquals(2, state.downloads.size)
             assertEquals(2, state.completedCount)
             assertEquals(8_000_000L, state.totalBytes)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the storage total counts finished videos, and not ones still arriving`() = runTest {
+        downloads.value = listOf(download("a", downloadedBytes = 5_000_000L))
+        videoDownloads.value = mapOf(
+            "a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f, bytes = 30_000_000L),
+            "b" to VideoDownload(VideoQuality(720), DownloadState.DOWNLOADING, 40f, bytes = 12_000_000L),
+        )
+
+        viewModel.uiState.test {
+            // A picture is usually several times its sound; a total without it understated the
+            // phone by most of what was on it.
+            assertEquals(35_000_000L, expectMostRecentItem().totalBytes)
             cancelAndIgnoreRemainingEvents()
         }
     }

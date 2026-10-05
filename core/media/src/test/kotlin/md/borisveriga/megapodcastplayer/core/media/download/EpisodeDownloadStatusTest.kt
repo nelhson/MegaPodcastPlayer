@@ -5,6 +5,8 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadProgress
 import androidx.media3.exoplayer.offline.DownloadRequest
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoOnlySentinel
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,8 +96,40 @@ class EpisodeDownloadStatusTest {
     }
 
     /** A [Download] in the given state, with the given progress. */
-    private fun download(state: Int, bytesDownloaded: Long, percent: Float): Download = Download(
-        DownloadRequest.Builder("episode-1", "https://example.com/1.mp3".toUri()).build(),
+    @Test
+    fun `a picture download carries its episode, rendition and bytes`() {
+        val (episodeId, video) = checkNotNull(
+            download(
+                state = Download.STATE_DOWNLOADING,
+                bytesDownloaded = 31_000_000L,
+                percent = 40f,
+                id = videoDownloadId("episode-1"),
+                uri = youTubeVideoOnlySentinel("niTJ2221aS8", VideoQuality(720)),
+            ).asVideoDownloadOrNull(),
+        )
+
+        assertEquals("episode-1", episodeId)
+        assertEquals(VideoQuality(720), video.quality)
+        assertEquals(DownloadState.DOWNLOADING, video.state)
+        // What deleting it frees, and its share of the storage the Downloads screen adds up.
+        assertEquals(31_000_000L, video.bytes)
+    }
+
+    @Test
+    fun `an audio download is not a picture`() {
+        val audio = download(state = Download.STATE_COMPLETED, bytesDownloaded = 1L, percent = 100f)
+
+        assertEquals(null, audio.asVideoDownloadOrNull())
+    }
+
+    private fun download(
+        state: Int,
+        bytesDownloaded: Long,
+        percent: Float,
+        id: String = "episode-1",
+        uri: String = "https://example.com/1.mp3",
+    ): Download = Download(
+        DownloadRequest.Builder(id, uri.toUri()).build(),
         state,
         /* startTimeMs = */ 0L,
         /* updateTimeMs = */ 0L,

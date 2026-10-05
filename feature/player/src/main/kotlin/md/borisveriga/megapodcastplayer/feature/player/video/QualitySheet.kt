@@ -18,10 +18,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import md.borisveriga.megapodcastplayer.core.common.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.feature.player.R
 
 /**
@@ -63,8 +63,7 @@ fun QualitySheet(
  * The sheet's contents, without the sheet, so a preview can hold them.
  *
  * @param qualities the renditions on offer; null while still being asked for.
- * @param selected the rendition marked, or null to mark none — the download sheet of a video
- *   that is not on the phone.
+ * @param selected the rendition marked, or null to mark none.
  * @param failed true when the renditions could not be asked for.
  * @param onSelect a rendition was tapped.
  */
