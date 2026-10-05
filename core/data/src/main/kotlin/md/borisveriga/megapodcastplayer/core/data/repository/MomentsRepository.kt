@@ -41,8 +41,8 @@ interface MomentsRepository {
      *
      * Marking the same spot twice does not make two moments: a mark within
      * [md.borisveriga.megapodcastplayer.core.model.MOMENT_MERGE_WINDOW_MS] of an existing one is
-     * that one. The button is pressed with a phone in a pocket or a watch on a wrist, and the
-     * second press is nearly always the user's doubt about the first rather than a second thought.
+     * that one. The button is pressed with the phone half out of a pocket, and the second press is
+     * nearly always the user's doubt about the first rather than a second thought.
      *
      * @param episodeId the episode being listened to.
      * @param positionMs where in it to mark.

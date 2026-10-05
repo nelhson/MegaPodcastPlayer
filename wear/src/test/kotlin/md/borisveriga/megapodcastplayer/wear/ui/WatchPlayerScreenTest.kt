@@ -612,6 +612,43 @@ class WatchPlayerScreenTest {
     }
 
     /**
+     * At either end of the scale one button is disabled. Pressing it again — the commonest thing to
+     * do at an end stop — must not reach the bar behind it and change the bezel's mode. Robolectric's
+     * slider happens to swallow that press either way, so this pins the requirement rather than
+     * reproducing a failure; the bar's position-bounded tap is what guarantees it on a watch.
+     */
+    @Test
+    fun `quieter at zero does not take the bezel`() {
+        var toggled = 0
+        setScreen(
+            uiState = volumeAtRest.copy(snapshot = playingWithVolume.copy(volume = 0), volumeLevel = 0),
+            onBeginVolume = { toggled++ },
+            onEndVolume = { toggled++ },
+        )
+
+        scrollToVolume()
+        composeTestRule.onNodeWithContentDescription("Quieter").performClick()
+
+        assertEquals(0, toggled)
+    }
+
+    /** The same at the top, with the bezel already held: the press must not give it back. */
+    @Test
+    fun `louder at the top does not give the bezel back`() {
+        var toggled = 0
+        setScreen(
+            uiState = volumeHeld.copy(snapshot = playingWithVolume.copy(volume = 15), volumeLevel = 15),
+            onBeginVolume = { toggled++ },
+            onEndVolume = { toggled++ },
+        )
+
+        scrollToVolume()
+        composeTestRule.onNodeWithContentDescription("Louder").performClick()
+
+        assertEquals(0, toggled)
+    }
+
+    /**
      * The bar looks like something a finger can move, so a finger has to be able to move it. The
      * slider underneath is two buttons and a picture; the drag is this screen's own.
      */

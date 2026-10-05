@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -59,6 +61,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -67,6 +70,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -153,12 +157,17 @@ fun WatchPlayerScreen(viewModel: WatchPlayerViewModel) {
  * no buttons, which is what buys the transport its place on the first screen; the volume is a row
  * of its own directly under the player's controls, a short scroll away, because it is adjusted
  * now and then rather than pressed blind. The transport is the one thing here that has to be under
- * the thumb within a second
- * of raising the wrist, and it is: the two lists are the only parts whose length the phone decides,
- * and they are last in the column, so however long they grow nothing above them moves. The screen
- * was once split into two pages to keep a growing list from pushing pause off the bottom; putting
- * the lists last does the same with nothing to swipe. This is the whole app — there is no second
- * screen, and the tile that used to be a smaller copy of this one is gone.
+ * the thumb within a second of raising the wrist, and it is: the two lists are the only parts whose
+ * length the phone decides, and they are last in the column, so however long they grow nothing
+ * above them moves. The screen was once split into two pages to keep a growing list from pushing
+ * pause off the bottom; putting the lists last does the same with nothing to swipe. This is the
+ * whole app — there is no second screen, and the tile that used to be a smaller copy of this one is
+ * gone.
+ *
+ * The bezel scrolls the list unless the scrubber or the volume bar has taken it, and comes back to
+ * the list the moment neither holds it. Those two are list items, and a lazy list does not keep a
+ * focused item composed: had the bezel been left with whichever of them took it last, scrolling
+ * that row out of view would have taken the focus with it, and every turn after would go nowhere.
  *
  * @param uiState what to draw.
  * @param onTogglePlayPause invoked by the centre transport button.
@@ -220,6 +229,14 @@ fun WatchPlayerScreen(
     // reading per screen, and this is where a screen's readings belong.
     val reduceMotion = rememberReduceMotion()
 
+    // The bezel's home. Taken back whenever neither the scrubber nor the volume bar holds it; see
+    // this function's documentation for why it cannot be left with them.
+    val listFocus = remember { FocusRequester() }
+    val bezelHeldByRow = uiState.isScrubbing || uiState.isAdjustingVolume
+    LaunchedEffect(bezelHeldByRow) {
+        if (!bezelHeldByRow) listFocus.requestFocus()
+    }
+
     // A scrolling list rather than a fixed layout even for the controls alone, because at 200 %
     // font scale five items do not fit a round screen and the alternative to scrolling is clipping.
     ScreenScaffold(
@@ -229,7 +246,8 @@ fun WatchPlayerScreen(
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
-            modifier = Modifier.fillMaxSize(),
+            // Ahead of the list's own rotary modifier, so it names the focus target that one adds.
+            modifier = Modifier.fillMaxSize().focusRequester(listFocus),
         ) {
             if (uiState.lastCommandFailed) {
                 item(key = "failed", contentType = "note") {
@@ -686,9 +704,16 @@ private fun ProgressRow(
  * drag need no mode at all, which is what keeps the bar usable for a wearer who never discovers
  * the bezel.
  *
- * The rotary handler stays attached when the bezel is given back, and passes each turn up to the
- * list: the row keeps the focus it claimed, and a handler that vanished with the mode would leave
- * nothing focused to scroll with.
+ * The tap is heard only on the bar between the two buttons, not on the whole row. An enabled
+ * button consumes its own tap; for a disabled one — "Quieter" at zero, "Louder" at the top — the
+ * slider makes no such promise, and a row-wide tap that a greyed-out button let through would be a
+ * change of mode nobody asked for. Bounding the target by position makes it not matter.
+ * There is no ripple for the same reason it has no row-wide target: the outline is the answer to
+ * the tap, and a ripple bounded to the row would light the corners outside the pill.
+ *
+ * Giving the bezel back hands the focus to the list rather than leaving it here; see
+ * [WatchPlayerScreen]. The rotary handler still declines every turn while the mode is off, for the
+ * moment between the two.
  *
  * The one thing it does not copy from the scrubber is the pause before the value is sent. A seek
  * is a jump to somewhere you cannot hear until you arrive; a volume change is audible while the
@@ -733,8 +758,8 @@ internal fun VolumeRow(
     // finger — which is what the bar suggests and what the scrubber already does with an episode.
     // The bar is the row less the button at either end of it.
     val maxVolume = uiState.snapshot.maxVolume
-    val buttonsPx = with(LocalDensity.current) { (SLIDER_BUTTON_WIDTH * 2).toPx() }
-    val barWidthPx = (rowWidthPx - buttonsPx).coerceAtLeast(0f)
+    val buttonPx = with(LocalDensity.current) { SLIDER_BUTTON_WIDTH.toPx() }
+    val barWidthPx = (rowWidthPx - buttonPx * 2).coerceAtLeast(0f)
     val dragPixelsPerStep: Float = if (maxVolume > 0) barWidthPx / maxVolume else 0f
 
     val volumeLabel = stringResource(
@@ -743,6 +768,8 @@ internal fun VolumeRow(
     // An outline rather than a fill: the slider paints its own opaque container, so a tint behind
     // it would never be seen.
     val outline = if (engaged) MaterialTheme.colorScheme.primary else Color.Transparent
+    // Read through state by the gesture below, which is started once and outlives recompositions.
+    val toggle by rememberUpdatedState { if (engaged) onEndVolume() else onBeginVolume() }
 
     Column(modifier = modifier.fillMaxWidth().padding(top = 4.dp)) {
         Box(
@@ -750,10 +777,19 @@ internal fun VolumeRow(
                 .fillMaxWidth()
                 .onSizeChanged { rowWidthPx = it.width }
                 .border(width = VOLUME_HELD_OUTLINE, color = outline, shape = CircleShape)
-                .semantics { contentDescription = volumeLabel }
-                // The slider's own buttons consume their taps, so this hears only the bar between
-                // them — the part that has no job of its own.
-                .clickable { if (engaged) onEndVolume() else onBeginVolume() }
+                .semantics {
+                    contentDescription = volumeLabel
+                    // What the tap below is to a finger, for TalkBack, which has no position.
+                    onClick {
+                        toggle()
+                        true
+                    }
+                }
+                .pointerInput(buttonPx) {
+                    detectTapGestures { offset ->
+                        if (offset.x > buttonPx && offset.x < size.width - buttonPx) toggle()
+                    }
+                }
                 .focusRequester(focusRequester)
                 .focusable()
                 .onRotaryScrollEvent { event ->
