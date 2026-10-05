@@ -7,13 +7,11 @@ import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
-import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -27,14 +25,12 @@ import org.junit.Test
 /**
  * Tests for [EpisodePlayer], the bridge from an episode id to the player.
  *
- * The interesting behaviour is the cold-start queue restore: it must happen exactly once, must not
- * trample a player that already has a queue, and must not give up when the service is not yet
- * reachable.
+ * The cold-start queue restore is not here: the service does it, and `QueueRestoreTest` in
+ * `:core:media` covers it. What is left of it on this side is that *Resume* waits for it.
  */
 class EpisodePlayerTest {
 
     private lateinit var playbackRepository: PlaybackRepository
-    private lateinit var queueSource: PlaybackQueueSource
     private lateinit var connection: PlaybackConnection
     private lateinit var episodePlayer: EpisodePlayer
 
@@ -61,12 +57,11 @@ class EpisodePlayerTest {
     @Before
     fun setUp() {
         playbackRepository = mockk(relaxed = true)
-        queueSource = mockk(relaxed = true)
         connection = mockk(relaxed = true)
         showSettings = mockk(relaxed = true)
         // No show has an intro until a test gives it one; every start then resumes as before.
         every { showSettings.observeSettings(any()) } returns flowOf(ShowSettings.DEFAULT)
-        episodePlayer = EpisodePlayer(playbackRepository, queueSource, showSettings, connection)
+        episodePlayer = EpisodePlayer(playbackRepository, showSettings, connection)
     }
 
     @Test
@@ -163,131 +158,39 @@ class EpisodePlayerTest {
     }
 
     @Test
-    fun `a cold start loads the persisted queue paused`() = runTest {
-        coEvery { connection.currentState() } returns PlaybackState(isConnected = true)
-        coEvery { queueSource.resumableQueue() } returns
-            listOf(playable("a", positionMs = 42_000L), playable("b"))
-
-        episodePlayer.restoreQueue()
-
-        coVerify {
-            connection.setQueue(
-                episodes = listOf(playable("a", positionMs = 42_000L), playable("b")),
-                startIndex = 0,
-                startPositionMs = 42_000L,
-                playWhenReady = false,
-            )
-        }
-    }
-
-    @Test
-    fun `restoring is skipped when the player already has a queue`() = runTest {
-        // The process survived; whatever is loaded is more current than the database.
+    fun `resuming from a cold start waits for the service's restore and then plays`() = runTest {
+        coEvery { connection.awaitRestored() } returns true
         coEvery { connection.currentState() } returns
-            PlaybackState(isConnected = true, queueEpisodeIds = listOf("a"))
-
-        episodePlayer.restoreQueue()
-
-        coVerify(exactly = 0) { connection.setQueue(any(), any(), any(), any()) }
-    }
-
-    @Test
-    fun `restoring runs only once`() = runTest {
-        coEvery { connection.currentState() } returns PlaybackState(isConnected = true)
-        coEvery { queueSource.resumableQueue() } returns listOf(playable("a"))
-
-        episodePlayer.restoreQueue()
-        episodePlayer.restoreQueue()
-
-        coVerify(exactly = 1) { connection.setQueue(any(), any(), any(), any()) }
-    }
-
-    @Test
-    fun `an unreachable service is retried rather than written off`() = runTest {
-        coEvery { connection.currentState() } returns PlaybackState(isConnected = false)
-        coEvery { queueSource.resumableQueue() } returns listOf(playable("a"))
-
-        episodePlayer.restoreQueue()
-        coVerify(exactly = 0) { connection.setQueue(any(), any(), any(), any()) }
-
-        // The service finished starting; the next caller must still get its queue back.
-        coEvery { connection.currentState() } returns PlaybackState(isConnected = true)
-        episodePlayer.restoreQueue()
-
-        coVerify(exactly = 1) { connection.setQueue(any(), any(), any(), any()) }
-    }
-
-    @Test
-    fun `two restores that begin together still load the queue once`() = runTest {
-        coEvery { connection.currentState() } returns PlaybackState(isConnected = true)
-        coEvery { queueSource.resumableQueue() } returns listOf(playable("a"))
-
-        // What a cold start actually does: the player screen and the Resume shortcut both ask, and
-        // neither has finished by the time the other begins. A second load landing after the
-        // shortcut's play would pause the episode the user asked to carry on with.
-        val first = launch { episodePlayer.restoreQueue() }
-        val second = launch { episodePlayer.restoreQueue() }
-        first.join()
-        second.join()
-
-        coVerify(exactly = 1) { connection.setQueue(any(), any(), any(), any()) }
-    }
-
-    @Test
-    fun `nothing to resume means nothing is handed to the player`() = runTest {
-        coEvery { connection.currentState() } returns PlaybackState(isConnected = true)
-        coEvery { queueSource.resumableQueue() } returns emptyList()
-
-        episodePlayer.restoreQueue()
-
-        coVerify(exactly = 0) { connection.setQueue(any(), any(), any(), any()) }
-    }
-
-    @Test
-    fun `resuming from a cold start loads the persisted queue and plays it`() = runTest {
-        // Empty when the restore looks, loaded by the time the play does: the two readings a cold
-        // start actually produces, in order.
-        coEvery { connection.currentState() } returnsMany listOf(
-            PlaybackState(isConnected = true),
-            PlaybackState(isConnected = true, episodeId = "a", queueEpisodeIds = listOf("a", "b")),
-        )
-        coEvery { queueSource.resumableQueue() } returns
-            listOf(playable("a", positionMs = 42_000L), playable("b"))
+            PlaybackState(isConnected = true, episodeId = "a", queueEpisodeIds = listOf("a", "b"))
 
         assertTrue(episodePlayer.resume())
 
-        // Loaded exactly as an ordinary cold start loads it — paused, at the stored position —
-        // and then started, rather than by a second route that could resume a different episode.
-        coVerify {
-            connection.setQueue(
-                episodes = listOf(playable("a", positionMs = 42_000L), playable("b")),
-                startIndex = 0,
-                startPositionMs = 42_000L,
-                playWhenReady = false,
-            )
+        // In this order: a play sent before the restore has landed reaches an empty player.
+        coVerifyOrder {
+            connection.awaitRestored()
+            connection.currentState()
+            connection.play()
         }
-        coVerify { connection.play() }
-    }
-
-    @Test
-    fun `resuming a player that already has an episode just presses play`() = runTest {
-        coEvery { connection.currentState() } returns
-            PlaybackState(isConnected = true, episodeId = "a", queueEpisodeIds = listOf("a"))
-
-        assertTrue(episodePlayer.resume())
-
-        // Nothing is reloaded: the queue is already the user's, and setting it again would throw
-        // away the position the player has moved on to since it was stored.
+        // The service loaded the queue; loading it again from here is the race this replaced.
         coVerify(exactly = 0) { connection.setQueue(any(), any(), any(), any()) }
-        coVerify { connection.play() }
     }
 
     @Test
     fun `resuming with nothing to resume plays nothing and says so`() = runTest {
+        coEvery { connection.awaitRestored() } returns true
         coEvery { connection.currentState() } returns PlaybackState(isConnected = true)
-        coEvery { queueSource.resumableQueue() } returns emptyList()
 
         // The caller's cue to open the app rather than an empty player over it.
+        assertFalse(episodePlayer.resume())
+
+        coVerify(exactly = 0) { connection.play() }
+    }
+
+    @Test
+    fun `resuming with the service unreachable plays nothing and says so`() = runTest {
+        coEvery { connection.awaitRestored() } returns false
+        coEvery { connection.currentState() } returns PlaybackState()
+
         assertFalse(episodePlayer.resume())
 
         coVerify(exactly = 0) { connection.play() }

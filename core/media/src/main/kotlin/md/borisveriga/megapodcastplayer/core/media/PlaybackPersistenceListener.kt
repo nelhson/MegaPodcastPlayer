@@ -65,11 +65,54 @@ internal class PlaybackPersistenceListener(
         newPosition: Player.PositionInfo,
         reason: Int,
     ) {
-        // An automatic transition is the only discontinuity that means "the previous episode
-        // finished". A seek, or a user tapping "next", must not mark anything played.
-        if (reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION) return
-        val finishedId = oldPosition.mediaItem?.episodeId ?: return
-        record(NON_FATAL_COMPLETION) { progressRecorder.recordCompleted(finishedId) }
+        when (reason) {
+            // An automatic transition is the only discontinuity that means "the previous episode
+            // finished". A seek, or a user tapping "next", must not mark anything played.
+            Player.DISCONTINUITY_REASON_AUTO_TRANSITION -> {
+                val finishedId = oldPosition.mediaItem?.episodeId ?: return
+                record(NON_FATAL_COMPLETION) { progressRecorder.recordCompleted(finishedId) }
+            }
+
+            Player.DISCONTINUITY_REASON_SEEK,
+            Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT,
+            -> recordSeek(oldPosition, newPosition)
+
+            // A removed item, skipped silence, an internal jump: nobody chose a new place, and
+            // the ticker's next write covers wherever playback now is.
+            else -> Unit
+        }
+    }
+
+    /**
+     * Stores where a seek left things, without waiting for the service's ticker.
+     *
+     * The ticker only runs while playing, and pausing flushes the position as it was *then* — so a
+     * scrub or a skip made while paused was never written, and was lost with the process.
+     *
+     * A seek within an episode stores where it landed. A seek to another episode — next, previous,
+     * a tap in the queue — stores where the one being left had got to, which the ticker may be up
+     * to five seconds behind on. The episode arrived at is left alone: it starts wherever the
+     * player put it, and writing that would replace a place the user earned with one they have not
+     * listened from yet.
+     *
+     * @param oldPosition where playback was before the seek.
+     * @param newPosition where the seek landed.
+     */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun recordSeek(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo) {
+        val leftId = oldPosition.mediaItem?.episodeId
+        val landedId = newPosition.mediaItem?.episodeId
+        val reading = if (leftId != null && leftId != landedId) {
+            // No duration: the player's is already the next episode's.
+            PositionReading(leftId, oldPosition.positionMs.coerceAtLeast(0L), durationMs = null)
+        } else {
+            PositionReading(
+                episodeId = landedId ?: return,
+                positionMs = newPosition.positionMs.coerceAtLeast(0L),
+                durationMs = player.positionReading()?.takeIf { it.episodeId == landedId }?.durationMs,
+            )
+        }
+        record(NON_FATAL_POSITION) { reading.recordInto(progressRecorder) }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {

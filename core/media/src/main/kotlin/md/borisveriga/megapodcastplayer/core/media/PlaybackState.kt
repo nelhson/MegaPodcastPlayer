@@ -19,8 +19,9 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
  * @property isPlaying true only while audio is actually coming out; false while buffering or paused.
  * @property isBuffering true while the player is loading and cannot produce audio yet.
  * @property positionMs playback position at the time of the snapshot.
- * @property durationMs total duration in milliseconds, or `0` until the player has read it. Media3's
- *   own `C.TIME_UNSET` is normalised away here so that nothing outside this module has to know it.
+ * @property durationMs total duration in milliseconds: the player's measurement once it has one,
+ *   the feed's figure until then, and `0` when neither is known. Media3's own `C.TIME_UNSET` is
+ *   normalised away here so that nothing outside this module has to know it.
  * @property bufferedPositionMs how far ahead the buffer reaches, for the secondary scrubber track.
  * @property speed the current playback rate.
  * @property queueEpisodeIds every episode in the player's queue, in play order, including the
@@ -43,6 +44,15 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
  * @property videoQuality the rendition the episode is showing, or null while it plays as sound only.
  * @property videoWidth the picture's width in pixels once the decoder has reported it, else `0`.
  * @property videoHeight the picture's height, likewise.
+ * @property pictureReady true once the player has drawn a frame of this episode's picture on the
+ *   output it currently has. The size above says a picture was *decoded*, which stays true when
+ *   the output is taken away or changed; this says one is *on screen*, which is what decides
+ *   whether a poster still has to cover it.
+ * @property isRestoring true until the playback service has been heard from for the first time —
+ *   and again while a connection that dropped is being rebuilt. Nothing is loaded *yet*, which is
+ *   not the same as nothing being loaded: the service puts the persisted queue back as it starts,
+ *   and a screen that treated the wait as an empty player would close the face it was restored on
+ *   a moment before the episode arrived. Never true together with [isConnected].
  */
 data class PlaybackState(
     val isConnected: Boolean = false,
@@ -66,10 +76,20 @@ data class PlaybackState(
     val videoQuality: VideoQuality? = null,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    val pictureReady: Boolean = false,
+    val isRestoring: Boolean = false,
 ) {
 
     /** True when there is nothing loaded, i.e. the mini player should be hidden. */
     val isIdle: Boolean get() = episodeId == null
+
+    /**
+     * True when the player is known to hold nothing: idle, and not merely not heard from yet.
+     *
+     * What a screen that closes itself over an empty player goes by; [isIdle] alone is also true
+     * for the moments before the service has put the queue back.
+     */
+    val isEmptied: Boolean get() = isIdle && !isRestoring
 
     /** True when the loaded episode has a picture the video screen could show. */
     val canWatch: Boolean get() = youTubeVideoId != null

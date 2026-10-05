@@ -7,6 +7,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -182,6 +184,38 @@ class PlayerQueueTest : PlayerViewModelFixture() {
             val state = expectMostRecentItem()
             assertEquals(DownloadState.DOWNLOADING, state.download?.state)
             assertEquals(42f, state.download?.percent)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the current episode's video download reaches the ui, so its delete can ask`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+
+            playing("a", downloadState = DownloadState.COMPLETED, downloadPercent = 100f)
+            videoDownloads.value = mapOf(
+                "a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f, bytes = 1L),
+                // Another episode's video is none of this button's business.
+                "b" to VideoDownload(VideoQuality(1080), DownloadState.DOWNLOADING, 10f),
+            )
+
+            val download = expectMostRecentItem().download
+            assertEquals(VideoQuality(720), download?.video?.quality)
+            assertEquals(true, download?.removalTakesVideo)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `an episode with no video deletes without asking`() = runTest {
+        viewModel.uiState.test {
+            awaitItem()
+
+            playing("a", downloadState = DownloadState.COMPLETED, downloadPercent = 100f)
+            videoDownloads.value = mapOf("b" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f))
+
+            assertEquals(false, expectMostRecentItem().download?.removalTakesVideo)
             cancelAndIgnoreRemainingEvents()
         }
     }

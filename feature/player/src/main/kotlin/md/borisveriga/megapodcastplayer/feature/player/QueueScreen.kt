@@ -66,10 +66,13 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 
 /**
  * The play queue.
  *
+ * @param onOpenPlayer invoked once a tapped episode has been handed to the player, so the shell
+ *   can open the player on it — as it was last used, since a queue row asks for neither face.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list
  *   back at the top (NAV-4).
@@ -78,6 +81,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  */
 @Composable
 fun QueueRoute(
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
@@ -87,7 +91,9 @@ fun QueueRoute(
 
     QueueScreen(
         uiState = uiState,
-        onPlay = viewModel::playQueued,
+        onPlay = { episodeId ->
+            viewModel.playQueued(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.REMEMBERED) }
+        },
         onRemove = viewModel::removeFromQueue,
         onMove = viewModel::moveInUpNext,
         onClear = viewModel::clearQueue,

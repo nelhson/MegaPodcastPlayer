@@ -95,12 +95,26 @@ class VideoModeTest {
     }
 
     @Test
-    fun `a swap re-prepares a player that had stopped`() {
+    fun `a swap re-prepares a player that had stopped on an error`() {
         val player = playerAt(index = 0, positionMs = 0L, state = Player.STATE_IDLE)
+        every { player.playerError } returns mockk()
 
         player.swapCurrentItem(video720)
 
         verify(exactly = 1) { player.prepare() }
+    }
+
+    @Test
+    fun `a swap does not prepare a restored player that was never started`() {
+        // Idle because the queue was put back without opening a stream. Reopening the app on the
+        // video screen swaps to the picture's flavour, and that must not be what touches the network.
+        val player = playerAt(index = 0, positionMs = 42_000L, state = Player.STATE_IDLE)
+        every { player.playerError } returns null
+
+        player.swapCurrentItem(video720)
+
+        verify(exactly = 1) { player.seekTo(1, 42_000L) }
+        verify(exactly = 0) { player.prepare() }
     }
 
     // --- entering and leaving -----------------------------------------------
@@ -133,6 +147,28 @@ class VideoModeTest {
 
         assertEquals(VideoModeOutcome.SWAPPED, player.enterVideoMode(VideoQuality(1080)))
         assertEquals(VideoQuality(1080), added.captured.videoQualityOrNull)
+    }
+
+    @Test
+    fun `a picture asked for an episode the player has left is not shown on its successor`() {
+        // The ask is decided, then sent; the queue can move on in between.
+        val player = playerAt(index = 0, positionMs = 5_000L, current = audio)
+
+        assertEquals(
+            VideoModeOutcome.SUPERSEDED,
+            player.enterVideoMode(VideoQuality(720), expectedEpisodeId = "another-episode"),
+        )
+        verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
+    }
+
+    @Test
+    fun `a picture asked for the episode playing is shown`() {
+        val player = playerAt(index = 0, positionMs = 5_000L, current = audio)
+
+        assertEquals(
+            VideoModeOutcome.SWAPPED,
+            player.enterVideoMode(VideoQuality(720), expectedEpisodeId = "ep-1"),
+        )
     }
 
     @Test

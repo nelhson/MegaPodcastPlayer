@@ -1,18 +1,24 @@
 package md.borisveriga.megapodcastplayer.feature.podcast
 
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
@@ -23,6 +29,8 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -113,6 +121,7 @@ class PodcastDetailScreenTest {
         onFilterChange: (EpisodeFilter) -> Unit = {},
         onSortChange: (EpisodeSort) -> Unit = {},
         description: String = podcast.description,
+        videoDownloads: Map<String, VideoDownload> = emptyMap(),
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -124,6 +133,7 @@ class PodcastDetailScreenTest {
                         isRebuilding = isRebuilding,
                         openEpisodeId = openEpisodeId,
                         settings = settings,
+                        videoDownloads = videoDownloads,
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
@@ -283,6 +293,19 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithContentDescription("Play video").performClick()
 
         assertEquals("a", watched)
+    }
+
+    @Test
+    fun `the row's video button is a full touch target`() {
+        setScreen(
+            listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8"))),
+            source = PodcastSource.YOUTUBE,
+        )
+
+        // Drawn at the play button's 40 dp beside it, and touched at 48 round that.
+        composeRule.onNodeWithContentDescription("Play video")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test
@@ -640,13 +663,70 @@ class PodcastDetailScreenTest {
 
         // Deleting audio, calling a transfer off and trying a failure again are three different
         // promises, and the gesture that makes them is the same one — so the label is all the
-        // user, or a screen reader, has to tell them apart.
+        // user, or a screen reader, has to tell them apart. A failure says so: it used to read
+        // "Download", as if it had never been tried.
         composeRule.onNodeWithText("Episode stored")
             .performCustomAccessibilityAction("Delete download")
         composeRule.onNodeWithText("Episode busy")
             .performCustomAccessibilityAction("Cancel download")
         composeRule.onNodeWithText("Episode broken")
-            .performCustomAccessibilityAction("Download")
+            .performCustomAccessibilityAction("Try again")
+    }
+
+    @Test
+    fun `deleting an episode whose video is downloaded too names both and asks first`() {
+        val toggled = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a", downloadState = DownloadState.COMPLETED)),
+            onEpisodeDownloadToggle = { toggled += it },
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityAction("Delete audio and video downloads")
+
+        // The swipe used to say "Delete download" and take a video nobody had mentioned.
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertExists()
+        assertEquals(emptyList<String>(), toggled)
+
+        composeRule.onAllNodesWithText("Delete").onLast().performClick()
+
+        assertEquals(listOf("a"), toggled)
+    }
+
+    @Test
+    fun `a question whose transfer failed meanwhile closes rather than download on confirm`() {
+        val toggled = mutableListOf<String>()
+        // A list the test can change under the open question, as the database would.
+        val episodes = mutableStateListOf(episode("a", downloadState = DownloadState.DOWNLOADING))
+        setScreen(
+            episodes = episodes,
+            onEpisodeDownloadToggle = { toggled += it },
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.QUEUED, 0f)),
+        )
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityAction("Cancel audio and video downloads")
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertExists()
+
+        episodes[0] = episode("a", downloadState = DownloadState.FAILED)
+        composeRule.waitForIdle()
+
+        // On a failed copy the toggle downloads: the opposite of what the question asked.
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertDoesNotExist()
+        assertEquals(emptyList<String>(), toggled)
+    }
+
+    @Test
+    fun `deleting sound alone carries on without a question`() {
+        val toggled = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a", downloadState = DownloadState.COMPLETED)),
+            onEpisodeDownloadToggle = { toggled += it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Delete download")
+
+        assertEquals(listOf("a"), toggled)
     }
 
     @Test

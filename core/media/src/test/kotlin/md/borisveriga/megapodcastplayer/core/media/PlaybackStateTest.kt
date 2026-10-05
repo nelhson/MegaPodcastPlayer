@@ -43,6 +43,18 @@ class PlaybackStateTest {
     }
 
     @Test
+    fun `a player not heard from yet is idle but not emptied`() {
+        // The difference between "nothing loaded" and "nothing loaded yet": the second must not
+        // close a player that was restored open.
+        val restoring = PlaybackState(isRestoring = true)
+
+        assertTrue(restoring.isIdle)
+        assertFalse(restoring.isEmptied)
+        assertTrue(PlaybackState(isConnected = true).isEmptied)
+        assertFalse(PlaybackState(isConnected = true, episodeId = "e1").isEmptied)
+    }
+
+    @Test
     fun `progress is zero while the duration is unknown`() {
         val state = PlaybackState(episodeId = "e1", positionMs = 60_000L, durationMs = 0L)
 

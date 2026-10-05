@@ -2,6 +2,9 @@ package md.borisveriga.megapodcastplayer.core.datastore
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
@@ -44,6 +47,23 @@ class UserPreferencesDataSourceTest {
         assertNull(dataSource.lastPlayedEpisodeId.first())
         assertEquals(VideoQuality.DEFAULT, dataSource.videoQuality.first())
         assertEquals(PlayerMode.AUDIO, dataSource.playerMode.first())
+    }
+
+    @Test
+    fun `an unrelated write does not re-emit the playback settings`() = runTest {
+        val emissions = mutableListOf<PlaybackSettings>()
+        val collecting = launch(UnconfinedTestDispatcher(testScheduler)) {
+            dataSource.playbackSettings.toList(emissions)
+        }
+
+        // What happens on every change of episode. The service applies each emission to the
+        // player, so one here would put the app's speed back over a show's own.
+        dataSource.setLastPlayedEpisodeId("episode-1")
+        dataSource.setPlayerMode(PlayerMode.VIDEO)
+        dataSource.setSpeed(1.5f)
+        collecting.cancel()
+
+        assertEquals(listOf(PlaybackSettings(), PlaybackSettings(speed = 1.5f)), emissions)
     }
 
     @Test

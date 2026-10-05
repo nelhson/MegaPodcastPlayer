@@ -120,6 +120,26 @@ class MomentsViewModelTest {
         }
 
     @Test
+    fun `a moment whose episode was handed to the player says so, for the player to be opened`() = runTest {
+        coEvery { episodePlayer.playFrom("episode-1", any()) } returns true
+        var opened = false
+
+        viewModel.play(entry(id = 1L, positionMs = 743_000L)) { opened = true }
+
+        assertEquals(true, opened)
+    }
+
+    @Test
+    fun `a moment whose episode has gone opens nothing`() = runTest {
+        coEvery { episodePlayer.playFrom("episode-1", any()) } returns false
+        var opened = false
+
+        viewModel.play(entry(id = 1L, positionMs = 743_000L)) { opened = true }
+
+        assertEquals(false, opened)
+    }
+
+    @Test
     fun `deleting offers the moment back`() = runTest {
         val deleted = entry(id = 1L, note = "the good bit")
 

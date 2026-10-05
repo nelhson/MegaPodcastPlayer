@@ -8,12 +8,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -30,6 +32,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
+import md.borisveriga.megapodcastplayer.core.media.VideoOutput
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
@@ -47,9 +50,10 @@ private const val NON_FATAL_QUALITIES = "Video qualities lookup failed"
  * @property qualities the renditions the loaded video comes in, lowest first; null while the
  *   extractor is still being asked, empty when the video has no picture at all.
  * @property qualitiesFailed true when the extractor could not be asked; the picker says so.
- * @property refused true when the service would not show the picture — the episode has none, or the
- *   service was unreachable — until the screen has said so; cleared via
- *   [VideoViewModel.onRefusalShown].
+ * @property refused true while the picture that was asked for is not being shown: the service
+ *   would not show it, it could not be fetched, or it failed and the episode fell back to sound.
+ *   A standing fact rather than a message, so the screen can say it where the picture would be
+ *   for as long as it is true; asking again clears it.
  * @property videoDownload the loaded episode's downloaded video, or null when it has none.
  * @property downloadMessage what a download request just did, until the screen has said so;
  *   cleared via [VideoViewModel.onDownloadMessageShown].
@@ -82,8 +86,10 @@ sealed interface VideoDownloadMessage {
      * The video was queued for download.
      *
      * @property quality the rendition asked for.
+     * @property waitingForWifi whether it waits for an unmetered network, which the message then
+     *   says, as the audio's does on the show page.
      */
-    data class Queued(val quality: VideoQuality) : VideoDownloadMessage
+    data class Queued(val quality: VideoQuality, val waitingForWifi: Boolean = false) : VideoDownloadMessage
 
     /** The downloaded video was deleted; the audio stays. */
     data object Deleted : VideoDownloadMessage
@@ -104,6 +110,12 @@ sealed interface VideoDownloadMessage {
  * time the player spends in video with the app in front. Everything else here is the ordinary
  * transport, delegated the way the player sheet's view model delegates it.
  *
+ * Both halves are kept as *what is wanted now* rather than as calls passed on one by one. The
+ * player has one output and one flavour, and the screen and the bar come and go in an order
+ * nobody controls — a rotation builds the new pair before it has finished taking the old one down.
+ * So the views register and leave, the asks come and go, and one collector apiece sends the player
+ * whatever the latest answer is.
+ *
  * One instance serves both places, held by the shell that holds both. The bracket is the shell's
  * to keep for that reason: minimising the screen moves the picture to the bar rather than ending
  * it, and two holders each bracketing their own time on screen would hand back to sound in the gap
@@ -116,8 +128,8 @@ sealed interface VideoDownloadMessage {
  * @property networkStatus says whether a picture that is not on the device could be fetched.
  * @property crashReporter where a failed lookup goes; the picker shows a sentence, the report
  *   keeps the cause.
- * @property applicationScope where leaving runs. The screen's own scope dies with the screen, and
- *   handing back to audio is the one thing that must outlive it.
+ * @property applicationScope where the asks for the picture are sent from. The screen's own scope
+ *   dies with the screen, and handing back to audio is the one thing that must outlive it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -139,18 +151,36 @@ class VideoViewModel @Inject constructor(
      * Whether the picture is wanted, between [enter] and [exit].
      *
      * Read by the collector in `init` that follows the episode: the player moving on to another
-     * YouTube episode should keep the picture going only while there is somewhere to show it.
+     * YouTube episode should keep the picture going only while there is somewhere to show it. Also
+     * read where the asks are sent, on another thread, hence volatile.
      */
+    @Volatile
     private var watching = false
 
     /**
-     * The [enter] still on its way to the service, if any.
+     * The latest thing asked of the picture, waiting to be sent.
      *
-     * [enter] reads the remembered rendition from disk before it asks, and [exit] runs on another
-     * scope. Leaving within those few milliseconds would otherwise let the exit arrive first and
-     * the enter after it, leaving a picture streaming with no screen; [exit] cancels this instead.
+     * One slot, read by one sender. [enter] reads the remembered rendition from disk before it
+     * asks, and used to do so on a different scope from [exit]: leaving within those milliseconds
+     * could let the exit arrive first and the enter after it, leaving a picture streaming with no
+     * screen. With a single sender the commands reach the service in the order they were asked,
+     * and an ask that a newer one has replaced is abandoned rather than sent late.
      */
-    private var pendingEnter: Job? = null
+    private val pictureAsks = Channel<PictureAsk>(Channel.CONFLATED)
+
+    /**
+     * The views that could show the picture right now, oldest first. Main thread only.
+     *
+     * Usually one. Two for the length of a hand-over — minimising, reopening, the first frame
+     * after a rotation — and the newest is the one drawn on, which is the one on its way in.
+     */
+    private val outputs = ArrayList<VideoOutput>()
+
+    /** The view the picture belongs on: the newest of [outputs], or null when there is none. */
+    private val wantedOutput = MutableStateFlow<VideoOutput?>(null)
+
+    /** The output the player was last given, so it can be let go when this view model is. */
+    private var givenOutput: VideoOutput? = null
 
     /**
      * The renditions of whichever video is loaded, re-asked as the video changes.
@@ -227,6 +257,26 @@ class VideoViewModel @Inject constructor(
     )
 
     init {
+        // Send the asks, one at a time and newest only. On the application scope: the last of them
+        // is the hand back to sound as the activity stops, which can be the activity finishing.
+        applicationScope.launch {
+            pictureAsks.consumeAsFlow().collectLatest { ask ->
+                when (ask) {
+                    is PictureAsk.Show -> showPicture(ask.quality)
+                    PictureAsk.Hide -> connection.exitVideo()
+                }
+            }
+        }
+        // Keep the player drawing on whichever view is wanted. Media3 holds one output and does
+        // not fall back to the one before it, so when the newest view leaves, the survivor has to
+        // be given the picture again — which is the whole of what a rotation used to break.
+        viewModelScope.launch {
+            wantedOutput.collect { output ->
+                // Nothing given and nothing wanted: the state this view model starts in.
+                if (output == null && givenOutput == null) return@collect
+                if (connection.showVideoOn(output)) givenOutput = output
+            }
+        }
         // Follow the episode. When the queue moves on while the picture is wanted — the episode
         // ended, or the user pressed next — the next one arrives as sound, because that is how
         // every episode is stored; if it has a picture, show it too. The first value is whatever
@@ -236,7 +286,9 @@ class VideoViewModel @Inject constructor(
                 .map { it.youTubeVideoId }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { videoId -> if (watching && videoId != null) showPicture() }
+                .collect { videoId ->
+                    if (watching && videoId != null) pictureAsks.trySend(PictureAsk.Show())
+                }
         }
         // Notice the service handing a failed picture back to sound. The same video dropping from
         // picture to sound while the screen is up is only ever that: leaving clears `watching`
@@ -259,27 +311,23 @@ class VideoViewModel @Inject constructor(
      * Safe to call again while the picture is already wanted, and called so: by the shell when the
      * player is put in video, and by the video screen each time it starts. The service answers a
      * repeat by doing nothing, so the second ask costs a round trip and no re-buffer — and it is
-     * what retries a picture that was refused the first time, which is why a refusal still waiting
-     * to be said is dropped here rather than said about an ask that has been superseded.
+     * what retries a picture that was refused the first time, which is why a standing refusal is
+     * dropped here rather than left over an ask that has been superseded.
      */
     fun enter() {
         watching = true
         refusedState.value = false
-        pendingEnter?.cancel()
-        pendingEnter = viewModelScope.launch { showPicture() }
+        pictureAsks.trySend(PictureAsk.Show())
     }
 
     /**
      * Goes back to sound only. Playback carries on; only the picture stops.
      *
-     * On the application scope rather than this view model's: this is called as the activity stops,
-     * which can be the activity finishing, and a scope that is being torn down would cancel the very
-     * command that hands back to audio.
+     * Replaces an [enter] that has not been sent yet, and follows one that has; see [pictureAsks].
      */
     fun exit() {
         watching = false
-        pendingEnter?.cancel()
-        applicationScope.launch { connection.exitVideo() }
+        pictureAsks.trySend(PictureAsk.Hide)
     }
 
     /**
@@ -292,53 +340,56 @@ class VideoViewModel @Inject constructor(
     fun setQuality(quality: VideoQuality) {
         viewModelScope.launch {
             playbackRepository.setVideoQuality(quality)
-            if (!connection.enterVideo(quality)) refusedState.value = true
+            pictureAsks.trySend(PictureAsk.Show(quality))
         }
     }
 
     /**
-     * Gives the player the screen's surface to draw on.
+     * Offers the screen's surface to draw on. The newest view offered is the one drawn on.
      *
      * @param view the surface, freshly created by the screen.
      */
-    fun attachSurface(view: SurfaceView) {
-        viewModelScope.launch { connection.attachVideoSurface(view) }
-    }
+    fun attachSurface(view: SurfaceView) = offer(VideoOutput.Screen(view))
 
     /**
-     * Takes the surface back before the screen destroys it.
-     *
-     * On the application scope for the reason [exit] is: this runs as the screen is disposed.
+     * Takes the surface back before the screen destroys it; the bar's texture, if it is still
+     * there, is given the picture again.
      *
      * @param view the surface handed over by [attachSurface].
      */
-    fun detachSurface(view: SurfaceView) {
-        applicationScope.launch { connection.detachVideoSurface(view) }
-    }
+    fun detachSurface(view: SurfaceView) = withdraw(VideoOutput.Screen(view))
 
     /**
-     * Gives the player the collapsed bar's texture to draw on.
+     * Offers the collapsed bar's texture to draw on. The newest view offered is the one drawn on.
      *
      * @param view the texture, freshly created by the bar.
      */
-    fun attachTexture(view: TextureView) {
-        viewModelScope.launch { connection.attachVideoTexture(view) }
-    }
+    fun attachTexture(view: TextureView) = offer(VideoOutput.Bar(view))
 
     /**
-     * Takes the texture back before the bar destroys it.
-     *
-     * On the application scope for the reason [detachSurface] is.
+     * Takes the texture back before the bar destroys it; the screen's surface, if it is still
+     * there, is given the picture again.
      *
      * @param view the texture handed over by [attachTexture].
      */
-    fun detachTexture(view: TextureView) {
-        applicationScope.launch { connection.detachVideoTexture(view) }
+    fun detachTexture(view: TextureView) = withdraw(VideoOutput.Bar(view))
+
+    /** Clears the player's error once the video screen has said it. */
+    fun onErrorShown() {
+        connection.clearError()
     }
 
-    /** Clears [VideoUiState.refused] once its snackbar has been shown. */
-    fun onRefusalShown() {
-        refusedState.value = false
+    /**
+     * Lets go of the picture's output and stops taking asks.
+     *
+     * The views have normally all left by now. One that has not is released on the application
+     * scope, and only if the player is still drawing on it: by the time this runs another activity
+     * may have given the player a view of its own.
+     */
+    override fun onCleared() {
+        pictureAsks.close()
+        val output = givenOutput ?: return
+        applicationScope.launch { connection.releaseVideoOutput(output) }
     }
 
     /**
@@ -355,7 +406,10 @@ class VideoViewModel @Inject constructor(
         viewModelScope.launch {
             val requested = downloadRepository.downloadVideo(episodeId, quality)
             downloadMessageState.value = if (requested) {
-                VideoDownloadMessage.Queued(quality)
+                VideoDownloadMessage.Queued(
+                    quality = quality,
+                    waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly,
+                )
             } else {
                 VideoDownloadMessage.Failed
             }
@@ -441,11 +495,33 @@ class VideoViewModel @Inject constructor(
     }
 
     /**
-     * Asks the service for the picture, noting a refusal.
+     * Adds [output] to the views the picture could be drawn on, as the newest.
      *
-     * At the downloaded rendition when the episode has a finished video download, else at the
-     * remembered one. A download is filed under its rendition, so asking for any other would
-     * stream a picture that is already on the device — or, offline, fail to show it at all.
+     * @param output a view that has just been created.
+     */
+    private fun offer(output: VideoOutput) {
+        outputs.remove(output)
+        outputs.add(output)
+        wantedOutput.value = outputs.lastOrNull()
+    }
+
+    /**
+     * Removes [output]; the picture goes to the newest view left, or nowhere.
+     *
+     * @param output a view that is about to be destroyed.
+     */
+    private fun withdraw(output: VideoOutput) {
+        outputs.remove(output)
+        wantedOutput.value = outputs.lastOrNull()
+    }
+
+    /**
+     * Asks the service for the picture, noting whether it was refused.
+     *
+     * At [chosen] when the user has just picked a rendition; otherwise at the downloaded rendition
+     * when the episode has a finished video download, else at the remembered one. A download is
+     * filed under its rendition, so asking for any other would stream a picture that is already on
+     * the device — or, offline, fail to show it at all.
      *
      * Not asked at all for a picture that is neither on the device nor fetchable. The video flavour
      * is one merged source, so asking takes the sound down until the player gives up on the picture
@@ -453,21 +529,47 @@ class VideoViewModel @Inject constructor(
      * only when the user says "watch". Offline with the audio downloaded, that would be an
      * interruption per visit to the app. It is said as a refusal instead, which the video screen
      * words if it is up and the bar lets pass.
+     *
+     * The episode is named in the ask. It is read here, a disk read before the command goes, and
+     * the queue can move on in between; the service then leaves the newcomer alone, and the
+     * collector that follows the episode asks again for it.
+     *
+     * Nor before the service has said what it holds. The video screen can be restored with the
+     * activity, ahead of the queue the service is still putting back, and asking then is asking an
+     * empty player: the answer is a refusal, said in the frame of an episode that is about to
+     * arrive and show its picture.
+     *
+     * @param chosen the rendition the user just picked, or null to work it out.
      */
-    private suspend fun showPicture() {
-        val episodeId = connection.playbackState.value.episodeId
+    private suspend fun showPicture(chosen: VideoQuality? = null) {
+        val episodeId = connection.playbackState.first { !it.isRestoring }.episodeId
         val downloaded = episodeId
             ?.let { downloadRepository.observeVideoDownloads().first()[it] }
             ?.takeIf { it.isComplete }
             ?.quality
-        val quality = downloaded ?: playbackRepository.observeVideoQuality().first()
-        // The screen may have gone while the rendition was being read; see [pendingEnter].
-        if (!watching) return
-        if (downloaded == null && !networkStatus.isOnline()) {
+        val quality = chosen ?: downloaded ?: playbackRepository.observeVideoQuality().first()
+        // The screen may have gone while the rendition was being read. A rendition picked by hand
+        // is shown regardless: the picker is only reachable from the picture.
+        if (chosen == null && !watching) return
+        if (quality != downloaded && !networkStatus.isOnline()) {
             refusedState.value = true
             return
         }
-        if (!connection.enterVideo(quality)) refusedState.value = true
+        refusedState.value = !connection.enterVideo(quality, episodeId)
+    }
+
+    /** What can be asked of the picture; see [pictureAsks]. */
+    private sealed interface PictureAsk {
+
+        /**
+         * Show the picture.
+         *
+         * @property quality the rendition the user just picked, or null for the usual one.
+         */
+        data class Show(val quality: VideoQuality? = null) : PictureAsk
+
+        /** Go back to sound only. */
+        data object Hide : PictureAsk
     }
 
     /**

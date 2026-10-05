@@ -10,13 +10,16 @@ package md.borisveriga.megapodcastplayer.core.media
 interface PlaybackQueueSource {
 
     /**
-     * Rebuilds the queue after the process was killed, for a system-initiated resumption — the user
-     * pressing play on a headset or on the Android 13+ resumption tile.
+     * Says where playback was left, for whoever rebuilds the player after the process was killed:
+     * the app's own cold start, a system-initiated resumption — the user pressing play on a headset
+     * or on the Android 13+ resumption tile — and the widget, which draws the same episode.
      *
-     * @return the durable queue in play order. The first entry is the one to resume; an empty list
-     *   tells the framework there is nothing to resume.
+     * One answer for all of them, so they cannot disagree about which episode comes back.
+     *
+     * @return the durable queue and the place in it; [ResumePoint.EMPTY] when there is nothing to
+     *   resume.
      */
-    suspend fun resumableQueue(): List<PlayableEpisode>
+    suspend fun resumePoint(): ResumePoint
 
     /**
      * Loads episodes by id, preserving the order of [episodeIds].
@@ -25,6 +28,57 @@ interface PlaybackQueueSource {
      * skipped rather than reported, because a stale queue entry is not an error the user can act on.
      */
     suspend fun playableEpisodes(episodeIds: List<String>): List<PlayableEpisode>
+}
+
+/**
+ * Where playback was left: the queue, which entry of it was loaded, and how far in.
+ *
+ * The index is part of the answer because the queue keeps the episodes *before* the one playing —
+ * they are what "previous" goes back to — so the head of the queue is not, in general, the episode
+ * the user was listening to.
+ *
+ * @property queue the durable queue in play order; empty when there is nothing to resume.
+ * @property index which entry of [queue] to resume. Zero when the queue is empty.
+ * @property positionMs how far into that entry playback had reached.
+ */
+data class ResumePoint(
+    val queue: List<PlayableEpisode>,
+    val index: Int,
+    val positionMs: Long,
+) {
+
+    /** The episode to resume, or null when there is nothing to resume. */
+    val episode: PlayableEpisode? get() = queue.getOrNull(index)
+
+    /**
+     * Drops the entries that fail [predicate] without losing the place.
+     *
+     * The index is re-resolved by episode id, so a dropped entry ahead of the current one does not
+     * shift the user onto its neighbour. When the current entry is itself dropped the point falls
+     * back to the head of what is left, at that episode's own stored position.
+     *
+     * @param predicate true for the entries to keep.
+     * @return the same point over the filtered queue.
+     */
+    fun keeping(predicate: (PlayableEpisode) -> Boolean): ResumePoint {
+        val kept = queue.filter(predicate)
+        val currentId = episode?.episode?.id
+        val keptIndex = kept.indexOfFirst { it.episode.id == currentId }
+        return if (keptIndex >= 0) {
+            ResumePoint(queue = kept, index = keptIndex, positionMs = positionMs)
+        } else {
+            ResumePoint(
+                queue = kept,
+                index = 0,
+                positionMs = kept.firstOrNull()?.episode?.positionMs ?: 0L,
+            )
+        }
+    }
+
+    companion object {
+        /** Nothing queued and nothing played. */
+        val EMPTY = ResumePoint(queue = emptyList(), index = 0, positionMs = 0L)
+    }
 }
 
 /**

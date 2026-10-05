@@ -13,9 +13,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Button
@@ -53,6 +54,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.component.RichText
+import md.borisveriga.megapodcastplayer.core.designsystem.component.VideoDownloadSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLine
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -60,6 +62,7 @@ import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
+import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 
 /**
  * One episode, read rather than played.
@@ -220,14 +223,20 @@ private fun EpisodeIdentity(
 /**
  * What the sheet knows about an episode's picture.
  *
+ * @property canPlay false when the picture could not be shown right now: there is no connection,
+ *   and the video is not on the phone. *Play video* is then disabled and says why.
  * @property download the video kept on the phone, or on its way; null when there is none.
  * @property qualities the renditions on offer, lowest first; null until asked for and answered.
  * @property qualitiesFailed true when asking for them failed.
+ * @property waitingForWifi whether downloads wait for Wi-Fi, which is then why a queued video has
+ *   not started.
  */
 data class EpisodeVideo(
+    val canPlay: Boolean = true,
     val download: VideoDownload? = null,
     val qualities: List<VideoQuality>? = null,
     val qualitiesFailed: Boolean = false,
+    val waitingForWifi: Boolean = false,
 )
 
 /**
@@ -302,7 +311,17 @@ private fun EpisodeActions(
                     label = stringResource(R.string.episode_play_video),
                     onClick = videoActions.onPlay,
                     filled = true,
+                    enabled = video.canPlay,
                     modifier = Modifier.weight(1f),
+                )
+            }
+            if (!video.canPlay) {
+                // Under the pair rather than in a snackbar: it is why one of the two is grey, and
+                // it stays true for as long as the button stays grey.
+                Text(
+                    text = stringResource(R.string.episode_play_video_offline),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -321,8 +340,8 @@ private fun EpisodeActions(
 
         if (video != null) {
             ActionButton(
-                icon = Icons.Rounded.OndemandVideo,
-                label = videoDownloadLabel(video.download),
+                icon = videoDownloadIcon(video.download),
+                label = videoDownloadLabel(video.download, video.waitingForWifi),
                 onClick = {
                     videoActions.onRequestQualities()
                     qualityDialogOpen = true
@@ -333,7 +352,8 @@ private fun EpisodeActions(
     }
 
     if (qualityDialogOpen && video != null) {
-        VideoDownloadDialog(
+        VideoDownloadSheet(
+            waitingForWifi = video.waitingForWifi,
             qualities = video.qualities,
             failed = video.qualitiesFailed,
             download = video.download,
@@ -341,7 +361,7 @@ private fun EpisodeActions(
                 qualityDialogOpen = false
                 videoActions.onDownload(quality)
             },
-            onRemoveDownload = {
+            onDelete = {
                 qualityDialogOpen = false
                 videoActions.onRemoveDownload()
             },
@@ -358,6 +378,7 @@ private fun EpisodeActions(
  * @param onClick the handler.
  * @param modifier layout modifier.
  * @param filled true for a play button, which is filled; downloads are tonal, a step quieter.
+ * @param enabled false when the action cannot be taken right now; the caller says why beside it.
  */
 @Composable
 private fun ActionButton(
@@ -366,6 +387,7 @@ private fun ActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     filled: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val content: @Composable () -> Unit = {
         Icon(imageVector = icon, contentDescription = null)
@@ -377,9 +399,9 @@ private fun ActionButton(
         )
     }
     if (filled) {
-        Button(onClick = onClick, modifier = modifier) { content() }
+        Button(onClick = onClick, modifier = modifier, enabled = enabled) { content() }
     } else {
-        FilledTonalButton(onClick = onClick, modifier = modifier) { content() }
+        FilledTonalButton(onClick = onClick, modifier = modifier, enabled = enabled) { content() }
     }
 }
 
@@ -405,19 +427,47 @@ private fun Episode.playLabel(): String {
 }
 
 /**
- * What the *Download video* button says: the action while there is no video, its state once there
- * is one — the tap opens the dialog either way, where it can be changed or deleted.
+ * The glyph for the *Download video* button: the download arrow, in the three shapes the video
+ * screen's own download button takes — nothing kept or failed, on its way, here.
+ *
+ * The arrow and nothing else, because a download button wears the download glyph: this one used to
+ * wear a film reel, and the screen glyph beside it means watching, so a button that fetched a file
+ * looked like a second way to play.
  *
  * @param download the episode's downloaded video, if any.
  */
-@Composable
-private fun videoDownloadLabel(download: VideoDownload?): String {
-    val quality = download?.let { stringResource(R.string.episode_video_quality, it.quality.height) }
-    return when (download?.state) {
-        null, DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
-            stringResource(R.string.episode_download_video)
+private fun videoDownloadIcon(download: VideoDownload?): ImageVector = when (download?.state) {
+    null, DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.Download
+    DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Downloading
+    DownloadState.COMPLETED -> Icons.Rounded.DownloadDone
+}
 
-        DownloadState.QUEUED -> stringResource(R.string.episode_video_download_waiting, quality.orEmpty())
+/**
+ * What the *Download video* button says: the action while there is no video, its state once there
+ * is one — the tap opens the dialog either way, where it can be changed or deleted.
+ *
+ * A failed download says so rather than going back to *Download video*, as if it had never been
+ * tried; and one waiting says what for.
+ *
+ * @param download the episode's downloaded video, if any.
+ * @param waitingForWifi whether a queued download is waiting for Wi-Fi rather than in line.
+ */
+@Composable
+private fun videoDownloadLabel(download: VideoDownload?, waitingForWifi: Boolean): String {
+    val quality = download?.let { formatVideoQuality(it.quality.height) }
+    return when (download?.state) {
+        null, DownloadState.NOT_DOWNLOADED -> stringResource(R.string.episode_download_video)
+
+        DownloadState.FAILED -> stringResource(R.string.episode_video_download_failed)
+
+        DownloadState.QUEUED -> stringResource(
+            if (waitingForWifi) {
+                R.string.episode_video_download_waiting_wifi
+            } else {
+                R.string.episode_video_download_waiting
+            },
+            quality.orEmpty(),
+        )
 
         DownloadState.DOWNLOADING -> stringResource(
             R.string.episode_video_download_progress,
@@ -544,7 +594,7 @@ private fun Episode.metadataLine(now: Instant): String {
 private fun Episode.downloadIcon(): ImageVector = when (downloadState) {
     DownloadState.COMPLETED -> Icons.Rounded.Delete
     DownloadState.QUEUED, DownloadState.DOWNLOADING -> Icons.Rounded.Close
-    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.FileDownload
+    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> Icons.Rounded.Download
 }
 
 /**
@@ -561,8 +611,12 @@ private fun Episode.downloadIcon(): ImageVector = when (downloadState) {
  */
 internal fun Episode.downloadLabelRes(hasVideo: Boolean, hasVideoDownload: Boolean): Int =
     when (downloadState) {
-        DownloadState.NOT_DOWNLOADED, DownloadState.FAILED ->
+        DownloadState.NOT_DOWNLOADED ->
             if (hasVideo) R.string.episode_download_audio else R.string.podcast_action_download
+
+        // Said as the failure it is, with the way out: the same tap asks again.
+        DownloadState.FAILED ->
+            if (hasVideo) R.string.episode_audio_download_failed else R.string.episode_download_failed
 
         DownloadState.QUEUED, DownloadState.DOWNLOADING -> when {
             hasVideoDownload -> R.string.episode_cancel_audio_and_video_download

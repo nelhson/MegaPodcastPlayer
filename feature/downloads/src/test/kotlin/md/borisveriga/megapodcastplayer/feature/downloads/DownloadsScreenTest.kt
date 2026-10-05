@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasScrollAction
@@ -22,6 +23,8 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -94,6 +97,8 @@ class DownloadsScreenTest {
         onExportList: () -> Unit = {},
         scrollToTopSignal: Int = 0,
         deleteAfterPlaying: Boolean = false,
+        videoDownloads: Map<String, VideoDownload> = emptyMap(),
+        onEpisodePlayVideo: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -110,6 +115,7 @@ class DownloadsScreenTest {
                         freeBytes = 4_000_000_000L,
                         unmeteredOnly = unmeteredOnly,
                         deleteAfterPlaying = deleteAfterPlaying,
+                        videoDownloads = videoDownloads,
                         isLoading = false,
                     ),
                     onEpisodeClick = onEpisodeClick,
@@ -124,9 +130,94 @@ class DownloadsScreenTest {
                     onOpenSettings = onOpenSettings,
                     onExportList = onExportList,
                     scrollToTopSignal = scrollToTopSignal,
+                    onEpisodePlayVideo = onEpisodePlayVideo,
                 )
             }
         }
+    }
+
+    /**
+     * The badges are pills at the end of the row, and where they are is half of what they say.
+     * Read out after an episode's title, a bare "Audio" says none of it.
+     */
+    @Test
+    fun `the downloaded badges are spoken as what is on the phone`() {
+        setScreen(
+            listOf(download("a")),
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithContentDescription("Audio on this phone", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithContentDescription("Video on this phone, 720p", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithContentDescription("Video on this phone, 720p", useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `a row whose video is still arriving says so, and its size waits for it`() {
+        setScreen(
+            listOf(download("a")),
+            videoDownloads = mapOf(
+                "a" to VideoDownload(VideoQuality(720), DownloadState.DOWNLOADING, 42f, bytes = 100_000_000L),
+            ),
+        )
+
+        // The sound is ready and the picture is not: the row used to look finished.
+        composeRule.onNodeWithText("90 MB · Video 42%", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a row whose video is on the phone counts it in its size`() {
+        setScreen(
+            listOf(download("a")),
+            videoDownloads = mapOf(
+                "a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f, bytes = 310_000_000L),
+            ),
+        )
+
+        composeRule.onNodeWithText("400 MB", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a failed video is named on its row`() {
+        setScreen(
+            listOf(download("a")),
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.FAILED, 0f)),
+        )
+
+        composeRule.onNodeWithText("Video download failed", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a video waiting for wi-fi says which kind of waiting it is doing`() {
+        setScreen(
+            listOf(download("a")),
+            unmeteredOnly = true,
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.QUEUED, 0f)),
+        )
+
+        composeRule.onNodeWithText("Video waiting for Wi-Fi", substring = true).assertExists()
+    }
+
+    @Test
+    fun `the video badge plays the episode as video`() {
+        var watched: String? = null
+        var tapped: String? = null
+        setScreen(
+            listOf(download("a")),
+            onEpisodeClick = { tapped = it },
+            onEpisodePlayVideo = { watched = it },
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithContentDescription("Video on this phone, 720p").assertHasClickAction()
+            .performClick()
+
+        assertEquals("a", watched)
+        // The badge's tap is its own, not also the row's.
+        assertNull(tapped)
     }
 
     /**
@@ -300,6 +391,44 @@ class DownloadsScreenTest {
         composeRule.onAllNodesWithText("Delete").onLast().performClick()
 
         assertEquals("a", removed)
+    }
+
+    @Test
+    fun `deleting an episode with its video says both go, and what they free`() {
+        var removed: String? = null
+        setScreen(
+            listOf(download("a")),
+            onEpisodeRemove = { removed = it },
+            videoDownloads = mapOf(
+                "a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f, bytes = 310_000_000L),
+            ),
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Delete audio and video")
+
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertExists()
+        // 90 MB of sound and 310 MB of picture: the question counts both.
+        composeRule.onNodeWithText("This frees 400 MB", substring = true).assertExists()
+        composeRule.onAllNodesWithText("Delete").onLast().performClick()
+        assertEquals("a", removed)
+    }
+
+    @Test
+    fun `calling off a transfer that takes a video with it asks first`() {
+        var removed: String? = null
+        setScreen(
+            listOf(download("a", state = DownloadState.DOWNLOADING, downloadPercent = 42f)),
+            onEpisodeRemove = { removed = it },
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithText("Episode a")
+            .performCustomAccessibilityActionWithLabel("Cancel audio and video")
+
+        // A finished picture goes with the unfinished sound, and that is something lost.
+        composeRule.onNodeWithText("Delete the audio and video of \"Episode a\"?").assertExists()
+        assertNull(removed)
     }
 
     @Test

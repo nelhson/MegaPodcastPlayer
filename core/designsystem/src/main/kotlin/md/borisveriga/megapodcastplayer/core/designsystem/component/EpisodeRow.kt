@@ -60,6 +60,9 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  * @param isPlayed whether the episode has been finished; dims the row.
  * @param isDownloaded whether the audio is already on the device; marks the row so a list can be
  *   read down for what will play without a connection.
+ * @param isVideoDownloaded whether the episode's video is on the device too; a second mark beside
+ *   the first, because "plays offline" and "plays offline as a picture" are different answers to
+ *   the same question, and the second one costs several times the space.
  * @param playedFraction progress through the episode in `0f..1f`; drawn as a hairline under the row.
  * @param isNowPlaying whether this episode is the one loaded in the player.
  * @param isPlaying whether that episode is actually running, as opposed to loaded and paused.
@@ -86,6 +89,7 @@ fun EpisodeRow(
     isUnplayed: Boolean = false,
     isPlayed: Boolean = false,
     isDownloaded: Boolean = false,
+    isVideoDownloaded: Boolean = false,
     playedFraction: Float = 0f,
     isNowPlaying: Boolean = false,
     isPlaying: Boolean = false,
@@ -165,6 +169,7 @@ fun EpisodeRow(
                         isNowPlaying = isNowPlaying,
                         isPlaying = isPlaying,
                         isDownloaded = isDownloaded,
+                        isVideoDownloaded = isVideoDownloaded,
                         showNowPlayingBars = showNowPlayingBars,
                     )
                     Text(
@@ -234,6 +239,7 @@ fun EpisodeRow(
  * @param isNowPlaying whether this is the episode the player has loaded.
  * @param isPlaying whether that episode is running, which the bars show.
  * @param isDownloaded whether the audio is on the device.
+ * @param isVideoDownloaded whether the video is on the device too.
  * @param showNowPlayingBars whether the loaded episode is marked here at all; false where the
  *   caller draws its own play/pause control instead.
  */
@@ -243,6 +249,7 @@ private fun TitleMarks(
     isNowPlaying: Boolean,
     isPlaying: Boolean,
     isDownloaded: Boolean,
+    isVideoDownloaded: Boolean,
     showNowPlayingBars: Boolean,
 ) {
     val marksNowPlaying = isNowPlaying && showNowPlayingBars
@@ -260,6 +267,9 @@ private fun TitleMarks(
     }
     if (isDownloaded) {
         DownloadedMark(contentDescription = stringResource(R.string.designsystem_downloaded))
+    }
+    if (isVideoDownloaded) {
+        DownloadedVideoMark(contentDescription = stringResource(R.string.designsystem_video_downloaded))
     }
 }
 
@@ -324,6 +334,14 @@ internal fun EpisodeRowPreview() {
                 playedFraction = 0.3f,
                 isNowPlaying = true,
                 isPlaying = true,
+                onClick = {},
+            )
+            EpisodeRow(
+                title = "Did a 50 year old military secret just solve agent prompt injection?",
+                showTitle = "Uploads from Fireship",
+                metadata = "5 min · 3 days ago",
+                isDownloaded = true,
+                isVideoDownloaded = true,
                 onClick = {},
             )
             EpisodeRow(

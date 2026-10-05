@@ -16,6 +16,7 @@ import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackProgressRecorder
 import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
+import md.borisveriga.megapodcastplayer.core.media.ResumePoint
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
@@ -99,17 +100,27 @@ class DefaultPlaybackRepository @Inject constructor(
     override suspend fun setAutoPlayNext(enabled: Boolean) =
         userPreferences.setAutoPlayNext(enabled)
 
-    override suspend fun resumableQueue(): List<PlayableEpisode> = withContext(ioDispatcher) {
+    override suspend fun resumePoint(): ResumePoint = withContext(ioDispatcher) {
+        val lastPlayedId = userPreferences.lastPlayedEpisodeId.first()
         val queued = queueDao.getQueuedWithShow().map { it.asPlayableEpisode() }
-        if (queued.isNotEmpty()) return@withContext queued
+        if (queued.isNotEmpty()) {
+            // The queue keeps what was played before the current episode, so the place in it is
+            // the last played episode's, not the head. An id the queue no longer holds — never
+            // recorded, or removed since — falls back to the head, which is all there is to go on.
+            val index = queued.indexOfFirst { it.episode.id == lastPlayedId }.coerceAtLeast(0)
+            return@withContext ResumePoint(
+                queue = queued,
+                index = index,
+                positionMs = queued[index].episode.positionMs,
+            )
+        }
 
         // Nothing queued: the user was playing a single episode straight from a show's list, so
         // resume that rather than telling the system there is nothing to resume.
-        val lastPlayedId = userPreferences.lastPlayedEpisodeId.first()
-            ?: return@withContext emptyList()
-        listOfNotNull(
-            episodeDao.getWithShowByIds(listOf(lastPlayedId)).firstOrNull()?.asPlayableEpisode(),
-        )
+        val lastPlayed = lastPlayedId
+            ?.let { episodeDao.getWithShowByIds(listOf(it)).firstOrNull()?.asPlayableEpisode() }
+            ?: return@withContext ResumePoint.EMPTY
+        ResumePoint(queue = listOf(lastPlayed), index = 0, positionMs = lastPlayed.episode.positionMs)
     }
 
     override suspend fun playableEpisodes(episodeIds: List<String>): List<PlayableEpisode> =

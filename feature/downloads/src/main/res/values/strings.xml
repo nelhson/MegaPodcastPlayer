@@ -34,6 +34,12 @@
     -->
     <string name="downloads_action_delete">Delete</string>
     <string name="downloads_action_cancel">Cancel download</string>
+    <!--
+        The same two when the episode's video is downloaded too: deleting the sound takes the
+        picture with it, and a label that named only the sound undersold what was going.
+    -->
+    <string name="downloads_action_delete_with_video">Delete audio and video</string>
+    <string name="downloads_action_cancel_with_video">Cancel audio and video</string>
     <!-- Only on a row that is actually waiting for Wi-Fi. Kept short: it is drawn under an icon. -->
     <string name="downloads_action_download_now">Download now</string>
     <!-- Only on a failed row. Tapping the row plays it; the swipe is what asks for it again. -->
@@ -42,13 +48,6 @@
     <!-- A drag is invisible to a screen reader, so the reorder is published as these two actions. -->
     <string name="downloads_move_up">Move up</string>
     <string name="downloads_move_down">Move down</string>
-
-    <!-- Confirmation before deleting audio, which no second gesture undoes. %1$s is the episode. -->
-    <string name="downloads_remove_dialog_title">Delete \"%1$s\"?</string>
-    <!-- %1$s is the freed size, e.g. "148 MB". -->
-    <string name="downloads_remove_dialog_text">This frees %1$s. The episode stays in your library and can be downloaded again.</string>
-    <string name="downloads_remove_confirm">Delete</string>
-    <string name="downloads_cancel">Cancel</string>
 
     <!-- The storage card. %1$s is a size, e.g. "1.4 GB". -->
     <string name="downloads_storage_used">%1$s downloaded</string>
@@ -91,6 +90,16 @@
     <string name="downloads_state_queued_wifi">Waiting for Wi-Fi</string>
     <!-- Names the way out, because a tap plays the row rather than retrying it. -->
     <string name="downloads_state_failed">Download failed — swipe to try again</string>
+    <!--
+        The same states for the episode's video, after the sound's part of the line. The picture is
+        often the larger, slower half, and a row whose sound was ready while its video waited or
+        failed used to look finished. Nothing is said once the video is on the phone: the badge says
+        it. The failure names the way out the sound's does, since the same swipe asks again.
+    -->
+    <string name="downloads_state_video_downloading">Video %1$d%%</string>
+    <string name="downloads_state_video_queued">Video waiting to download</string>
+    <string name="downloads_state_video_queued_wifi">Video waiting for Wi-Fi</string>
+    <string name="downloads_state_video_failed">Video download failed</string>
 
     <!--
         Said after "Download now". Names the wider effect on purpose: Media3 enforces one network
@@ -120,8 +129,17 @@
 
     <!--
         Badges at the end of a finished row, naming what of the episode is on the phone: its sound,
-        its picture, or both. %1$d is the video's height in pixels, e.g. 720.
+        its picture, or both. %1$s is the video's quality, already formatted, e.g. "720p".
     -->
     <string name="downloads_badge_audio">Audio</string>
-    <string name="downloads_badge_video">Video · %1$dp</string>
+    <string name="downloads_badge_video">Video · %1$s</string>
+    <!--
+        The same two, spoken. Drawn, a pill at the end of a row in Downloads says "on this phone" by
+        where it is; read out, a bare "Audio" after an episode's title says nothing, so the spoken
+        form says it.
+    -->
+    <string name="downloads_badge_audio_spoken">Audio on this phone</string>
+    <string name="downloads_badge_video_spoken">Video on this phone, %1$s</string>
+    <!-- The video badge is also the way to watch it; what a tap on it does, spoken. -->
+    <string name="downloads_badge_play_video">Play video</string>
 </resources>

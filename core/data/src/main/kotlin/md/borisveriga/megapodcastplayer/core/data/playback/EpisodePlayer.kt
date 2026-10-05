@@ -3,13 +3,10 @@ package md.borisveriga.megapodcastplayer.core.data.playback
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
-import md.borisveriga.megapodcastplayer.core.media.PlaybackQueueSource
 import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
 import md.borisveriga.megapodcastplayer.core.model.Episode
 
@@ -22,34 +19,15 @@ import md.borisveriga.megapodcastplayer.core.model.Episode
  * so no screen has to know how to do the lookup.
  *
  * @property playbackRepository resolves ids and owns the durable queue.
- * @property queueSource the same object seen through the service's read interface, which is where
- *   the "resume the last played episode when nothing is queued" rule lives.
  * @property showSettings the per-show intro to skip; see [play].
  * @property connection the player itself.
  */
 @Singleton
 class EpisodePlayer @Inject constructor(
     private val playbackRepository: PlaybackRepository,
-    private val queueSource: PlaybackQueueSource,
     private val showSettings: ShowSettingsRepository,
     private val connection: PlaybackConnection,
 ) {
-
-    /**
-     * Serialises [restoreQueue] so that the first caller restores the queue and every subsequent
-     * one is a no-op, however many view models ask.
-     *
-     * A lock around the whole restore rather than a flag inside it, because the flag alone leaves a
-     * window: two callers arriving together both read it before either sets it, both find the
-     * player empty, and both load the queue. That was harmless while every caller loaded it paused
-     * — the second load repeated the first — and stopped being harmless when [resume] started
-     * pressing play afterwards, since a second load landing after that play would pause what the
-     * user had just asked to carry on.
-     */
-    private val restoreLock = Mutex()
-
-    /** Whether the once-per-process restore has happened; read and written under [restoreLock]. */
-    private var queueRestored = false
 
     /**
      * Plays an episode now, resuming from its stored position.
@@ -316,55 +294,20 @@ class EpisodePlayer @Inject constructor(
 
     /**
      * Carries on with whatever the app would carry on with — what the launcher's *Resume* shortcut
-     * asks for.
+     * and the widget's button ask for.
      *
-     * Deliberately built out of the two things that already happen when the app is opened by hand
-     * and the mini player's play button is pressed: [restoreQueue] puts back the queue the process
-     * was killed holding, and then the player is simply told to play. Resolving "the last episode"
-     * a second way here would be a second answer to a question [PlaybackQueueSource.resumableQueue]
-     * already answers — and the two would disagree the first time one of them changed.
-     *
-     * The order matters on a cold start, where nothing is loaded yet: the restore is what gives the
-     * play something to act on. It is also why the restore's once-per-process guard is left to do
-     * its job rather than worked around — whichever of this and the first screen's restore arrives
-     * first wins, and the other is a no-op instead of a second queue overwriting the first.
+     * The service puts the persisted queue back by itself when it starts, so there is nothing to
+     * restore here and no second answer to "the last episode": this waits for that restore, and then
+     * the player is simply told to play. The wait is what matters on a cold start, where the player
+     * is empty for as long as the database read takes and a play sent into it would do nothing.
      *
      * @return true if there was something to resume; false when the queue is empty and nothing is
      *   loaded, which is the caller's cue to open the app rather than an empty player.
      */
     suspend fun resume(): Boolean {
-        restoreQueue()
+        connection.awaitRestored()
         if (connection.currentState().episodeId == null) return false
         connection.play()
         return true
-    }
-
-    /**
-     * Loads the persisted queue into a player that has none — a cold start.
-     *
-     * Loaded paused: the mini player appears where the user left it, but launching the app does not
-     * start making noise. Runs at most once per process, and once at a time; see [restoreLock].
-     */
-    suspend fun restoreQueue() = restoreLock.withLock {
-        if (queueRestored) return@withLock
-
-        val state = connection.currentState()
-        // Not reachable yet — the service is still starting. Leave the flag alone so the next
-        // caller tries again; giving up here would leave the player permanently empty while the
-        // database still holds a queue, and the first edit would then overwrite it.
-        if (!state.isConnected) return@withLock
-
-        queueRestored = true
-        if (state.queueEpisodeIds.isNotEmpty()) return@withLock
-
-        val queue = queueSource.resumableQueue()
-        if (queue.isEmpty()) return@withLock
-
-        connection.setQueue(
-            episodes = queue,
-            startIndex = 0,
-            startPositionMs = queue.first().episode.positionMs,
-            playWhenReady = false,
-        )
     }
 }

@@ -49,6 +49,8 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  *   cancel, remove or retry — and is the caller's to interpret.
  * @param modifier layout modifier.
  * @param enabled whether the control accepts input.
+ * @param removesVideo true when the episode's video is downloaded too, so the finished face's tap
+ *   deletes both and says so; the glyph is the same, since the button is about the episode.
  */
 @Composable
 fun DownloadButton(
@@ -57,6 +59,7 @@ fun DownloadButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    removesVideo: Boolean = false,
 ) {
     val description = when (state) {
         DownloadState.NOT_DOWNLOADED -> stringResource(R.string.designsystem_download)
@@ -68,7 +71,13 @@ fun DownloadButton(
             progressPercent.roundToInt(),
         )
 
-        DownloadState.COMPLETED -> stringResource(R.string.designsystem_download_remove)
+        DownloadState.COMPLETED -> stringResource(
+            if (removesVideo) {
+                R.string.designsystem_download_remove_with_video
+            } else {
+                R.string.designsystem_download_remove
+            },
+        )
 
         DownloadState.FAILED -> stringResource(R.string.designsystem_download_retry)
     }

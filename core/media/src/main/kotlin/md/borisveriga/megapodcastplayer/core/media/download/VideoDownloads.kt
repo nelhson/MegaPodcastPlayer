@@ -61,5 +61,10 @@ internal fun Download.asVideoDownloadOrNull(): Pair<String, VideoDownload>? {
     val quality = youTubeVideoOnlyRefOrNull(request.uri.toString())?.quality ?: return null
     val state = downloadStateOf(state)
     if (state == DownloadState.NOT_DOWNLOADED) return null
-    return episodeId to VideoDownload(quality = quality, state = state, percent = percentOf(state))
+    return episodeId to VideoDownload(
+        quality = quality,
+        state = state,
+        percent = percentOf(state),
+        bytes = bytesDownloaded,
+    )
 }

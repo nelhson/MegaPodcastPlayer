@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistRemove
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Tune
@@ -64,6 +65,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -82,6 +84,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
+import md.borisveriga.megapodcastplayer.core.common.format.formatBytes
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
@@ -91,6 +94,7 @@ import md.borisveriga.megapodcastplayer.core.data.export.ExportStage
 import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdrop
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DeleteDownloadDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedCount
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
@@ -106,6 +110,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLine
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
+import md.borisveriga.megapodcastplayer.core.designsystem.component.removalTakesVideo
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.ReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.moveActions
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableLayout
@@ -118,11 +123,13 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
+import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.model.orderedBy
 import md.borisveriga.megapodcastplayer.core.model.showShareText
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
@@ -132,10 +139,9 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * Podcast detail screen: the show's header and its episode list.
  *
  * @param onBack invoked when the user navigates back, and automatically once the show is removed.
- * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the caller
- *   can open the full player.
- * @param onEpisodeWatching invoked once an episode started as video — by the sheet's *Play video*
- *   or a row's video button — is loaded, so the caller can open the video screen.
+ * @param onOpenPlayer invoked once an episode has been handed to the player, so the shell can
+ *   open the player on it: as sound for the play button and a chapter, as picture for the sheet's
+ *   *Play video* and a row's video button.
  * @param modifier layout modifier.
  * @param showBackButton false when the screen is rendered as the detail pane of a two-pane layout,
  *   where the list is still on screen and a back arrow would be misleading.
@@ -144,8 +150,7 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 @Composable
 fun PodcastDetailRoute(
     onBack: () -> Unit,
-    onEpisodePlaying: () -> Unit,
-    onEpisodeWatching: () -> Unit,
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
     viewModel: PodcastDetailViewModel = hiltViewModel(),
@@ -171,11 +176,18 @@ fun PodcastDetailRoute(
         // A tap opens the episode; the row's own play button plays it. See the sheet's KDoc for
         // why an episode had to become readable before it could become one tap away.
         onEpisodeClick = viewModel::openEpisode,
-        onEpisodePlay = { episodeId -> viewModel.togglePlay(episodeId, onEpisodePlaying) },
-        onEpisodePlayFrom = { episodeId, positionMs ->
-            viewModel.playFrom(episodeId, positionMs, onEpisodePlaying)
+        onEpisodePlay = { episodeId ->
+            viewModel.togglePlay(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
         },
-        onEpisodeWatch = { episodeId -> viewModel.watchEpisode(episodeId, onEpisodeWatching) },
+        onEpisodePlayFrom = { episodeId, positionMs ->
+            viewModel.playFrom(episodeId, positionMs) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+        },
+        onEpisodeWatch = { episodeId ->
+            viewModel.watchEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.VIDEO) }
+        },
+        onEpisodeListen = { episodeId ->
+            viewModel.listenToEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+        },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
         onEpisodePlayNext = viewModel::playNext,
@@ -209,6 +221,8 @@ fun PodcastDetailRoute(
  * @param onEpisodePlay plays an episode, or pauses the one already playing.
  * @param onEpisodePlayFrom plays an episode from a position — what a chapter tap does.
  * @param onEpisodeWatch plays a YouTube episode and opens it as video.
+ * @param onEpisodeListen plays an episode as sound — the sheet's *Play audio*, which unlike the
+ *   row's button never pauses. Defaults to [onEpisodePlay] for callers that draw no sheet.
  * @param onEpisodeSheetDismiss closes the episode sheet.
  * @param onVideoQualitiesRequest asks which renditions an episode's video comes in.
  * @param onVideoDownload downloads an episode's video at a rendition.
@@ -258,6 +272,7 @@ fun PodcastDetailScreen(
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true,
+    onEpisodeListen: (String) -> Unit = onEpisodePlay,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
@@ -270,6 +285,8 @@ fun PodcastDetailScreen(
     val filter = uiState.settings.episodeFilter
     // Saveable so opening the Fold 7 mid-decision does not close the sheet.
     var showSettingsOpen by rememberSaveable { mutableStateOf(false) }
+
+    val toggleDownload = rememberAskingDownloadToggle(uiState, onEpisodeDownloadToggle)
     val listState = rememberLazyListState()
     val moveUp = stringResource(R.string.podcast_move_up)
     val moveDown = stringResource(R.string.podcast_move_down)
@@ -315,23 +332,25 @@ fun PodcastDetailScreen(
             // Only a YouTube episode has a picture; any other gets no video actions at all.
             video = if (youTubeVideoIdOrNull(episode.audioUrl) != null) {
                 EpisodeVideo(
+                    canPlay = uiState.canPlayVideo(episode.id),
                     download = uiState.openVideoDownload,
                     qualities = uiState.videoQualities,
                     qualitiesFailed = uiState.videoQualitiesFailed,
+                    waitingForWifi = uiState.unmeteredOnly,
                 )
             } else {
                 null
             },
             onPlay = {
                 onEpisodeSheetDismiss()
-                onEpisodePlay(episode.id)
+                onEpisodeListen(episode.id)
             },
             onPlayChapter = { chapter ->
                 onEpisodeSheetDismiss()
                 onEpisodePlayFrom(episode.id, chapter.startMs)
             },
             // The downloads leave the sheet open: both change what the sheet itself shows.
-            onToggleDownload = { onEpisodeDownloadToggle(episode.id) },
+            onToggleDownload = { toggleDownload(episode.id) },
             videoActions = EpisodeVideoActions(
                 onPlay = {
                     onEpisodeSheetDismiss()
@@ -527,7 +546,10 @@ fun PodcastDetailScreen(
                                 } else {
                                     null
                                 },
-                                onDownloadToggle = { onEpisodeDownloadToggle(episode.id) },
+                                canWatch = uiState.canPlayVideo(episode.id),
+                                hasVideoDownload = uiState.videoDownloads[episode.id] != null,
+                                isVideoDownloaded = uiState.videoDownloads[episode.id]?.isComplete == true,
+                                onDownloadToggle = { toggleDownload(episode.id) },
                                 onPlayNext = { onEpisodePlayNext(episode.id) },
                             )
                         }
@@ -569,6 +591,8 @@ fun PodcastDetailScreen(
  * @param onPlay plays it, or pauses it when it is the one already playing.
  * @param onWatch plays it as video, or null for an episode with no picture, which draws no second
  *   button at all.
+ * @param canWatch false when the picture could not be shown right now — offline, and the video not
+ *   downloaded — which draws the second button disabled.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
  * @param onPlayNext queues it to play after whatever is playing now.
@@ -587,12 +611,15 @@ private fun EpisodeListRow(
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onWatch: (() -> Unit)?,
+    canWatch: Boolean,
+    hasVideoDownload: Boolean,
+    isVideoDownloaded: Boolean,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
 ) {
     val isDragging = drag.draggingKey == episode.id
     val isNowPlaying = nowPlaying.episodeId == episode.id
-    val download = episode.downloadSwipeAction(onDownloadToggle)
+    val download = episode.downloadSwipeAction(hasVideoDownload, onDownloadToggle)
     val playNext = SwipeAction(
         icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
         label = stringResource(R.string.podcast_action_play_next),
@@ -648,6 +675,7 @@ private fun EpisodeListRow(
             // down for what will play on a train with no signal, and the only ways to find out here
             // were the Downloaded filter chip or swiping a row to see what the backdrop said.
             isDownloaded = episode.downloadState == DownloadState.COMPLETED,
+            isVideoDownloaded = isVideoDownloaded,
             playedFraction = episode.playedFraction,
             isNowPlaying = isNowPlaying,
             isPlaying = nowPlaying.isPlaying,
@@ -688,7 +716,7 @@ private fun EpisodeListRow(
                 )
                 // The second way to take the episode, and second in the row: listening is what a
                 // podcast app is for, and the play button stays the first thing the thumb meets.
-                onWatch?.let { watch -> WatchButton(onClick = watch) }
+                onWatch?.let { watch -> WatchButton(onClick = watch, enabled = canWatch) }
             },
         )
     }
@@ -701,25 +729,44 @@ private fun EpisodeListRow(
  * two read as a pair of ways to start the one episode — in the tertiary container, which keeps it
  * a step apart from the control that is also the now-playing mark.
  *
+ * Disabled, it stays where it is, dimmed: the episode still has a picture, there is only no way
+ * to show it right now, and a button that vanished offline would move the row's other controls.
+ * The reason is spoken with it, since a dimmed circle says nothing to a screen reader.
+ *
+ * The circle is drawn at the play button's size and touched at a full touch target round it, the
+ * bargain a Material icon button makes: a 40 dp target at the end of a row was the one control
+ * there a thumb could miss.
+ *
  * @param onClick plays the episode and opens the video screen.
  * @param modifier layout modifier.
+ * @param enabled false when the picture could not be shown: offline, and not downloaded.
  */
 @Composable
-private fun WatchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun WatchButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val offline = stringResource(R.string.episode_play_video_offline)
     Box(
         modifier = modifier
-            .size(WatchButtonSize)
+            .size(WatchTargetSize)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.tertiaryContainer)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .then(if (enabled) Modifier else Modifier.semantics { stateDescription = offline }),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.SmartDisplay,
-            contentDescription = stringResource(R.string.episode_play_video),
-            tint = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.size(WatchGlyphSize),
-        )
+        Box(
+            modifier = Modifier
+                .size(WatchButtonSize)
+                .clip(CircleShape)
+                .alpha(if (enabled) 1f else DISABLED_ALPHA)
+                .background(MaterialTheme.colorScheme.tertiaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.SmartDisplay,
+                contentDescription = stringResource(R.string.episode_play_video),
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.size(WatchGlyphSize),
+            )
+        }
     }
 }
 
@@ -743,14 +790,20 @@ private fun Episode.runningDownload(): DownloadState? = downloadState.takeIf {
  * action, calling off a transfer takes nothing away, and deleting audio is the one that should look
  * like it.
  *
+ * The two that take the copy away name the video when the episode has one downloaded too:
+ * removing the sound takes the picture with it.
+ *
+ * @param hasVideoDownload whether the episode's video is downloaded or on its way.
  * @param onToggle the handler; the same one for every state, as the view model's toggle already
  *   reads the state to decide.
  * @return the action to hand to [SwipeActionsRow].
  */
 @Composable
-private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = when (downloadState) {
-    // A failed download is retried rather than cleared, so it reads as "download" too.
-    DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> SwipeAction(
+private fun Episode.downloadSwipeAction(
+    hasVideoDownload: Boolean,
+    onToggle: () -> Unit,
+): SwipeAction = when (downloadState) {
+    DownloadState.NOT_DOWNLOADED -> SwipeAction(
         icon = Icons.Rounded.FileDownload,
         label = stringResource(R.string.podcast_action_download),
         containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -758,9 +811,25 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
         onClick = onToggle,
     )
 
+    // A failed download is retried rather than cleared. It used to read "Download", as if it had
+    // never been tried; Downloads' own swipe says "Try again", and so does this one now.
+    DownloadState.FAILED -> SwipeAction(
+        icon = Icons.Rounded.Refresh,
+        label = stringResource(R.string.podcast_action_retry_download),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        onClick = onToggle,
+    )
+
     DownloadState.QUEUED, DownloadState.DOWNLOADING -> SwipeAction(
         icon = Icons.Rounded.Close,
-        label = stringResource(R.string.podcast_action_cancel_download),
+        label = stringResource(
+            if (hasVideoDownload) {
+                R.string.episode_cancel_audio_and_video_download
+            } else {
+                R.string.podcast_action_cancel_download
+            },
+        ),
         containerColor = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         onClick = onToggle,
@@ -768,11 +837,66 @@ private fun Episode.downloadSwipeAction(onToggle: () -> Unit): SwipeAction = whe
 
     DownloadState.COMPLETED -> SwipeAction(
         icon = Icons.Rounded.Delete,
-        label = stringResource(R.string.podcast_action_delete_download),
+        label = stringResource(
+            if (hasVideoDownload) {
+                R.string.episode_delete_audio_and_video_download
+            } else {
+                R.string.podcast_action_delete_download
+            },
+        ),
         containerColor = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         onClick = onToggle,
     )
+}
+
+/**
+ * The download toggle, with the question in front of a removal that would take a video too.
+ *
+ * Removing the audio takes the video with it, so such a removal asks first, naming both and what
+ * comes back; one of sound alone carries on as it always has, straight from the swipe or the
+ * sheet's button. The episode waiting on the answer is held by id and saved, so a fold does not
+ * lose the question, and one whose episode has gone resolves to no dialog at all. So does one whose
+ * delete no longer takes a video — a transfer that failed while the question was up: the confirm
+ * runs the toggle, which reads the state afresh, and on a failed copy that toggle downloads.
+ *
+ * @param uiState the episodes and their video downloads.
+ * @param onToggle the view model's toggle, called at once or once the question is answered.
+ * @return the toggle to hand to the rows and the episode sheet.
+ */
+@Composable
+private fun rememberAskingDownloadToggle(
+    uiState: PodcastDetailUiState,
+    onToggle: (String) -> Unit,
+): (String) -> Unit {
+    val resources = LocalResources.current
+    var pendingDeleteId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pending = uiState.episodes.firstOrNull { it.id == pendingDeleteId }
+        ?.takeIf { removalTakesVideo(it.downloadState, uiState.videoDownloads[it.id]) }
+    LaunchedEffect(pending == null) {
+        if (pending == null) pendingDeleteId = null
+    }
+    pending?.let { episode ->
+        val video = uiState.videoDownloads[episode.id]
+        DeleteDownloadDialog(
+            episodeTitle = episode.title,
+            withVideo = video != null,
+            freed = formatBytes(resources, episode.downloadedBytes + (video?.bytes ?: 0L)),
+            onConfirm = {
+                pendingDeleteId = null
+                onToggle(episode.id)
+            },
+            onDismiss = { pendingDeleteId = null },
+        )
+    }
+    return { episodeId ->
+        val episode = uiState.episodes.firstOrNull { it.id == episodeId }
+        if (episode != null && removalTakesVideo(episode.downloadState, uiState.videoDownloads[episodeId])) {
+            pendingDeleteId = episodeId
+        } else {
+            onToggle(episodeId)
+        }
+    }
 }
 
 /**
@@ -1357,15 +1481,13 @@ internal fun Context.shareShow(podcast: Podcast, chooserTitle: String) {
 private const val SHARE_MIME_TYPE = "text/plain"
 
 /**
- * Turns a [PodcastDetailMessage] into snackbar text.
- *
- * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ * What a finished refresh says: how many episodes it brought, or that it brought none.
  *
  * @param resources resolved from the composition by the caller.
  * @return the text to show.
  */
-internal fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
-    is PodcastDetailMessage.Refreshed -> if (newEpisodeCount == 0) {
+private fun PodcastDetailMessage.Refreshed.toText(resources: Resources): String =
+    if (newEpisodeCount == 0) {
         resources.getString(R.string.podcast_message_no_new_episodes)
     } else {
         resources.getQuantityString(
@@ -1374,6 +1496,17 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
             newEpisodeCount,
         )
     }
+
+/**
+ * Turns a [PodcastDetailMessage] into snackbar text.
+ *
+ * Takes [Resources] rather than being a `@Composable`, because the caller is a `LaunchedEffect`.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+internal fun PodcastDetailMessage.toText(resources: Resources): String = when (this) {
+    is PodcastDetailMessage.Refreshed -> toText(resources)
 
     is PodcastDetailMessage.RefreshFailed ->
         resources.getString(R.string.podcast_message_refresh_failed, reason)
@@ -1408,6 +1541,9 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
     PodcastDetailMessage.EpisodeUnavailable ->
         resources.getString(R.string.podcast_message_episode_unavailable)
 
+    PodcastDetailMessage.VideoNotStarted ->
+        resources.getString(R.string.podcast_message_video_not_started)
+
     is PodcastDetailMessage.DownloadQueued -> resources.getString(
         if (waitingForWifi) {
             R.string.podcast_message_download_waiting_for_wifi
@@ -1423,11 +1559,7 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
     is PodcastDetailMessage.QueuedNext ->
         resources.getString(R.string.podcast_message_queued_next, title)
 
-    is PodcastDetailMessage.VideoDownloadQueued -> resources.getString(
-        R.string.podcast_message_video_download_queued,
-        title,
-        resources.getString(R.string.episode_video_quality, quality.height),
-    )
+    is PodcastDetailMessage.VideoDownloadQueued -> videoQueuedText(resources)
 
     is PodcastDetailMessage.VideoDownloadRemoved -> resources.getString(
         if (wasComplete) {
@@ -1466,11 +1598,34 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
         resources.getString(R.string.podcast_message_export_failed)
 }
 
+/**
+ * The snackbar for a video queued for download: where it is going, or what it is waiting for.
+ *
+ * @param resources resolved from the composition by the caller.
+ * @return the text to show.
+ */
+private fun PodcastDetailMessage.VideoDownloadQueued.videoQueuedText(resources: Resources): String =
+    resources.getString(
+        if (waitingForWifi) {
+            R.string.podcast_message_video_download_waiting_for_wifi
+        } else {
+            R.string.podcast_message_video_download_queued
+        },
+        title,
+        formatVideoQuality(quality.height),
+    )
+
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
 
-/** The watch button's side: the row's play button's, so the two sit as a pair. */
+/** The watch button's drawn side: the row's play button's, so the two sit as a pair. */
 private val WatchButtonSize = 40.dp
+
+/** The watch button's touch target round its circle: Material's minimum. */
+private val WatchTargetSize = 48.dp
+
+/** How much of the watch button is left when it cannot be pressed: Material's disabled content. */
+private const val DISABLED_ALPHA = 0.38f
 
 /** The watch button's glyph, the size of the play button's. */
 private val WatchGlyphSize = 22.dp

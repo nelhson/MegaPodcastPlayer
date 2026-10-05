@@ -18,6 +18,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
+import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
@@ -98,6 +99,8 @@ abstract class PodcastDetailViewModelFixture {
     protected val exportRun = MutableStateFlow<ExportRun?>(null)
     protected val videoDownloads = MutableStateFlow(emptyMap<String, VideoDownload>())
     protected lateinit var videoQualitySource: VideoQualitySource
+    protected lateinit var networkStatus: NetworkStatus
+    protected val online = MutableStateFlow(true)
     protected lateinit var crashReporter: CrashReporter
 
     @Before
@@ -130,6 +133,8 @@ abstract class PodcastDetailViewModelFixture {
         // Combined into the state like the player's, and frozen just the same if left unstubbed.
         every { downloadRepository.observeVideoDownloads() } returns videoDownloads
         videoQualitySource = mockk()
+        networkStatus = mockk()
+        every { networkStatus.observeOnline() } returns online
         crashReporter = mockk(relaxed = true)
         downloadExporter = mockk(relaxed = true)
         every { downloadExporter.observe(podcast.id) } returns exportRun
@@ -145,6 +150,7 @@ abstract class PodcastDetailViewModelFixture {
             downloadExporter = downloadExporter,
             videoQualitySource = videoQualitySource,
             crashReporter = crashReporter,
+            networkStatus = networkStatus,
             savedStateHandle = SavedStateHandle(
                 mapOf(PodcastDetailViewModel.PODCAST_ID_ARG to podcast.id),
             ),

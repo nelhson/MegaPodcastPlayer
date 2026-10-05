@@ -21,11 +21,14 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
@@ -81,7 +84,7 @@ class PlaybackService : MediaSessionService() {
     @PlaybackDataSource
     lateinit var dataSourceFactory: DataSource.Factory
 
-    /** Supplies episodes when the system asks us to resume playback after a process death. */
+    /** Where playback was left: what [restoreQueue] loads, and what the system is handed to resume. */
     @Inject
     lateinit var queueSource: PlaybackQueueSource
 
@@ -133,6 +136,12 @@ class PlaybackService : MediaSessionService() {
      * edit to the playlist rather than a meaning given to a button.
      */
     private var exoPlayer: ExoPlayer? = null
+
+    /**
+     * Completed once [restoreQueue] has finished, with or without anything to restore, and when the
+     * service is destroyed — so that nothing waiting on it waits for a service that is gone.
+     */
+    private val restored = CompletableDeferred<Unit>()
 
     override fun onCreate() {
         super.onCreate()
@@ -229,6 +238,29 @@ class PlaybackService : MediaSessionService() {
 
         startPositionTicker(sessionPlayer)
         followPersistedSettings(player)
+        restoreQueue(player)
+    }
+
+    /**
+     * Puts the persisted queue back into the player this service has just built.
+     *
+     * Here rather than in the UI because the service is what every way into playback has in
+     * common: the app's own screens, the widget, a headset and the watch all end up at this player,
+     * and only the first of them used to restore it. Done through the controller, the restore could
+     * also land *after* one of the others had started something and replace it with a paused queue;
+     * see [restoreIfEmpty] on why it cannot here.
+     *
+     * A failed read is reported and otherwise ignored: the player stays empty, which is what it
+     * would have been, and [restored] still completes so that nobody waits on a read that failed.
+     *
+     * @param player the player built in [onCreate].
+     */
+    private fun restoreQueue(player: ExoPlayer) {
+        serviceScope.launch {
+            suspendRunCatching { player.restoreIfEmpty(queueSource.resumePoint()) }
+                .onFailure { error -> crashReporter.recordNonFatal(NON_FATAL_RESTORE, error) }
+            restored.complete(Unit)
+        }
     }
 
     /**
@@ -244,17 +276,24 @@ class PlaybackService : MediaSessionService() {
      * A continuous collection rather than a single read, because the skip interval is now drawn as
      * well as applied: the notification's glyph carries the number, so a user who changes 30 seconds
      * to 15 in Settings while the service is alive would otherwise be left with a button that says
-     * one thing and does another until the process next died. Re-applying the speed on each emission
-     * is redundant with the player already having it — the app's own speed control writes the
-     * preference and calls the controller — but it is idempotent, and it is what makes this the one
-     * place preferences reach the player.
+     * one thing and does another until the process next died.
+     *
+     * The speed is followed apart from the rest, and applied only when the stored speed itself
+     * changes. The player's speed is not always the stored one — a show can have a speed of its own,
+     * set through the controller when one of its episodes loads — so re-applying it because a skip
+     * interval or the auto-play switch changed would put the app's speed back over the show's.
      *
      * @param player the player built in [onCreate].
      */
     private fun followPersistedSettings(player: ExoPlayer) {
         serviceScope.launch {
+            userPreferences.playbackSettings
+                .map { it.speed }
+                .distinctUntilChanged()
+                .collect { speed -> player.setPlaybackSpeed(speed) }
+        }
+        serviceScope.launch {
             userPreferences.playbackSettings.collect { settings ->
-                player.setPlaybackSpeed(settings.speed)
                 player.setSeekForwardIncrementMs(settings.skipForwardMs)
                 player.setSeekBackIncrementMs(settings.skipBackMs)
                 mediaSession?.setMediaButtonPreferences(
@@ -284,6 +323,7 @@ class PlaybackService : MediaSessionService() {
         mediaSession = null
         exoPlayer = null
         serviceScope.cancel()
+        restored.complete(Unit)
         super.onDestroy()
     }
 
@@ -407,6 +447,7 @@ class PlaybackService : MediaSessionService() {
                     MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                         .add(SessionCommand(SESSION_COMMAND_ENTER_VIDEO, Bundle.EMPTY))
                         .add(SessionCommand(SESSION_COMMAND_EXIT_VIDEO, Bundle.EMPTY))
+                        .add(SessionCommand(SESSION_COMMAND_AWAIT_RESTORE, Bundle.EMPTY))
                         .build(),
                 )
             }
@@ -414,7 +455,10 @@ class PlaybackService : MediaSessionService() {
         }
 
         /**
-         * Handles the two video commands; everything else is left to Media3.
+         * Handles the two video commands and the wait for the restore; everything else is left to
+         * Media3.
+         *
+         * The wait is the one answer here that is not immediate, since waiting is what it is for.
          *
          * Answered synchronously, on the player's thread, because a swap is three playlist calls
          * and the caller is waiting to attach a surface: an asynchronous answer would only add a
@@ -435,19 +479,35 @@ class PlaybackService : MediaSessionService() {
                     if (height <= 0) {
                         return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                     }
-                    player.enterVideoMode(VideoQuality(height))
+                    player.enterVideoMode(VideoQuality(height), args.getString(EXTRA_VIDEO_EPISODE_ID))
                 }
 
                 SESSION_COMMAND_EXIT_VIDEO -> player.exitVideoMode()
 
-                else -> return super.onCustomCommand(session, controller, customCommand, args)
+                else -> return if (customCommand.customAction == SESSION_COMMAND_AWAIT_RESTORE) {
+                    whenRestored()
+                } else {
+                    super.onCustomCommand(session, controller, customCommand, args)
+                }
             }
             val code = when (outcome) {
                 VideoModeOutcome.SWAPPED, VideoModeOutcome.UNCHANGED -> SessionResult.RESULT_SUCCESS
                 VideoModeOutcome.NOT_YOUTUBE -> SessionError.ERROR_BAD_VALUE
                 VideoModeOutcome.NOTHING_LOADED -> SessionError.ERROR_INVALID_STATE
+                VideoModeOutcome.SUPERSEDED -> SessionResult.RESULT_INFO_SKIPPED
             }
             return Futures.immediateFuture(SessionResult(code))
+        }
+
+        /**
+         * Answers [SESSION_COMMAND_AWAIT_RESTORE].
+         *
+         * @return a future that succeeds once [restoreQueue] has finished; at once if it already has.
+         */
+        private fun whenRestored(): ListenableFuture<SessionResult> {
+            val future = SettableFuture.create<SessionResult>()
+            restored.invokeOnCompletion { future.set(SessionResult(SessionResult.RESULT_SUCCESS)) }
+            return future
         }
 
         override fun onPlaybackResumption(
@@ -458,14 +518,17 @@ class PlaybackService : MediaSessionService() {
             val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
             val job = serviceScope.launch {
                 suspendRunCatching {
-                    // mapNotNull, not map: an episode whose stored audio URL fails the scheme
-                    // allowlist is dropped from the resumed queue rather than handed to the player.
-                    val queue = queueSource.resumableQueue().filter { it.hasPlayableAudio }
+                    // An episode whose stored audio URL fails the scheme allowlist is dropped from
+                    // the resumed queue rather than handed to the player, and the place in the
+                    // queue is kept across the drop.
+                    val resumePoint = queueSource.resumePoint().keeping { it.hasPlayableAudio }
                     MediaSession.MediaItemsWithStartPosition(
-                        queue.mapNotNull { it.toMediaItemOrNull() },
-                        /* startIndex = */ 0,
+                        resumePoint.queue.mapNotNull { it.toMediaItemOrNull() },
+                        // The episode that was playing, which is not the head of the queue once
+                        // anything before it has been played.
+                        /* startIndex = */ resumePoint.index,
                         // Resume where the user stopped, not at the top of the episode.
-                        /* startPositionMs = */ queue.firstOrNull()?.episode?.positionMs ?: 0L,
+                        /* startPositionMs = */ resumePoint.positionMs,
                     )
                 }.onSuccess { items -> future.set(items) }.onFailure { error ->
                     // Media3 turns a failed future into "nothing to resume", which is the right
@@ -503,6 +566,9 @@ class PlaybackService : MediaSessionService() {
             // The Bluetooth stack's AVRCP bridge, i.e. the buttons on a car stereo or headset.
             "com.android.bluetooth",
         )
+
+        /** One message for the failure kind, fixed, so each groups into one report. */
+        const val NON_FATAL_RESTORE = "Queue restore failed"
 
         /** How often the position is written while playing. */
         const val POSITION_SAVE_INTERVAL_MS = 5_000L

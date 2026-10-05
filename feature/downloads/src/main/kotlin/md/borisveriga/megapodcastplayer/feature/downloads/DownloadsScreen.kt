@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Upload
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,7 +41,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -64,6 +62,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -74,6 +73,7 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatBytes
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DeleteDownloadDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
@@ -96,16 +96,19 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 
 /**
  * Downloads screen: everything the download stack is tracking, across all shows — finished
  * episodes, transfers in progress, downloads waiting their turn, and failures.
  *
- * @param onEpisodePlaying invoked once a tapped episode has been handed to the player, so the
- *   caller can open the full player.
+ * @param onOpenPlayer invoked once a tapped episode has been handed to the player, so the shell
+ *   can open the player on it. A row is opened as the player was last used when its video is on
+ *   the phone too, and as sound otherwise; the *Video* badge opens it as video.
  * @param onBrowseLibrary invoked from the empty state, to send the user somewhere they can download
  *   something.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
@@ -117,7 +120,7 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  */
 @Composable
 fun DownloadsRoute(
-    onEpisodePlaying: () -> Unit,
+    onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
     onBrowseLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
@@ -132,7 +135,19 @@ fun DownloadsRoute(
 
     DownloadsScreen(
         uiState = uiState,
-        onEpisodeClick = { episodeId -> viewModel.play(episodeId, onEpisodePlaying) },
+        onEpisodeClick = { episodeId ->
+            // A row whose picture is on the phone too is a video as much as a sound, so it opens
+            // as the player was last used; one of sound alone has only the one face.
+            val openAs = if (uiState.videoDownloads[episodeId]?.isComplete == true) {
+                OpenPlayerAs.REMEMBERED
+            } else {
+                OpenPlayerAs.AUDIO
+            }
+            viewModel.play(episodeId) { onOpenPlayer(episodeId, openAs) }
+        },
+        onEpisodePlayVideo = { episodeId ->
+            viewModel.playVideo(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.VIDEO) }
+        },
         onEpisodeRetry = viewModel::retry,
         onEpisodeDownloadNow = viewModel::downloadNow,
         onEpisodeRemove = viewModel::remove,
@@ -169,6 +184,8 @@ fun DownloadsRoute(
  *   at the top (NAV-4).
  * @param onMessageShown called once a snackbar message has been displayed.
  * @param modifier layout modifier.
+ * @param onEpisodePlayVideo plays an episode as video, from the *Video* badge of a row whose
+ *   picture is on the phone.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -187,6 +204,7 @@ fun DownloadsScreen(
     scrollToTopSignal: Int,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
+    onEpisodePlayVideo: (String) -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
@@ -212,9 +230,12 @@ fun DownloadsScreen(
 
     val pendingRemoval = uiState.downloads.firstOrNull { it.episode.id == pendingRemovalId }
     if (pendingRemoval != null) {
-        RemovalDialog(
-            title = pendingRemoval.episode.title,
-            freedBytes = pendingRemoval.episode.downloadedBytes,
+        val video = uiState.videoDownloads[pendingRemoval.episode.id]
+        DeleteDownloadDialog(
+            episodeTitle = pendingRemoval.episode.title,
+            withVideo = video != null,
+            // What actually comes back: the sound and, when it goes with it, the picture.
+            freed = formatBytes(resources, pendingRemoval.episode.downloadedBytes + (video?.bytes ?: 0L)),
             onConfirm = {
                 pendingRemovalId = null
                 onEpisodeRemove(pendingRemoval.episode.id)
@@ -274,16 +295,19 @@ fun DownloadsScreen(
                         uiState = uiState,
                         now = now,
                         onEpisodeClick = onEpisodeClick,
+                        onEpisodePlayVideo = onEpisodePlayVideo,
                         onEpisodeRetry = onEpisodeRetry,
                         onEpisodeDownloadNow = onEpisodeDownloadNow,
                         onEpisodeQueue = onEpisodeQueue,
                         onMove = onMove,
                         // A finished episode is a file the user would have to fetch again, so it
-                        // asks first. A transfer that has not finished is not: calling it off is
-                        // exactly what the ring on the same row already does with one tap.
+                        // asks first, and so does any removal that takes a video with it. A
+                        // transfer of sound alone does not: calling it off loses nothing that was
+                        // there.
                         onOpenSettings = onOpenSettings,
                         onEpisodeRemove = { download ->
-                            if (download.episode.downloadState == DownloadState.COMPLETED) {
+                            val video = uiState.videoDownloads[download.episode.id]
+                            if (download.episode.downloadState == DownloadState.COMPLETED || video != null) {
                                 pendingRemovalId = download.episode.id
                             } else {
                                 onEpisodeRemove(download.episode.id)
@@ -316,6 +340,7 @@ fun DownloadsScreen(
  * @param uiState what to render.
  * @param now reference time for relative date formatting.
  * @param onEpisodeClick tap handler; plays the row's episode in any state.
+ * @param onEpisodePlayVideo plays the row's episode as video, from its *Video* badge.
  * @param onEpisodeRetry retry handler for a failed download, from the row's swipe.
  * @param onEpisodeDownloadNow starts a download that is waiting for Wi-Fi, now.
  * @param onEpisodeQueue add-to-queue handler for a row's full swipe.
@@ -330,6 +355,7 @@ private fun DownloadList(
     uiState: DownloadsUiState,
     now: Instant,
     onEpisodeClick: (String) -> Unit,
+    onEpisodePlayVideo: (String) -> Unit,
     onEpisodeRetry: (String) -> Unit,
     onEpisodeDownloadNow: (String) -> Unit,
     onEpisodeQueue: (String) -> Unit,
@@ -390,16 +416,23 @@ private fun DownloadList(
                     download = download,
                     index = index,
                     drag = drag.takeIf { group.isReorderable },
-                    metadata = download.metadataLine(now, resources, uiState.unmeteredOnly),
+                    metadata = download.metadataLine(
+                        now = now,
+                        resources = resources,
+                        unmeteredOnly = uiState.unmeteredOnly,
+                        video = uiState.videoDownloads[download.episode.id],
+                    ),
                     kinds = downloadedKinds(
                         audio = download.episode.downloadState,
                         video = uiState.videoDownloads[download.episode.id],
                     ),
+                    hasVideo = uiState.videoDownloads[download.episode.id] != null,
                     // Only where it is actually waiting for Wi-Fi: on any other row the action
                     // would be a control for a situation the row is not in.
                     onDownloadNow = { onEpisodeDownloadNow(download.episode.id) }
                         .takeIf { group.section == DownloadSection.WAITING && uiState.unmeteredOnly },
                     onClick = onEpisodeClick,
+                    onPlayVideo = { onEpisodePlayVideo(download.episode.id) },
                     onRetry = onEpisodeRetry,
                     onQueue = { onEpisodeQueue(download.episode.id) },
                     onRemove = { onEpisodeRemove(download) },
@@ -448,9 +481,12 @@ private val DownloadSection.labelResId: Int
  *   every section but *Ready*, where an arrangement would be rewritten by the next arrival.
  * @param metadata the line under the title, already assembled.
  * @param kinds what of the episode is fully on the phone, drawn as badges at the row's end.
+ * @param hasVideo whether the episode has a video download, finished or not, which the removal
+ *   takes with it and so names.
  * @param onDownloadNow starts this download without waiting for Wi-Fi; null unless it is actually
  *   waiting for one.
  * @param onClick tap handler; plays the episode in any state.
+ * @param onPlayVideo plays the episode as video, from its *Video* badge.
  * @param onRetry swipe handler for a failed download, asking for it again.
  * @param onQueue adds this episode to the end of the play queue.
  * @param onRemove delete-or-cancel handler.
@@ -463,8 +499,10 @@ private fun DownloadRow(
     drag: ReorderableState<EpisodeWithShow>?,
     metadata: String,
     kinds: List<DownloadedKind>,
+    hasVideo: Boolean,
     onDownloadNow: (() -> Unit)?,
     onClick: (String) -> Unit,
+    onPlayVideo: () -> Unit,
     onRetry: (String) -> Unit,
     onQueue: () -> Unit,
     onRemove: () -> Unit,
@@ -491,11 +529,13 @@ private fun DownloadRow(
         // Two names for one gesture, because it does two things: a finished episode is a file and
         // is deleted, and a transfer still running has no file yet and is called off. Naming both
         // "Remove" was the vaguer half of COPY-2's terminology drift.
+        // And it names the video when the video goes too: deleting the sound takes the picture.
         label = stringResource(
-            if (isCompleted) {
-                R.string.downloads_action_delete
-            } else {
-                R.string.downloads_action_cancel
+            when {
+                isCompleted && hasVideo -> R.string.downloads_action_delete_with_video
+                isCompleted -> R.string.downloads_action_delete
+                hasVideo -> R.string.downloads_action_cancel_with_video
+                else -> R.string.downloads_action_cancel
             },
         ),
         // The error palette, because the file is going. On this screen that is the whole point of
@@ -579,7 +619,7 @@ private fun DownloadRow(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xxs),
                     ) {
-                        kinds.forEach { kind -> DownloadedKindBadge(kind) }
+                        kinds.forEach { kind -> DownloadedKindBadge(kind, onPlayVideo = onPlayVideo) }
                     }
                 }
             },
@@ -618,27 +658,57 @@ internal fun downloadedKinds(audio: DownloadState, video: VideoDownload?): List<
     )
 
 /**
- * A small pill naming one downloaded half: *Audio*, or *Video · 720p*.
+ * A small pill naming one downloaded half: *Audio*, or *Video · 720p*, and spoken as where it is.
  *
  * Shaped like the library's source badge — a pill on the highest surface container, a glyph and a
- * word — because it is the same kind of fact: what this row is, not something to tap.
+ * word — because it is the same kind of fact: what this row is. The video one is also the way to
+ * watch it: the row's own tap opens the player as it was last used, so a picture kept on purpose
+ * gets a door of its own, and the screen glyph it wears is the one that means watching. It stays a
+ * pill rather than becoming a button-shaped button, so the two halves still read as a pair.
  *
  * @param kind the half it names.
+ * @param onPlayVideo plays the episode as video; only the video badge takes taps.
  * @param modifier layout modifier.
  */
 @Composable
-private fun DownloadedKindBadge(kind: DownloadedKind, modifier: Modifier = Modifier) {
-    val (icon, label) = when (kind) {
-        DownloadedKind.Audio ->
-            Icons.Rounded.Headphones to stringResource(R.string.downloads_badge_audio)
+private fun DownloadedKindBadge(
+    kind: DownloadedKind,
+    onPlayVideo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val quality = (kind as? DownloadedKind.Video)?.let { formatVideoQuality(it.download.quality.height) }
+    val (icon, label, spoken) = when {
+        quality == null -> Triple(
+            Icons.Rounded.Headphones,
+            stringResource(R.string.downloads_badge_audio),
+            stringResource(R.string.downloads_badge_audio_spoken),
+        )
 
-        is DownloadedKind.Video ->
-            Icons.Rounded.SmartDisplay to
-                stringResource(R.string.downloads_badge_video, kind.download.quality.height)
+        // The screen glyph, which means watching: a tap on this one plays the picture.
+        else -> Triple(
+            Icons.Rounded.SmartDisplay,
+            stringResource(R.string.downloads_badge_video, quality),
+            stringResource(R.string.downloads_badge_video_spoken, quality),
+        )
     }
+    val playVideoLabel = stringResource(R.string.downloads_badge_play_video)
     Row(
         modifier = modifier
             .clip(MegaPodcastPlayerTheme.shapes.pill)
+            // The video badge's click comes first, so it is a node of its own a screen reader can
+            // land on, rather than one more fact merged into the row around it.
+            .then(
+                if (quality != null) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = playVideoLabel,
+                        onClick = onPlayVideo,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .clearAndSetSemantics { contentDescription = spoken }
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(
                 horizontal = MegaPodcastPlayerTheme.spacing.sm,
@@ -851,52 +921,6 @@ private fun HousekeepingLine(
 }
 
 /**
- * The confirmation shown before a downloaded episode is deleted.
- *
- * Deleting audio is the one action here that no second gesture undoes — the file has to be fetched
- * again — so it asks first, and says how much space it will actually free, which is usually why it
- * is being done. A swipe is deliberate, but it is also a gesture a thumb can start by accident on a
- * list that scrolls.
- *
- * @param title the episode being deleted, named so a mis-swipe is caught here rather than after.
- * @param freedBytes what deleting it gives back.
- * @param onConfirm proceed.
- * @param onDismiss cancel.
- */
-@Composable
-private fun RemovalDialog(
-    title: String,
-    freedBytes: Long,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val resources = LocalResources.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(R.string.downloads_remove_dialog_title, title)) },
-        text = {
-            Text(
-                text = stringResource(
-                    R.string.downloads_remove_dialog_text,
-                    formatBytes(resources, freedBytes),
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(text = stringResource(R.string.downloads_remove_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.downloads_cancel))
-            }
-        },
-    )
-}
-
-/**
  * The metadata line under a download's title.
  *
  * A finished episode describes itself — when it came out, how long it is, what it takes up, whether
@@ -908,12 +932,34 @@ private fun RemovalDialog(
  * @param resources for the strings and plurals.
  * @param unmeteredOnly whether downloads wait for Wi-Fi, which is usually the answer to "why is
  *   this still waiting".
+ * @param video the episode's video download, if any: its size joins the episode's once finished,
+ *   and its progress or failure is said on the line until then.
  * @return the line to show.
  */
 private fun EpisodeWithShow.metadataLine(
     now: Instant,
     resources: Resources,
     unmeteredOnly: Boolean,
+    video: VideoDownload?,
+): String = listOfNotNull(
+    audioLine(now, resources, unmeteredOnly, video),
+    video?.let { videoLine(it, resources, unmeteredOnly) },
+).joinToString(resources.getString(R.string.downloads_metadata_separator))
+
+/**
+ * What the row's line says about the episode itself, and about its sound.
+ *
+ * @param now reference time for the relative date.
+ * @param resources for the strings and plurals.
+ * @param unmeteredOnly whether downloads wait for Wi-Fi.
+ * @param video the episode's video download, whose bytes are added to the size once finished.
+ * @return the line's first part.
+ */
+private fun EpisodeWithShow.audioLine(
+    now: Instant,
+    resources: Resources,
+    unmeteredOnly: Boolean,
+    video: VideoDownload?,
 ): String = when (episode.downloadState) {
     DownloadState.DOWNLOADING -> resources.getString(
         R.string.downloads_state_downloading,
@@ -938,11 +984,40 @@ private fun EpisodeWithShow.metadataLine(
             ?.takeIf { episode.positionMs > 0 }
             ?: formatDuration(resources, episode.durationMs),
         // Only meaningful once the file is whole; mid-transfer it would read as a size that keeps
-        // changing, next to a percentage that already says the same thing.
-        episode.downloadedBytes.takeIf { it > 0L }?.let { formatBytes(resources, it) },
+        // changing, next to a percentage that already says the same thing. The picture's share is
+        // added once it too is whole, so the figure is what deleting the row gives back.
+        (episode.downloadedBytes + (video?.takeIf { it.isComplete }?.bytes ?: 0L))
+            .takeIf { it > 0L }
+            ?.let { formatBytes(resources, it) },
         resources.getString(R.string.downloads_played).takeIf { episode.isPlayed },
     ).joinToString(resources.getString(R.string.downloads_metadata_separator))
 }
+
+/**
+ * What the row's line says about the video, while it is not yet on the phone.
+ *
+ * Nothing once it is: the badge says that. Until then the picture is often the larger and slower
+ * half, and a row whose sound was ready while its video sat waiting or had failed used to look
+ * finished.
+ *
+ * @param video the episode's video download.
+ * @param resources for the strings.
+ * @param unmeteredOnly whether downloads wait for Wi-Fi.
+ * @return the line's second part, or null when the video is on the phone.
+ */
+private fun videoLine(video: VideoDownload, resources: Resources, unmeteredOnly: Boolean): String? =
+    when (video.state) {
+        DownloadState.COMPLETED, DownloadState.NOT_DOWNLOADED -> null
+
+        DownloadState.DOWNLOADING ->
+            resources.getString(R.string.downloads_state_video_downloading, video.percent.roundToInt())
+
+        DownloadState.QUEUED -> resources.getString(
+            if (unmeteredOnly) R.string.downloads_state_video_queued_wifi else R.string.downloads_state_video_queued,
+        )
+
+        DownloadState.FAILED -> resources.getString(R.string.downloads_state_video_failed)
+    }
 
 /**
  * Turns a [DownloadsMessage] into snackbar text.

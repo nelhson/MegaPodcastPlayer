@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -26,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
+import md.borisveriga.megapodcastplayer.core.designsystem.component.removalTakesVideo
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
@@ -34,8 +36,10 @@ import md.borisveriga.megapodcastplayer.core.media.SleepTimerState
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.Moment
+import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import md.borisveriga.megapodcastplayer.core.model.chapters.indexOfCurrent
 import md.borisveriga.megapodcastplayer.core.model.chapters.nextStartAfter
@@ -184,6 +188,12 @@ data class PlayerUiState(
     val isIdle: Boolean get() = playback.isIdle
 
     /**
+     * True when the player is known to hold nothing, rather than not having been heard from yet;
+     * see [PlaybackState.isEmptied]. What puts the sheet away, where [isIdle] only hides it.
+     */
+    val isEmptied: Boolean get() = playback.isEmptied
+
+    /**
      * Whether what is playing is running at a rate the show asked for rather than the app's.
      *
      * Asked of the player rather than of storage, and that is the point: the per-show rate is
@@ -281,11 +291,20 @@ data class PlayerUiState(
  * @property state the five-way download state the button draws a face for.
  * @property percent progress in `0f..100f`; only meaningful while [state] is
  *   [DownloadState.DOWNLOADING].
+ * @property bytes how much of the sound is on the phone; with [video]'s, what deleting frees.
+ * @property video the episode's video download, finished or not, which removing the sound takes
+ *   with it; null for none.
  */
 data class EpisodeDownload(
     val state: DownloadState,
     val percent: Float,
-)
+    val bytes: Long = 0L,
+    val video: VideoDownload? = null,
+) {
+
+    /** Whether the button's tap removes the copy and takes a video with it, so must ask first. */
+    val removalTakesVideo: Boolean get() = removalTakesVideo(state, video)
+}
 
 /**
  * A moment that has just been saved, waiting to be acknowledged.
@@ -411,10 +430,25 @@ class PlayerViewModel @Inject constructor(
         .map { it.playback.episodeId ?: it.lastPlayedEpisodeId }
         .distinctUntilChanged()
         .flatMapLatest { episodeId ->
-            episodeId?.let(podcastRepository::observeEpisode) ?: flowOf(null)
-        }
-        .map { episode ->
-            episode?.let { EpisodeDownload(it.downloadState, it.downloadPercent) }
+            val episode = episodeId?.let(podcastRepository::observeEpisode) ?: flowOf(null)
+            // The video too, because removing the sound takes it: the button has to say so and
+            // ask first. Only the current episode's entry is kept, so another episode's video
+            // progress does not reach the sheet.
+            // Starting from "none", so the sheet never waits on the download index to draw.
+            val video = downloadRepository.observeVideoDownloads()
+                .map<Map<String, VideoDownload>, VideoDownload?> { downloads -> episodeId?.let(downloads::get) }
+                .onStart { emit(null) }
+                .distinctUntilChanged()
+            combine(episode, video) { current, currentVideo ->
+                current?.let {
+                    EpisodeDownload(
+                        state = it.downloadState,
+                        percent = it.downloadPercent,
+                        bytes = it.downloadedBytes,
+                        video = currentVideo,
+                    )
+                }
+            }
         }
         .distinctUntilChanged()
 
@@ -490,14 +524,14 @@ class PlayerViewModel @Inject constructor(
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
-        initialValue = PlayerUiState(),
+        // Restoring, like the connection's own first value: the first frame is drawn from this,
+        // and an empty player there would shut a sheet that was restored open with the activity.
+        initialValue = PlayerUiState(playback = PlaybackState(isRestoring = true)),
     )
 
-    init {
-        // A cold start finds an empty player; put the user's queue back so the mini player shows
-        // what they were listening to. Idempotent, so several screens asking costs nothing.
-        viewModelScope.launch { episodePlayer.restoreQueue() }
-    }
+    // Nothing here restores the queue on a cold start. Collecting [uiState] binds the playback
+    // service, and the service puts the queue back itself as it starts; the mini player appears
+    // when the player says it has an episode, like any other change of state.
 
     /**
      * Puts the player in one of its two faces and remembers it.
@@ -514,23 +548,42 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Whether opening the player right now should open the video screen, asked of the sources
-     * rather than of [uiState].
+     * Which face the player should be opened in, for an ask to open it as [openAs].
      *
-     * For the shell's one caller that cannot wait for a frame: a tap on the media notification can
-     * be what starts the process, and [uiState] then still holds its initial value — audio, nothing
-     * loaded — for the first moments. So this reads the stored mode, and gives the service a short
-     * while to say what is loaded. When it does not answer in time the player opens as the sheet,
-     * which is never wrong, only less than was hoped for.
+     * The one decision behind every way into the player. Asked of the sources rather than of
+     * [uiState], because the ask can come before the state has filled in: a tap on the media
+     * notification can be what starts the process, and an episode started a moment ago is not the
+     * one the player reports until the service has taken it.
      *
-     * @return true when the player is in video mode and the loaded episode has a picture.
+     * Sound needs nothing checked, and is answered at once. The other two depend on what is
+     * loaded, so the service is given a short while to say — for [episodeId], when one is named:
+     * the video screen leaves at once when the episode loaded has no picture, and until the new
+     * episode lands that is still whatever was playing before.
+     *
+     * @param episodeId the episode the player is being opened on, or null for whichever is loaded.
+     * @param openAs what was asked.
+     * @return [PlayerMode.VIDEO] for the video screen; [PlayerMode.AUDIO] for the sheet, which is
+     *   also the answer for an episode with no picture and for a remembered face that could not be
+     *   confirmed in time — the sheet is never wrong, only less than was hoped for; null when a
+     *   picture was asked for and the player never loaded the episode, where opening either face
+     *   would show something that was not asked for.
      */
-    suspend fun awaitOpensAsVideo(): Boolean {
-        if (playbackRepository.observePlayerMode().first() != PlayerMode.VIDEO) return false
-        val loaded = withTimeoutOrNull(LOADED_TIMEOUT_MS) {
-            connection.playbackState.first { it.isConnected && !it.isIdle }
+    suspend fun faceFor(episodeId: String?, openAs: OpenPlayerAs): PlayerMode? {
+        val remembered = openAs == OpenPlayerAs.REMEMBERED
+        if (openAs == OpenPlayerAs.AUDIO) return PlayerMode.AUDIO
+        if (remembered && playbackRepository.observePlayerMode().first() != PlayerMode.VIDEO) {
+            return PlayerMode.AUDIO
         }
-        return loaded?.canWatch == true
+        val loaded = withTimeoutOrNull(LOADED_TIMEOUT_MS) {
+            connection.playbackState.first { state ->
+                state.isConnected && !state.isIdle && (episodeId == null || state.episodeId == episodeId)
+            }
+        }
+        return when {
+            loaded?.canWatch == true -> PlayerMode.VIDEO
+            remembered || loaded != null -> PlayerMode.AUDIO
+            else -> null
+        }
     }
 
     /** Starts or pauses playback. */
@@ -620,9 +673,15 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /** Plays a queued episode immediately. */
-    fun playQueued(episodeId: String) {
-        viewModelScope.launch { episodePlayer.play(episodeId) }
+    /**
+     * Plays a queued episode immediately.
+     *
+     * @param episodeId the episode to play.
+     * @param onPlaying invoked once playback has been handed to the player, so the caller can open
+     *   the player. Not called when the episode has gone.
+     */
+    fun playQueued(episodeId: String, onPlaying: () -> Unit = {}) {
+        viewModelScope.launch { if (episodePlayer.play(episodeId)) onPlaying() }
     }
 
     /**
@@ -956,12 +1015,13 @@ class PlayerViewModel @Inject constructor(
         const val STOP_TIMEOUT_MS = 5_000L
 
         /**
-         * How long [awaitOpensAsVideo] gives the service to say what is loaded.
+         * How long [faceFor] gives the service to say what is loaded.
          *
-         * A cold start binds a controller and restores the queue in well under a second; this is
-         * that with room to spare, and still short enough that a tap is not left unanswered.
+         * A cold start binds a controller and restores the queue in well under a second, and an
+         * episode just started is the player's within a few frames; this is those with room to
+         * spare, and still short enough that a tap is not left unanswered.
          */
-        const val LOADED_TIMEOUT_MS = 2_000L
+        const val LOADED_TIMEOUT_MS = 3_000L
 
         /**
          * How much a shake adds to the sleep timer.

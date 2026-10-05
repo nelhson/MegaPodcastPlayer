@@ -4,6 +4,12 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,6 +25,7 @@ import org.robolectric.shadows.ShadowNetworkCapabilities
  * Both wrong answers cost something. "Online" with no network asks for a picture that cannot arrive
  * and takes the sound down with it; "offline" with one withholds a picture that would have played.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class NetworkStatusTest {
@@ -60,5 +67,39 @@ class NetworkStatusTest {
         shadowOf(manager).setActiveNetworkInfo(null)
 
         assertFalse(status.isOnline())
+    }
+
+    @Test
+    fun `the followed answer starts as it stands and follows the network going and back`() = runTest {
+        activeNetworkHas(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val seen = mutableListOf<Boolean>()
+        val following = launch(UnconfinedTestDispatcher(testScheduler)) {
+            status.observeOnline().collect { seen += it }
+        }
+        val callback = shadowOf(manager).networkCallbacks.single()
+        val network = checkNotNull(manager.activeNetwork)
+
+        callback.onLost(network)
+        // Said twice by the platform, drawn once.
+        callback.onLost(network)
+        val back = ShadowNetworkCapabilities.newInstance()
+        shadowOf(back).addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        callback.onCapabilitiesChanged(network, back)
+
+        assertEquals(listOf(true, false, true), seen)
+        following.cancel()
+    }
+
+    @Test
+    fun `the callback is taken back when nobody follows any more`() = runTest {
+        val following = launch(UnconfinedTestDispatcher(testScheduler)) {
+            status.observeOnline().collect {}
+        }
+        assertEquals(1, shadowOf(manager).networkCallbacks.size)
+
+        following.cancel()
+        runCurrent()
+
+        assertTrue(shadowOf(manager).networkCallbacks.isEmpty())
     }
 }

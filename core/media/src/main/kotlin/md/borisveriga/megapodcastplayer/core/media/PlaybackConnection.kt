@@ -4,8 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
 import android.os.Bundle
-import android.view.SurfaceView
-import android.view.TextureView
 import androidx.core.os.bundleOf
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -27,6 +25,8 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,8 +79,27 @@ class PlaybackConnection @Inject constructor(
 
     private var controller: MediaController? = null
 
+    /**
+     * How many controllers have been disconnected, which is only ever read as "one just was".
+     *
+     * A controller says it has been disconnected through the listener it was built with, and the
+     * flow following it is elsewhere; this is the line between them. A count rather than a flag so
+     * that every disconnection is a new value, and a state rather than an event so that a follower
+     * that starts late still checks its controller once.
+     */
+    private val disconnections = MutableStateFlow(0)
+
     /** Set when a command fails, so the UI can explain why nothing happened. */
     private val commandErrors = MutableStateFlow<String?>(null)
+
+    /**
+     * Whether the player has drawn a frame of the current picture on the current output.
+     *
+     * Kept here rather than read off the controller, which has no such property: Media3 only
+     * *announces* a first frame. Set by that announcement and cleared by whatever makes the next
+     * frame a new first one — another item, another output. Touched on the main thread only.
+     */
+    private var pictureReady = false
 
     /**
      * The current playback state, re-emitted on every player event and, while playing, every
@@ -89,43 +108,72 @@ class PlaybackConnection @Inject constructor(
      * Sharing is [SharingStarted.WhileSubscribed] with a grace period: rotating the device or
      * navigating from the mini player to the full player must not tear the connection down.
      */
-    val playbackState: StateFlow<PlaybackState> = callbackFlow {
-        val mediaController = suspendRunCatching { controller() }
-            .getOrElse { error ->
-                // No service means no playback, but the UI must still render — as idle, not as a
-                // crash. A cancelled collector is not a failure and never reaches here.
-                send(PlaybackState(isConnected = false, errorMessage = error.message))
-                return@callbackFlow
-            }
-
-        val listener = object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                trySend(mediaController.snapshot(commandErrors.value))
-            }
-        }
-        mediaController.addListener(listener)
-        send(mediaController.snapshot(commandErrors.value))
-
-        val ticker = launch {
-            while (isActive) {
-                kotlinx.coroutines.delay(POSITION_TICK_MS)
-                if (mediaController.isPlaying) {
-                    trySend(mediaController.snapshot(commandErrors.value))
-                }
-            }
-        }
-
-        awaitClose {
-            ticker.cancel()
-            mediaController.removeListener(listener)
-        }
-    }
+    val playbackState: StateFlow<PlaybackState> = followSession(::controller, ::statesOf)
         .flowOn(Dispatchers.Main.immediate)
         .stateIn(
             scope = scope,
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
-            initialValue = PlaybackState(),
+            // Not heard from yet, which is not the same as holding nothing.
+            initialValue = PlaybackState(isRestoring = true),
         )
+
+    /**
+     * The states of one controller, from the restored queue until the controller is disconnected.
+     *
+     * Nothing is sent before the service has finished putting the persisted queue back. A
+     * controller connects to a service whose player is still empty, and a snapshot taken then says
+     * "nothing loaded" a moment before something is: the player sheet and the video screen both
+     * close themselves on that, and a face restored with the activity would be gone before the
+     * episode it belongs to arrived.
+     *
+     * Completes when the controller is disconnected — the session was released, or the service
+     * died — which is [followSession]'s cue to connect again.
+     *
+     * @param mediaController a connected controller.
+     */
+    private fun statesOf(mediaController: MediaController): Flow<PlaybackState> = callbackFlow {
+        // An unanswered wait is not held against the snapshot: it then says what the player holds.
+        suspendRunCatching { mediaController.awaitRestore() }
+
+        val listener = object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // A swap between sound and picture is a transition too, which is the point: the
+                // frame on the surface belongs to the item that just left.
+                pictureReady = false
+            }
+
+            override fun onRenderedFirstFrame() {
+                pictureReady = true
+            }
+
+            override fun onEvents(player: Player, events: Player.Events) {
+                trySend(mediaController.snapshot(commandErrors.value, pictureReady))
+            }
+        }
+        mediaController.addListener(listener)
+        send(mediaController.snapshot(commandErrors.value, pictureReady))
+
+        val ticker = launch {
+            while (isActive) {
+                delay(POSITION_TICK_MS)
+                if (mediaController.isPlaying) {
+                    trySend(mediaController.snapshot(commandErrors.value, pictureReady))
+                }
+            }
+        }
+
+        // Checked on arrival as well as on every disconnection, since this one may have gone
+        // during the wait above.
+        val watchdog = launch {
+            disconnections.collect { if (!mediaController.isConnected) close() }
+        }
+
+        awaitClose {
+            ticker.cancel()
+            watchdog.cancel()
+            mediaController.removeListener(listener)
+        }
+    }
 
     /**
      * Plays [episode] now, keeping the rest of the queue.
@@ -158,13 +206,13 @@ class PlaybackConnection @Inject constructor(
     /**
      * Replaces the whole queue and starts playing.
      *
-     * Used when restoring a persisted queue on a cold start, and when the user plays a list.
+     * Used when putting back a queue the user cleared, and when the user plays a list.
      *
      * @param episodes the new queue, in play order.
      * @param startIndex which entry to start on.
      * @param startPositionMs where in that entry to start.
-     * @param playWhenReady false to load the queue without making noise, which is what a cold start
-     *   does so the mini player appears without ambushing the user.
+     * @param playWhenReady false to load the queue without making noise, which is what undoing a
+     *   cleared queue does.
      */
     suspend fun setQueue(
         episodes: List<PlayableEpisode>,
@@ -406,13 +454,18 @@ class PlaybackConnection @Inject constructor(
      * lets the video screen ask on every start without a rotation costing a re-buffer.
      *
      * @param quality the rendition height wanted; the resolver settles for the nearest the video has.
-     * @return true when the episode is showing, or already was; false when it has no picture to
-     *   show, when nothing is loaded, or when the service could not be reached.
+     * @param episodeId the episode the picture is wanted for, or null for whichever is playing.
+     *   The ask is decided before it is sent and the queue can move in between; named, the service
+     *   leaves another episode alone instead of showing a picture nobody asked for.
+     * @return true when the episode is showing, already was, or is no longer the one playing;
+     *   false when it has no picture to show, when nothing is loaded, or when the service could
+     *   not be reached.
      */
-    suspend fun enterVideo(quality: VideoQuality): Boolean = sendSessionCommand(
-        SESSION_COMMAND_ENTER_VIDEO,
-        bundleOf(EXTRA_VIDEO_HEIGHT to quality.height),
-    )
+    suspend fun enterVideo(quality: VideoQuality, episodeId: String? = null): Boolean =
+        sendSessionCommand(
+            SESSION_COMMAND_ENTER_VIDEO,
+            bundleOf(EXTRA_VIDEO_HEIGHT to quality.height, EXTRA_VIDEO_EPISODE_ID to episodeId),
+        )
 
     /**
      * Goes back to sound only, keeping the position. Playback carries on; only the picture stops.
@@ -423,51 +476,62 @@ class PlaybackConnection @Inject constructor(
     suspend fun exitVideo(): Boolean = sendSessionCommand(SESSION_COMMAND_EXIT_VIDEO, Bundle.EMPTY)
 
     /**
-     * Gives the player a surface to draw the picture on.
+     * Draws the picture on [output], or on nothing when it is null.
      *
-     * The controller forwards it to the service's player, so the picture is decoded where the
-     * sound is and the two cannot drift. Cleared with [detachVideoSurface] before the view goes.
+     * The controller forwards the view to the service's player, so the picture is decoded where
+     * the sound is and the two cannot drift. A `SurfaceView` is a hole in the window with the
+     * picture behind it, so it cannot be clipped to rounded corners, faded, or moved with what it
+     * sits in; a `TextureView` is drawn like any other view, at the cost of a copy that a picture
+     * the size of a thumbnail does not notice. Hence one of each: the screen's and the bar's.
      *
-     * @param view the surface to draw on.
+     * The caller says where the picture goes *now*, every time that changes, rather than attaching
+     * and detaching views one by one. Media3 keeps a single output: setting a second takes the
+     * picture from the first and clearing the second leaves the player with none, so two holders
+     * each managing their own view left the screen black after a rotation.
+     *
+     * Tried twice. The first failure is usually a service that went away, which the second attempt
+     * reconnects to; a second failure is recorded, because nothing on screen will say why the
+     * picture is missing.
+     *
+     * @param output where to draw, or null to stop drawing.
+     * @return true when the player took it.
      */
-    suspend fun attachVideoSurface(view: SurfaceView) = onController { player ->
-        player.setVideoSurfaceView(view)
+    suspend fun showVideoOn(output: VideoOutput?): Boolean {
+        var failure: Throwable? = null
+        repeat(OUTPUT_ATTEMPTS) {
+            val attempt = suspendRunCatching {
+                withContext(Dispatchers.Main.immediate) {
+                    val player = controller()
+                    // Whatever was on the last output is not on this one until a frame is drawn.
+                    pictureReady = false
+                    when (output) {
+                        is VideoOutput.Screen -> player.setVideoSurfaceView(output.view)
+                        is VideoOutput.Bar -> player.setVideoTextureView(output.view)
+                        null -> player.clearVideoSurface()
+                    }
+                }
+            }
+            if (attempt.isSuccess) return true
+            failure = attempt.exceptionOrNull()
+        }
+        failure?.let { crashReporter.recordNonFatal(NON_FATAL_VIDEO_OUTPUT, it) }
+        return false
     }
 
     /**
-     * Takes [view] back from the player, if it is the one drawing.
+     * Takes [output] back from the player, if it is the one drawing.
      *
-     * @param view the surface handed over by [attachVideoSurface].
+     * A no-op when the picture has since been given somewhere else to go, which is what makes this
+     * safe to call late: it is how a holder that is going away lets go without taking the picture
+     * from whoever came after it.
+     *
+     * @param output the output handed over by [showVideoOn].
      */
-    suspend fun detachVideoSurface(view: SurfaceView) = onController { player ->
-        player.clearVideoSurfaceView(view)
-    }
-
-    /**
-     * Gives the player a texture to draw the picture on, in place of whatever it was drawing on.
-     *
-     * The same hand-over as [attachVideoSurface], for a picture that is part of a layout rather
-     * than a screen of its own. A `SurfaceView` is a hole in the window with the picture behind it,
-     * so it cannot be clipped to rounded corners, faded, or moved with what it sits in; a
-     * `TextureView` is drawn like any other view, at the cost of a copy that a picture the size of
-     * a thumbnail does not notice.
-     *
-     * @param view the texture to draw on.
-     */
-    suspend fun attachVideoTexture(view: TextureView) = onController { player ->
-        player.setVideoTextureView(view)
-    }
-
-    /**
-     * Takes [view] back from the player, if it is the one drawing.
-     *
-     * A no-op when the picture has since been given somewhere else to go, which is what makes the
-     * hand-over between the bar and the video screen safe in either order.
-     *
-     * @param view the texture handed over by [attachVideoTexture].
-     */
-    suspend fun detachVideoTexture(view: TextureView) = onController { player ->
-        player.clearVideoTextureView(view)
+    suspend fun releaseVideoOutput(output: VideoOutput) = onController { player ->
+        when (output) {
+            is VideoOutput.Screen -> player.clearVideoSurfaceView(output.view)
+            is VideoOutput.Bar -> player.clearVideoTextureView(output.view)
+        }
     }
 
     /**
@@ -485,11 +549,31 @@ class PlaybackConnection @Inject constructor(
                 controller().sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args).await()
             }
         }
-            .map { result -> result.resultCode == SessionResult.RESULT_SUCCESS }
+            .map { result ->
+                // Skipped is the service declining an ask that events overtook, not a refusal.
+                result.resultCode == SessionResult.RESULT_SUCCESS ||
+                    result.resultCode == SessionResult.RESULT_INFO_SKIPPED
+            }
             .getOrElse { error ->
                 commandErrors.value = error.message ?: error::class.simpleName
                 false
             }
+
+    /**
+     * Waits until the service has put the persisted queue back, or found none to put back.
+     *
+     * The service restores by itself when it is created; binding to it is all it takes to start
+     * that. This is for the caller that has to act on the result — *Resume* presses play on whatever
+     * came back — and would otherwise be reading a player the restore has not reached yet.
+     *
+     * An unreachable service is not reported as a command error: nothing was asked of the player,
+     * and the caller's next reading of it says "nothing loaded" by itself.
+     *
+     * @return true once the restore has finished; false when the service could not be reached.
+     */
+    suspend fun awaitRestored(): Boolean =
+        suspendRunCatching { withContext(Dispatchers.Main.immediate) { controller().awaitRestore() } }
+            .getOrDefault(false)
 
     /** Clears the last command error once the UI has shown it. */
     fun clearError() {
@@ -500,12 +584,13 @@ class PlaybackConnection @Inject constructor(
      * Reads the player's state directly, once.
      *
      * [playbackState] only reflects the player while something collects it, so a caller that needs
-     * to know what is loaded *before* subscribing — the cold-start queue restore, for one — has to
+     * to know what is loaded *before* subscribing — the launcher's *Resume*, for one — has to
      * ask the controller itself. Returns a disconnected [PlaybackState] if the service cannot be
      * reached, which reads as "nothing is playing" and is the right answer in that case.
      */
     suspend fun currentState(): PlaybackState = withContext(Dispatchers.Main.immediate) {
-        suspendRunCatching { controller().snapshot(commandErrors.value) }.getOrElse { PlaybackState() }
+        suspendRunCatching { controller().snapshot(commandErrors.value, pictureReady) }
+            .getOrElse { PlaybackState() }
     }
 
     /**
@@ -520,11 +605,14 @@ class PlaybackConnection @Inject constructor(
     }
 
     /**
-     * Returns the connected controller, connecting on first use.
+     * Returns the connected controller, connecting on first use and again after a disconnection.
      *
      * The controller is kept for the process's lifetime: it binds the service without starting it,
      * and Media3 only promotes the service to the foreground while audio is actually playing, so an
      * idle connection costs nothing.
+     *
+     * Each one is built with a listener for its own disconnection, which is what tells
+     * [playbackState] that the session it was following has gone.
      */
     private suspend fun controller(): MediaController =
         withContext(Dispatchers.Main.immediate) {
@@ -532,9 +620,26 @@ class PlaybackConnection @Inject constructor(
                 controller?.takeIf { it.isConnected } ?: MediaController.Builder(
                     context,
                     SessionToken(context, ComponentName(context, PlaybackService::class.java)),
-                ).buildAsync().await().also { controller = it }
+                )
+                    .setListener(DisconnectionListener())
+                    .buildAsync()
+                    .await()
+                    .also { controller = it }
             }
         }
+
+    /**
+     * Notes a controller's disconnection, on the main thread, where Media3 reports it.
+     *
+     * The controller is of no further use — Media3 has released it — so it is forgotten here
+     * rather than left for the next command to find disconnected.
+     */
+    private inner class DisconnectionListener : MediaController.Listener {
+        override fun onDisconnected(disconnected: MediaController) {
+            if (controller === disconnected) controller = null
+            disconnections.value += 1
+        }
+    }
 
     private companion object {
         /** Full volume: what the player runs at whenever the sleep timer is not fading it out. */
@@ -548,6 +653,12 @@ class PlaybackConnection @Inject constructor(
 
         /** Past this point, "previous" restarts the episode instead of leaving it. */
         const val RESTART_THRESHOLD_MS = 3_000L
+
+        /** How many times an output is offered to the player before giving up; see [showVideoOn]. */
+        const val OUTPUT_ATTEMPTS = 2
+
+        /** One message for the failure kind, fixed, so each groups into one report. */
+        const val NON_FATAL_VIDEO_OUTPUT = "Video output refused by the player"
     }
 }
 
@@ -577,11 +688,23 @@ internal fun AudioManager.applyMediaVolume(level: Int): Boolean {
 }
 
 /**
+ * Waits until the service has put the persisted queue back, or found none to put back.
+ *
+ * @return true once the restore has finished; false when the service answered anything else.
+ */
+private suspend fun MediaController.awaitRestore(): Boolean =
+    sendCustomCommand(SessionCommand(SESSION_COMMAND_AWAIT_RESTORE, Bundle.EMPTY), Bundle.EMPTY)
+        .await()
+        .resultCode == SessionResult.RESULT_SUCCESS
+
+/**
  * Flattens the controller's current state into a [PlaybackState].
  *
  * @param errorMessage the last failed command's message, folded in so the UI reads one object.
+ * @param firstFrameRendered whether a frame of the current picture has been drawn; see
+ *   [PlaybackState.pictureReady].
  */
-private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
+private fun MediaController.snapshot(errorMessage: String?, firstFrameRendered: Boolean): PlaybackState {
     val metadata = mediaMetadata
     // Media3 forbids reading either of these unless the command is available, and it is absent on
     // a player built without device-volume control. Both then stay zero, which is the same thing
@@ -596,7 +719,7 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
         isPlaying = isPlaying,
         isBuffering = playbackState == Player.STATE_BUFFERING,
         positionMs = currentPosition.coerceAtLeast(0L),
-        durationMs = knownDurationMs() ?: 0L,
+        durationMs = durationToShowMs(measuredMs = knownDurationMs(), publishedMs = metadata.durationMs),
         bufferedPositionMs = bufferedPosition.coerceAtLeast(0L),
         speed = playbackParameters.speed,
         queueEpisodeIds = (0 until mediaItemCount).mapNotNull { getMediaItemAt(it).episodeId },
@@ -614,6 +737,9 @@ private fun MediaController.snapshot(errorMessage: String?): PlaybackState {
         videoQuality = currentMediaItem?.videoQualityOrNull,
         videoWidth = videoSize.width,
         videoHeight = videoSize.height,
+        // Only ever true of an item that is showing its picture: a frame left over from before a
+        // fall back to sound is not a picture of what is playing now.
+        pictureReady = firstFrameRendered && currentMediaItem?.videoQualityOrNull != null,
     )
 }
 

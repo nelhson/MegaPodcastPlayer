@@ -38,6 +38,27 @@
             </intent-filter>
         </service>
 
+        <!--
+            Media3's own receiver, which is what lets a play button start playback when the process
+            is not running: a headset, a car, or the system's media card after the app was swiped
+            away. The system keeps the last session's media button target across process death and
+            sends the key here; the receiver starts PlaybackService with it, and the service resumes
+            from the persisted queue (SessionCallback.onPlaybackResumption).
+
+            exported="true" because the sender is the system or the Bluetooth stack, not this app,
+            and there is no permission both would hold. What an outside app can do through it is
+            press a transport button, which is what the receiver is for; it reads nothing back, and
+            the session itself stays behind SessionCallback.onConnect. Suppressed here, next to the
+            reason, as the service's own check is.
+        -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
         <!--
             The download service. Unlike the playback service this is never bound to and never

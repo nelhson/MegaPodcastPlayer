@@ -2,9 +2,14 @@ package md.borisveriga.megapodcastplayer.feature.player
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -80,6 +85,7 @@ class PlayerSheetTest {
         onToggleDownload: () -> Unit = {},
         onDismiss: () -> Unit = {},
         onWatch: () -> Unit = {},
+        onSwitchToAudio: () -> Unit = {},
     ): PlayerSheetState {
         lateinit var sheetState: PlayerSheetState
         composeRule.setContent {
@@ -101,6 +107,7 @@ class PlayerSheetTest {
                     onOpenMoments = {},
                     onOpenQueue = {},
                     onWatch = onWatch,
+                    onSwitchToAudio = onSwitchToAudio,
                     onDismiss = onDismiss,
                     // A tagged box where the view bound to the player would be.
                     picture = { pictureModifier ->
@@ -187,23 +194,39 @@ class PlayerSheetTest {
     }
 
     @Test
-    fun `expanded, a youtube episode offers its picture`() {
-        var watched = false
+    fun `expanded, a youtube episode offers its picture through the switch`() {
+        var watched = 0
         val youTube = playing.copy(playback = playing.playback.copy(youTubeVideoId = "niTJ2221aS8"))
-        setContent(PlayerSheetValue.Expanded, uiState = youTube, onWatch = { watched = true })
+        setContent(PlayerSheetValue.Expanded, uiState = youTube, onWatch = { watched++ })
 
-        composeRule.onNodeWithContentDescription("Watch the video").performClick()
+        // The sheet is the audio face, and its switch says so.
+        composeRule.onNodeWithText("Audio").assertIsSelected()
+        composeRule.onNodeWithText("Video").assertIsNotSelected()
+        composeRule.onNodeWithText("Video").performClick()
 
-        assertTrue(watched)
+        assertEquals(1, watched)
     }
 
     @Test
-    fun `expanded, a feed episode has nothing to watch`() {
-        // Not disabled: absent. A feed episode has no picture, and a button that says so on every
-        // episode of every ordinary show would be noise on the row that matters most.
+    fun `expanded, the switch sits in the corner opposite the close button`() {
+        val youTube = playing.copy(playback = playing.playback.copy(youTubeVideoId = "niTJ2221aS8"))
+        setContent(PlayerSheetValue.Expanded, uiState = youTube)
+
+        val video = composeRule.onNodeWithText("Video").getBoundsInRoot()
+        val root = composeRule.onRoot().getBoundsInRoot()
+        // Top-right: in the trailing half, and in the header strip above the artwork.
+        assertTrue(video.left > root.right / 2)
+        assertTrue(video.bottom < root.bottom / 4)
+    }
+
+    @Test
+    fun `expanded, a feed episode has nothing to switch to`() {
+        // Not disabled: absent. A feed episode has one face, and a switch that says so on every
+        // episode of every ordinary show would be noise in the header of the player.
         setContent(PlayerSheetValue.Expanded)
 
-        composeRule.onNodeWithContentDescription("Watch the video").assertDoesNotExist()
+        composeRule.onNodeWithText("Audio").assertDoesNotExist()
+        composeRule.onNodeWithText("Video").assertDoesNotExist()
     }
 
     @Test
@@ -295,6 +318,81 @@ class PlayerSheetTest {
         assertEquals(0f, sheetState.progress, 0.001f)
     }
 
+    @Test
+    fun `a long press on the minimised video offers audio and stopping, and opens nothing`() {
+        var watched = 0
+        var switched = 0
+        val sheetState = setContent(
+            PlayerSheetValue.Collapsed,
+            uiState = watching,
+            onWatch = { watched++ },
+            onSwitchToAudio = { switched++ },
+        )
+
+        composeRule.onNodeWithText("Podlodka #400").performTouchInput { longClick() }
+        composeRule.onNodeWithText("Stop playing and hide the player").assertIsDisplayed()
+        composeRule.onNodeWithText("Switch to audio").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, switched)
+        // Neither the picture nor the sheet: the press was for the menu, and the bar stays a bar.
+        assertEquals(0, watched)
+        assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
+        // And the menu has gone with the choice.
+        composeRule.onNodeWithText("Switch to audio").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the minimised video's menu stops playback from its second entry`() {
+        var dismissed = 0
+        setContent(PlayerSheetValue.Collapsed, uiState = watching, onDismiss = { dismissed++ })
+
+        composeRule.onNodeWithText("Podlodka #400").performTouchInput { longClick() }
+        composeRule.onNodeWithText("Stop playing and hide the player").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, dismissed)
+    }
+
+    @Test
+    fun `a long press on the audio bar opens no menu`() {
+        // The audio bar's tap opens the sheet, which has both entries in it already.
+        var switched = 0
+        setContent(PlayerSheetValue.Collapsed, onSwitchToAudio = { switched++ })
+
+        composeRule.onNodeWithText("Podlodka #400").performTouchInput { longClick() }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Switch to audio").assertDoesNotExist()
+        assertEquals(0, switched)
+    }
+
+    /** The spoken actions the bar offers, by label, in the order a screen reader lists them. */
+    private fun barActions(): List<String> = composeRule.onNodeWithText("Podlodka #400")
+        .fetchSemanticsNode().config[SemanticsActions.CustomActions].map { it.label }
+
+    @Test
+    fun `the minimised video offers both menu entries to a screen reader as actions`() {
+        var switched = 0
+        setContent(PlayerSheetValue.Collapsed, uiState = watching, onSwitchToAudio = { switched++ })
+
+        assertEquals(listOf("Switch to audio", "Stop playing and hide the player"), barActions())
+
+        val action = composeRule.onNodeWithText("Podlodka #400")
+            .fetchSemanticsNode().config[SemanticsActions.CustomActions]
+            .first { it.label == "Switch to audio" }
+        composeRule.runOnUiThread { action.action() }
+
+        assertEquals(1, switched)
+    }
+
+    @Test
+    fun `the audio bar offers a screen reader only the way to stop`() {
+        setContent(PlayerSheetValue.Collapsed)
+
+        assertEquals(listOf("Stop playing and hide the player"), barActions())
+    }
+
     /**
      * The box standing in for the player's picture.
      *
@@ -308,6 +406,23 @@ class PlayerSheetTest {
 
         // The video screen put away is still a video: the picture carries on in the bar.
         picture().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the minimised video's mark is spoken, and the audio bar has none`() {
+        setContent(PlayerSheetValue.Collapsed, uiState = watching)
+
+        // The only thing telling this bar from an audio one, and so why its tap opens a picture.
+        composeRule.onNodeWithContentDescription("Playing as video", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Podlodka #400").assertHasClickAction()
+    }
+
+    @Test
+    fun `an audio bar says nothing about a picture`() {
+        setContent(PlayerSheetValue.Collapsed)
+
+        composeRule.onNodeWithContentDescription("Playing as video", useUnmergedTree = true)
+            .assertDoesNotExist()
     }
 
     @Test

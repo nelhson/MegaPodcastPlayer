@@ -24,6 +24,7 @@ import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.Moment
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Before
 import org.junit.Rule
@@ -60,6 +61,9 @@ abstract class PlayerViewModelFixture {
     protected lateinit var episodePlayer: EpisodePlayer
     protected lateinit var podcastRepository: PodcastRepository
     protected lateinit var downloadRepository: DownloadRepository
+
+    /** Every episode's video download, as the repository reports them; empty unless a test says. */
+    protected val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
     protected lateinit var momentsRepository: MomentsRepository
     protected lateinit var bell: EpisodeEndBell
     protected lateinit var sleepTimer: SleepTimer
@@ -120,6 +124,7 @@ abstract class PlayerViewModelFixture {
         episodePlayer = mockk(relaxed = true)
         podcastRepository = mockk(relaxed = true)
         downloadRepository = mockk(relaxed = true)
+        every { downloadRepository.observeVideoDownloads() } returns videoDownloads
         momentsRepository = mockk(relaxed = true)
         // The real one: it is a boolean in memory with no collaborators, so a mock would only
         // stand between the view model and the thing under test.

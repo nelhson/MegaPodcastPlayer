@@ -76,7 +76,7 @@ internal fun WidgetEntryPoint.widgetSnapshots(): Flow<WidgetSnapshot> = combine(
     podcastRepository().observeInProgressEpisodes(WIDGET_SHELF_LIMIT + 1),
 ) { playback, inProgress ->
     val resumable = if (playback.episodeId == null) {
-        playbackQueueSource().resumableQueue().firstOrNull()
+        playbackQueueSource().resumePoint().episode
     } else {
         null
     }

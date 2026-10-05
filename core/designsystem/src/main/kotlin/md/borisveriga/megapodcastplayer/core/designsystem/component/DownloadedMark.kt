@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +43,29 @@ internal fun DownloadedMark(
 ) {
     Icon(
         imageVector = Icons.Rounded.DownloadDone,
+        contentDescription = contentDescription,
+        tint = MegaPodcastPlayerTheme.colors.downloaded,
+        modifier = modifier.size(MARK_SIZE),
+    )
+}
+
+/**
+ * The same mark for an episode's video: on the device too, beside the audio's tick.
+ *
+ * A film rather than the screen glyph, which means watching, and in the same green, so the two
+ * marks read as one fact about two files. Drawn only beside [DownloadedMark]: a video does not play
+ * offline without its sound, and the removal that takes one takes both.
+ *
+ * @param modifier layout modifier.
+ * @param contentDescription what a screen reader says for it.
+ */
+@Composable
+internal fun DownloadedVideoMark(
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    Icon(
+        imageVector = Icons.Rounded.OndemandVideo,
         contentDescription = contentDescription,
         tint = MegaPodcastPlayerTheme.colors.downloaded,
         modifier = modifier.size(MARK_SIZE),

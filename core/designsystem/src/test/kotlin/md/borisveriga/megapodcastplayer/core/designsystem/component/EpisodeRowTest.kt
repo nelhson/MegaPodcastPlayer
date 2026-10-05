@@ -137,6 +137,18 @@ class EpisodeRowTest {
     }
 
     @Test
+    fun `marks a downloaded video beside the audio's mark, and says so`() {
+        composeTestRule.setContent {
+            MegaPodcastPlayerTheme {
+                EpisodeRow(title = "On the device", isDownloaded = true, isVideoDownloaded = true)
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Downloaded").assertExists()
+        composeTestRule.onNodeWithContentDescription("Video downloaded").assertExists()
+    }
+
+    @Test
     fun `leaves a row that is not downloaded unmarked`() {
         composeTestRule.setContent {
             MegaPodcastPlayerTheme {

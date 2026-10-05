@@ -12,6 +12,7 @@ import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
+import md.borisveriga.megapodcastplayer.core.media.ResumePoint
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
@@ -228,31 +229,73 @@ class DefaultPlaybackRepositoryTest {
         }
 
     @Test
-    fun `the resumable queue is the stored queue when there is one`() = runTest {
-        preferences.setLastPlayedEpisodeId("c")
-        repository.enqueue("a")
-        repository.enqueue("b")
+    fun `the resume point is the stored queue at its head when the last played is not in it`() =
+        runTest {
+            preferences.setLastPlayedEpisodeId("c")
+            repository.enqueue("a")
+            repository.enqueue("b")
+            repository.recordPosition(episodeId = "a", positionMs = 9_000L, durationMs = null)
 
-        assertEquals(listOf("a", "b"), repository.resumableQueue().map { it.episode.id })
+            val point = repository.resumePoint()
+
+            assertEquals(listOf("a", "b"), point.queue.map { it.episode.id })
+            assertEquals(0, point.index)
+            assertEquals(9_000L, point.positionMs)
+        }
+
+    @Test
+    fun `the resume point is the episode that was playing, with the ones before it kept`() =
+        runTest {
+            // Played "a", then pressed play on "b": the queue still holds "a" ahead of it, and the
+            // head used to be what came back after a restart.
+            repository.enqueue("a")
+            repository.enqueue("b")
+            repository.enqueue("c")
+            repository.recordPosition(episodeId = "a", positionMs = 9_000L, durationMs = null)
+            repository.recordPosition(episodeId = "b", positionMs = 42_000L, durationMs = null)
+            preferences.setLastPlayedEpisodeId("b")
+
+            val point = repository.resumePoint()
+
+            assertEquals(listOf("a", "b", "c"), point.queue.map { it.episode.id })
+            assertEquals(1, point.index)
+            assertEquals("b", point.episode?.episode?.id)
+            assertEquals(42_000L, point.positionMs)
+        }
+
+    @Test
+    fun `a queue with no last played episode resumes at its head`() = runTest {
+        repository.enqueue("b")
+        repository.enqueue("a")
+
+        val point = repository.resumePoint()
+
+        assertEquals(0, point.index)
+        assertEquals("b", point.episode?.episode?.id)
     }
 
     @Test
     fun `an empty queue resumes the last played episode instead`() = runTest {
+        repository.recordPosition(episodeId = "c", positionMs = 5_000L, durationMs = null)
         preferences.setLastPlayedEpisodeId("c")
 
-        assertEquals(listOf("c"), repository.resumableQueue().map { it.episode.id })
+        val point = repository.resumePoint()
+
+        assertEquals(listOf("c"), point.queue.map { it.episode.id })
+        assertEquals(0, point.index)
+        assertEquals(5_000L, point.positionMs)
     }
 
     @Test
     fun `nothing queued and nothing played means nothing to resume`() = runTest {
-        assertEquals(emptyList<String>(), repository.resumableQueue().map { it.episode.id })
+        assertEquals(ResumePoint.EMPTY, repository.resumePoint())
     }
 
     @Test
     fun `a last played episode that has since been removed is not resumed`() = runTest {
         preferences.setLastPlayedEpisodeId("deleted-episode")
 
-        assertEquals(emptyList<String>(), repository.resumableQueue().map { it.episode.id })
+        assertEquals(ResumePoint.EMPTY, repository.resumePoint())
     }
 
     @Test
