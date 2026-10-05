@@ -41,7 +41,11 @@ Uninstall of `md.borisveriga.megapodcastplayer` on the phone deletes the Room da
 
 ## install_on_devices
 
-- **Targets:** `:app` → Galaxy Z Fold 7, `:wear` → Galaxy Watch Ultra 2.
+- **Targets:** `:app` → Galaxy Z Fold 7, `:wear` → Galaxy Watch Ultra 2. Also a test phone, a
+  Galaxy S21+ (SM-G996B, Android 15, serial `RFCR2084L2Z`), paired over wireless adb since
+  2026-10-05 and seen as `adb-RFCR2084L2Z-uyPdGV._adb-tls-connect._tcp`; connect by that service
+  name. Not the daily driver, so a reinstall there costs nothing; `debug` goes on it when Boris
+  asks to check something there.
 - **Build type:** `debug` for the phone; **`wrist` for the watch** (since 2026-09-30). `wrist` is
   release's R8 configuration, not debuggable, signed with the debug key — a build type of its own
   in both application convention plugins (`addWristBuildType` in `AndroidCommon.kt`), documented in
