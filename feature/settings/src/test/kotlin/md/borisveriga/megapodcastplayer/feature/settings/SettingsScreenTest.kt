@@ -12,6 +12,8 @@ import md.borisveriga.megapodcastplayer.core.data.repository.RestoreProgress
 import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
+import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +49,7 @@ class SettingsScreenTest {
         onThemeChange: (ThemeChoice) -> Unit = {},
         onPureBlackChange: (Boolean) -> Unit = {},
         onOpenNotificationSettings: () -> Unit = {},
+        onSwipeDownloadChange: (SwipeDownload) -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -61,6 +64,7 @@ class SettingsScreenTest {
                     onUnmeteredOnlyChange = {},
                     onKeepLimitChange = {},
                     onDeleteAfterPlayingChange = {},
+                    onSwipeDownloadChange = onSwipeDownloadChange,
                     onThemeChange = onThemeChange,
                     onDynamicColorChange = {},
                     onPureBlackChange = onPureBlackChange,
@@ -108,6 +112,23 @@ class SettingsScreenTest {
         composeRule
             .onNodeWithText("Some shows play at their own speed: Acquired at 2x, Zeitgeist at 1.5x")
             .assertExists()
+    }
+
+    /** The download swipe's choice is offered in the downloads card, and a chip picks it. */
+    @Test
+    fun `choosing audio and video for the swipe is passed on`() {
+        var chosen: SwipeDownload? = null
+        setContent(
+            SettingsUiState(downloads = DownloadSettings(swipeDownload = SwipeDownload.AUDIO)),
+            onSwipeDownloadChange = { chosen = it },
+        )
+
+        // The row after the chips, so the chips themselves are in view: `performScrollTo` on a
+        // chip would scroll only the horizontal row it sits in.
+        scrollToText("About")
+        composeRule.onNodeWithText("Audio and video").performClick()
+
+        assertEquals(SwipeDownload.AUDIO_AND_VIDEO, chosen)
     }
 
     /** A row saying "no shows override this" would explain a feature rather than report a fact. */

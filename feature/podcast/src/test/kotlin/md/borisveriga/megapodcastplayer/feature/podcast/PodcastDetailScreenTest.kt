@@ -29,6 +29,7 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
@@ -111,6 +112,8 @@ class PodcastDetailScreenTest {
         onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
         onEpisodeDownloadToggle: (String) -> Unit = {},
+        onEpisodeSwipeDownload: (String) -> Unit = {},
+        swipeDownload: SwipeDownload = SwipeDownload.DEFAULT,
         onEpisodePlayNext: (String) -> Unit = {},
         onEpisodePlay: (String) -> Unit = {},
         onEpisodeWatch: (String) -> Unit = {},
@@ -134,6 +137,7 @@ class PodcastDetailScreenTest {
                         openEpisodeId = openEpisodeId,
                         settings = settings,
                         videoDownloads = videoDownloads,
+                        swipeDownload = swipeDownload,
                     ),
                     onBack = {},
                     onEpisodeClick = onEpisodeClick,
@@ -142,6 +146,7 @@ class PodcastDetailScreenTest {
                     onEpisodeWatch = onEpisodeWatch,
                     onEpisodeSheetDismiss = {},
                     onEpisodeDownloadToggle = onEpisodeDownloadToggle,
+                    onEpisodeSwipeDownload = onEpisodeSwipeDownload,
                     onEpisodePlayNext = onEpisodePlayNext,
                     onVideoQualitiesRequest = onVideoQualitiesRequest,
                     onVideoDownload = { _, _ -> },
@@ -637,9 +642,11 @@ class PodcastDetailScreenTest {
 
     @Test
     fun `a row's swipe downloads it, and no button on the right does it any more`() {
+        val swiped = mutableListOf<String>()
         val toggled = mutableListOf<String>()
         setScreen(
             episodes = listOf(episode("a")),
+            onEpisodeSwipeDownload = { swiped += it },
             onEpisodeDownloadToggle = { toggled += it },
         )
 
@@ -648,7 +655,36 @@ class PodcastDetailScreenTest {
 
         composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Download")
 
-        assertEquals(listOf("a"), toggled)
+        // Through the swipe's own handler, which follows the setting for what a swipe fetches;
+        // the sheet's buttons keep the toggle.
+        assertEquals(listOf("a"), swiped)
+        assertEquals(emptyList<String>(), toggled)
+    }
+
+    @Test
+    fun `a YouTube row's swipe says it fetches the video when the settings ask for it`() {
+        val swiped = mutableListOf<String>()
+        setScreen(
+            episodes = listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("dQw4w9WgXcQ"))),
+            swipeDownload = SwipeDownload.AUDIO_AND_VIDEO,
+            onEpisodeSwipeDownload = { swiped += it },
+        )
+
+        composeRule.onNodeWithText("Episode a").performCustomAccessibilityAction("Download with video")
+
+        assertEquals(listOf("a"), swiped)
+    }
+
+    @Test
+    fun `a downloaded episode wears the badges Downloads does`() {
+        setScreen(
+            episodes = listOf(episode("a", downloadState = DownloadState.COMPLETED)),
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+        )
+
+        composeRule.onNodeWithContentDescription("Audio on this phone", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithContentDescription("Video on this phone, 720p", useUnmergedTree = true)
+            .assertExists()
     }
 
     @Test

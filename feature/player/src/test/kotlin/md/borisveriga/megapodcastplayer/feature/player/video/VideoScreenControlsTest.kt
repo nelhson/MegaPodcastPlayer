@@ -40,7 +40,8 @@ import org.robolectric.annotation.Config
  * Behaviour, not pictures. A cleared page is a black one, which a golden would guard no better than
  * a comment; what can break is the wiring — that the tap reaches the flag, that buttons which have
  * faded out cannot still be pressed or spoken, that *minimise* and *switch to audio* each reach
- * their own handler rather than each other's, and that Back undoes a cleared page before it leaves.
+ * their own handler rather than each other's, that Back undoes a cleared page before it leaves, and
+ * that the controls leave on their own only over a moving picture, five seconds after the last touch.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -55,8 +56,20 @@ class VideoScreenControlsTest {
     /** Where Back is sent in the composition under test; read to press it and to ask who takes it. */
     private lateinit var backDispatcher: OnBackPressedDispatcher
 
-    /** The video screen on a YouTube episode, holding its own cleared-or-not flag. */
-    private fun setScreen(actions: VideoActions = VideoActions(), fullscreen: Boolean = false) {
+    /**
+     * The video screen on a YouTube episode, holding its own cleared-or-not flag.
+     *
+     * @param actions the controls' handlers.
+     * @param fullscreen whether the picture was asked to fill the screen.
+     * @param playing whether the picture is moving, which is when the controls hide on their own.
+     * @param holdControls whether a sheet opened from the controls is up.
+     */
+    private fun setScreen(
+        actions: VideoActions = VideoActions(),
+        fullscreen: Boolean = false,
+        playing: Boolean = false,
+        holdControls: Boolean = false,
+    ) {
         composeRule.setContent {
             backDispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current).onBackPressedDispatcher
             MegaPodcastPlayerTheme {
@@ -69,6 +82,7 @@ class VideoScreenControlsTest {
                             showTitle = "A playlist",
                             youTubeVideoId = "niTJ2221aS8",
                             durationMs = 60_000L,
+                            isPlaying = playing,
                         ),
                     ),
                     surface = { modifier -> Box(modifier = modifier) },
@@ -76,6 +90,7 @@ class VideoScreenControlsTest {
                     fullscreen = fullscreen,
                     controlsVisible = controlsVisible,
                     onControlsVisibleChange = { controlsVisible = it },
+                    holdControls = holdControls,
                 )
             }
         }
@@ -246,5 +261,73 @@ class VideoScreenControlsTest {
         tapLabelled("Show the controls").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription("Leave full screen").assertIsDisplayed()
+    }
+
+    // --- hiding on their own ------------------------------------------------
+
+    /** Moves the test clock on by [millis] and lets whatever that set off settle. */
+    private fun advance(millis: Long) {
+        composeRule.mainClock.advanceTimeBy(millis)
+        composeRule.waitForIdle()
+    }
+
+    @Test
+    fun `over a playing picture the page clears itself five seconds after the last touch`() {
+        composeRule.mainClock.autoAdvance = false
+        setScreen(playing = true)
+
+        advance(4_500L)
+        assertEquals(true, controlsVisible)
+
+        advance(1_000L)
+        assertEquals(false, controlsVisible)
+    }
+
+    @Test
+    fun `a touch on a control starts the five seconds again`() {
+        composeRule.mainClock.autoAdvance = false
+        setScreen(playing = true)
+        advance(4_000L)
+
+        // Pressing a button is using the controls, not leaving them alone.
+        composeRule.onNodeWithContentDescription("Next episode").performClick()
+        advance(4_000L)
+        assertEquals(true, controlsVisible)
+
+        advance(1_500L)
+        assertEquals(false, controlsVisible)
+    }
+
+    @Test
+    fun `a paused picture keeps its controls however long it is left`() {
+        composeRule.mainClock.autoAdvance = false
+        setScreen(playing = false)
+
+        advance(30_000L)
+
+        assertEquals(true, controlsVisible)
+    }
+
+    @Test
+    fun `a sheet open from the controls keeps them`() {
+        composeRule.mainClock.autoAdvance = false
+        setScreen(playing = true, holdControls = true)
+
+        advance(30_000L)
+
+        assertEquals(true, controlsVisible)
+    }
+
+    @Test
+    @Config(qualifiers = "w891dp-h411dp-land-xxhdpi")
+    fun `the overlay hides its controls after the same five seconds`() {
+        composeRule.mainClock.autoAdvance = false
+        setScreen(playing = true)
+
+        advance(4_500L)
+        assertEquals(true, controlsVisible)
+
+        advance(1_000L)
+        assertEquals(false, controlsVisible)
     }
 }

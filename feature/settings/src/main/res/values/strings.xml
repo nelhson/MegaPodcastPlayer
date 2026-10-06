@@ -67,6 +67,10 @@
 
     <string name="settings_delete_after_playing_title">Delete after playing</string>
     <string name="settings_delete_after_playing_description">Free up storage when an episode finishes</string>
+    <string name="settings_swipe_download_title">Swipe to download</string>
+    <string name="settings_swipe_download_description">On a YouTube show, video comes with its audio</string>
+    <string name="settings_swipe_download_audio">Audio</string>
+    <string name="settings_swipe_download_audio_and_video">Audio and video</string>
 
     <string name="settings_downloaded_episodes">Downloaded episodes</string>
     <!-- COPY-2: these are files, and files are deleted. -->

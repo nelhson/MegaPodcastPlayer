@@ -125,21 +125,4 @@
     <string name="downloads_message_list_exported">Download list exported</string>
     <string name="downloads_message_list_export_failed">Could not write that file</string>
     <string name="downloads_message_nothing_to_export">Nothing has finished downloading yet</string>
-
-
-    <!--
-        Badges at the end of a finished row, naming what of the episode is on the phone: its sound,
-        its picture, or both. %1$s is the video's quality, already formatted, e.g. "720p".
-    -->
-    <string name="downloads_badge_audio">Audio</string>
-    <string name="downloads_badge_video">Video · %1$s</string>
-    <!--
-        The same two, spoken. Drawn, a pill at the end of a row in Downloads says "on this phone" by
-        where it is; read out, a bare "Audio" after an episode's title says nothing, so the spoken
-        form says it.
-    -->
-    <string name="downloads_badge_audio_spoken">Audio on this phone</string>
-    <string name="downloads_badge_video_spoken">Video on this phone, %1$s</string>
-    <!-- The video badge is also the way to watch it; what a tap on it does, spoken. -->
-    <string name="downloads_badge_play_video">Play video</string>
 </resources>

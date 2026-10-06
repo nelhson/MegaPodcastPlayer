@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
@@ -163,6 +164,9 @@ interface DownloadRepository {
 
     /** Sets whether finishing an episode removes its downloaded audio. */
     suspend fun setDeleteAfterPlaying(enabled: Boolean)
+
+    /** Sets what the download swipe on a show's episode list fetches. */
+    suspend fun setSwipeDownload(choice: SwipeDownload)
 }
 
 /**

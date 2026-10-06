@@ -97,6 +97,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DeleteDownloadDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedCount
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedKindBadge
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
@@ -110,6 +111,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLine
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
+import md.borisveriga.megapodcastplayer.core.designsystem.component.downloadedKinds
 import md.borisveriga.megapodcastplayer.core.designsystem.component.removalTakesVideo
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.ReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.moveActions
@@ -127,6 +129,7 @@ import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
 import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
@@ -190,6 +193,7 @@ fun PodcastDetailRoute(
         },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
+        onEpisodeSwipeDownload = viewModel::swipeDownload,
         onEpisodePlayNext = viewModel::playNext,
         onVideoQualitiesRequest = viewModel::loadVideoQualities,
         onVideoDownload = viewModel::downloadVideo,
@@ -216,6 +220,9 @@ fun PodcastDetailRoute(
  * @param onEpisodeClick episode tap handler; a tap starts playback.
  * @param onEpisodeDownloadToggle download/remove handler; one action, because the button's
  *   meaning follows the episode's download state.
+ * @param onEpisodeSwipeDownload what a row's download swipe calls when it fetches; it follows the
+ *   setting for what a swipe downloads, where the sheet's own buttons each fetch what they name.
+ *   Cancelling and deleting go through [onEpisodeDownloadToggle] either way.
  * @param onEpisodePlayNext queues an episode to play after the current one, without interrupting
  *   it — which is the half of "what shall I listen to" that a tap on the row cannot express.
  * @param onEpisodePlay plays an episode, or pauses the one already playing.
@@ -257,6 +264,7 @@ fun PodcastDetailScreen(
     onEpisodeWatch: (String) -> Unit,
     onEpisodeSheetDismiss: () -> Unit,
     onEpisodeDownloadToggle: (String) -> Unit,
+    onEpisodeSwipeDownload: (String) -> Unit,
     onEpisodePlayNext: (String) -> Unit,
     onVideoQualitiesRequest: (String) -> Unit,
     onVideoDownload: (String, VideoQuality) -> Unit,
@@ -547,9 +555,12 @@ fun PodcastDetailScreen(
                                     null
                                 },
                                 canWatch = uiState.canPlayVideo(episode.id),
-                                hasVideoDownload = uiState.videoDownloads[episode.id] != null,
-                                isVideoDownloaded = uiState.videoDownloads[episode.id]?.isComplete == true,
-                                onDownloadToggle = { toggleDownload(episode.id) },
+                                videoDownload = uiState.videoDownloads[episode.id],
+                                swipeFetchesVideo = uiState.swipeDownloadsVideo(episode),
+                                onDownloadToggle = episode.swipeDownloadHandler(
+                                    fetch = onEpisodeSwipeDownload,
+                                    toggle = toggleDownload,
+                                ),
                                 onPlayNext = { onEpisodePlayNext(episode.id) },
                             )
                         }
@@ -593,6 +604,10 @@ fun PodcastDetailScreen(
  *   button at all.
  * @param canWatch false when the picture could not be shown right now — offline, and the video not
  *   downloaded — which draws the second button disabled.
+ * @param videoDownload the episode's video download, finished or not, or null; names what a removal
+ *   takes and badges the row once it has finished.
+ * @param swipeFetchesVideo whether a download swipe fetches the picture as well as the sound, which
+ *   the swipe's label then says.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
  *   current state means.
  * @param onPlayNext queues it to play after whatever is playing now.
@@ -612,14 +627,19 @@ private fun EpisodeListRow(
     onPlay: () -> Unit,
     onWatch: (() -> Unit)?,
     canWatch: Boolean,
-    hasVideoDownload: Boolean,
-    isVideoDownloaded: Boolean,
+    videoDownload: VideoDownload?,
+    swipeFetchesVideo: Boolean,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
 ) {
     val isDragging = drag.draggingKey == episode.id
     val isNowPlaying = nowPlaying.episodeId == episode.id
-    val download = episode.downloadSwipeAction(hasVideoDownload, onDownloadToggle)
+    val download = episode.downloadSwipeAction(
+        hasVideoDownload = videoDownload != null,
+        fetchesVideo = swipeFetchesVideo,
+        onToggle = onDownloadToggle,
+    )
+    val kinds = downloadedKinds(episode.downloadState, videoDownload)
     val playNext = SwipeAction(
         icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
         label = stringResource(R.string.podcast_action_play_next),
@@ -671,11 +691,15 @@ private fun EpisodeListRow(
             artworkUrl = artworkUrl,
             isUnplayed = episode.isNew,
             isPlayed = episode.isPlayed,
-            // The show page used to be the one list that hid this. The mark is how a list is read
-            // down for what will play on a train with no signal, and the only ways to find out here
-            // were the Downloaded filter chip or swiping a row to see what the backdrop said.
-            isDownloaded = episode.downloadState == DownloadState.COMPLETED,
-            isVideoDownloaded = isVideoDownloaded,
+            // The show page used to be the one list that hid this. The badges are how a list is
+            // read down for what will play on a train with no signal — the same pills Downloads
+            // wears, naming which half is here, rather than a tick a few pixels wide beside the
+            // title that did not say whether it was the sound or the picture.
+            badges = if (kinds.isEmpty()) {
+                null
+            } else {
+                { kinds.forEach { kind -> DownloadedKindBadge(kind) } }
+            },
             playedFraction = episode.playedFraction,
             isNowPlaying = isNowPlaying,
             isPlaying = nowPlaying.isPlaying,
@@ -794,6 +818,7 @@ private fun Episode.runningDownload(): DownloadState? = downloadState.takeIf {
  * removing the sound takes the picture with it.
  *
  * @param hasVideoDownload whether the episode's video is downloaded or on its way.
+ * @param fetchesVideo whether a download fetches the picture with the sound, which the label names.
  * @param onToggle the handler; the same one for every state, as the view model's toggle already
  *   reads the state to decide.
  * @return the action to hand to [SwipeActionsRow].
@@ -801,11 +826,14 @@ private fun Episode.runningDownload(): DownloadState? = downloadState.takeIf {
 @Composable
 private fun Episode.downloadSwipeAction(
     hasVideoDownload: Boolean,
+    fetchesVideo: Boolean,
     onToggle: () -> Unit,
 ): SwipeAction = when (downloadState) {
     DownloadState.NOT_DOWNLOADED -> SwipeAction(
         icon = Icons.Rounded.FileDownload,
-        label = stringResource(R.string.podcast_action_download),
+        label = stringResource(
+            if (fetchesVideo) R.string.podcast_action_download_with_video else R.string.podcast_action_download,
+        ),
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         onClick = onToggle,
@@ -848,6 +876,21 @@ private fun Episode.downloadSwipeAction(
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         onClick = onToggle,
     )
+}
+
+/**
+ * What a row's download swipe calls, which depends on whether it fetches.
+ *
+ * A swipe that fetches follows the setting for what a swipe downloads; one that cancels or deletes
+ * is the toggle's, question and all — the setting is about what to fetch, not about what to keep.
+ *
+ * @param fetch the swipe's own download handler, for an episode with no copy or a failed one.
+ * @param toggle the asking toggle, for a transfer to call off or a copy to delete.
+ * @return the handler to hand to the row.
+ */
+private fun Episode.swipeDownloadHandler(fetch: (String) -> Unit, toggle: (String) -> Unit): () -> Unit {
+    val fetches = downloadState == DownloadState.NOT_DOWNLOADED || downloadState == DownloadState.FAILED
+    return { if (fetches) fetch(id) else toggle(id) }
 }
 
 /**
@@ -1687,6 +1730,7 @@ internal fun PodcastDetailScreenPreview() {
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
+            onEpisodeSwipeDownload = {},
             onEpisodePlay = {},
             onEpisodePlayFrom = { _, _ -> },
             onEpisodeWatch = {},
@@ -1723,6 +1767,7 @@ internal fun PodcastDetailScreenInPanePreview() {
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
+            onEpisodeSwipeDownload = {},
             onEpisodePlay = {},
             onEpisodePlayFrom = { _, _ -> },
             onEpisodeWatch = {},
@@ -1766,6 +1811,7 @@ internal fun PodcastDetailScreenYouTubePreview() {
             onBack = {},
             onEpisodeClick = {},
             onEpisodeDownloadToggle = {},
+            onEpisodeSwipeDownload = {},
             onEpisodePlay = {},
             onEpisodePlayFrom = { _, _ -> },
             onEpisodeWatch = {},

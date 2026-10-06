@@ -89,6 +89,15 @@ class PlaybackConnection @Inject constructor(
      */
     private val disconnections = MutableStateFlow(0)
 
+    /**
+     * How many times the session's extras have changed, which is only ever read as "they just did".
+     *
+     * The extras say whether the service is retrying a failed episode, and that changes how the
+     * player is shown; but a change of extras is not a player event, so the flow following the
+     * controller hears of it through this, the same way it hears of [disconnections].
+     */
+    private val extrasChanges = MutableStateFlow(0)
+
     /** Set when a command fails, so the UI can explain why nothing happened. */
     private val commandErrors = MutableStateFlow<String?>(null)
 
@@ -162,6 +171,11 @@ class PlaybackConnection @Inject constructor(
             }
         }
 
+        // A retry starting or ending changes what the snapshot says without any player event.
+        val extras = launch {
+            extrasChanges.collect { trySend(mediaController.snapshot(commandErrors.value, pictureReady)) }
+        }
+
         // Checked on arrival as well as on every disconnection, since this one may have gone
         // during the wait above.
         val watchdog = launch {
@@ -170,6 +184,7 @@ class PlaybackConnection @Inject constructor(
 
         awaitClose {
             ticker.cancel()
+            extras.cancel()
             watchdog.cancel()
             mediaController.removeListener(listener)
         }
@@ -629,15 +644,21 @@ class PlaybackConnection @Inject constructor(
         }
 
     /**
-     * Notes a controller's disconnection, on the main thread, where Media3 reports it.
+     * Notes a controller's disconnection, and a change of its session's extras, on the main thread,
+     * where Media3 reports both.
      *
-     * The controller is of no further use — Media3 has released it — so it is forgotten here
-     * rather than left for the next command to find disconnected.
+     * A disconnected controller is of no further use — Media3 has released it — so it is
+     * forgotten here rather than left for the next command to find disconnected.
      */
     private inner class DisconnectionListener : MediaController.Listener {
         override fun onDisconnected(disconnected: MediaController) {
             if (controller === disconnected) controller = null
             disconnections.value += 1
+        }
+
+        /** Passes a change of the session's extras on to [playbackState]; see [extrasChanges]. */
+        override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+            extrasChanges.value += 1
         }
     }
 
@@ -740,6 +761,12 @@ private fun MediaController.snapshot(errorMessage: String?, firstFrameRendered: 
         // Only ever true of an item that is showing its picture: a frame left over from before a
         // fall back to sound is not a picture of what is playing now.
         pictureReady = firstFrameRendered && currentMediaItem?.videoQualityOrNull != null,
+    ).whileRetrying(
+        // A failed episode the service is about to ask for again is not failed yet; see
+        // [PlaybackRetryListener].
+        retrying = sessionExtras.getBoolean(EXTRA_RETRYING),
+        hasPlayerError = playerError != null,
+        commandError = errorMessage,
     )
 }
 

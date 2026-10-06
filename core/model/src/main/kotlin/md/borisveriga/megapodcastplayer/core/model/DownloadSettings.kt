@@ -16,12 +16,14 @@ package md.borisveriga.megapodcastplayer.core.model
  *   *fetched*: nothing here removes a download that is already on the device, because a refresh
  *   that deleted what the user had saved would be worse than one that saved a little too much.
  * @property deleteAfterPlaying whether finishing an episode removes its audio from the device.
+ * @property swipeDownload what the download swipe on a show's episode list fetches.
  */
 data class DownloadSettings(
     val autoDownloadNewEpisodes: Boolean = false,
     val unmeteredOnly: Boolean = true,
     val keepLimitPerPodcast: Int = DEFAULT_KEEP_LIMIT,
     val deleteAfterPlaying: Boolean = true,
+    val swipeDownload: SwipeDownload = SwipeDownload.DEFAULT,
 ) {
     companion object {
         /** Sentinel for "no bound": auto-download fetches everything a refresh discovers. */

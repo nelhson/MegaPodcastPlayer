@@ -21,6 +21,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.ShowSettingsCodec
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 
@@ -73,6 +74,10 @@ class UserPreferencesDataSource @Inject constructor(
                 preferences[Keys.KEEP_LIMIT] ?: DownloadSettings.DEFAULT_KEEP_LIMIT
                 ).coerceAtLeast(DownloadSettings.KEEP_ALL),
             deleteAfterPlaying = preferences[Keys.DELETE_AFTER_PLAYING] ?: true,
+            // By name, falling back on a name this build does not know, as the sort order does.
+            swipeDownload = preferences[Keys.SWIPE_DOWNLOAD]
+                ?.let { stored -> SwipeDownload.entries.firstOrNull { it.name == stored } }
+                ?: SwipeDownload.DEFAULT,
         )
     }
 
@@ -253,6 +258,15 @@ class UserPreferencesDataSource @Inject constructor(
     /** Sets whether finishing an episode removes its downloaded audio. */
     suspend fun setDeleteAfterPlaying(enabled: Boolean) {
         dataStore.edit { it[Keys.DELETE_AFTER_PLAYING] = enabled }
+    }
+
+    /**
+     * Sets what the download swipe on a show's episode list fetches.
+     *
+     * @param choice audio only, or audio and video; stored by name.
+     */
+    suspend fun setSwipeDownload(choice: SwipeDownload) {
+        dataStore.edit { it[Keys.SWIPE_DOWNLOAD] = choice.name }
     }
 
     /**
@@ -448,6 +462,7 @@ class UserPreferencesDataSource @Inject constructor(
         val UNMETERED_ONLY = booleanPreferencesKey("download_unmetered_only")
         val KEEP_LIMIT = intPreferencesKey("download_keep_limit_per_podcast")
         val DELETE_AFTER_PLAYING = booleanPreferencesKey("delete_after_playing")
+        val SWIPE_DOWNLOAD = stringPreferencesKey("swipe_download")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val THEME = stringPreferencesKey("theme")

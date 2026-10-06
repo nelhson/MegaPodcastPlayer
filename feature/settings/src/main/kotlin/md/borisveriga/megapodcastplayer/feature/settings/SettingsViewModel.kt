@@ -27,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesReposi
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupCodec
 import md.borisveriga.megapodcastplayer.core.model.backup.OpmlCodec
@@ -332,6 +333,15 @@ class SettingsViewModel @Inject constructor(
     /** Sets whether finishing an episode removes its downloaded audio. */
     fun setDeleteAfterPlaying(enabled: Boolean) {
         viewModelScope.launch { downloadRepository.setDeleteAfterPlaying(enabled) }
+    }
+
+    /**
+     * Sets what the download swipe on a show's episode list fetches.
+     *
+     * @param choice audio only, or audio and video.
+     */
+    fun setSwipeDownload(choice: SwipeDownload) {
+        viewModelScope.launch { downloadRepository.setSwipeDownload(choice) }
     }
 
     /**

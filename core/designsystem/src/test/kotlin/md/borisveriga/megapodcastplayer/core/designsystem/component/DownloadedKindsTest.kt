@@ -1,4 +1,4 @@
-package md.borisveriga.megapodcastplayer.feature.downloads
+package md.borisveriga.megapodcastplayer.core.designsystem.component
 
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
@@ -6,7 +6,7 @@ import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Which badges a Downloads row draws: only for what has finished arriving. */
+/** Which badges an episode row draws: only for what has finished arriving. */
 class DownloadedKindsTest {
 
     private fun video(state: DownloadState) = VideoDownload(VideoQuality(720), state, percent = 0f)
