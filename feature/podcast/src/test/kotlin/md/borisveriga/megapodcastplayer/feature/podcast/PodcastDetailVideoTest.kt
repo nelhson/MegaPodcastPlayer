@@ -3,9 +3,11 @@ package md.borisveriga.megapodcastplayer.feature.podcast
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.verify
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -13,6 +15,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
@@ -280,6 +283,71 @@ class PodcastDetailVideoTest : PodcastDetailViewModelFixture() {
                 awaitItem().message,
             )
         }
+    }
+
+    @Test
+    fun `the download swipe fetches the video too when the settings ask for it`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        downloadSettings.value = DownloadSettings(
+            unmeteredOnly = false,
+            swipeDownload = SwipeDownload.AUDIO_AND_VIDEO,
+        )
+        every { playbackRepository.observeVideoQuality() } returns flowOf(VideoQuality(1080))
+        coEvery { downloadRepository.downloadVideo("a", VideoQuality(1080)) } returns true
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.swipeDownload("a")
+        runCurrent()
+
+        // The video download brings the audio with it; asking for the audio separately as well
+        // would be a second request for the same file.
+        coVerify(exactly = 1) { downloadRepository.downloadVideo("a", VideoQuality(1080)) }
+        coVerify(exactly = 0) { downloadRepository.download(any()) }
+        viewModel.uiState.test {
+            assertEquals(
+                PodcastDetailMessage.VideoDownloadQueued("Episode a", VideoQuality(1080)),
+                awaitItem().message,
+            )
+        }
+    }
+
+    @Test
+    fun `the download swipe fetches audio only when the settings say audio`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a"))
+        downloadSettings.value = DownloadSettings(swipeDownload = SwipeDownload.AUDIO)
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.swipeDownload("a")
+        runCurrent()
+
+        coVerify(exactly = 1) { downloadRepository.download("a") }
+        coVerify(exactly = 0) { downloadRepository.downloadVideo(any(), any()) }
+    }
+
+    @Test
+    fun `an episode with no picture is downloaded as audio whatever the swipe is set to`() = runTest {
+        episodes.value = listOf(episode("a", DownloadState.NOT_DOWNLOADED))
+        downloadSettings.value = DownloadSettings(swipeDownload = SwipeDownload.AUDIO_AND_VIDEO)
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.swipeDownload("a")
+        runCurrent()
+
+        coVerify(exactly = 1) { downloadRepository.download("a") }
+        coVerify(exactly = 0) { downloadRepository.downloadVideo(any(), any()) }
+    }
+
+    @Test
+    fun `the swipe on a finished download deletes it, whatever it would fetch`() = runTest {
+        episodes.value = listOf(youTubeEpisode("a").copy(downloadState = DownloadState.COMPLETED))
+        downloadSettings.value = DownloadSettings(swipeDownload = SwipeDownload.AUDIO_AND_VIDEO)
+        viewModel.uiState.test { awaitItem() }
+
+        viewModel.swipeDownload("a")
+        runCurrent()
+
+        coVerify(exactly = 1) { downloadRepository.removeDownload("a") }
+        coVerify(exactly = 0) { downloadRepository.downloadVideo(any(), any()) }
     }
 
     @Test

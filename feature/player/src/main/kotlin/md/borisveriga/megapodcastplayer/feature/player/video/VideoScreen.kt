@@ -58,8 +58,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,6 +71,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -291,6 +297,8 @@ fun VideoRoute(
         controlsVisible = controlsVisible,
         onControlsVisibleChange = { visible -> hiddenInOverlay = if (visible) null else overlay },
         snackbarHostState = snackbarHostState,
+        // A sheet is the user doing something to the picture; its controls stay for when it closes.
+        holdControls = speedOpen || qualityOpen || downloadOpen,
     )
 }
 
@@ -361,6 +369,10 @@ private fun videoDownloadMessageText(message: VideoDownloadMessage): String = wh
  * turned: the Fold opened out is wider than it is tall and has all the room a page wants.
  *
  * In both, [controlsVisible] says whether anything but the picture is drawn, and a tap flips it.
+ * In both, too, the controls go on their own [CONTROLS_TIMEOUT_MS] after the last touch while the
+ * picture is moving; see [videoControlsAutoHide] for when they stay. Any touch anywhere on the
+ * screen — on the picture, on a button, along the scrubber — starts the wait again, so the controls
+ * never vanish from under a finger that is using them.
  *
  * The surface is a slot rather than drawn here, so a preview — and the golden — can put a plain
  * box where a `SurfaceView` bound to the player would be.
@@ -373,6 +385,8 @@ private fun videoDownloadMessageText(message: VideoDownloadMessage): String = wh
  * @param controlsVisible false when only the picture is to be shown.
  * @param onControlsVisibleChange asks for the controls to be shown or hidden; a tap does.
  * @param snackbarHostState where a playback error or a download message is shown.
+ * @param holdControls true while something opened from the controls — a sheet — is up, which keeps
+ *   them from hiding underneath it.
  */
 @Composable
 internal fun VideoScreen(
@@ -384,14 +398,85 @@ internal fun VideoScreen(
     controlsVisible: Boolean = true,
     onControlsVisibleChange: (Boolean) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    holdControls: Boolean = false,
 ) {
     val controls = ControlsVisibility(controlsVisible, onControlsVisibleChange)
+    // Bumped by every touch; a change restarts the wait below.
+    var touches by remember { mutableIntStateOf(0) }
+    // True while a finger is on the screen: a scrub or a press held past the timeout must not have
+    // the controls taken from under it. The lift both clears it and restarts the wait.
+    var fingerDown by remember { mutableStateOf(false) }
+    val autoHide = videoControlsAutoHide(
+        visible = controlsVisible,
+        playback = uiState.playback,
+        refused = uiState.refused,
+        held = holdControls || fingerDown,
+    )
+    // Stretched for anyone whose accessibility settings ask for more time to act, which for a
+    // screen reader is "never": a control that disappears while it is being found is no control.
+    val timeoutMs = LocalAccessibilityManager.current?.calculateRecommendedTimeoutMillis(
+        originalTimeoutMillis = CONTROLS_TIMEOUT_MS,
+        containsIcons = true,
+        containsText = true,
+        containsControls = true,
+    ) ?: CONTROLS_TIMEOUT_MS
+    val onChange by rememberUpdatedState(onControlsVisibleChange)
+    LaunchedEffect(autoHide, touches, timeoutMs) {
+        if (!autoHide) return@LaunchedEffect
+        delay(timeoutMs)
+        onChange(false)
+    }
+    val watched = modifier.pointerInput(Unit) {
+        // Watched on the way down, before any child sees it, and never consumed: this only notes
+        // that the user is here, it takes nothing from the button or the scrubber being touched.
+        // Presses and lifts only: a drag along the scrubber would otherwise recompose the screen on
+        // every move, and the lift that ends it starts the wait again anyway.
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.type == PointerEventType.Press || event.type == PointerEventType.Release) {
+                    touches += 1
+                    fingerDown = event.changes.any { it.pressed }
+                }
+            }
+        }
+    }
     if (showsOverlay(fullscreen)) {
-        OverlayVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
+        OverlayVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, watched)
     } else {
-        PageVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, modifier)
+        PageVideo(uiState, surface, actions, controls, fullscreen, snackbarHostState, watched)
     }
 }
+
+/**
+ * Whether the video screen's controls should hide on their own after a while untouched.
+ *
+ * Only while they are up and the picture is moving. A paused picture is one the user is about to do
+ * something to; a buffering one — which includes one the player is retrying — or a failed one is one
+ * they are waiting on, and the spinner and what they might press about it should stay; a refused
+ * one is saying something with buttons of its own. And not while [held]: a sheet opened from the
+ * controls is the user busy with them, and coming back from it to find them gone would be the
+ * screen moving on without them.
+ *
+ * Pure, so each of those cases is asserted without a clock.
+ *
+ * @param visible whether the controls are showing.
+ * @param playback what the player is doing.
+ * @param refused whether the picture could not be shown.
+ * @param held whether something opened from the controls is up.
+ * @return true when the wait should run.
+ */
+internal fun videoControlsAutoHide(
+    visible: Boolean,
+    playback: PlaybackState,
+    refused: Boolean,
+    held: Boolean,
+): Boolean = visible &&
+    playback.isPlaying &&
+    !playback.isBuffering &&
+    playback.error == null &&
+    !refused &&
+    !held
 
 /**
  * Whether the controls are shown, and the way to change that, passed to the layouts as one thing.
@@ -451,13 +536,12 @@ private val PageMinHeight: Dp = WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND.dp
  * visible thing about the gesture. While cleared, the whole screen is one target that brings
  * everything back.
  *
- * Nothing hides on a timer here, unlike the overlay: the page's controls are beside the picture, not
- * over it, so they are only in the way when the user says they are.
+ * The page also clears itself after a while untouched while the picture plays, as the overlay does;
+ * see [VideoScreen]. A moving picture is watched with nothing else on the screen.
  *
- * For the same reason Back, on a cleared page, brings the controls back before it does anything
- * else. The user cleared the page and Back undoes that; minimising from a page with no minimise
- * button in sight would be leaving a screen by a door that was not showing. The overlay does not do
- * this: its controls go on their own, so Back there would be spent undoing something nobody did.
+ * Back, on a cleared page, brings the controls back before it does anything else: minimising from a
+ * page with no minimise button in sight would be leaving a screen by a door that was not showing.
+ * The overlay does not do this: it is the picture alone by design, and Back there leaves it.
  *
  * @param uiState what to render.
  * @param surface draws the picture.
@@ -592,8 +676,7 @@ private fun PageVideo(
  * The full-screen shape.
  *
  * The whole surface is one tap target that shows and hides the controls; while playing they go
- * away on their own after [CONTROLS_TIMEOUT_MS], and stay while paused, because a paused picture is
- * one the user is about to do something to.
+ * away on their own, which [VideoScreen] arranges for both shapes.
  *
  * @param uiState what to render.
  * @param surface draws the picture.
@@ -614,12 +697,6 @@ private fun OverlayVideo(
     modifier: Modifier = Modifier,
 ) {
     val controlsVisible = controls.visible
-    LaunchedEffect(controlsVisible, uiState.playback.isPlaying) {
-        if (controlsVisible && uiState.playback.isPlaying) {
-            delay(CONTROLS_TIMEOUT_MS)
-            controls.onChange(false)
-        }
-    }
     val toggleLabel = stringResource(
         if (controlsVisible) R.string.video_hide_controls else R.string.video_show_controls,
     )
@@ -1138,8 +1215,8 @@ private fun FullscreenEffects(
 /** The shape assumed until the decoder reports one; every YouTube rendition here is 16:9. */
 private const val DEFAULT_ASPECT_RATIO = 16f / 9f
 
-/** How long the overlay's controls stay after the last touch while the picture is moving. */
-private const val CONTROLS_TIMEOUT_MS = 3_000L
+/** How long the controls stay after the last touch while the picture is moving. */
+private const val CONTROLS_TIMEOUT_MS = 5_000L
 
 /** The overlay's darkening at the top and bottom edges, where the controls sit over the picture. */
 private val SCRIM = Color.Black.copy(alpha = 0.6f)

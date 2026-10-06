@@ -212,13 +212,27 @@ class PlaybackService : MediaSessionService() {
         )
 
         // A picture that fails takes the sound down with it, since the two are one merged source;
-        // this hands the episode back to sound so the listening carries on.
-        player.addListener(VideoFallbackListener(player = player, crashReporter = crashReporter))
+        // this hands the episode back to sound so the listening carries on. Only once the retries
+        // below are used up: most failures are a moment of bad network, and asking again is cheaper
+        // for the user than being told.
+        val videoFallback = VideoFallbackListener(player = player, crashReporter = crashReporter)
+        player.addListener(videoFallback)
+        // Before the session is built, so it hears the error first: the controllers are told a
+        // retry is pending before the error itself reaches them, and show buffering instead.
+        val retry = PlaybackRetryListener(
+            player = player,
+            scope = serviceScope,
+            crashReporter = crashReporter,
+            onRetryingChanged = { retrying -> mediaSession?.setSessionExtras(retryingExtras(retrying)) },
+            onGaveUp = videoFallback::fallBack,
+        )
+        player.addListener(retry)
 
         // Everything above is installed on the real player, because everything above is about what
         // the *player* did. The wrapper below is about what a button *means*, and it is what the
         // session — and therefore the notification, the lock screen, a car and a headset — sees.
-        val sessionPlayer = ChapterAwarePlayer(player)
+        // A stop from any controller drops a retry still waiting; see [PlaybackRetryListener.cancelPending].
+        val sessionPlayer = ChapterAwarePlayer(player, onStop = retry::cancelPending)
         sessionPlayer.addListener(
             ChapterFollowingListener(
                 player = sessionPlayer,

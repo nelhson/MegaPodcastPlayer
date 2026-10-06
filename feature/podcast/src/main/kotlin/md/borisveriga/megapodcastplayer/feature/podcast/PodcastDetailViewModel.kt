@@ -46,6 +46,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerCommand
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.filterBy
@@ -93,6 +94,8 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * @property videoQualitiesFailed true when that lookup failed, so the dialog can say so rather
  *   than wait forever.
  * @property isOnline whether there is a network to fetch a picture over; see [canPlayVideo].
+ * @property swipeDownload what the download swipe fetches, from the app's download settings; see
+ *   [swipeDownloadsVideo].
  */
 data class PodcastDetailUiState(
     val podcast: Podcast? = null,
@@ -115,7 +118,19 @@ data class PodcastDetailUiState(
     val videoQualities: List<VideoQuality>? = null,
     val videoQualitiesFailed: Boolean = false,
     val isOnline: Boolean = true,
+    val swipeDownload: SwipeDownload = SwipeDownload.DEFAULT,
 ) {
+    /**
+     * Whether the download swipe on this episode fetches its picture as well as its sound.
+     *
+     * Only when the settings ask for video and the episode has one: an RSS episode is downloaded
+     * as audio whichever is set.
+     *
+     * @param episode the episode asked about.
+     */
+    fun swipeDownloadsVideo(episode: Episode): Boolean =
+        swipeDownload == SwipeDownload.AUDIO_AND_VIDEO && youTubeVideoIdOrNull(episode.audioUrl) != null
+
     /**
      * Whether an episode's picture could be shown right now: there is a network to stream it
      * over, or the video is on the phone.
@@ -441,6 +456,7 @@ class PodcastDetailViewModel @Inject constructor(
             videoQualities = transient.videoQualities,
             videoQualitiesFailed = transient.videoQualitiesFailed,
             isOnline = surroundings.isOnline,
+            swipeDownload = preferences.downloads.swipeDownload,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -1026,6 +1042,33 @@ class PodcastDetailViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * The download swipe on an episode's row: [toggleDownload], except in what a download fetches.
+     *
+     * What it fetches follows [PodcastDetailUiState.swipeDownload]. Set to audio and video, a
+     * YouTube episode's picture comes with its sound, at the quality last chosen on the video
+     * screen; the video download fetches the audio itself, so nothing else is asked for. The
+     * episode sheet keeps its two separate buttons and does not come through here: the setting is
+     * about the one gesture that has no room to ask.
+     *
+     * Cancelling and deleting are the toggle's, unchanged.
+     *
+     * @param episodeId the episode swiped.
+     */
+    fun swipeDownload(episodeId: String) {
+        val state = uiState.value
+        val episode = state.episodes.firstOrNull { it.id == episodeId } ?: return
+        val fetches = episode.downloadState == DownloadState.NOT_DOWNLOADED ||
+            episode.downloadState == DownloadState.FAILED
+        if (!fetches || !state.swipeDownloadsVideo(episode)) {
+            toggleDownload(episodeId)
+            return
+        }
+        viewModelScope.launch {
+            downloadVideo(episodeId, playbackRepository.observeVideoQuality().first())
         }
     }
 

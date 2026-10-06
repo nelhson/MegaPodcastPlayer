@@ -47,7 +47,7 @@ class VideoFallbackListenerTest {
         val added = slot<MediaItem>()
         every { player.addMediaItem(any(), capture(added)) } returns Unit
 
-        VideoFallbackListener(player, crashReporter).onPlayerError(error)
+        VideoFallbackListener(player, crashReporter).fallBack(error)
 
         assertEquals(youTubeAudioSentinel(VIDEO_ID), added.captured.localConfiguration?.uri.toString())
         verify(exactly = 1) { player.prepare() }
@@ -58,7 +58,7 @@ class VideoFallbackListenerTest {
     fun `a failed sound is left alone`() {
         val player = playerOn(item(youTubeAudioSentinel(VIDEO_ID)))
 
-        VideoFallbackListener(player, crashReporter).onPlayerError(error)
+        VideoFallbackListener(player, crashReporter).fallBack(error)
 
         verify(exactly = 0) { player.addMediaItem(any(), any<MediaItem>()) }
         verify(exactly = 0) { crashReporter.recordNonFatal(any(), any()) }

@@ -64,6 +64,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 
 /**
@@ -114,6 +115,7 @@ fun SettingsRoute(
         onUnmeteredOnlyChange = viewModel::setUnmeteredOnly,
         onKeepLimitChange = viewModel::setKeepLimit,
         onDeleteAfterPlayingChange = viewModel::setDeleteAfterPlaying,
+        onSwipeDownloadChange = viewModel::setSwipeDownload,
         onRemoveAllDownloads = viewModel::removeAllDownloads,
         onExportSubscriptions = { exportLauncher.launch(viewModel.suggestedFileName()) },
         onImportSubscriptions = { importLauncher.launch(OPML_PICKER_TYPES) },
@@ -146,6 +148,7 @@ fun SettingsRoute(
  * @param onUnmeteredOnlyChange Wi-Fi-only toggle handler.
  * @param onKeepLimitChange keep-limit handler.
  * @param onDeleteAfterPlayingChange delete-after-playing toggle handler.
+ * @param onSwipeDownloadChange handler for what the show page's download swipe fetches.
  * @param onRemoveAllDownloads remove-all handler.
  * @param onExportSubscriptions called when the user asks to write the subscription list.
  * @param onImportSubscriptions called when the user asks to read one.
@@ -173,6 +176,7 @@ fun SettingsScreen(
     onUnmeteredOnlyChange: (Boolean) -> Unit,
     onKeepLimitChange: (Int) -> Unit,
     onDeleteAfterPlayingChange: (Boolean) -> Unit,
+    onSwipeDownloadChange: (SwipeDownload) -> Unit,
     onRemoveAllDownloads: () -> Unit,
     onExportSubscriptions: () -> Unit,
     onImportSubscriptions: () -> Unit,
@@ -377,6 +381,17 @@ fun SettingsScreen(
                     checked = uiState.downloads.deleteAfterPlaying,
                     onCheckedChange = onDeleteAfterPlayingChange,
                 )
+
+                // What the long pull on a show's episode row fetches. Only a YouTube episode has a
+                // picture, so the description says where the choice applies.
+                SettingsChoiceRow(
+                    title = stringResource(R.string.settings_swipe_download_title),
+                    description = stringResource(R.string.settings_swipe_download_description),
+                    options = SwipeDownload.entries,
+                    selected = uiState.downloads.swipeDownload,
+                    label = { choice -> stringResource(choice.labelResId) },
+                    onSelect = onSwipeDownloadChange,
+                )
             }
 
             SectionHeader(text = stringResource(R.string.settings_section_about))
@@ -489,6 +504,19 @@ private val ThemeChoice.labelResId: Int
         ThemeChoice.SYSTEM -> R.string.settings_theme_system
         ThemeChoice.LIGHT -> R.string.settings_theme_light
         ThemeChoice.DARK -> R.string.settings_theme_dark
+    }
+
+/**
+ * The caption on each choice of what the download swipe fetches.
+ *
+ * Beside the screen for the reason [ThemeChoice.labelResId] is: the choices are a fact about the
+ * app, the words for them are this module's.
+ */
+@get:StringRes
+private val SwipeDownload.labelResId: Int
+    get() = when (this) {
+        SwipeDownload.AUDIO -> R.string.settings_swipe_download_audio
+        SwipeDownload.AUDIO_AND_VIDEO -> R.string.settings_swipe_download_audio_and_video
     }
 
 /**
@@ -788,6 +816,7 @@ internal fun SettingsScreenPreview() {
             onUnmeteredOnlyChange = {},
             onKeepLimitChange = {},
             onDeleteAfterPlayingChange = {},
+            onSwipeDownloadChange = {},
             onThemeChange = {},
             onDynamicColorChange = {},
             onPureBlackChange = {},

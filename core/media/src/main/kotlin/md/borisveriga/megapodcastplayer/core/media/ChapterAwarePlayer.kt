@@ -40,9 +40,14 @@ import md.borisveriga.megapodcastplayer.core.model.chapters.previousStartBefore
  *
  * @param player the real player. This wrapper owns it for the session's purposes — releasing the
  *   wrapper releases it.
+ * @param onStop told before a stop is passed on, from whichever controller sent it; the service
+ *   cancels a pending playback retry with it.
  */
 @UnstableApi
-class ChapterAwarePlayer(player: Player) : ForwardingSimpleBasePlayer(player) {
+class ChapterAwarePlayer(
+    player: Player,
+    private val onStop: () -> Unit = {},
+) : ForwardingSimpleBasePlayer(player) {
 
     /** The chapters of the episode currently loaded; empty when it has none, or none yet. */
     private var chapters: List<Chapter> = emptyList()
@@ -110,6 +115,12 @@ class ChapterAwarePlayer(player: Player) : ForwardingSimpleBasePlayer(player) {
         // *episode* the press implied, and the answer here is that it implied none.
         player.seekTo(chapterStart)
         return Futures.immediateVoidFuture()
+    }
+
+    /** Tells [onStop] first, then stops the real player. */
+    override fun handleStop(): ListenableFuture<*> {
+        onStop()
+        return super.handleStop()
     }
 
     /** Where the chapter after the playhead starts, or null in the last one (or with no list). */

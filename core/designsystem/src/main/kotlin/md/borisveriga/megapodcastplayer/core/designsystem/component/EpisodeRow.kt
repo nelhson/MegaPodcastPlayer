@@ -75,6 +75,8 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
  *   action, because a long press is a gesture a TalkBack user cannot make.
  * @param longClickLabel names that custom action. Required in practice whenever [onLongClick] is
  *   set.
+ * @param badges small pills under the metadata line, e.g. [DownloadedKindBadge]s; null draws no
+ *   line for them at all, so a row with nothing to badge is no taller than it was.
  * @param trailing actions pinned to the end of the row, e.g. a [DownloadButton].
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -97,6 +99,7 @@ fun EpisodeRow(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     longClickLabel: String? = null,
+    badges: @Composable (RowScope.() -> Unit)? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val background by animateColorAsState(
@@ -192,6 +195,14 @@ fun EpisodeRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (badges != null) {
+                    Row(
+                        modifier = Modifier.padding(top = MegaPodcastPlayerTheme.spacing.xxs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
+                        content = badges,
                     )
                 }
             }

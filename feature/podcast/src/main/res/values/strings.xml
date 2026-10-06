@@ -111,6 +111,8 @@
         each has to read as something to do rather than as a state.
     -->
     <string name="podcast_action_download">Download</string>
+    <!-- The same swipe when Settings asks for the picture too; the video brings its sound. -->
+    <string name="podcast_action_download_with_video">Download with video</string>
     <string name="podcast_action_cancel_download">Cancel download</string>
     <!-- On a failed download, which the same swipe asks for again: Downloads' word for it. -->
     <string name="podcast_action_retry_download">Try again</string>

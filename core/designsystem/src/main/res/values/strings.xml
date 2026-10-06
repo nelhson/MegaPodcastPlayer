@@ -116,4 +116,19 @@
     <string name="designsystem_state_in_progress">%1$d%% played</string>
     <string name="designsystem_state_now_playing">Now playing</string>
 
+    <!--
+        Badges on a finished episode, in Downloads and on a show's page, naming what of the episode
+        is on the phone: its sound, its picture, or both. %1$s is the video's quality, already formatted, e.g. "720p".
+    -->
+    <string name="designsystem_badge_audio">Audio</string>
+    <string name="designsystem_badge_video">Video · %1$s</string>
+    <!--
+        The same two, spoken. Drawn, a pill on an episode row says "on this phone" by where it is;
+        read out, a bare "Audio" after an episode's title says nothing, so the spoken form says it.
+    -->
+    <string name="designsystem_badge_audio_spoken">Audio on this phone</string>
+    <string name="designsystem_badge_video_spoken">Video on this phone, %1$s</string>
+    <!-- The video badge is also the way to watch it; what a tap on it does, spoken. -->
+    <string name="designsystem_badge_play_video">Play video</string>
+
 </resources>

@@ -36,6 +36,7 @@ import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupFile
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupPodcast
@@ -343,6 +344,7 @@ class SettingsViewModelTest {
         viewModel.setUnmeteredOnly(false)
         viewModel.setKeepLimit(5)
         viewModel.setDeleteAfterPlaying(false)
+        viewModel.setSwipeDownload(SwipeDownload.AUDIO_AND_VIDEO)
 
         coVerify { playbackRepository.setSpeed(2f) }
         coVerify { playbackRepository.setAutoPlayNext(false) }
@@ -350,6 +352,7 @@ class SettingsViewModelTest {
         coVerify { downloadRepository.setUnmeteredOnly(false) }
         coVerify { downloadRepository.setKeepLimitPerPodcast(5) }
         coVerify { downloadRepository.setDeleteAfterPlaying(false) }
+        coVerify { downloadRepository.setSwipeDownload(SwipeDownload.AUDIO_AND_VIDEO) }
     }
 
     @Test

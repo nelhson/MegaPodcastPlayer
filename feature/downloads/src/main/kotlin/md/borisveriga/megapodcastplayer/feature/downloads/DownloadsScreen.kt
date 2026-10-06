@@ -27,9 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
-import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -74,6 +72,8 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DeleteDownloadDialog
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedKind
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedKindBadge
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyState
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LoadingState
@@ -84,6 +84,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.component.SettingsActi
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeAction
 import md.borisveriga.megapodcastplayer.core.designsystem.component.SwipeActionsRow
 import md.borisveriga.megapodcastplayer.core.designsystem.component.asAccessibilityActions
+import md.borisveriga.megapodcastplayer.core.designsystem.component.downloadedKinds
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.ReorderableState
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.moveActions
 import md.borisveriga.megapodcastplayer.core.designsystem.reorder.rememberReorderableLayout
@@ -99,7 +100,6 @@ import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
-import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 
 /**
@@ -626,113 +626,6 @@ private fun DownloadRow(
         )
     }
 }
-
-/** One half of an episode that is fully on the phone. */
-internal sealed interface DownloadedKind {
-
-    /** The episode's sound. */
-    data object Audio : DownloadedKind
-
-    /**
-     * The episode's picture.
-     *
-     * @property download the finished video download, which names its rendition.
-     */
-    data class Video(val download: VideoDownload) : DownloadedKind
-}
-
-/**
- * Which halves of an episode are fully on the phone, sound first.
- *
- * Only finished ones: a badge says "this is here", and a transfer or a failure is not — the row's
- * section and metadata line already say what is happening to those.
- *
- * @param audio the episode's audio download state.
- * @param video its video download, if it has one.
- * @return the badges to draw; empty when nothing has finished.
- */
-internal fun downloadedKinds(audio: DownloadState, video: VideoDownload?): List<DownloadedKind> =
-    listOfNotNull(
-        DownloadedKind.Audio.takeIf { audio == DownloadState.COMPLETED },
-        video?.takeIf { it.isComplete }?.let(DownloadedKind::Video),
-    )
-
-/**
- * A small pill naming one downloaded half: *Audio*, or *Video · 720p*, and spoken as where it is.
- *
- * Shaped like the library's source badge — a pill on the highest surface container, a glyph and a
- * word — because it is the same kind of fact: what this row is. The video one is also the way to
- * watch it: the row's own tap opens the player as it was last used, so a picture kept on purpose
- * gets a door of its own, and the screen glyph it wears is the one that means watching. It stays a
- * pill rather than becoming a button-shaped button, so the two halves still read as a pair.
- *
- * @param kind the half it names.
- * @param onPlayVideo plays the episode as video; only the video badge takes taps.
- * @param modifier layout modifier.
- */
-@Composable
-private fun DownloadedKindBadge(
-    kind: DownloadedKind,
-    onPlayVideo: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val quality = (kind as? DownloadedKind.Video)?.let { formatVideoQuality(it.download.quality.height) }
-    val (icon, label, spoken) = when {
-        quality == null -> Triple(
-            Icons.Rounded.Headphones,
-            stringResource(R.string.downloads_badge_audio),
-            stringResource(R.string.downloads_badge_audio_spoken),
-        )
-
-        // The screen glyph, which means watching: a tap on this one plays the picture.
-        else -> Triple(
-            Icons.Rounded.SmartDisplay,
-            stringResource(R.string.downloads_badge_video, quality),
-            stringResource(R.string.downloads_badge_video_spoken, quality),
-        )
-    }
-    val playVideoLabel = stringResource(R.string.downloads_badge_play_video)
-    Row(
-        modifier = modifier
-            .clip(MegaPodcastPlayerTheme.shapes.pill)
-            // The video badge's click comes first, so it is a node of its own a screen reader can
-            // land on, rather than one more fact merged into the row around it.
-            .then(
-                if (quality != null) {
-                    Modifier.clickable(
-                        role = Role.Button,
-                        onClickLabel = playVideoLabel,
-                        onClick = onPlayVideo,
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .clearAndSetSemantics { contentDescription = spoken }
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(
-                horizontal = MegaPodcastPlayerTheme.spacing.sm,
-                vertical = MegaPodcastPlayerTheme.spacing.xxs,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(BADGE_ICON_SIZE),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** The badge glyph, sized to the label type beside it. */
-private val BADGE_ICON_SIZE = 14.dp
 
 /**
  * What the downloads cost, drawn against what is left.

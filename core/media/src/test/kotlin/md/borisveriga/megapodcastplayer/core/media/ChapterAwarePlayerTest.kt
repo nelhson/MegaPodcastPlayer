@@ -33,6 +33,18 @@ class ChapterAwarePlayerTest {
     )
 
     @Test
+    fun `a stop is told to the service before it reaches the player`() {
+        val wrapped = FakePlayer(itemCount = 1)
+        var told = 0
+        val player = ChapterAwarePlayer(wrapped, onStop = { told += 1 })
+
+        player.stop()
+
+        assertEquals(1, told)
+        assertEquals(1, wrapped.stops)
+    }
+
+    @Test
     fun `next seeks to the next chapter without leaving the episode`() {
         val wrapped = FakePlayer(itemCount = 2, positionMs = 30_000L)
         val player = ChapterAwarePlayer(wrapped).apply { setChapters(chapters) }

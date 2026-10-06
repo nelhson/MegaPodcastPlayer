@@ -1,5 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.datastore
 
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
@@ -13,6 +15,7 @@ import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.Assert.assertEquals
@@ -221,6 +224,7 @@ class UserPreferencesDataSourceTest {
         dataSource.setUnmeteredOnly(false)
         dataSource.setKeepLimitPerPodcast(5)
         dataSource.setDeleteAfterPlaying(false)
+        dataSource.setSwipeDownload(SwipeDownload.AUDIO_AND_VIDEO)
 
         assertEquals(
             DownloadSettings(
@@ -228,9 +232,17 @@ class UserPreferencesDataSourceTest {
                 unmeteredOnly = false,
                 keepLimitPerPodcast = 5,
                 deleteAfterPlaying = false,
+                swipeDownload = SwipeDownload.AUDIO_AND_VIDEO,
             ),
             dataSource.downloadSettings.first(),
         )
+    }
+
+    @Test
+    fun `a swipe choice this build does not know reads as the default`() = runTest {
+        store.edit { it[stringPreferencesKey("swipe_download")] = "VIDEO_ONLY" }
+
+        assertEquals(SwipeDownload.DEFAULT, dataSource.downloadSettings.first().swipeDownload)
     }
 
     @Test

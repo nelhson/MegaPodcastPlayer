@@ -27,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
+import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.model.downloadListMarkdown
@@ -269,6 +270,9 @@ class MediaDownloadRepository @Inject constructor(
 
     override suspend fun setDeleteAfterPlaying(enabled: Boolean) =
         userPreferences.setDeleteAfterPlaying(enabled)
+
+    override suspend fun setSwipeDownload(choice: SwipeDownload) =
+        userPreferences.setSwipeDownload(choice)
 
     private companion object {
         /** Where a download the user has never dragged sorts: after everything they have placed. */
