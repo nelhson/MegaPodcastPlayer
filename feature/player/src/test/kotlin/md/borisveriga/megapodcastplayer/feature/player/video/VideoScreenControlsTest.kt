@@ -299,6 +299,24 @@ class VideoScreenControlsTest {
     }
 
     @Test
+    fun `a finger held on a control keeps them up, and the lift starts the five seconds`() {
+        composeRule.mainClock.autoAdvance = false
+        setScreen(playing = true)
+        val control = composeRule.onNodeWithContentDescription("Next episode")
+
+        // A scrub or a long press outlasting the timeout must not lose its controls mid-gesture.
+        control.performTouchInput { down(center) }
+        advance(30_000L)
+        assertEquals(true, controlsVisible)
+
+        control.performTouchInput { up() }
+        advance(4_500L)
+        assertEquals(true, controlsVisible)
+        advance(1_000L)
+        assertEquals(false, controlsVisible)
+    }
+
+    @Test
     fun `a paused picture keeps its controls however long it is left`() {
         composeRule.mainClock.autoAdvance = false
         setScreen(playing = false)

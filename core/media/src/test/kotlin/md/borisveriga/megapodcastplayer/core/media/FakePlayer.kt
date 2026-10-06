@@ -42,6 +42,10 @@ internal class FakePlayer(
     /** Indices of episodes seeked to, in the order they arrived. */
     val mediaItemSeeks = mutableListOf<Int>()
 
+    /** How many times it was stopped. */
+    var stops = 0
+        private set
+
     /**
      * Advances the playhead the way playback would, with no seek involved.
      *
@@ -73,6 +77,7 @@ internal class FakePlayer(
                     Player.COMMAND_SEEK_TO_MEDIA_ITEM,
                     Player.COMMAND_SEEK_BACK,
                     Player.COMMAND_SEEK_FORWARD,
+                    Player.COMMAND_STOP,
                 )
                 // The two the wrapper is about, offered as a real player offers them: next only
                 // when an episode follows, previous always, an episode being restartable.
@@ -92,6 +97,11 @@ internal class FakePlayer(
         .setCurrentMediaItemIndex(mediaItemIndex)
         .setContentPositionMs(positionMs)
         .build()
+
+    override fun handleStop(): ListenableFuture<*> {
+        stops += 1
+        return Futures.immediateVoidFuture()
+    }
 
     override fun handleSeek(
         mediaItemIndex: Int,

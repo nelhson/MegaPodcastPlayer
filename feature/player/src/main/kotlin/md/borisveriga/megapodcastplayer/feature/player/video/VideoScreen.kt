@@ -403,11 +403,14 @@ internal fun VideoScreen(
     val controls = ControlsVisibility(controlsVisible, onControlsVisibleChange)
     // Bumped by every touch; a change restarts the wait below.
     var touches by remember { mutableIntStateOf(0) }
+    // True while a finger is on the screen: a scrub or a press held past the timeout must not have
+    // the controls taken from under it. The lift both clears it and restarts the wait.
+    var fingerDown by remember { mutableStateOf(false) }
     val autoHide = videoControlsAutoHide(
         visible = controlsVisible,
         playback = uiState.playback,
         refused = uiState.refused,
-        held = holdControls,
+        held = holdControls || fingerDown,
     )
     // Stretched for anyone whose accessibility settings ask for more time to act, which for a
     // screen reader is "never": a control that disappears while it is being found is no control.
@@ -433,6 +436,7 @@ internal fun VideoScreen(
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 if (event.type == PointerEventType.Press || event.type == PointerEventType.Release) {
                     touches += 1
+                    fingerDown = event.changes.any { it.pressed }
                 }
             }
         }
