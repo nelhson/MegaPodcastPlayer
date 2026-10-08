@@ -247,7 +247,9 @@ object DownloadModule {
  * `newBuilder()` copies the connection pool, dispatcher, DNS and interceptors by reference, so audio
  * still shares the pool with feeds and artwork — the reason that client is a singleton — and still
  * passes through [md.borisveriga.megapodcastplayer.core.network.HttpsUpgradeInterceptor], which the cleartext
- * enclosure URLs depend on. A separately constructed client would silently lose both.
+ * enclosure URLs depend on, and [md.borisveriga.megapodcastplayer.core.network.TrackingPrefixInterceptor],
+ * which keeps measurement redirectors from seeing what is played. A separately constructed client
+ * would silently lose all three.
  *
  * A top-level function rather than a private one so the guarantee can be asserted directly.
  *

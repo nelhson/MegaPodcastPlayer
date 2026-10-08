@@ -27,7 +27,8 @@
 
     <!--
       The hosts the app picks for itself, as opposed to the ones feeds pick for it, are HTTPS-only:
-      the iTunes search API, and YouTube for extraction, audio and thumbnails. Every request the app
+      the iTunes search API, and YouTube for extraction, audio, thumbnails, the published playlist
+      feed and the embedded player's page. Every request the app
       makes to them is already written as https://, so a cleartext request to one of these could
       only come from a redirect or a downgrade the app never asked for. The platform refuses it
       here, before HttpsUpgradeInterceptor or anything else gets a say.

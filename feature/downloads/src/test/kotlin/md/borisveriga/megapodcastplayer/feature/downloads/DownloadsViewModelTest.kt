@@ -15,8 +15,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultDownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -24,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,6 +57,12 @@ class DownloadsViewModelTest {
     private val videoDownloads = MutableStateFlow<Map<String, VideoDownload>>(emptyMap())
 
     private lateinit var downloadRepository: DownloadRepository
+
+    /**
+     * The real folder repository over an in-memory store: what folder a download ends up in is the
+     * behaviour under test, and a mock would only echo what it was told.
+     */
+    private lateinit var folders: DefaultDownloadFolderRepository
     private lateinit var episodePlayer: EpisodePlayer
     private lateinit var viewModel: DownloadsViewModel
     private val fileStore = mockk<BackupFileStore>(relaxed = true)
@@ -93,8 +103,10 @@ class DownloadsViewModelTest {
         every { downloadRepository.observeVideoDownloads() } returns videoDownloads
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.freeBytes() } returns FREE_BYTES
+        folders = DefaultDownloadFolderRepository(UserPreferencesDataSource(InMemoryPreferencesDataStore()))
         viewModel = DownloadsViewModel(
             downloadRepository = downloadRepository,
+            folderRepository = folders,
             episodePlayer = episodePlayer,
             fileStore = fileStore,
             clock = Clock.fixed(Instant.parse("2026-09-16T10:00:00Z"), ZoneOffset.UTC),
@@ -606,6 +618,127 @@ class DownloadsViewModelTest {
         // Once from `init` and once from the pair of pulls: the second found one already running.
         coVerify(exactly = 2) { downloadRepository.freeBytes() }
     }
+
+    @Test
+    fun `the kind chips are not offered while no episode has a video`() = runTest {
+        downloads.value = listOf(download("a"), download("b"))
+
+        viewModel.uiState.test {
+            val state = expectMostRecentItem()
+
+            assertFalse(state.showKindFilter)
+            assertEquals(DownloadKindFilter.ALL, state.kindFilter)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the video chip narrows the list to episodes with a video`() = runTest {
+        downloads.value = listOf(download("sound"), download("picture"))
+        videoDownloads.value = mapOf("picture" to video())
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.VIDEO)
+
+            val state = expectMostRecentItem()
+            assertTrue(state.showKindFilter)
+            assertEquals(DownloadKindFilter.VIDEO, state.kindFilter)
+            assertEquals(listOf("picture"), state.sections.flatMap { it.downloads }.map { it.episode.id })
+            // The flat list is never narrowed: an empty one means nothing is downloaded at all.
+            assertEquals(2, state.downloads.size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the audio chip leaves out the episodes with a video`() = runTest {
+        downloads.value = listOf(download("sound"), download("picture"))
+        videoDownloads.value = mapOf("picture" to video())
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.AUDIO)
+
+            assertEquals(
+                listOf("sound"),
+                expectMostRecentItem().sections.flatMap { it.downloads }.map { it.episode.id },
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a chosen filter stops applying once the last video is gone`() = runTest {
+        downloads.value = listOf(download("sound"), download("picture"))
+        videoDownloads.value = mapOf("picture" to video())
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.VIDEO)
+            videoDownloads.value = emptyMap()
+
+            val state = expectMostRecentItem()
+            assertFalse(state.showKindFilter)
+            assertEquals(DownloadKindFilter.ALL, state.kindFilter)
+            assertEquals(2, state.sections.flatMap { it.downloads }.size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `the storage figures count every download whatever the filter`() = runTest {
+        downloads.value = listOf(
+            download("sound", downloadedBytes = 1_000L),
+            download("picture", downloadedBytes = 2_000L),
+        )
+        videoDownloads.value = mapOf("picture" to video(bytes = 4_000L))
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.AUDIO)
+
+            val state = expectMostRecentItem()
+            assertEquals(2, state.completedCount)
+            assertEquals(7_000L, state.totalBytes)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a drag with nothing hidden stores the rows as dragged`() = runTest {
+        downloads.value = listOf(download("a"), download("b"), download("c"))
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.move(listOf("a", "b", "c"), from = 0, to = 2)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coVerify { downloadRepository.reorderDownloads(listOf("b", "c", "a")) }
+    }
+
+    @Test
+    fun `a drag under a filter keeps the hidden rows where they were`() = runTest {
+        // a and c have a video; b, between them, does not and is hidden by the Video chip.
+        downloads.value = listOf(download("a"), download("b"), download("c"))
+        videoDownloads.value = mapOf("a" to video(), "c" to video())
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.VIDEO)
+            expectMostRecentItem()
+
+            viewModel.move(listOf("a", "c"), from = 0, to = 1)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coVerify { downloadRepository.reorderDownloads(listOf("c", "b", "a")) }
+    }
+
+    /** A finished video download; only its presence and size matter to the filter. */
+    private fun video(bytes: Long = 0L) =
+        VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f, bytes)
 }
 
 /** A plausible amount of free space; the figure only has to be recognisable in an assertion. */

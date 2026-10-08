@@ -445,6 +445,21 @@ class EpisodeDaoTest {
     }
 
     @Test
+    fun `the limited query takes the top of the hand order and leaves the rest in place`() = runTest {
+        podcastDao.upsert(podcast)
+        episodeDao.upsertFromFeed(
+            listOf(episode("a"), episode("b"), episode("c"), episode("d")),
+            handOrdered = true,
+        )
+
+        val limited = episodeDao.observeByPodcastOrderedLimited(podcast.id, limit = 2).first()
+
+        // The same order the uncut query gives, stopped short; nothing below the cut is touched.
+        assertEquals(listOf("a", "b"), limited.map { it.id })
+        assertEquals(4, episodeDao.observeByPodcastOrdered(podcast.id).first().size)
+    }
+
+    @Test
     fun `a refresh does not disturb an order the user arranged`() = runTest {
         podcastDao.upsert(podcast)
         episodeDao.upsertFromFeed(

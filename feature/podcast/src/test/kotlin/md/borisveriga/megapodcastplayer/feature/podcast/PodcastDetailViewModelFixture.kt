@@ -14,10 +14,12 @@ import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.data.export.DownloadExporter
 import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultDownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
+import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
@@ -29,6 +31,8 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
+import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Before
 import org.junit.Rule
@@ -49,6 +53,7 @@ abstract class PodcastDetailViewModelFixture {
 
     protected val episodes = MutableStateFlow(emptyList<Episode>())
     protected val downloadSettings = MutableStateFlow(DownloadSettings())
+    protected val youTubeSource = MutableStateFlow(YouTubeSource.DEFAULT)
 
     protected lateinit var repository: PodcastRepository
     protected lateinit var episodePlayer: EpisodePlayer
@@ -89,6 +94,9 @@ abstract class PodcastDetailViewModelFixture {
         downloadState = downloadState,
     )
 
+    /** The show as the screen sees it; a test replaces it to make the show a YouTube one. */
+    protected val podcastFlow = MutableStateFlow<Podcast?>(null)
+
     protected lateinit var chapterResolver: ChapterResolver
     protected lateinit var showSettings: ShowSettingsRepository
     protected lateinit var playbackRepository: PlaybackRepository
@@ -103,8 +111,15 @@ abstract class PodcastDetailViewModelFixture {
     protected val online = MutableStateFlow(true)
     protected lateinit var crashReporter: CrashReporter
 
+    /**
+     * The real folder repository over an in-memory store, so a test can make a folder and see the
+     * show page name it — a mock would only echo what it was told.
+     */
+    protected lateinit var folderRepository: DefaultDownloadFolderRepository
+
     @Before
     fun setUp() {
+        podcastFlow.value = podcast
         repository = mockk(relaxed = true)
         episodePlayer = mockk(relaxed = true)
         downloadRepository = mockk(relaxed = true)
@@ -126,8 +141,10 @@ abstract class PodcastDetailViewModelFixture {
         // once — an unstubbed player would freeze the whole screen at its initial value.
         every { connection.playbackState } returns playbackState
 
-        every { repository.observePodcast(any()) } returns flowOf(podcast)
+        every { repository.observePodcast(any()) } returns podcastFlow
         every { repository.observeEpisodes(any()) } returns episodes
+        // Another source the screen combines in; unstubbed it would freeze the whole state.
+        every { repository.observeYouTubeSource() } returns youTubeSource
         every { downloadRepository.observeDownloadSettings() } returns downloadSettings
         coEvery { downloadRepository.download(any()) } returns true
         // Combined into the state like the player's, and frozen just the same if left unstubbed.
@@ -136,6 +153,7 @@ abstract class PodcastDetailViewModelFixture {
         networkStatus = mockk()
         every { networkStatus.observeOnline() } returns online
         crashReporter = mockk(relaxed = true)
+        folderRepository = DefaultDownloadFolderRepository(UserPreferencesDataSource(InMemoryPreferencesDataStore()))
         downloadExporter = mockk(relaxed = true)
         every { downloadExporter.observe(podcast.id) } returns exportRun
 
@@ -143,6 +161,7 @@ abstract class PodcastDetailViewModelFixture {
             repository = repository,
             episodePlayer = episodePlayer,
             downloadRepository = downloadRepository,
+            folderRepository = folderRepository,
             chapterResolver = chapterResolver,
             showSettings = showSettings,
             playbackRepository = playbackRepository,

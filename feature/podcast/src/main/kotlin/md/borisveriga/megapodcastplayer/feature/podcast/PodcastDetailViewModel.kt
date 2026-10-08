@@ -28,6 +28,7 @@ import md.borisveriga.megapodcastplayer.core.data.export.ExportRun
 import md.borisveriga.megapodcastplayer.core.data.export.ExportSummary
 import md.borisveriga.megapodcastplayer.core.data.export.exportNetworkFor
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
@@ -35,6 +36,8 @@ import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsReposit
 import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -45,10 +48,12 @@ import md.borisveriga.megapodcastplayer.core.model.PlayControl
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerCommand
 import md.borisveriga.megapodcastplayer.core.model.Podcast
+import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.filterBy
 import md.borisveriga.megapodcastplayer.core.model.playTransition
 import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
@@ -96,6 +101,9 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * @property isOnline whether there is a network to fetch a picture over; see [canPlayVideo].
  * @property swipeDownload what the download swipe fetches, from the app's download settings; see
  *   [swipeDownloadsVideo].
+ * @property downloadFolders the user's download folders, for the episode sheet's "Save to" picker
+ *   and for naming the folder a download went to.
+ * @property youTubeSource where YouTube shows are read from and played by; see [isOfficialYouTube].
  */
 data class PodcastDetailUiState(
     val podcast: Podcast? = null,
@@ -119,7 +127,38 @@ data class PodcastDetailUiState(
     val videoQualitiesFailed: Boolean = false,
     val isOnline: Boolean = true,
     val swipeDownload: SwipeDownload = SwipeDownload.DEFAULT,
+    val downloadFolders: DownloadFolders = DownloadFolders.NONE,
+    val youTubeSource: YouTubeSource = YouTubeSource.DEFAULT,
 ) {
+    /**
+     * Whether this is a YouTube show under the official source.
+     *
+     * The one fact that changes what the page offers: such a show's episodes play in YouTube's own
+     * player and nowhere else, so nothing here may hand one to the app's player — not the row's
+     * buttons, not the sheet, not *Play next*, not a download in any form. The rows themselves are
+     * the repository's business and already come cut and with their downloads hidden.
+     */
+    val isOfficialYouTube: Boolean
+        get() = podcast?.source == PodcastSource.YOUTUBE && youTubeSource == YouTubeSource.OFFICIAL
+
+    /**
+     * Whether an episode gets the actions only a picture has: *Play video*, the quality dialog, the
+     * video download.
+     *
+     * Only a YouTube episode has a picture, and under the official source its one play button *is*
+     * the picture, so there is no second way to watch it and nothing to download.
+     *
+     * @param episode the episode asked about.
+     */
+    fun offersVideoActions(episode: Episode): Boolean =
+        !isOfficialYouTube && youTubeVideoIdOrNull(episode.audioUrl) != null
+
+    /**
+     * Whether *Download and export* has anything to work on: episodes on screen, of a show whose
+     * episodes can be downloaded at all.
+     */
+    val canExport: Boolean get() = hasExportableEpisodes && !isOfficialYouTube
+
     /**
      * Whether the download swipe on this episode fetches its picture as well as its sound.
      *
@@ -184,12 +223,14 @@ data class NowPlaying(
  * @property export a *Download and export* of this show, if one was started.
  * @property videoDownloads every episode's downloaded video, by episode id.
  * @property isOnline whether there is a network to fetch a picture over.
+ * @property folders the user's download folders.
  */
 private data class Surroundings(
     val transient: PodcastDetailViewModel.TransientState,
     val export: ExportRun?,
     val videoDownloads: Map<String, VideoDownload>,
     val isOnline: Boolean,
+    val folders: DownloadFolders,
 )
 
 /**
@@ -199,11 +240,13 @@ private data class Surroundings(
  * @property show this show's own settings.
  * @property playback the app-wide playback settings, read only for the rate.
  * @property downloads the app-wide download settings, read only for the auto-download answer.
+ * @property youTubeSource where YouTube shows are read from and played by.
  */
 private data class ShowPreferences(
     val show: ShowSettings,
     val playback: PlaybackSettings,
     val downloads: DownloadSettings,
+    val youTubeSource: YouTubeSource,
 )
 
 /** A one-off outcome to show the user. */
@@ -281,9 +324,14 @@ sealed interface PodcastDetailMessage {
      *
      * @property title the episode's title.
      * @property waitingForWifi whether the download is waiting for an unmetered network.
+     * @property folderName the folder the download is filed under, said so that a swipe — which
+     *   has no room to ask — still tells the user where it went; null for *Downloads*.
      */
-    data class DownloadQueued(val title: String, val waitingForWifi: Boolean) :
-        PodcastDetailMessage
+    data class DownloadQueued(
+        val title: String,
+        val waitingForWifi: Boolean,
+        val folderName: String? = null,
+    ) : PodcastDetailMessage
 
     /**
      * A downloaded episode was removed from the device.
@@ -300,11 +348,13 @@ sealed interface PodcastDetailMessage {
      * @property waitingForWifi whether it waits for an unmetered network, which the message then
      *   says, as the audio's does: a download that does not start reads otherwise as one that
      *   failed.
+     * @property folderName the folder the episode is filed under; null for *Downloads*.
      */
     data class VideoDownloadQueued(
         val title: String,
         val quality: VideoQuality,
         val waitingForWifi: Boolean = false,
+        val folderName: String? = null,
     ) : PodcastDetailMessage
 
     /**
@@ -363,6 +413,7 @@ class PodcastDetailViewModel @Inject constructor(
     private val repository: PodcastRepository,
     private val episodePlayer: EpisodePlayer,
     private val downloadRepository: DownloadRepository,
+    private val folderRepository: DownloadFolderRepository,
     private val chapterResolver: ChapterResolver,
     private val showSettings: ShowSettingsRepository,
     private val playbackRepository: PlaybackRepository,
@@ -424,6 +475,7 @@ class PodcastDetailViewModel @Inject constructor(
             downloadExporter.observe(podcastId),
             downloadRepository.observeVideoDownloads(),
             networkStatus.observeOnline(),
+            folderRepository.observeFolders(),
             ::Surroundings,
         ),
         nowPlaying,
@@ -431,6 +483,7 @@ class PodcastDetailViewModel @Inject constructor(
             showSettings.observeSettings(podcastId),
             playbackRepository.observePlaybackSettings(),
             downloadRepository.observeDownloadSettings(),
+            repository.observeYouTubeSource(),
             ::ShowPreferences,
         ),
     ) { podcast, episodes, surroundings, playing, preferences ->
@@ -451,12 +504,14 @@ class PodcastDetailViewModel @Inject constructor(
             appSpeed = preferences.playback.speed,
             appAutoDownload = preferences.downloads.autoDownloadNewEpisodes,
             unmeteredOnly = preferences.downloads.unmeteredOnly,
+            youTubeSource = preferences.youTubeSource,
             exportProgress = (surroundings.export as? ExportRun.Running)?.progress,
             videoDownloads = surroundings.videoDownloads,
             videoQualities = transient.videoQualities,
             videoQualitiesFailed = transient.videoQualitiesFailed,
             isOnline = surroundings.isOnline,
             swipeDownload = preferences.downloads.swipeDownload,
+            downloadFolders = surroundings.folders,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -498,6 +553,8 @@ class PodcastDetailViewModel @Inject constructor(
      * @param folderName the name the user gave the folder.
      */
     fun downloadAndExport(treeUri: String, folderName: String) {
+        // Nothing of an official YouTube show can be downloaded, so nothing of it can be exported.
+        if (uiState.value.isOfficialYouTube) return
         if (uiState.value.exportProgress != null || folderName.isBlank()) return
         expectingExportOutcome = true
         viewModelScope.launch {
@@ -694,6 +751,7 @@ class PodcastDetailViewModel @Inject constructor(
      *   the full player. Not called when the episode has gone.
      */
     fun playEpisode(episodeId: String, onPlaying: () -> Unit) {
+        if (opensEmbedded(episodeId)) return
         viewModelScope.launch {
             if (episodePlayer.play(episodeId)) {
                 onPlaying()
@@ -749,6 +807,10 @@ class PodcastDetailViewModel @Inject constructor(
      *   episode. Which face is the control's own, and the caller's to pass on.
      */
     private fun press(control: PlayControl, episodeId: String, onOpenPlayer: () -> Unit) {
+        // The route never gets here for such an episode — it opens YouTube's own player instead,
+        // see opensEmbedded — so this is the last line: whatever reaches the app's player with a
+        // YouTube episode under the official source is refused below it anyway, with an error.
+        if (opensEmbedded(episodeId)) return
         val transition = playTransition(
             control = control,
             isLoaded = uiState.value.nowPlaying.episodeId == episodeId,
@@ -806,6 +868,7 @@ class PodcastDetailViewModel @Inject constructor(
      * @param episodeId the episode whose sheet asked; must be a YouTube episode to have an answer.
      */
     fun loadVideoQualities(episodeId: String) {
+        if (opensEmbedded(episodeId)) return
         val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
         val videoId = youTubeVideoIdOrNull(episode.audioUrl) ?: return
         transientState.value = transientState.value.copy(
@@ -828,16 +891,27 @@ class PodcastDetailViewModel @Inject constructor(
      *
      * @param episodeId the episode.
      * @param quality the rendition to keep; replaces one kept at another quality.
+     * @param destination the folder to file the episode under, from the sheet's picker; by default
+     *   the one it is in, else the default folder.
      */
-    fun downloadVideo(episodeId: String, quality: VideoQuality) {
+    fun downloadVideo(
+        episodeId: String,
+        quality: VideoQuality,
+        destination: DownloadDestination = DownloadDestination.Unspecified,
+    ) {
+        if (opensEmbedded(episodeId)) return
         val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        // Named before the request, from the folders as the screen has them: the request is what
+        // files the episode, and the message is about where that put it.
+        val folderName = folderNameFor(episodeId, destination)
         viewModelScope.launch {
             transientState.value = transientState.value.copy(
-                message = if (downloadRepository.downloadVideo(episodeId, quality)) {
+                message = if (downloadRepository.downloadVideo(episodeId, quality, destination)) {
                     PodcastDetailMessage.VideoDownloadQueued(
                         title = episode.title,
                         quality = quality,
                         waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly,
+                        folderName = folderName,
                     )
                 } else {
                     PodcastDetailMessage.EpisodeUnavailable
@@ -852,6 +926,7 @@ class PodcastDetailViewModel @Inject constructor(
      * @param episodeId the episode.
      */
     fun removeVideoDownload(episodeId: String) {
+        if (opensEmbedded(episodeId)) return
         val state = uiState.value
         val episode = state.episodes.firstOrNull { it.id == episodeId } ?: return
         val wasComplete = state.videoDownloads[episodeId]?.isComplete == true
@@ -877,6 +952,7 @@ class PodcastDetailViewModel @Inject constructor(
      * @param episodeId the episode to queue.
      */
     fun playNext(episodeId: String) {
+        if (opensEmbedded(episodeId)) return
         // Read before the suspend, and from the state rather than from the player: it is the only
         // place the title is, and the episode may be gone from both by the time the queue answers.
         val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
@@ -966,6 +1042,7 @@ class PodcastDetailViewModel @Inject constructor(
      * @param onPlaying invoked once the player has it, so the caller can open the player.
      */
     fun playFrom(episodeId: String, positionMs: Long, onPlaying: () -> Unit) {
+        if (opensEmbedded(episodeId)) return
         viewModelScope.launch {
             if (episodePlayer.playFrom(episodeId, positionMs)) {
                 onPlaying()
@@ -1012,27 +1089,13 @@ class PodcastDetailViewModel @Inject constructor(
      * @param episodeId the episode to download or remove.
      */
     fun toggleDownload(episodeId: String) {
+        if (opensEmbedded(episodeId)) return
         val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
         viewModelScope.launch {
             when (episode.downloadState) {
                 // A failed download is retried rather than cleared: the user tapping the button
                 // again plainly means "try that again".
-                DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> {
-                    if (downloadRepository.download(episodeId)) {
-                        val waitingForWifi =
-                            downloadRepository.observeDownloadSettings().first().unmeteredOnly
-                        transientState.value = transientState.value.copy(
-                            message = PodcastDetailMessage.DownloadQueued(
-                                title = episode.title,
-                                waitingForWifi = waitingForWifi,
-                            ),
-                        )
-                    } else {
-                        transientState.value = transientState.value.copy(
-                            message = PodcastDetailMessage.EpisodeUnavailable,
-                        )
-                    }
-                }
+                DownloadState.NOT_DOWNLOADED, DownloadState.FAILED -> fetch(episode, DownloadDestination.Unspecified)
 
                 // Tapping a download in progress cancels it; tapping a finished one frees it.
                 DownloadState.QUEUED, DownloadState.DOWNLOADING, DownloadState.COMPLETED -> {
@@ -1043,6 +1106,56 @@ class PodcastDetailViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Downloads an episode's audio into a folder, from the episode sheet's *Download* with its
+     * "Save to" picker.
+     *
+     * Only ever a download: the sheet's button means "delete" once the episode is on the device,
+     * and that path asks first and goes through [toggleDownload].
+     *
+     * @param episodeId the episode.
+     * @param destination the folder chosen in the sheet.
+     */
+    fun download(episodeId: String, destination: DownloadDestination) {
+        if (opensEmbedded(episodeId)) return
+        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        viewModelScope.launch { fetch(episode, destination) }
+    }
+
+    /**
+     * Asks for an episode's audio and says what happened, naming the folder it went to.
+     *
+     * @param episode the episode to download.
+     * @param destination the folder to file it under.
+     */
+    private suspend fun fetch(episode: Episode, destination: DownloadDestination) {
+        val folderName = folderNameFor(episode.id, destination)
+        transientState.value = transientState.value.copy(
+            message = if (downloadRepository.download(episode.id, destination)) {
+                PodcastDetailMessage.DownloadQueued(
+                    title = episode.title,
+                    waitingForWifi = downloadRepository.observeDownloadSettings().first().unmeteredOnly,
+                    folderName = folderName,
+                )
+            } else {
+                PodcastDetailMessage.EpisodeUnavailable
+            },
+        )
+    }
+
+    /**
+     * The name of the folder a download asked for now would be filed under, or null for
+     * *Downloads* — which needs no saying, since it is where every download used to go.
+     *
+     * @param episodeId the episode being downloaded.
+     * @param destination what was asked for.
+     */
+    private fun folderNameFor(episodeId: String, destination: DownloadDestination): String? {
+        val folders = uiState.value.downloadFolders
+        val folderId = folders.folderForDownload(episodeId, destination) ?: return null
+        return folders.folders.firstOrNull { it.id == folderId }?.name
     }
 
     /**
@@ -1059,6 +1172,7 @@ class PodcastDetailViewModel @Inject constructor(
      * @param episodeId the episode swiped.
      */
     fun swipeDownload(episodeId: String) {
+        if (opensEmbedded(episodeId)) return
         val state = uiState.value
         val episode = state.episodes.firstOrNull { it.id == episodeId } ?: return
         val fetches = episode.downloadState == DownloadState.NOT_DOWNLOADED ||
@@ -1075,6 +1189,23 @@ class PodcastDetailViewModel @Inject constructor(
     /** Clears the current message once its snackbar has been shown. */
     fun onMessageShown() {
         transientState.value = transientState.value.copy(message = null)
+    }
+
+    /**
+     * Whether a press on [episodeId] opens YouTube's own player rather than the app's.
+     *
+     * True for any episode of a YouTube show under the official source — see
+     * [PodcastDetailUiState.isOfficialYouTube]. The route asks this before it asks anything else of
+     * this view model about the episode, and the methods that would start the app's player or the
+     * download stack ask it again and do nothing when it is true. Asked per episode rather than per
+     * show only so that the answer stays with the thing it is about.
+     *
+     * @param episodeId the episode pressed.
+     */
+    fun opensEmbedded(episodeId: String): Boolean {
+        val state = uiState.value
+        return state.isOfficialYouTube &&
+            state.episodes.any { it.id == episodeId && youTubeVideoIdOrNull(it.audioUrl) != null }
     }
 
     internal data class TransientState(

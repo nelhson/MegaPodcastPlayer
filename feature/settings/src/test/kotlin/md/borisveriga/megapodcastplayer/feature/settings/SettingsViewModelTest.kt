@@ -14,18 +14,20 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import md.borisveriga.megapodcastplayer.core.common.crash.NoOpCrashReporter
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.backup.LibraryRestorer
 import md.borisveriga.megapodcastplayer.core.data.backup.RestoreRun
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultDownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.FolderEdit
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.RestoreProgress
 import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.data.repository.ShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.UiPreferencesRepository
+import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
@@ -38,8 +40,10 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupFile
 import md.borisveriga.megapodcastplayer.core.model.backup.BackupPodcast
+import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -66,6 +70,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SettingsViewModelTest {
+
+    /** The real folder repository over an in-memory store: what the default becomes is the test. */
+    private val folderRepository =
+        DefaultDownloadFolderRepository(UserPreferencesDataSource(InMemoryPreferencesDataStore()))
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -127,6 +135,7 @@ class SettingsViewModelTest {
     private val appearance = MutableStateFlow(AppearanceSettings())
     private val library = MutableStateFlow<List<PodcastWithCounts>>(emptyList())
     private val showSettings = MutableStateFlow<Map<String, ShowSettings>>(emptyMap())
+    private val youTubeSource = MutableStateFlow(YouTubeSource.DEFAULT)
 
     @Before
     fun setUp() {
@@ -153,17 +162,18 @@ class SettingsViewModelTest {
         podcastRepository = mockk(relaxed = true)
         showSettingsRepository = mockk(relaxed = true)
         every { podcastRepository.observeLibrary() } returns library
+        every { podcastRepository.observeYouTubeSource() } returns youTubeSource
         every { showSettingsRepository.observeAll() } returns showSettings
         viewModel = SettingsViewModel(
             playbackRepository = playbackRepository,
             downloadRepository = downloadRepository,
+            folderRepository = folderRepository,
             backupRepository = backupRepository,
             backupFileStore = backupFileStore,
             libraryRestorer = libraryRestorer,
             uiPreferences = uiPreferences,
             podcastRepository = podcastRepository,
             showSettingsRepository = showSettingsRepository,
-            crashReporter = NoOpCrashReporter,
             clock = Clock.fixed(exportedAt, ZoneOffset.UTC),
         )
     }
@@ -214,15 +224,6 @@ class SettingsViewModelTest {
 
         viewModel.uiState.test {
             assertEquals(emptyList<ShowSpeedOverride>(), awaitItem().speedOverrides)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    /** SET-4. A build with no Firebase configuration reports nothing, and should say so. */
-    @Test
-    fun `the screen is told whether anything is actually reported`() = runTest {
-        viewModel.uiState.test {
-            assertFalse(awaitItem().isCrashReporting)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -353,6 +354,22 @@ class SettingsViewModelTest {
         coVerify { downloadRepository.setKeepLimitPerPodcast(5) }
         coVerify { downloadRepository.setDeleteAfterPlaying(false) }
         coVerify { downloadRepository.setSwipeDownload(SwipeDownload.AUDIO_AND_VIDEO) }
+    }
+
+    @Test
+    fun `the youtube source is read into the state and written through the library`() = runTest {
+        viewModel.uiState.test {
+            assertEquals(YouTubeSource.EXTRACTOR, awaitItem().youTubeSource)
+
+            youTubeSource.value = YouTubeSource.OFFICIAL
+
+            assertEquals(YouTubeSource.OFFICIAL, awaitItem().youTubeSource)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        viewModel.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        coVerify { podcastRepository.setYouTubeSource(YouTubeSource.OFFICIAL) }
     }
 
     @Test
@@ -618,5 +635,18 @@ class SettingsViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
         coVerify(exactly = 0) { backupRepository.acknowledgeRestore(any()) }
+    }
+
+    @Test
+    fun `the default download folder is offered once a folder exists and is stored when chosen`() = runTest {
+        val id = (folderRepository.createFolder("Commute") as FolderEdit.Done).folder.id
+
+        viewModel.uiState.test {
+            assertEquals(listOf(id), expectMostRecentItem().downloadFolders.folders.map { it.id })
+            viewModel.setDefaultDownloadFolder(id)
+
+            assertEquals(id, expectMostRecentItem().downloadFolders.defaultFolderId)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

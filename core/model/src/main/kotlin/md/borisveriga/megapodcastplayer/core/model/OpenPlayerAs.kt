@@ -9,7 +9,7 @@ package md.borisveriga.megapodcastplayer.core.model
  * last episode had left it; which face came up depended on where the episode was started from.
  *
  * Distinct from [PlayerMode], which is what the player *is*. This is what was *asked*, and one of
- * the three asks is to leave that alone.
+ * the asks is to leave that alone.
  */
 enum class OpenPlayerAs {
     /** As sound: the sheet, and the player is put in [PlayerMode.AUDIO]. */
@@ -23,4 +23,13 @@ enum class OpenPlayerAs {
      * a picture, otherwise the sheet. The mode is not changed.
      */
     REMEMBERED,
+
+    /**
+     * As YouTube's own embedded player, on a screen of its own.
+     *
+     * The one ask that does not open *the* player: the app's player is not given the episode, is
+     * not started and has its mode left alone. What a YouTube show's episode asks for when the
+     * [YouTubeSource] is [YouTubeSource.OFFICIAL], and never otherwise.
+     */
+    EMBEDDED,
 }

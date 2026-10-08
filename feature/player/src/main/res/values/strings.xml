@@ -343,4 +343,26 @@
     <string name="player_moment_note_save">Save</string>
     <string name="player_moment_note_cancel">Cancel</string>
 
+
+    <!--
+      The embedded video screen: YouTube's own player on an episode, under the official source.
+      No transport copy of its own — the embed draws its controls — so what is here is what stands
+      where the picture would be when it cannot, and the one line under the picture that says what
+      this player is not. That line is a fact the rest of the app contradicts everywhere else
+      (background sound, the bar, the watch), so it is said once, where the difference is.
+    -->
+    <string name="embedded_player_note">Plays in YouTube\'s own player, on this screen only. Nothing continues in the background.</string>
+    <!-- The embed streams from YouTube; with no network there is nothing to load it over. -->
+    <string name="embedded_offline_title">You\'re offline</string>
+    <string name="embedded_offline_description">YouTube\'s player needs a connection. The video will play once you\'re back online.</string>
+    <!--
+      The failures YouTube's player reports. The first is the realistic one under the official
+      source — the owner has switched embedding off — and the only answer is YouTube itself, which
+      the button under it opens. The title is shared; the sentence says which.
+    -->
+    <string name="embedded_error_title">Can\'t play here</string>
+    <string name="embedded_error_not_allowed">The owner of this video doesn\'t allow it to play outside YouTube.</string>
+    <string name="embedded_error_gone">This video has been removed or made private.</string>
+    <string name="embedded_error_failed">YouTube\'s player couldn\'t play this video. Try again in a moment.</string>
+    <string name="embedded_open_in_youtube">Open in YouTube</string>
 </resources>

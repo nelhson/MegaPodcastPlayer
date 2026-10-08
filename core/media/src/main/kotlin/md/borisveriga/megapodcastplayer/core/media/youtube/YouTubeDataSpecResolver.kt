@@ -6,10 +6,12 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.ResolvingDataSource
 import javax.inject.Inject
 import javax.inject.Singleton
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.youTubeAnyVideoIdOrNull
 import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 import md.borisveriga.megapodcastplayer.core.model.youTubeVideoOnlyRefOrNull
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubeAudioResolver
+import md.borisveriga.megapodcastplayer.core.youtube.YouTubeAudioUnavailableException
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubeVideoResolver
 
 /**
@@ -25,15 +27,25 @@ import md.borisveriga.megapodcastplayer.core.youtube.YouTubeVideoResolver
  * gets the same chunking and the same invalidation as the sound, without a second chain to keep in
  * step.
  *
+ * Under the official [YouTubeSource] there is no extraction to do, and this is where that is
+ * enforced for the whole player: either sentinel is refused with the same exception an unplayable
+ * video raises, so playback and downloads fail the way they already know how to. The screens do not
+ * send YouTube here under that source, and the queue is cleared of it when the source is chosen;
+ * this is the last line, for whatever reaches the player regardless. A download that was mid-transfer
+ * when the source changed fails here and shows as failed; nothing is deleted, and it retries once the
+ * source is switched back.
+ *
  * @property resolver performs the actual extraction for the sound.
  * @property videoResolver performs it for the picture; the same object underneath, so the two share
  *   one extraction.
+ * @property gate says whether extraction is allowed at all right now.
  */
 @UnstableApi
 @Singleton
 class YouTubeDataSpecResolver @Inject constructor(
     private val resolver: YouTubeAudioResolver,
     private val videoResolver: YouTubeVideoResolver,
+    private val gate: YouTubeSourceGate,
 ) : ResolvingDataSource.Resolver {
 
     /**
@@ -41,22 +53,41 @@ class YouTubeDataSpecResolver @Inject constructor(
      *
      * @param dataSpec the spec Media3 is about to open. May be for any URL at all.
      * @return the spec to actually open — unchanged for everything that is not a YouTube sentinel.
-     * @throws java.io.IOException when the video has no playable audio, or the network fails.
+     * @throws java.io.IOException when the video has no playable audio, when the official source is
+     *   selected and extraction is therefore off, or the network fails.
      */
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
         // This resolver is on the path for *every* URL, including every ordinary podcast MP3. The
         // early returns are what keep the existing library working, so they come first and do the
         // cheapest possible tests: the audio sentinel, by far the commoner of the two, before the
-        // video one.
+        // video one. The gate is asked only once a sentinel is in hand, so an ordinary URL never
+        // touches it.
         val uri = dataSpec.uri.toString()
         val videoId = youTubeVideoIdOrNull(uri)
         if (videoId != null) {
+            refuseUnderOfficialSource(videoId)
             val audio = resolver.resolve(videoId)
             return dataSpec.resolvedTo(audio.url, audio.requestHeaders)
         }
         val videoOnly = youTubeVideoOnlyRefOrNull(uri) ?: return dataSpec
+        refuseUnderOfficialSource(videoOnly.videoId)
         val video = videoResolver.resolveVideo(videoOnly.videoId, videoOnly.quality)
         return dataSpec.resolvedTo(video.url, video.requestHeaders)
+    }
+
+    /**
+     * Throws if the user has chosen the official source, under which nothing may be extracted.
+     *
+     * @param videoId the video about to be resolved, for the message.
+     * @throws YouTubeAudioUnavailableException under the official source.
+     */
+    private fun refuseUnderOfficialSource(videoId: String) {
+        if (gate.current() == YouTubeSource.OFFICIAL) {
+            throw YouTubeAudioUnavailableException(
+                videoId = videoId,
+                reason = "the official YouTube player is selected in settings",
+            )
+        }
     }
 
     /**

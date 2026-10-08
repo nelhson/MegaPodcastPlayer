@@ -13,9 +13,9 @@ import org.junit.Test
 /**
  * Tests for [isConnectivityFailure].
  *
- * The line it draws decides what reaches Crashlytics, so both sides are pinned: a device with no
- * network must not look like a bug, and a server that answers wrongly must not look like a device
- * with no network.
+ * The line it draws decides what reaches the crash reporter, so both sides are pinned: a device
+ * with no network must not look like a bug, and a server that answers wrongly must not look like a
+ * device with no network.
  */
 class ConnectivityFailureTest {
 

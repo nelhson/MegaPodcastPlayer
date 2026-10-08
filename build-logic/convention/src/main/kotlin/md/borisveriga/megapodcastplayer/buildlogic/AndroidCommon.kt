@@ -220,40 +220,6 @@ internal fun ApplicationExtension.addWristBuildType() {
 const val WRIST_BUILD_TYPE = "wrist"
 
 /**
- * Writes each build type's name into the APK, where the crash reporter can read it.
- *
- * `FirebaseCrashReporter` lives in `:core:common` and tags every report with the build type, so a
- * crash from the desk can be told from one from a real release. It used to work that out from the
- * manifest's `debuggable` flag, which was enough for two build types and is wrong for three:
- * `wrist` is not debuggable, so its reports were tagged `release` — the one build they most need
- * telling apart from. A library has no better source of its own: its `BuildConfig` describes the
- * library's variant, and a `wrist` app builds every library as `release`.
- *
- * So the application says it. Each build type overrides the empty `crash_build_type` string that
- * `:core:common` declares with its own name; an application's resource wins over a library's when
- * they are merged. Call this after every build type exists.
- *
- * The string's only reader is in another module, and lint checks each module on its own, so the
- * application modules would report it as unused; `config/lint.xml` exempts that one resource and
- * says why. It is the applications' lint configuration for that reason alone.
- */
-internal fun Project.nameBuildTypesForCrashReports(extension: ApplicationExtension) {
-    extension.apply {
-        buildFeatures.resValues = true
-        buildTypes.configureEach {
-            resValue("string", CRASH_BUILD_TYPE_RESOURCE, name)
-        }
-        lint.lintConfig = rootProject.file(APPLICATION_LINT_CONFIG)
-    }
-}
-
-/** The string resource `:core:common` declares empty and each application build type fills in. */
-private const val CRASH_BUILD_TYPE_RESOURCE = "crash_build_type"
-
-/** The application modules' lint configuration, relative to the repository root. */
-private const val APPLICATION_LINT_CONFIG = "config/lint.xml"
-
-/**
  * Makes every release packaging task in this project fail with an explanation.
  *
  * Matched by name (`package…Release`, `assemble…Release`, `bundle…Release`) rather than by task

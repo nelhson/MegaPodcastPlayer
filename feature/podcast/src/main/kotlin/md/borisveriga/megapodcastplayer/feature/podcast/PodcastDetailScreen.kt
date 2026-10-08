@@ -121,6 +121,7 @@ import md.borisveriga.megapodcastplayer.core.designsystem.reorder.reorderableLon
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
@@ -136,7 +137,6 @@ import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
 import md.borisveriga.megapodcastplayer.core.model.orderedBy
 import md.borisveriga.megapodcastplayer.core.model.showShareText
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
-import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
  * Podcast detail screen: the show's header and its episode list.
@@ -173,6 +173,19 @@ fun PodcastDetailRoute(
         onPauseOrDispose { }
     }
 
+    // Under the official source a YouTube episode opens YouTube's own player, and the app's player
+    // is never asked: not started, not switched, not waited for. One seam for the four ways an
+    // episode is started from this page, so none of them can forget. A chapter opens the embed at
+    // the episode's own position — the embed takes no second from here — which is the one thing
+    // the official source does less well, and is said in the sheet's KDoc.
+    fun start(episodeId: String, openAs: OpenPlayerAs, inAppPlayer: (onPlaying: () -> Unit) -> Unit) {
+        if (viewModel.opensEmbedded(episodeId)) {
+            onOpenPlayer(episodeId, OpenPlayerAs.EMBEDDED)
+        } else {
+            inAppPlayer { onOpenPlayer(episodeId, openAs) }
+        }
+    }
+
     PodcastDetailScreen(
         uiState = uiState,
         onBack = onBack,
@@ -180,16 +193,16 @@ fun PodcastDetailRoute(
         // why an episode had to become readable before it could become one tap away.
         onEpisodeClick = viewModel::openEpisode,
         onEpisodePlay = { episodeId ->
-            viewModel.togglePlay(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+            start(episodeId, OpenPlayerAs.AUDIO) { onPlaying -> viewModel.togglePlay(episodeId, onPlaying) }
         },
         onEpisodePlayFrom = { episodeId, positionMs ->
-            viewModel.playFrom(episodeId, positionMs) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+            start(episodeId, OpenPlayerAs.AUDIO) { onPlaying -> viewModel.playFrom(episodeId, positionMs, onPlaying) }
         },
         onEpisodeWatch = { episodeId ->
-            viewModel.watchEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.VIDEO) }
+            start(episodeId, OpenPlayerAs.VIDEO) { onWatching -> viewModel.watchEpisode(episodeId, onWatching) }
         },
         onEpisodeListen = { episodeId ->
-            viewModel.listenToEpisode(episodeId) { onOpenPlayer(episodeId, OpenPlayerAs.AUDIO) }
+            start(episodeId, OpenPlayerAs.AUDIO) { onPlaying -> viewModel.listenToEpisode(episodeId, onPlaying) }
         },
         onEpisodeSheetDismiss = viewModel::closeEpisode,
         onEpisodeDownloadToggle = viewModel::toggleDownload,
@@ -197,6 +210,7 @@ fun PodcastDetailRoute(
         onEpisodePlayNext = viewModel::playNext,
         onVideoQualitiesRequest = viewModel::loadVideoQualities,
         onVideoDownload = viewModel::downloadVideo,
+        onEpisodeDownloadTo = viewModel::download,
         onVideoDownloadRemove = viewModel::removeVideoDownload,
         onEpisodeMove = viewModel::moveEpisode,
         onFilterChange = viewModel::setFilter,
@@ -232,7 +246,8 @@ fun PodcastDetailRoute(
  *   row's button never pauses. Defaults to [onEpisodePlay] for callers that draw no sheet.
  * @param onEpisodeSheetDismiss closes the episode sheet.
  * @param onVideoQualitiesRequest asks which renditions an episode's video comes in.
- * @param onVideoDownload downloads an episode's video at a rendition.
+ * @param onVideoDownload downloads an episode's video at a rendition, into a folder.
+ * @param onEpisodeDownloadTo downloads an episode's audio into the folder picked in its sheet.
  * @param onVideoDownloadRemove deletes an episode's downloaded video, or cancels it.
  * @param onEpisodeMove applies a completed reorder on a hand-ordered show. Takes the ids currently
  *   on screen alongside the two positions, because a filter means those are a subset and the
@@ -267,7 +282,8 @@ fun PodcastDetailScreen(
     onEpisodeSwipeDownload: (String) -> Unit,
     onEpisodePlayNext: (String) -> Unit,
     onVideoQualitiesRequest: (String) -> Unit,
-    onVideoDownload: (String, VideoQuality) -> Unit,
+    onVideoDownload: (String, VideoQuality, DownloadDestination) -> Unit,
+    onEpisodeDownloadTo: (String, DownloadDestination) -> Unit,
     onVideoDownloadRemove: (String) -> Unit,
     onEpisodeMove: (List<String>, Int, Int) -> Unit,
     onFilterChange: (EpisodeFilter) -> Unit,
@@ -337,8 +353,10 @@ fun PodcastDetailScreen(
             chapters = uiState.chapters,
             isChaptersLoading = uiState.isChaptersLoading,
             now = now,
-            // Only a YouTube episode has a picture; any other gets no video actions at all.
-            video = if (youTubeVideoIdOrNull(episode.audioUrl) != null) {
+            // Only a YouTube episode has a picture; any other gets no video actions at all. Nor
+            // does one under the official source: its one play button is the embed, and there is
+            // no second way to watch it and nothing to download.
+            video = if (uiState.offersVideoActions(episode)) {
                 EpisodeVideo(
                     canPlay = uiState.canPlayVideo(episode.id),
                     download = uiState.openVideoDownload,
@@ -357,15 +375,19 @@ fun PodcastDetailScreen(
                 onEpisodeSheetDismiss()
                 onEpisodePlayFrom(episode.id, chapter.startMs)
             },
-            // The downloads leave the sheet open: both change what the sheet itself shows.
-            onToggleDownload = { toggleDownload(episode.id) },
+            // The downloads leave the sheet open: both change what the sheet itself shows. Under
+            // the official source there is no download, so the sheet is not offered one.
+            onToggleDownload = { destination: DownloadDestination ->
+                sheetDownload(episode, destination, onEpisodeDownloadTo, toggleDownload)
+            }.takeIf { !uiState.isOfficialYouTube },
+            folders = uiState.downloadFolders,
             videoActions = EpisodeVideoActions(
                 onPlay = {
                     onEpisodeSheetDismiss()
                     onEpisodeWatch(episode.id)
                 },
                 onRequestQualities = { onVideoQualitiesRequest(episode.id) },
-                onDownload = { quality -> onVideoDownload(episode.id, quality) },
+                onDownload = { quality, destination -> onVideoDownload(episode.id, quality, destination) },
                 onRemoveDownload = { onVideoDownloadRemove(episode.id) },
             ),
             onDismiss = onEpisodeSheetDismiss,
@@ -416,7 +438,7 @@ fun PodcastDetailScreen(
                                 )
                             },
                             onOpenSettings = { showSettingsOpen = true },
-                            canExport = uiState.hasExportableEpisodes,
+                            canExport = uiState.canExport,
                             exportProgress = uiState.exportProgress,
                             onDownloadAndExport = { exportNameDialogOpen = true },
                             onRemove = onRemove,
@@ -548,14 +570,16 @@ fun PodcastDetailScreen(
                                 onClick = { onEpisodeClick(episode.id) },
                                 onPlay = { onEpisodePlay(episode.id) },
                                 // Only a YouTube episode has a picture; any other row keeps its
-                                // one button.
-                                onWatch = if (youTubeVideoIdOrNull(episode.audioUrl) != null) {
+                                // one button. So does one under the official source, whose one
+                                // button is the embed.
+                                onWatch = if (uiState.offersVideoActions(episode)) {
                                     { onEpisodeWatch(episode.id) }
                                 } else {
                                     null
                                 },
                                 canWatch = uiState.canPlayVideo(episode.id),
                                 videoDownload = uiState.videoDownloads[episode.id],
+                                offersAppPlayer = !uiState.isOfficialYouTube,
                                 swipeFetchesVideo = uiState.swipeDownloadsVideo(episode),
                                 onDownloadToggle = episode.swipeDownloadHandler(
                                     fetch = onEpisodeSwipeDownload,
@@ -606,6 +630,9 @@ fun PodcastDetailScreen(
  *   downloaded — which draws the second button disabled.
  * @param videoDownload the episode's video download, finished or not, or null; names what a removal
  *   takes and badges the row once it has finished.
+ * @param offersAppPlayer whether the row offers what only the app's player can do: the download
+ *   swipe and *Play next*. False for a YouTube show under the official source, whose episodes play
+ *   in YouTube's own player and are neither downloaded nor queued.
  * @param swipeFetchesVideo whether a download swipe fetches the picture as well as the sound, which
  *   the swipe's label then says.
  * @param onDownloadToggle downloads it, cancels the transfer, or deletes the copy — whichever the
@@ -628,6 +655,7 @@ private fun EpisodeListRow(
     onWatch: (() -> Unit)?,
     canWatch: Boolean,
     videoDownload: VideoDownload?,
+    offersAppPlayer: Boolean,
     swipeFetchesVideo: Boolean,
     onDownloadToggle: () -> Unit,
     onPlayNext: () -> Unit,
@@ -648,14 +676,18 @@ private fun EpisodeListRow(
         onClick = onPlayNext,
     )
 
+    // Both gestures are the app's player's; a row without it has neither, spoken or swiped.
+    val swipeActions = if (offersAppPlayer) listOf(playNext) else emptyList()
+    val fullSwipe = download.takeIf { offersAppPlayer }
+
     SwipeActionsRow(
         // Revealed rather than committed: it does not fire on release. Queueing changes what
         // happens after the thing the user is listening to — worth a deliberate tap, and the pull
         // that would fire it is already spoken for by the download. Marking played is not here at
         // all: it lives in the episode sheet, where the row that is about to leave a filtered list
         // is not the one under the finger.
-        actions = listOf(playNext),
-        fullSwipeAction = download,
+        actions = swipeActions,
+        fullSwipeAction = fullSwipe,
         modifier = Modifier.graphicsLayer {
             // Only the dragged row moves; the rest are re-laid-out by the list as the order
             // changes underneath it.
@@ -671,7 +703,7 @@ private fun EpisodeListRow(
                 .semantics {
                     customActions = (
                         if (isReorderable) drag.moveActions(index, moveUp, moveDown) else emptyList()
-                        ) + listOf(playNext, download).asAccessibilityActions()
+                        ) + (swipeActions + listOfNotNull(fullSwipe)).asAccessibilityActions()
                 }
                 // Inside the swipe box rather than around it, so the row's two drags are settled
                 // by the pointer that started them: this one consumes movement only once the
@@ -1587,14 +1619,7 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
     PodcastDetailMessage.VideoNotStarted ->
         resources.getString(R.string.podcast_message_video_not_started)
 
-    is PodcastDetailMessage.DownloadQueued -> resources.getString(
-        if (waitingForWifi) {
-            R.string.podcast_message_download_waiting_for_wifi
-        } else {
-            R.string.podcast_message_downloading
-        },
-        title,
-    )
+    is PodcastDetailMessage.DownloadQueued -> downloadQueuedText(resources)
 
     is PodcastDetailMessage.DownloadRemoved ->
         resources.getString(R.string.podcast_message_download_removed, title)
@@ -1642,21 +1667,83 @@ internal fun PodcastDetailMessage.toText(resources: Resources): String = when (t
 }
 
 /**
+ * What the snackbar says once an episode's audio is queued: whether it waits for Wi-Fi, and — when
+ * it is filed under a folder of the user's — which.
+ *
+ * @param resources for the strings.
+ * @return the message.
+ */
+private fun PodcastDetailMessage.DownloadQueued.downloadQueuedText(resources: Resources): String =
+    if (folderName == null) {
+        resources.getString(
+            if (waitingForWifi) {
+                R.string.podcast_message_download_waiting_for_wifi
+            } else {
+                R.string.podcast_message_downloading
+            },
+            title,
+        )
+    } else {
+        resources.getString(
+            if (waitingForWifi) {
+                R.string.podcast_message_download_to_folder_waiting_for_wifi
+            } else {
+                R.string.podcast_message_downloading_to_folder
+            },
+            title,
+            folderName,
+        )
+    }
+
+/**
+ * What the episode sheet's audio button does: a download carries the folder picked in the sheet;
+ * anything else — cancel, delete — is the toggle's, which asks first where it should.
+ *
+ * @param episode the sheet's episode.
+ * @param destination the folder chosen in the sheet.
+ * @param onDownloadTo downloads into a folder.
+ * @param toggle cancels or deletes, asking where it must.
+ */
+private fun sheetDownload(
+    episode: Episode,
+    destination: DownloadDestination,
+    onDownloadTo: (String, DownloadDestination) -> Unit,
+    toggle: (String) -> Unit,
+) {
+    val fetches = episode.downloadState == DownloadState.NOT_DOWNLOADED ||
+        episode.downloadState == DownloadState.FAILED
+    if (fetches) onDownloadTo(episode.id, destination) else toggle(episode.id)
+}
+
+/**
  * The snackbar for a video queued for download: where it is going, or what it is waiting for.
  *
  * @param resources resolved from the composition by the caller.
  * @return the text to show.
  */
 private fun PodcastDetailMessage.VideoDownloadQueued.videoQueuedText(resources: Resources): String =
-    resources.getString(
-        if (waitingForWifi) {
-            R.string.podcast_message_video_download_waiting_for_wifi
-        } else {
-            R.string.podcast_message_video_download_queued
-        },
-        title,
-        formatVideoQuality(quality.height),
-    )
+    if (folderName == null) {
+        resources.getString(
+            if (waitingForWifi) {
+                R.string.podcast_message_video_download_waiting_for_wifi
+            } else {
+                R.string.podcast_message_video_download_queued
+            },
+            title,
+            formatVideoQuality(quality.height),
+        )
+    } else {
+        resources.getString(
+            if (waitingForWifi) {
+                R.string.podcast_message_video_download_to_folder_waiting_for_wifi
+            } else {
+                R.string.podcast_message_video_download_to_folder
+            },
+            title,
+            formatVideoQuality(quality.height),
+            folderName,
+        )
+    }
 
 /** How far a dragged episode is lifted above its neighbours, so they cannot clip it. */
 private const val DRAG_ELEVATION = 8f
@@ -1737,8 +1824,9 @@ internal fun PodcastDetailScreenPreview() {
             onEpisodeSheetDismiss = {},
             onEpisodePlayNext = {},
             onVideoQualitiesRequest = {},
-            onVideoDownload = { _, _ -> },
+            onVideoDownload = { _, _, _ -> },
             onVideoDownloadRemove = {},
+            onEpisodeDownloadTo = { _, _ -> },
             onEpisodeMove = { _, _, _ -> },
             onFilterChange = {},
             onSortChange = {},
@@ -1774,8 +1862,9 @@ internal fun PodcastDetailScreenInPanePreview() {
             onEpisodeSheetDismiss = {},
             onEpisodePlayNext = {},
             onVideoQualitiesRequest = {},
-            onVideoDownload = { _, _ -> },
+            onVideoDownload = { _, _, _ -> },
             onVideoDownloadRemove = {},
+            onEpisodeDownloadTo = { _, _ -> },
             onEpisodeMove = { _, _, _ -> },
             onFilterChange = {},
             onSortChange = {},
@@ -1818,8 +1907,9 @@ internal fun PodcastDetailScreenYouTubePreview() {
             onEpisodeSheetDismiss = {},
             onEpisodePlayNext = {},
             onVideoQualitiesRequest = {},
-            onVideoDownload = { _, _ -> },
+            onVideoDownload = { _, _, _ -> },
             onVideoDownloadRemove = {},
+            onEpisodeDownloadTo = { _, _ -> },
             onEpisodeMove = { _, _, _ -> },
             onFilterChange = {},
             onSortChange = {},

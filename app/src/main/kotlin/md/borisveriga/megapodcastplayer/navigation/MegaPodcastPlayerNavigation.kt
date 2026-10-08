@@ -111,7 +111,9 @@ sealed interface Route {
      *
      * The player itself is deliberately *not* a route. It is a sheet that grows out of the bar
      * above the navigation bar, so there is no destination to navigate to and nothing for the back
-     * stack to disagree with the playback service about.
+     * stack to disagree with the playback service about. The two pictures — [Video], the player's
+     * own face, and [EmbeddedVideo], which is not the player at all — are routes because a picture
+     * needs the whole window.
      */
     @Serializable
     data object Queue : Route
@@ -129,6 +131,31 @@ sealed interface Route {
      */
     @Serializable
     data object Video : Route
+
+    /**
+     * YouTube's own embedded player on one episode, under the official YouTube source.
+     *
+     * The other full-screen destination, and unlike [Video] not a face of the app's player at all:
+     * the app's player is Media3 over an extracted stream, which the official source forbids, and
+     * this is YouTube's embed in a `WebView`, which it permits. Nothing of it reaches the bar, the
+     * notification or the watch. It is reached from a YouTube show's episode — any way of playing
+     * one, while the official source is chosen — and from a moment on such an episode. Backing out
+     * lands where it was opened from, with nothing playing.
+     *
+     * @property episodeId the episode to watch.
+     * @property startMs where to start, in milliseconds, or the default to pick up where the
+     *   episode was left. A moment names a second; a tap on an episode names none.
+     */
+    @Serializable
+    data class EmbeddedVideo(
+        val episodeId: String,
+        val startMs: Long = EMBEDDED_RESUME,
+    ) : Route
+
+    companion object {
+        /** The [EmbeddedVideo.startMs] that means "where the episode was left". */
+        const val EMBEDDED_RESUME: Long = -1L
+    }
 }
 
 /**

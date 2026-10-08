@@ -159,6 +159,13 @@
     <string name="podcast_message_video_not_started">Couldn\'t start the video. Try again.</string>
     <string name="podcast_message_download_waiting_for_wifi">\"%1$s\" will download on Wi-Fi</string>
     <string name="podcast_message_downloading">Downloading \"%1$s\"</string>
+    <!--
+        The same two once the user has folders and the download is filed under one of them, so a
+        swipe — which has no room to ask — still says where it went. %2$s is the folder's name,
+        unquoted as a name is (COPY_RULES §4). Not said for the built-in Downloads folder.
+    -->
+    <string name="podcast_message_downloading_to_folder">Downloading \"%1$s\" to %2$s</string>
+    <string name="podcast_message_download_to_folder_waiting_for_wifi">\"%1$s\" will download to %2$s on Wi-Fi</string>
     <string name="podcast_message_download_removed">Deleted \"%1$s\" from this device</string>
     <!-- %1$s is the episode's title. Says where it went, because the queue is another screen. -->
     <string name="podcast_message_queued_next">\"%1$s\" plays next</string>
@@ -166,6 +173,9 @@
     <string name="podcast_message_video_download_queued">Downloading the video of \"%1$s\" at %2$s</string>
     <!-- The same, when downloads wait for Wi-Fi: the audio's message says so, and so does this. -->
     <string name="podcast_message_video_download_waiting_for_wifi">The video of \"%1$s\" will download on Wi-Fi, at %2$s</string>
+    <!-- The video's two, naming the folder (%3$s) as the audio's do. -->
+    <string name="podcast_message_video_download_to_folder">Downloading the video of \"%1$s\" at %2$s to %3$s</string>
+    <string name="podcast_message_video_download_to_folder_waiting_for_wifi">The video of \"%1$s\" will download to %3$s on Wi-Fi, at %2$s</string>
     <!-- The audio stays in both cases, so neither says the episode was deleted. -->
     <string name="podcast_message_video_deleted">Deleted the video of \"%1$s\"</string>
     <string name="podcast_message_video_cancelled">Cancelled the video download of \"%1$s\"</string>

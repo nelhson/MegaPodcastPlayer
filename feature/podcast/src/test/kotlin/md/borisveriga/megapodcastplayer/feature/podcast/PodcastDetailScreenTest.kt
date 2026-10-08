@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
@@ -112,6 +113,7 @@ class PodcastDetailScreenTest {
         onRebuild: () -> Unit = {},
         onRemove: () -> Unit = {},
         onEpisodeDownloadToggle: (String) -> Unit = {},
+        onEpisodeDownloadTo: (String, DownloadDestination) -> Unit = { _, _ -> },
         onEpisodeSwipeDownload: (String) -> Unit = {},
         swipeDownload: SwipeDownload = SwipeDownload.DEFAULT,
         onEpisodePlayNext: (String) -> Unit = {},
@@ -146,10 +148,11 @@ class PodcastDetailScreenTest {
                     onEpisodeWatch = onEpisodeWatch,
                     onEpisodeSheetDismiss = {},
                     onEpisodeDownloadToggle = onEpisodeDownloadToggle,
+                    onEpisodeDownloadTo = onEpisodeDownloadTo,
                     onEpisodeSwipeDownload = onEpisodeSwipeDownload,
                     onEpisodePlayNext = onEpisodePlayNext,
                     onVideoQualitiesRequest = onVideoQualitiesRequest,
-                    onVideoDownload = { _, _ -> },
+                    onVideoDownload = { _, _, _ -> },
                     onVideoDownloadRemove = {},
                     onEpisodeMove = onEpisodeMove,
                     onFilterChange = onFilterChange,
@@ -324,11 +327,15 @@ class PodcastDetailScreenTest {
     fun `an episode that is only sound gets one play and one download, no video`() {
         var played: String? = null
         var toggled: String? = null
+        var folder: DownloadDestination? = null
         setScreen(
             listOf(episode("a")),
             openEpisodeId = "a",
             onEpisodePlay = { played = it },
-            onEpisodeDownloadToggle = { toggled = it },
+            onEpisodeDownloadTo = { id, destination ->
+                toggled = id
+                folder = destination
+            },
         )
 
         composeRule.onNodeWithText("Play video").assertDoesNotExist()
@@ -337,6 +344,7 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithText("Play").performClick()
 
         assertEquals("a", toggled)
+        assertEquals(DownloadDestination.Unspecified, folder)
         assertEquals("a", played)
     }
 
@@ -345,12 +353,16 @@ class PodcastDetailScreenTest {
         var played: String? = null
         var watched: String? = null
         var toggled: String? = null
+        var folder: DownloadDestination? = null
         setScreen(
             listOf(episode("a").copy(audioUrl = youTubeAudioSentinel("dQw4w9WgXcQ"))),
             openEpisodeId = "a",
             onEpisodePlay = { played = it },
             onEpisodeWatch = { watched = it },
-            onEpisodeDownloadToggle = { toggled = it },
+            onEpisodeDownloadTo = { id, destination ->
+                toggled = id
+                folder = destination
+            },
         )
 
         composeRule.onNodeWithText("Download audio").performClick()
@@ -359,6 +371,7 @@ class PodcastDetailScreenTest {
         composeRule.onNodeWithText("Play audio").performClick()
 
         assertEquals("a", toggled)
+        assertEquals(DownloadDestination.Unspecified, folder)
         assertEquals("a", watched)
         assertEquals("a", played)
     }

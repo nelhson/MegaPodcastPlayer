@@ -66,6 +66,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 
 /**
  * Settings screen.
@@ -116,6 +117,8 @@ fun SettingsRoute(
         onKeepLimitChange = viewModel::setKeepLimit,
         onDeleteAfterPlayingChange = viewModel::setDeleteAfterPlaying,
         onSwipeDownloadChange = viewModel::setSwipeDownload,
+        onDefaultDownloadFolderChange = viewModel::setDefaultDownloadFolder,
+        onYouTubeSourceChange = viewModel::setYouTubeSource,
         onRemoveAllDownloads = viewModel::removeAllDownloads,
         onExportSubscriptions = { exportLauncher.launch(viewModel.suggestedFileName()) },
         onImportSubscriptions = { importLauncher.launch(OPML_PICKER_TYPES) },
@@ -149,6 +152,9 @@ fun SettingsRoute(
  * @param onKeepLimitChange keep-limit handler.
  * @param onDeleteAfterPlayingChange delete-after-playing toggle handler.
  * @param onSwipeDownloadChange handler for what the show page's download swipe fetches.
+ * @param onYouTubeSourceChange handler for where YouTube shows are read from and played by.
+ * @param onDefaultDownloadFolderChange handler for where new downloads are filed; null for the
+ *   built-in *Downloads* folder.
  * @param onRemoveAllDownloads remove-all handler.
  * @param onExportSubscriptions called when the user asks to write the subscription list.
  * @param onImportSubscriptions called when the user asks to read one.
@@ -177,6 +183,8 @@ fun SettingsScreen(
     onKeepLimitChange: (Int) -> Unit,
     onDeleteAfterPlayingChange: (Boolean) -> Unit,
     onSwipeDownloadChange: (SwipeDownload) -> Unit,
+    onDefaultDownloadFolderChange: (String?) -> Unit,
+    onYouTubeSourceChange: (YouTubeSource) -> Unit,
     onRemoveAllDownloads: () -> Unit,
     onExportSubscriptions: () -> Unit,
     onImportSubscriptions: () -> Unit,
@@ -351,6 +359,21 @@ fun SettingsScreen(
                 )
             }
 
+            // Its own section rather than a row under Playback: the choice changes what a
+            // YouTube show *is* on this phone — how many videos it has, whether it downloads,
+            // which player opens — and a row between the skip intervals would understate that.
+            SectionHeader(text = stringResource(R.string.settings_section_youtube))
+            SettingsCard {
+                SettingsChoiceRow(
+                    title = stringResource(R.string.settings_youtube_source_title),
+                    description = stringResource(R.string.settings_youtube_source_description),
+                    options = YouTubeSource.entries,
+                    selected = uiState.youTubeSource,
+                    label = { source -> stringResource(source.labelResId) },
+                    onSelect = onYouTubeSourceChange,
+                )
+            }
+
             SectionHeader(text = stringResource(R.string.settings_section_downloads))
             SettingsCard {
                 SettingsSwitchRow(
@@ -392,14 +415,26 @@ fun SettingsScreen(
                     label = { choice -> stringResource(choice.labelResId) },
                     onSelect = onSwipeDownloadChange,
                 )
+
+                // Only once the user has made a folder: with *Downloads* alone there is no choice.
+                // A swipe and an auto-download have no room to ask, so this is where they go.
+                val folders = uiState.downloadFolders
+                if (folders.folders.isNotEmpty()) {
+                    val builtIn = stringResource(R.string.settings_default_folder_downloads)
+                    SettingsChoiceRow(
+                        title = stringResource(R.string.settings_default_folder_title),
+                        description = stringResource(R.string.settings_default_folder_description),
+                        options = listOf<String?>(null) + folders.folders.map { it.id },
+                        selected = folders.defaultFolderId?.takeIf(folders::exists),
+                        label = { id -> folders.folders.firstOrNull { it.id == id }?.name ?: builtIn },
+                        onSelect = onDefaultDownloadFolderChange,
+                    )
+                }
             }
 
             SectionHeader(text = stringResource(R.string.settings_section_about))
             SettingsCard {
-                AboutRows(
-                    isCrashReporting = uiState.isCrashReporting,
-                    onOpenFontLicences = { fontLicencesOpen = true },
-                )
+                AboutRows(onOpenFontLicences = { fontLicencesOpen = true })
             }
 
             SectionHeader(text = stringResource(R.string.settings_section_subscriptions))
@@ -520,6 +555,16 @@ private val SwipeDownload.labelResId: Int
     }
 
 /**
+ * The caption on each choice of where YouTube shows come from, for the reason the others are here.
+ */
+@get:StringRes
+private val YouTubeSource.labelResId: Int
+    get() = when (this) {
+        YouTubeSource.EXTRACTOR -> R.string.settings_youtube_source_extractor
+        YouTubeSource.OFFICIAL -> R.string.settings_youtube_source_official
+    }
+
+/**
  * Opens the system's notification settings for this app.
  *
  * The system page rather than a set of switches here, because every one of those switches already
@@ -547,11 +592,10 @@ private fun Context.openNotificationSettings() {
  * is already at the complexity the build allows — and because these three are the only rows here
  * that report rather than change anything.
  *
- * @param isCrashReporting whether handled failures actually leave the device.
  * @param onOpenFontLicences opens the licence text.
  */
 @Composable
-private fun AboutRows(isCrashReporting: Boolean, onOpenFontLicences: () -> Unit) {
+private fun AboutRows(onOpenFontLicences: () -> Unit) {
     ListItem(
         headlineContent = { Text(text = stringResource(R.string.settings_version)) },
         supportingContent = { Text(text = appVersionName()) },
@@ -560,20 +604,9 @@ private fun AboutRows(isCrashReporting: Boolean, onOpenFontLicences: () -> Unit)
 
     ListItem(
         headlineContent = { Text(text = stringResource(R.string.settings_crash_reporting)) },
-        // States which of the two builds this is rather than offering a switch there is nothing
-        // behind: whether anything is sent was decided by whether a configuration file was present
-        // when the APK was built.
-        supportingContent = {
-            Text(
-                text = stringResource(
-                    if (isCrashReporting) {
-                        R.string.settings_crash_reporting_on
-                    } else {
-                        R.string.settings_crash_reporting_off
-                    },
-                ),
-            )
-        },
+        // A statement rather than a switch: there is no crash-reporting service in the app to
+        // turn on, so there is nothing for a switch to be behind.
+        supportingContent = { Text(text = stringResource(R.string.settings_crash_reporting_off)) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 
@@ -817,6 +850,8 @@ internal fun SettingsScreenPreview() {
             onKeepLimitChange = {},
             onDeleteAfterPlayingChange = {},
             onSwipeDownloadChange = {},
+            onDefaultDownloadFolderChange = {},
+            onYouTubeSourceChange = {},
             onThemeChange = {},
             onDynamicColorChange = {},
             onPureBlackChange = {},

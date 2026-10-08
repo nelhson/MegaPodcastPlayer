@@ -51,12 +51,16 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
 import md.borisveriga.megapodcastplayer.core.data.chapters.EpisodeChapters
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkSize
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadFolderPicker
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.component.RichText
 import md.borisveriga.megapodcastplayer.core.designsystem.component.VideoDownloadSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.WavyProgressLine
+import md.borisveriga.megapodcastplayer.core.designsystem.component.rememberDownloadFolderChoice
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
@@ -91,10 +95,15 @@ import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
  *   it has none, which hides every video action.
  * @param onPlay plays the episode's sound from where it was left.
  * @param onPlayChapter plays it from a chapter's start.
- * @param onToggleDownload downloads, cancels or deletes the audio — whichever its state means.
+ * @param onToggleDownload downloads, cancels or deletes the audio — whichever its state means;
+ *   given the folder chosen in the "Save to" picker, which only a download uses. Null for an
+ *   episode that cannot be downloaded at all — a YouTube one under the official source — which
+ *   draws no download button and no picker.
  * @param videoActions what the video buttons and the quality dialog do; unused when [video] is null.
  * @param onDismiss closes the sheet.
  * @param modifier layout modifier.
+ * @param folders the user's download folders; the "Save to" picker is drawn only once there are
+ *   any, and only while there is something left to download.
  */
 // ModalBottomSheet is still experimental in material3 1.4.0 and is the only modal sheet there is;
 // the opt-in is scoped to the one composable that opens it, and MegaPodcastPlayerBottomSheet is
@@ -111,10 +120,11 @@ fun EpisodeSheet(
     video: EpisodeVideo?,
     onPlay: () -> Unit,
     onPlayChapter: (Chapter) -> Unit,
-    onToggleDownload: () -> Unit,
+    onToggleDownload: ((DownloadDestination) -> Unit)?,
     videoActions: EpisodeVideoActions,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    folders: DownloadFolders = DownloadFolders.NONE,
 ) {
     MegaPodcastPlayerBottomSheet(
         onDismiss = onDismiss,
@@ -140,6 +150,7 @@ fun EpisodeSheet(
                 onPlay = onPlay,
                 onToggleDownload = onToggleDownload,
                 videoActions = videoActions,
+                folders = folders,
             )
 
             if (isChaptersLoading) {
@@ -245,13 +256,13 @@ data class EpisodeVideo(
  * @property onPlay plays the episode and opens it as video.
  * @property onRequestQualities asks which renditions the video comes in; called as the download
  *   dialog opens.
- * @property onDownload downloads the video at a rendition.
+ * @property onDownload downloads the video at a rendition, into the folder chosen in the sheet.
  * @property onRemoveDownload deletes the downloaded video, or cancels one on its way.
  */
 class EpisodeVideoActions(
     val onPlay: () -> Unit,
     val onRequestQualities: () -> Unit,
-    val onDownload: (VideoQuality) -> Unit,
+    val onDownload: (VideoQuality, DownloadDestination) -> Unit,
     val onRemoveDownload: () -> Unit,
 )
 
@@ -268,6 +279,7 @@ class EpisodeVideoActions(
  * @param onPlay plays the sound.
  * @param onToggleDownload downloads, cancels or deletes the audio.
  * @param videoActions the video buttons' handlers.
+ * @param folders the user's download folders, for the "Save to" picker.
  * @param modifier layout modifier.
  */
 @Composable
@@ -275,12 +287,20 @@ private fun EpisodeActions(
     episode: Episode,
     video: EpisodeVideo?,
     onPlay: () -> Unit,
-    onToggleDownload: () -> Unit,
+    onToggleDownload: ((DownloadDestination) -> Unit)?,
     videoActions: EpisodeVideoActions,
+    folders: DownloadFolders,
     modifier: Modifier = Modifier,
 ) {
     // Saveable, so unfolding the phone with the dialog open does not close it.
     var qualityDialogOpen by rememberSaveable { mutableStateOf(false) }
+    // One choice for both downloads: an episode's sound and picture are one row in one folder.
+    val folderChoice = rememberDownloadFolderChoice(folders, episode.id)
+    // Only while something is left to fetch: once both are on the phone the buttons delete, and a
+    // folder to delete into means nothing. Moving a download is the Downloads tab's.
+    val canFetchAudio = episode.downloadState == DownloadState.NOT_DOWNLOADED ||
+        episode.downloadState == DownloadState.FAILED
+    val canFetchVideo = video != null && video.download?.isComplete != true
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -326,17 +346,29 @@ private fun EpisodeActions(
             }
         }
 
-        ActionButton(
-            icon = episode.downloadIcon(),
-            label = stringResource(
-                episode.downloadLabelRes(
-                    hasVideo = video != null,
-                    hasVideoDownload = video?.download != null,
+        // No download handler means no download at all — a YouTube episode under the official
+        // source — so neither the folder to put it in nor the button that would is drawn.
+        if (onToggleDownload != null && (canFetchAudio || canFetchVideo)) {
+            DownloadFolderPicker(
+                folders = folders,
+                selectedFolderId = folderChoice.folderId,
+                onSelect = folderChoice.onChoose,
+            )
+        }
+
+        if (onToggleDownload != null) {
+            ActionButton(
+                icon = episode.downloadIcon(),
+                label = stringResource(
+                    episode.downloadLabelRes(
+                        hasVideo = video != null,
+                        hasVideoDownload = video?.download != null,
+                    ),
                 ),
-            ),
-            onClick = onToggleDownload,
-            modifier = Modifier.fillMaxWidth(),
-        )
+                onClick = { onToggleDownload(folderChoice.destination) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         if (video != null) {
             ActionButton(
@@ -359,7 +391,7 @@ private fun EpisodeActions(
             download = video.download,
             onDownload = { quality ->
                 qualityDialogOpen = false
-                videoActions.onDownload(quality)
+                videoActions.onDownload(quality, folderChoice.destination)
             },
             onDelete = {
                 qualityDialogOpen = false

@@ -1,6 +1,7 @@
 package md.borisveriga.megapodcastplayer.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
@@ -74,10 +75,18 @@ interface DownloadRepository {
      * Safe to call for an episode that is already downloading (a no-op) or that previously failed
      * (a retry), which is what lets one button serve both.
      *
+     * The download is filed under a folder before it is requested, so its row appears in the right
+     * one while it is still waiting; see `DownloadFolders.folderForDownload` for which.
+     *
      * @param episodeId the episode to download.
+     * @param destination the folder to file it under; by default the one it is already in, and
+     *   otherwise the user's default.
      * @return true if the request was made; false if the episode is not stored.
      */
-    suspend fun download(episodeId: String): Boolean
+    suspend fun download(
+        episodeId: String,
+        destination: DownloadDestination = DownloadDestination.Unspecified,
+    ): Boolean
 
     /**
      * Starts a waiting download now, without waiting for Wi-Fi.
@@ -122,12 +131,20 @@ interface DownloadRepository {
      * picture plays merged with the audio and a video with its sound still on the network does not
      * play offline. An episode keeps one quality: asking for another replaces the one it has.
      *
+     * The episode is one download with its audio, so it is filed as [download] files it: a video
+     * joining audio already on the device stays in the audio's folder unless told otherwise.
+     *
      * @param episodeId the episode.
      * @param quality the rendition to keep, one of those the video offers.
+     * @param destination the folder to file the episode under; see [download].
      * @return true if the request was made; false if the episode is not stored or is not a YouTube
      *   episode, which has no picture to download.
      */
-    suspend fun downloadVideo(episodeId: String, quality: VideoQuality): Boolean
+    suspend fun downloadVideo(
+        episodeId: String,
+        quality: VideoQuality,
+        destination: DownloadDestination = DownloadDestination.Unspecified,
+    ): Boolean
 
     /**
      * Deletes an episode's downloaded video and keeps its downloaded audio.

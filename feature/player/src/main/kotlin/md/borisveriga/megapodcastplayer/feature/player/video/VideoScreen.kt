@@ -100,11 +100,13 @@ import kotlinx.coroutines.delay
 import md.borisveriga.megapodcastplayer.core.common.format.formatCountdown
 import md.borisveriga.megapodcastplayer.core.common.format.formatPosition
 import md.borisveriga.megapodcastplayer.core.common.format.formatSpeed
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadFolderPicker
 import md.borisveriga.megapodcastplayer.core.designsystem.component.LabelledWaveScrubber
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseButton
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PlayPauseSize
 import md.borisveriga.megapodcastplayer.core.designsystem.component.PodcastArtwork
 import md.borisveriga.megapodcastplayer.core.designsystem.component.VideoDownloadSheet
+import md.borisveriga.megapodcastplayer.core.designsystem.component.rememberDownloadFolderChoice
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.Motion
@@ -225,14 +227,25 @@ fun VideoRoute(
             onDismiss = { qualityOpen = false },
         )
     }
-    if (downloadOpen) {
+    val episodeId = uiState.playback.episodeId
+    if (downloadOpen && episodeId != null) {
+        // Where the download goes, chosen in the sheet: the episode's folder, else the default,
+        // until the user picks another.
+        val folderChoice = rememberDownloadFolderChoice(uiState.downloadFolders, episodeId)
         VideoDownloadSheet(
             qualities = uiState.qualities,
             failed = uiState.qualitiesFailed,
             download = uiState.videoDownload,
             onDownload = { quality ->
                 downloadOpen = false
-                viewModel.downloadVideo(quality)
+                viewModel.downloadVideo(quality, folderChoice.destination)
+            },
+            folderPicker = {
+                DownloadFolderPicker(
+                    folders = uiState.downloadFolders,
+                    selectedFolderId = folderChoice.folderId,
+                    onSelect = folderChoice.onChoose,
+                )
             },
             onDelete = {
                 downloadOpen = false

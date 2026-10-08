@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
@@ -34,6 +35,8 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoOutput
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
@@ -57,6 +60,7 @@ private const val NON_FATAL_QUALITIES = "Video qualities lookup failed"
  * @property videoDownload the loaded episode's downloaded video, or null when it has none.
  * @property downloadMessage what a download request just did, until the screen has said so;
  *   cleared via [VideoViewModel.onDownloadMessageShown].
+ * @property downloadFolders the user's download folders, for the download sheet's "Save to" picker.
  */
 data class VideoUiState(
     val playback: PlaybackState = PlaybackState(),
@@ -67,6 +71,7 @@ data class VideoUiState(
     val refused: Boolean = false,
     val videoDownload: VideoDownload? = null,
     val downloadMessage: VideoDownloadMessage? = null,
+    val downloadFolders: DownloadFolders = DownloadFolders.NONE,
 ) {
 
     /** Whether the loaded episode has a picture at all; false is the screen's cue to leave. */
@@ -138,6 +143,7 @@ class VideoViewModel @Inject constructor(
     private val playbackRepository: PlaybackRepository,
     private val qualitySource: VideoQualitySource,
     private val downloadRepository: DownloadRepository,
+    private val folderRepository: DownloadFolderRepository,
     private val networkStatus: NetworkStatus,
     private val crashReporter: CrashReporter,
     @ApplicationScope private val applicationScope: CoroutineScope,
@@ -218,8 +224,9 @@ class VideoViewModel @Inject constructor(
         refusedState,
         videoDownload,
         downloadMessageState,
-    ) { qualities, refused, download, message ->
-        Extras(qualities.offeringDownload(download), refused, download, message)
+        folderRepository.observeFolders(),
+    ) { qualities, refused, download, message, folders ->
+        Extras(qualities.offeringDownload(download), refused, download, message, folders)
     }
 
     /**
@@ -246,6 +253,7 @@ class VideoViewModel @Inject constructor(
             refused = extras.refused,
             videoDownload = extras.download,
             downloadMessage = extras.message,
+            downloadFolders = extras.folders,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -400,11 +408,13 @@ class VideoViewModel @Inject constructor(
      * the download is what the next visit to this screen plays from.
      *
      * @param quality the rendition to keep.
+     * @param destination the folder to file the episode under, from the sheet's picker; by default
+     *   the one it is in, else the default folder.
      */
-    fun downloadVideo(quality: VideoQuality) {
+    fun downloadVideo(quality: VideoQuality, destination: DownloadDestination = DownloadDestination.Unspecified) {
         val episodeId = uiState.value.playback.episodeId ?: return
         viewModelScope.launch {
-            val requested = downloadRepository.downloadVideo(episodeId, quality)
+            val requested = downloadRepository.downloadVideo(episodeId, quality, destination)
             downloadMessageState.value = if (requested) {
                 VideoDownloadMessage.Queued(
                     quality = quality,
@@ -607,12 +617,14 @@ class VideoViewModel @Inject constructor(
      * @property refused whether a refusal waits to be shown.
      * @property download the loaded episode's downloaded video, if any.
      * @property message a download message waiting to be shown.
+     * @property folders the user's download folders.
      */
     private data class Extras(
         val qualities: Qualities,
         val refused: Boolean,
         val download: VideoDownload?,
         val message: VideoDownloadMessage?,
+        val folders: DownloadFolders,
     )
 
     /**
