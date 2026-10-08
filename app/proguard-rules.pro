@@ -5,12 +5,12 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The embedded YouTube player's page calls back into this class by method name, through
+# addJavascriptInterface. A shrunk build that renamed a method would be a page calling into
+# nothing: the player would play and the app would never hear a position or an error from it.
+-keepclassmembers class md.borisveriga.megapodcastplayer.feature.player.embedded.EmbeddedPlayerBridge {
+   public *;
+}
 
 # Line numbers survive shrinking so that a crash from a distributed build can be read back against
 # the source once mapping.txt has been applied. Without them a shrunk stack trace names only the

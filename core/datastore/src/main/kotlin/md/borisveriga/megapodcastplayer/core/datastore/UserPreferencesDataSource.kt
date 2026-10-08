@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
+import md.borisveriga.megapodcastplayer.core.model.DownloadFoldersCodec
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.LibrarySort
@@ -24,6 +26,7 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettingsCodec
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 
 /**
  * Reads and writes the small, user-owned settings that are not worth a database table.
@@ -80,6 +83,19 @@ class UserPreferencesDataSource @Inject constructor(
                 ?: SwipeDownload.DEFAULT,
         )
     }
+
+    /**
+     * Observes where YouTube shows are read from and what plays them; the extractor until chosen.
+     *
+     * By name with a fallback, as the sort order is, and for the same reason: the file outlives
+     * the build. Emits only on change, because the resolver and the repositories reconfigure
+     * themselves on what this says, and the file is rewritten on every change of episode.
+     */
+    val youTubeSource: Flow<YouTubeSource> = dataStore.data.map { preferences ->
+        preferences[Keys.YOUTUBE_SOURCE]
+            ?.let { stored -> YouTubeSource.entries.firstOrNull { it.name == stored } }
+            ?: YouTubeSource.DEFAULT
+    }.distinctUntilChanged()
 
     /** Observes how the library screen draws its shows; the default until one is chosen. */
     val libraryLayout: Flow<LibraryLayout> = dataStore.data.map { preferences ->
@@ -270,6 +286,16 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Stores where YouTube shows are read from and what plays them.
+     *
+     * @param source the choice; see [YouTubeSource] for what each one means and what switching
+     *   does not do.
+     */
+    suspend fun setYouTubeSource(source: YouTubeSource) {
+        dataStore.edit { it[Keys.YOUTUBE_SOURCE] = source.name }
+    }
+
+    /**
      * Records which layout the library screen is showing.
      *
      * @param layout the chosen layout; stored by name so the file stays readable and a reordered
@@ -413,6 +439,36 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Observes the user's download folders, which download is in which, and the default.
+     *
+     * One key for all three, so a change that touches more than one — deleting the folder that was
+     * the default — is one atomic write and can never be seen half done. Emits only on a change:
+     * every other preference shares this file and re-emits it on any write.
+     */
+    val downloadFolders: Flow<DownloadFolders> = dataStore.data.map { preferences ->
+        DownloadFoldersCodec.decode(preferences[Keys.DOWNLOAD_FOLDERS])
+    }.distinctUntilChanged()
+
+    /**
+     * Changes the download folders.
+     *
+     * Read-modify-write inside `edit`, which DataStore serialises, so a download being filed while
+     * the user renames a folder cannot lose either change.
+     *
+     * @param transform receives the current folders and returns the new ones.
+     * @return the folders as written.
+     */
+    suspend fun updateDownloadFolders(transform: (DownloadFolders) -> DownloadFolders): DownloadFolders {
+        var written = DownloadFolders.NONE
+        dataStore.edit { preferences ->
+            val updated = transform(DownloadFoldersCodec.decode(preferences[Keys.DOWNLOAD_FOLDERS]))
+            preferences[Keys.DOWNLOAD_FOLDERS] = DownloadFoldersCodec.encode(updated)
+            written = updated
+        }
+        return written
+    }
+
+    /**
      * Observes what the user has decided about individual shows, keyed by podcast id.
      *
      * A show that has never been touched is absent rather than present with defaults, so the map
@@ -463,6 +519,7 @@ class UserPreferencesDataSource @Inject constructor(
         val KEEP_LIMIT = intPreferencesKey("download_keep_limit_per_podcast")
         val DELETE_AFTER_PLAYING = booleanPreferencesKey("delete_after_playing")
         val SWIPE_DOWNLOAD = stringPreferencesKey("swipe_download")
+        val YOUTUBE_SOURCE = stringPreferencesKey("youtube_source")
         val LIBRARY_LAYOUT = stringPreferencesKey("library_layout")
         val LIBRARY_SORT = stringPreferencesKey("library_sort")
         val THEME = stringPreferencesKey("theme")
@@ -475,6 +532,7 @@ class UserPreferencesDataSource @Inject constructor(
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val VIDEO_QUALITY_HEIGHT = intPreferencesKey("video_quality_height")
         val PLAYER_VIDEO_MODE = booleanPreferencesKey("player_video_mode")
+        val DOWNLOAD_FOLDERS = stringPreferencesKey("download_folders")
     }
 
     private companion object {

@@ -69,6 +69,8 @@ import md.borisveriga.megapodcastplayer.core.model.format.formatVideoQuality
  * @param modifier layout modifier.
  * @param waitingForWifi whether downloads wait for Wi-Fi, which is then why a queued video has not
  *   started, and the status line says so as the audio's does.
+ * @param folderPicker drawn above the download button, to choose which folder the download is filed
+ *   under; null when the caller has its own, or there is nothing to choose.
  */
 // MegaPodcastPlayerBottomSheet is built on the experimental ModalBottomSheet.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,6 +84,7 @@ fun VideoDownloadSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     waitingForWifi: Boolean = false,
+    folderPicker: (@Composable () -> Unit)? = null,
 ) {
     var confirmingDelete by rememberSaveable { mutableStateOf(false) }
 
@@ -100,6 +103,7 @@ fun VideoDownloadSheet(
             download = download,
             onDownload = onDownload,
             onDelete = { if (download?.isComplete == true) confirmingDelete = true else onDelete() },
+            folderPicker = folderPicker,
         )
     }
 
@@ -145,6 +149,7 @@ fun canDownloadVideo(picked: VideoQuality?, download: VideoDownload?): Boolean =
  * @param download the episode's downloaded video, if any.
  * @param onDownload a rendition was confirmed.
  * @param onDelete the delete or cancel button was pressed; asking first is the caller's.
+ * @param folderPicker drawn above the download button; see [VideoDownloadSheet].
  */
 @Composable
 fun VideoDownloadOptions(
@@ -153,6 +158,7 @@ fun VideoDownloadOptions(
     download: VideoDownload?,
     onDownload: (VideoQuality) -> Unit,
     onDelete: () -> Unit,
+    folderPicker: (@Composable () -> Unit)? = null,
 ) {
     var pickedHeight by rememberSaveable { mutableStateOf(download?.quality?.height) }
     val picked = pickedHeight?.let(::VideoQuality)
@@ -203,6 +209,9 @@ fun VideoDownloadOptions(
                 }
             }
         }
+
+        // Where the download goes, read just before the button that sends it there.
+        folderPicker?.invoke()
 
         // Stacked rather than side by side: at a large font the pair no longer fits one line, and
         // the button that spends data was the one that broke mid-word.

@@ -62,6 +62,9 @@ private const val PLAYLIST_FEED_PREFIX = "https://www.youtube.com/feeds/videos.x
 /** The playlist's own page, which is the URL the extractor accepts. */
 private const val PLAYLIST_PAGE_PREFIX = "https://www.youtube.com/playlist?list="
 
+/** A video's own page, which is what another app is handed; see [youTubeWatchUrl]. */
+private const val WATCH_PAGE_PREFIX = "https://www.youtube.com/watch?v="
+
 /**
  * The alphabet a YouTube video id is drawn from.
  *
@@ -217,6 +220,21 @@ fun youTubePlaylistIdOrNull(feedUrl: String): String? =
  * @param playlistId the canonical playlist id.
  */
 fun youTubePlaylistUrl(playlistId: String): String = PLAYLIST_PAGE_PREFIX + playlistId
+
+/**
+ * The watch page URL for [videoId]: what a browser or the YouTube app opens.
+ *
+ * An address, never an identity — the stored one is [youTubeAudioSentinel] — and only ever built
+ * from an id that has been through [isYouTubeVideoId], since the id goes straight into a URL
+ * handed to another app.
+ *
+ * @param videoId a well-formed video id.
+ * @throws IllegalArgumentException for a malformed one.
+ */
+fun youTubeWatchUrl(videoId: String): String {
+    require(isYouTubeVideoId(videoId)) { "Not a YouTube video id: $videoId" }
+    return WATCH_PAGE_PREFIX + videoId
+}
 
 /**
  * Pulls the video id out of a watch URL.

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
@@ -17,6 +18,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -246,6 +248,40 @@ class UserPreferencesDataSourceTest {
     }
 
     @Test
+    fun `the youtube source defaults to the extractor and round trips`() = runTest {
+        assertEquals(YouTubeSource.DEFAULT, dataSource.youTubeSource.first())
+
+        dataSource.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        assertEquals(YouTubeSource.OFFICIAL, dataSource.youTubeSource.first())
+    }
+
+    @Test
+    fun `a youtube source this build does not know reads as the default`() = runTest {
+        // The preferences file outlives the build; a value from a future or past enum must not
+        // crash the resolver, which reads this on a Media3 thread.
+        store.edit { it[stringPreferencesKey("youtube_source")] = "DATA_API" }
+
+        assertEquals(YouTubeSource.DEFAULT, dataSource.youTubeSource.first())
+    }
+
+    @Test
+    fun `an unrelated write does not re-emit the youtube source`() = runTest {
+        val emissions = mutableListOf<YouTubeSource>()
+        val collecting = launch(UnconfinedTestDispatcher(testScheduler)) {
+            dataSource.youTubeSource.toList(emissions)
+        }
+
+        // The last played episode is written on every change of episode; the resolver and the
+        // repositories reconfigure on what this flow says, so it must not fire for that.
+        dataSource.setLastPlayedEpisodeId("episode-1")
+        dataSource.setLastPlayedEpisodeId("episode-2")
+
+        assertEquals(listOf(YouTubeSource.DEFAULT), emissions)
+        collecting.cancel()
+    }
+
+    @Test
     fun `a negative keep limit is stored as keep-all rather than deleting everything`() = runTest {
         dataSource.setKeepLimitPerPodcast(-3)
 
@@ -292,5 +328,28 @@ class UserPreferencesDataSourceTest {
         // Otherwise the map grows a row for every show the user has ever glanced at with a
         // filter on, and never loses one.
         assertFalse(dataSource.showSettings.first().containsKey("show-1"))
+    }
+
+    @Test
+    fun `no folders are stored until one is made`() = runTest {
+        assertEquals(DownloadFolders.NONE, dataSource.downloadFolders.first())
+    }
+
+    @Test
+    fun `download folders round-trip and the write returns what was stored`() = runTest {
+        val written = dataSource.updateDownloadFolders {
+            it.created(id = "f1", name = "Commute").moved(listOf("e1"), "f1").withDefault("f1")
+        }
+
+        assertEquals(written, dataSource.downloadFolders.first())
+        assertEquals("f1", dataSource.downloadFolders.first().folderOf("e1"))
+    }
+
+    @Test
+    fun `an update starts from what is stored`() = runTest {
+        dataSource.updateDownloadFolders { it.created(id = "f1", name = "Commute") }
+        dataSource.updateDownloadFolders { it.created(id = "f2", name = "Lectures") }
+
+        assertEquals(listOf("f1", "f2"), dataSource.downloadFolders.first().folders.map { it.id })
     }
 }

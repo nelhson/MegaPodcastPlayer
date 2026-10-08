@@ -1,47 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-    What leaves the device when the user backs up to the cloud or moves to a new phone.
+    What leaves the device when it is backed up or replaced: nothing goes to the cloud, and a direct
+    transfer to a new phone carries the library.
 
-    The policy is "restore the library, not the bytes": everything that represents a decision the
-    user made is backed up, and everything that is large or that only makes sense on the device that
-    produced it is left behind.
+    No cloud backup, by decision (2026-10-08, see docs/CRASH_REPORTING.md for the same choice made
+    about crash reports). A backup would put the whole database in Google Drive — subscriptions,
+    listening history, the queue and every moment the user wrote — and even encrypted with the
+    screen lock, its existence, size and timing are Google's to see. android:allowBackup="false"
+    already switches cloud backup off; the root exclusion below says so a second time, so that
+    turning the attribute back on would not quietly resume it. The cost is real: a phone restored
+    from the cloud comes back without the library, so the moments export and the subscription
+    export in Settings are what carry it.
 
-    Stated as exclusions rather than inclusions on purpose. With no <include>, the platform backs up
-    the app's files, databases and shared preferences by default, so anything added later — a new
-    Room table, another DataStore — is protected without anyone remembering to come back here. The
-    two exclusions below are the things that would actively be wrong to carry over.
-
+    Device-to-device transfer (cable or direct Wi-Fi, Android 12+) is not cloud and stays on;
+    allowBackup="false" does not govern it, this file does. The policy there is "restore the
+    library, not the bytes", stated as exclusions so that a new Room table or DataStore travels
+    without anyone remembering to come back here:
+      - databases/megapodcastplayer.db — subscriptions, episodes, listening positions and the queue.
+      - files/datastore/megapodcastplayer_preferences.preferences_pb — the user's settings.
     Not listed because the platform already excludes them: cacheDir (Coil's image_cache and OkHttp's
     http cache both live there) and no_backup/.
-
-    Backed up, deliberately:
-      - databases/megapodcastplayer.db — subscriptions, episodes, listening positions and the queue. This is
-        the whole point; it is small and it is not recoverable from anywhere else.
-      - files/datastore/megapodcastplayer_preferences.preferences_pb — playback speed, skip intervals,
-        auto-download settings. Small, and every value in it is a choice the user made.
 
     There is no backup_rules.xml counterpart: `android:fullBackupContent` applies only to API 30 and
     below, and minSdk is 34.
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="root" path="." />
+    </cloud-backup>
+    <device-transfer>
         <!--
-            The downloaded audio: gigabytes, and re-downloadable from the feed. Sending it to cloud
-            backup would blow through the per-app quota and take the rest of the backup with it.
+            The downloaded audio: gigabytes, and re-downloadable from the feed.
         -->
         <exclude domain="file" path="episode_downloads" />
         <!--
             Media3's own index of what is downloaded and cached. It must not travel without the
-            audio files above, or the restored app shows episodes as downloaded that are not on
-            disk. Media3 rebuilds it from the (empty) cache directory on first use.
+            audio files above, or the new phone shows episodes as downloaded that are not on disk.
+            Media3 rebuilds it from the (empty) cache directory on first use.
         -->
-        <exclude domain="database" path="exoplayer_internal.db" />
-        <exclude domain="database" path="exoplayer_internal.db-wal" />
-        <exclude domain="database" path="exoplayer_internal.db-shm" />
-    </cloud-backup>
-    <device-transfer>
-        <!-- Same reasoning as above; a direct transfer is size-limited too, and the index would be
-             just as wrong without the files it indexes. -->
-        <exclude domain="file" path="episode_downloads" />
         <exclude domain="database" path="exoplayer_internal.db" />
         <exclude domain="database" path="exoplayer_internal.db-wal" />
         <exclude domain="database" path="exoplayer_internal.db-shm" />

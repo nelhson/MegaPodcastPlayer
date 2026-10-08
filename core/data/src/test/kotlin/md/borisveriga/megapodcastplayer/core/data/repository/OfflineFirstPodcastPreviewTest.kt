@@ -13,12 +13,14 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
+import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.network.itunes.ItunesRemoteDataSource
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedChannel
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedFetchResult
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedItem
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedRemoteDataSource
+import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -98,7 +100,9 @@ class OfflineFirstPodcastPreviewTest {
             episodeDao = database.episodeDao(),
             itunes = mockk<ItunesRemoteDataSource>(),
             feeds = feeds,
-            youTubePlaylists = mockk<YouTubePlaylistFetcher>(),
+            extractorPlaylists = mockk<YouTubePlaylistFetcher>(),
+            officialPlaylists = mockk<YouTubePlaylistFetcher>(),
+            userPreferences = UserPreferencesDataSource(InMemoryPreferencesDataStore()),
             autoDownloadScheduler = mockk(relaxed = true),
             clock = Clock.fixed(Instant.parse("2026-08-28T12:00:00Z"), ZoneOffset.UTC),
             crashReporter = mockk<CrashReporter>(relaxed = true),

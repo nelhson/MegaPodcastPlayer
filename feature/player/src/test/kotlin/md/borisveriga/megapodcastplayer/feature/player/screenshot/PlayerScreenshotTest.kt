@@ -20,6 +20,9 @@ import md.borisveriga.megapodcastplayer.feature.player.QueueScreenPreview
 import md.borisveriga.megapodcastplayer.feature.player.SkipGlyphsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SleepTimerOptionsPreview
 import md.borisveriga.megapodcastplayer.feature.player.SpeedControlsPreview
+import md.borisveriga.megapodcastplayer.feature.player.embedded.EmbeddedVideoNotAllowedPreview
+import md.borisveriga.megapodcastplayer.feature.player.embedded.EmbeddedVideoOfflinePreview
+import md.borisveriga.megapodcastplayer.feature.player.embedded.EmbeddedVideoPlayerPreview
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenPreview
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenUnavailablePreview
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoScreenWidePreview
@@ -59,6 +62,20 @@ class PlayerScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun collapsedPlayer() = capture("collapsed-player") { CollapsedPlayerPreview() }
+
+    /**
+     * The embedded player's screen in its three states. The player itself is a `WebView`, which
+     * no golden can hold; the preview with it up draws a frame where it would be, so what is
+     * guarded is the frame's proportions and what sits around it.
+     */
+    @Test
+    fun embeddedVideoPlayer() = capture("embedded-video-player") { EmbeddedVideoPlayerPreview() }
+
+    @Test
+    fun embeddedVideoOffline() = capture("embedded-video-offline") { EmbeddedVideoOfflinePreview() }
+
+    @Test
+    fun embeddedVideoNotAllowed() = capture("embedded-video-not-allowed") { EmbeddedVideoNotAllowedPreview() }
 
     /** The bar while an episode is being watched, which differs by one small mark. */
     @Test

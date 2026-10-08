@@ -11,6 +11,7 @@ import io.mockk.verify
 import java.io.IOException
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.youtube.ResolvedYouTubeAudio
 import md.borisveriga.megapodcastplayer.core.youtube.ResolvedYouTubeVideo
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubeAudioResolver
@@ -61,7 +62,53 @@ class YouTubeDataSpecResolverTest {
         every { resolveVideo(any(), any()) } returns resolvedVideo
     }
 
-    private val resolver = YouTubeDataSpecResolver(audioResolver, videoResolver)
+    private val gate: YouTubeSourceGate = mockk {
+        every { current() } returns YouTubeSource.EXTRACTOR
+    }
+
+    private val resolver = YouTubeDataSpecResolver(audioResolver, videoResolver, gate)
+
+    // --- the official source ------------------------------------------------
+
+    @Test
+    fun `under the official source the sound is refused before any extraction`() {
+        every { gate.current() } returns YouTubeSource.OFFICIAL
+        val spec = DataSpec.Builder().setUri("youtube://video/niTJ2221aS8".toUri()).build()
+
+        try {
+            resolver.resolveDataSpec(spec)
+            fail("Expected the official source to refuse the sentinel")
+        } catch (e: YouTubeAudioUnavailableException) {
+            assertEquals("niTJ2221aS8", e.videoId)
+            assertTrue(e.reason, e.reason.contains("official"))
+        }
+        verify(exactly = 0) { audioResolver.resolve(any()) }
+    }
+
+    @Test
+    fun `under the official source the picture is refused before any extraction`() {
+        every { gate.current() } returns YouTubeSource.OFFICIAL
+        val spec = DataSpec.Builder().setUri("youtube://video-only/niTJ2221aS8?h=720".toUri()).build()
+
+        try {
+            resolver.resolveDataSpec(spec)
+            fail("Expected the official source to refuse the sentinel")
+        } catch (_: YouTubeAudioUnavailableException) {
+            // Expected: the same IOException Media3 already turns into a playback error.
+        }
+        verify(exactly = 0) { videoResolver.resolveVideo(any(), any()) }
+    }
+
+    @Test
+    fun `under the official source an ordinary podcast url never consults the gate`() {
+        every { gate.current() } returns YouTubeSource.OFFICIAL
+        val spec = DataSpec.Builder().setUri("https://cdn.example.com/episode-42.mp3".toUri()).build()
+
+        assertSame(spec, resolver.resolveDataSpec(spec))
+
+        // The gate may block on its first call; an MP3 must not pay for that.
+        verify(exactly = 0) { gate.current() }
+    }
 
     @Test
     fun `swaps a sentinel for the resolved audio url`() {

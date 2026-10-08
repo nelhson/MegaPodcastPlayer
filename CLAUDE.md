@@ -69,14 +69,19 @@ without `keystore.properties` by design; see `docs/RELEASE_SIGNING.md`.
   something on a machine that has never had this app installed.
 - **A failure nobody is shown still goes somewhere.** The many `suspendRunCatching` sites that
   carry on from a failure are right to, but the failure is then invisible; inject `CrashReporter`
-  from `:core:common` and record it. Firebase is on that one module's classpath and nowhere else.
-  See `docs/CRASH_REPORTING.md`.
+  from `:core:common` and record it. It writes to the device log and nothing more: no record leaves
+  the device, by decision. See `docs/CRASH_REPORTING.md`.
 - **Never swallow `CancellationException`.** Use `suspendRunCatching` from `:core:common`; detekt's
   `TooGenericExceptionCaught` and `SwallowedException` enforce it.
 - **Dependency verification is on.** A bump needs `gradle/verification-metadata.xml` refreshed;
   the procedure is in `docs/DEPENDENCY_VERIFICATION.md`.
 - **YouTube extraction** (`:core:youtube`, NewPipeExtractor) is against YouTube's terms. Accepted
-  for a personal build; a hard blocker for any store distribution.
+  for a personal build; a hard blocker for any store distribution. A *YouTube source* setting
+  (`YouTubeSource` in `:core:model`, default Extractor) switches an install at runtime to the
+  official Atom feed (newest 10 videos) and YouTube's embedded player in a WebView, within the
+  terms; it hides rather than deletes what the extractor had. The APK still ships NewPipe either
+  way, so the toggle does not make a build store-distributable; a flavour without the extractor is
+  separate work.
 
 ## Working here
 

@@ -31,7 +31,12 @@ import org.robolectric.annotation.Config
 class YouTubeInvalidatingDataSourceTest {
 
     private val audioResolver: YouTubeAudioResolver = mockk(relaxed = true)
-    private val resolver = YouTubeDataSpecResolver(audioResolver, mockk(relaxed = true))
+    private val resolver = YouTubeDataSpecResolver(
+        audioResolver,
+        mockk(relaxed = true),
+        // Relaxed: the extractor is the first enum entry, so a relaxed gate answers it.
+        mockk(relaxed = true),
+    )
 
     private fun source(upstream: DataSource) = YouTubeInvalidatingDataSource(upstream, resolver)
 

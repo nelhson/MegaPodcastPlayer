@@ -42,6 +42,8 @@ sealed interface FeedFetchResult {
  * fifteen. Playlists are read with the extractor instead —
  * `md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher` — and the choice between the two is
  * made one level up, in the repository, since `:core:network` cannot depend on `:core:youtube`.
+ * The Atom feed is still read, by [YouTubeAtomFeedDataSource] beside this class, when the user has
+ * chosen to stay within YouTube's terms and accept the fifteen; that too is the repository's choice.
  *
  * @property api Retrofit client for arbitrary feed URLs.
  * @property rssParser the streaming RSS 2.0 parser.

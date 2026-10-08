@@ -9,7 +9,9 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -25,6 +27,8 @@ import md.borisveriga.megapodcastplayer.core.database.dao.EpisodeDao
 import md.borisveriga.megapodcastplayer.core.database.dao.PodcastDao
 import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.database.model.asExternalModel
+import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
+import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.Podcast
@@ -34,12 +38,16 @@ import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastSource
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.youTubePlaylistFeedUrl
 import md.borisveriga.megapodcastplayer.core.model.youTubePlaylistIdOrNull
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 import md.borisveriga.megapodcastplayer.core.network.itunes.ItunesRemoteDataSource
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedFetchResult
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedRemoteDataSource
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher
+import md.borisveriga.megapodcastplayer.core.youtube.di.ExtractorPlaylists
+import md.borisveriga.megapodcastplayer.core.youtube.di.OfficialPlaylists
 
 /**
  * Room-backed, offline-first implementation of [PodcastRepository].
@@ -48,9 +56,14 @@ import md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher
  * @property episodeDao episode rows.
  * @property itunes Apple search/lookup.
  * @property feeds feed downloading and parsing, for RSS shows.
- * @property youTubePlaylists playlist reading, for YouTube shows. A separate collaborator rather
- *   than another parser behind [feeds] because a playlist is not fetched over HTTP at all — see
- *   [fetchFeed].
+ * @property extractorPlaylists playlist reading for YouTube shows under [YouTubeSource.EXTRACTOR].
+ *   A separate collaborator rather than another parser behind [feeds] because a playlist is not
+ *   fetched over HTTP at all — see [fetchFeed].
+ * @property officialPlaylists playlist reading under [YouTubeSource.OFFICIAL]: the published feed,
+ *   cut to the newest few. Which of the two is asked is decided on every fetch, from the user's
+ *   current choice.
+ * @property userPreferences holds that choice. Read here, not passed down: a YouTube show's
+ *   episode list is read differently under each source, and only this class knows it is reading one.
  * @property autoDownloadScheduler told about newly discovered episodes, so the download stack
  *   can act on them without this class knowing anything about downloads.
  * @property clock injected so refresh timestamps are deterministic in tests.
@@ -69,7 +82,9 @@ class OfflineFirstPodcastRepository @Inject constructor(
     private val episodeDao: EpisodeDao,
     private val itunes: ItunesRemoteDataSource,
     private val feeds: FeedRemoteDataSource,
-    private val youTubePlaylists: YouTubePlaylistFetcher,
+    @ExtractorPlaylists private val extractorPlaylists: YouTubePlaylistFetcher,
+    @OfficialPlaylists private val officialPlaylists: YouTubePlaylistFetcher,
+    private val userPreferences: UserPreferencesDataSource,
     private val autoDownloadScheduler: AutoDownloadScheduler,
     private val clock: Clock,
     private val crashReporter: CrashReporter,
@@ -85,18 +100,37 @@ class OfflineFirstPodcastRepository @Inject constructor(
     override fun observeEpisodes(podcastId: String): Flow<List<Episode>> =
         // Which ordering a show gets is a property of the show, so it is resolved here rather than
         // asked of every screen. `flatMapLatest` because the source can change under us: removing
-        // and re-adding a feed as a different kind is a real sequence.
-        podcastDao.observeById(podcastId)
-            .map { it?.source == PodcastSource.YOUTUBE }
+        // and re-adding a feed as a different kind is a real sequence, and so is the user changing
+        // the YouTube source in settings while the list is on screen.
+        combine(
+            podcastDao.observeById(podcastId).map { it?.source == PodcastSource.YOUTUBE },
+            userPreferences.youTubeSource,
+        ) { handOrdered, youTubeSource -> handOrdered to youTubeSource }
             .distinctUntilChanged()
-            .flatMapLatest { handOrdered ->
-                if (handOrdered) {
-                    episodeDao.observeByPodcastOrdered(podcastId)
-                } else {
-                    episodeDao.observeByPodcast(podcastId)
+            .flatMapLatest { (handOrdered, youTubeSource) ->
+                when {
+                    !handOrdered -> {
+                        episodeDao.observeByPodcast(podcastId)
+                            .map { rows -> rows.map { it.asExternalModel() } }
+                    }
+
+                    youTubeSource == YouTubeSource.OFFICIAL -> {
+                        episodeDao
+                            .observeByPodcastOrderedLimited(podcastId, YouTubeSource.OFFICIAL_EPISODE_LIMIT)
+                            .map { rows -> rows.map { it.asExternalModel().hidingDownload() } }
+                    }
+
+                    else -> {
+                        episodeDao.observeByPodcastOrdered(podcastId)
+                            .map { rows -> rows.map { it.asExternalModel() } }
+                    }
                 }
             }
-            .map { rows -> rows.map { it.asExternalModel() } }
+
+    override fun observeYouTubeSource(): Flow<YouTubeSource> = userPreferences.youTubeSource
+
+    override suspend fun setYouTubeSource(source: YouTubeSource) =
+        userPreferences.setYouTubeSource(source)
 
     override suspend fun reorderLibrary(podcastIds: List<String>) =
         withContext(ioDispatcher) { podcastDao.reorder(podcastIds) }
@@ -108,11 +142,26 @@ class OfflineFirstPodcastRepository @Inject constructor(
         episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
 
     override fun observeInProgressEpisodes(limit: Int): Flow<List<EpisodeWithShow>> =
-        episodeDao.observeInProgressWithShow(limit)
-            .map { rows -> rows.map { it.asEpisodeWithShow() } }
+        combine(
+            episodeDao.observeInProgressWithShow(limit),
+            userPreferences.youTubeSource,
+        ) { rows, youTubeSource ->
+            rows.map { it.asEpisodeWithShow() }
+                // The widget offers to resume these in the app's player, which under the official
+                // source refuses a YouTube episode. Left out rather than offered and refused; the
+                // limit is still the DAO's, so the shelf may run a row short, which is fine.
+                .filterNot { youTubeSource == YouTubeSource.OFFICIAL && it.episode.isYouTube }
+        }
 
     override fun observeEpisode(episodeId: String): Flow<Episode?> =
-        episodeDao.observeById(episodeId).map { it?.asExternalModel() }
+        combine(episodeDao.observeById(episodeId), userPreferences.youTubeSource) { row, youTubeSource ->
+            val episode = row?.asExternalModel()
+            if (episode != null && youTubeSource == YouTubeSource.OFFICIAL && episode.isYouTube) {
+                episode.hidingDownload()
+            } else {
+                episode
+            }
+        }
 
     override suspend fun search(term: String): Result<List<PodcastSearchResult>> =
         withContext(ioDispatcher) {
@@ -339,10 +388,6 @@ class OfflineFirstPodcastRepository @Inject constructor(
                         // buried the failures worth reading. The show is still counted as failed
                         // below, so the library's refresh message still names it.
                         if (!error.isConnectivityFailure) {
-                            // The feed URL is a key rather than part of the message so that every
-                            // refresh failure groups into one issue, with the offending shows
-                            // listed inside it, instead of one issue per show.
-                            crashReporter.setKey(KEY_FEED_URL, podcast.feedUrl)
                             crashReporter.recordNonFatal(NON_FATAL_REFRESH_FAILED, error)
                         }
                         failed += podcast.title
@@ -368,7 +413,8 @@ class OfflineFirstPodcastRepository @Inject constructor(
      * rather than an address: the Atom feed it names returns only the first fifteen entries of a
      * playlist and cannot page, so it can neither import a longer playlist nor ever report a video
      * added past position fifteen. The extractor reads the whole playlist instead, which is why the
-     * playlist id has to be recovered from the stored URL.
+     * playlist id has to be recovered from the stored URL. Under [YouTubeSource.OFFICIAL] the user
+     * has chosen that very feed, fifteen and all, and the id is handed to a fetcher that reads it.
      *
      * It follows that a YouTube show never answers [FeedFetchResult.NotModified] — there is no
      * conditional GET to answer it with. In practice nothing changes: YouTube's feed endpoint sent
@@ -396,8 +442,14 @@ class OfflineFirstPodcastRepository @Inject constructor(
             val playlistId = requireNotNull(youTubePlaylistIdOrNull(feedUrl)) {
                 "YouTube show stored with a feed URL that names no playlist: $feedUrl"
             }
+            // The user's choice, read on every fetch rather than once: a show added under one
+            // source is refreshed under whichever is current, which is the whole point of a setting.
+            val fetcher = when (userPreferences.youTubeSource.first()) {
+                YouTubeSource.EXTRACTOR -> extractorPlaylists
+                YouTubeSource.OFFICIAL -> officialPlaylists
+            }
             FeedFetchResult.Fetched(
-                channel = youTubePlaylists.fetch(playlistId),
+                channel = fetcher.fetch(playlistId),
                 etag = null,
                 lastModified = null,
             )
@@ -513,11 +565,21 @@ class OfflineFirstPodcastRepository @Inject constructor(
             }
 
             val episodes = channel.channel.items.map { it.asEpisodeEntity(podcastId) }
-            val keptDownloadIds = episodeDao.replaceForPodcast(
-                podcastId = podcastId,
-                episodes = episodes,
-                handOrdered = podcast.source == PodcastSource.YOUTUBE,
-            )
+            val keptDownloadIds = if (podcast.source == PodcastSource.YOUTUBE && isOfficialYouTube()) {
+                // The official feed shows ten of a playlist that may hold hundreds. A rebuild that
+                // took it at its word would delete everything past the tenth as "withdrawn", which
+                // is the one thing switching source promises not to do. So under this source a
+                // rebuild merges, as a refresh does, and withdraws nothing: the rows it cannot see
+                // are hidden by the read, not by the write.
+                episodeDao.upsertFromFeed(episodes.map { it.copy(isNew = false) }, handOrdered = true)
+                emptyList()
+            } else {
+                episodeDao.replaceForPodcast(
+                    podcastId = podcastId,
+                    episodes = episodes,
+                    handOrdered = podcast.source == PodcastSource.YOUTUBE,
+                )
+            }
             podcastDao.updateRefreshMetadata(
                 id = podcastId,
                 refreshedAt = Instant.now(clock).toEpochMilli(),
@@ -545,14 +607,15 @@ class OfflineFirstPodcastRepository @Inject constructor(
             podcastDao.setAutoRefresh(podcastId, enabled)
         }
 
+    /** Whether YouTube shows are currently read under [YouTubeSource.OFFICIAL]. */
+    private suspend fun isOfficialYouTube(): Boolean =
+        userPreferences.youTubeSource.first() == YouTubeSource.OFFICIAL
+
     private companion object {
         private const val TAG = "PodcastRepository"
 
-        /** Groups every failed feed refresh into one Crashlytics issue; see [refreshAll]. */
+        /** One fixed line for every failed feed refresh; see [refreshAll]. */
         private const val NON_FATAL_REFRESH_FAILED = "Podcast refresh failed"
-
-        /** Crashlytics key carrying the feed that failed most recently. */
-        private const val KEY_FEED_URL = "feedUrl"
     }
 }
 
@@ -578,3 +641,21 @@ private fun PodcastEntity.isFreshAt(now: Instant, staleAfter: Duration?): Boolea
     val age = Duration.between(fetchedAt, now)
     return !age.isNegative && age < staleAfter
 }
+
+/** Whether this episode is a YouTube video, by the one thing that says so: its stored URL. */
+private val Episode.isYouTube: Boolean
+    get() = youTubeVideoIdOrNull(audioUrl) != null
+
+/**
+ * This episode with its download out of sight.
+ *
+ * What a YouTube episode reads as under the official source, whatever its row says: that source
+ * plays nothing from a file, so a *Downloaded* badge would promise what cannot be delivered and a
+ * *Delete download* action would delete what the user may well want back. The row keeps its real
+ * state and the file stays on the device; switching the source back shows both again.
+ */
+private fun Episode.hidingDownload(): Episode = copy(
+    downloadState = DownloadState.NOT_DOWNLOADED,
+    downloadedBytes = 0L,
+    downloadPercent = 0f,
+)

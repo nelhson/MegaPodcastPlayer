@@ -11,10 +11,12 @@ import md.borisveriga.megapodcastplayer.core.data.export.ExportDirectory
 import md.borisveriga.megapodcastplayer.core.data.repository.AutoDownloadScheduler
 import md.borisveriga.megapodcastplayer.core.data.repository.BackupRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultBackupRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultDownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultMomentsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultPlaybackRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultShowSettingsRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DefaultUiPreferencesRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.MediaDownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
@@ -118,6 +120,12 @@ abstract class DataModule {
     abstract fun bindsUiPreferencesRepository(
         implementation: DefaultUiPreferencesRepository,
     ): UiPreferencesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindsDownloadFolderRepository(
+        implementation: DefaultDownloadFolderRepository,
+    ): DownloadFolderRepository
 
     @Binds
     @Singleton
