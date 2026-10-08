@@ -13,6 +13,7 @@ import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import md.borisveriga.megapodcastplayer.core.network.BuildConfig
 import md.borisveriga.megapodcastplayer.core.network.HttpsUpgradeInterceptor
+import md.borisveriga.megapodcastplayer.core.network.TrackingPrefixInterceptor
 import md.borisveriga.megapodcastplayer.core.network.chapters.ChaptersApi
 import md.borisveriga.megapodcastplayer.core.network.itunes.ItunesApi
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedApi
@@ -57,13 +58,18 @@ object NetworkModule {
     fun providesOkHttpClient(
         @ApplicationContext context: Context,
         httpsUpgrade: HttpsUpgradeInterceptor,
+        trackingPrefixes: TrackingPrefixInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
         .cache(Cache(File(context.cacheDir, "http"), HTTP_CACHE_BYTES))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        // First in the chain so everything below it — including the debug logger — sees the URL
-        // that is actually requested. Feeds publish cleartext enclosure URLs that Android will not
-        // open; see HttpsUpgradeInterceptor.
+        // First in the chain: a measurement redirector in front of an enclosure is skipped before
+        // anything else sees the URL, so the request goes to the publisher's host and the
+        // redirectors never hear of it. See TrackingPrefixInterceptor.
+        .addInterceptor(trackingPrefixes)
+        // Next, so everything below it — including the debug logger — sees the URL that is
+        // actually requested. Feeds publish cleartext enclosure URLs that Android will not open;
+        // see HttpsUpgradeInterceptor.
         .addInterceptor(httpsUpgrade)
         .apply {
             if (BuildConfig.DEBUG) {
