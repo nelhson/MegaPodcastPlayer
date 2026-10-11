@@ -5,6 +5,7 @@ import java.net.UnknownHostException
 import md.borisveriga.megapodcastplayer.core.network.TrackingPrefixInterceptor.Companion.untrackedUrlOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -150,6 +151,17 @@ class TrackingPrefixInterceptorTest {
         assertEquals(200, response.code)
     }
 
+    /** A host's "soft 404": a 200 that is a web page, which must not be cached as the audio. */
+    @Test
+    fun `an html page sends the request back to the published URL`() {
+        val terminal = RecordingInterceptor(contentTypes = listOf("text/html; charset=utf-8"))
+        val published = "https://pdst.fm/e/cdn.example.com/ep1.mp3"
+
+        clientWith(terminal).get(published)
+
+        assertEquals(listOf("https://cdn.example.com/ep1.mp3", published), terminal.attempted)
+    }
+
     @Test
     fun `a transport failure sends the request back to the published URL`() {
         val terminal = RecordingInterceptor(failFirstWith = UnknownHostException("cdn.example.com"))
@@ -251,11 +263,13 @@ class TrackingPrefixInterceptorTest {
      * ever dialled.
      *
      * @param statuses the status to answer each attempt with, in order; 200 once they run out.
+     * @param contentTypes the content type of each answer, in order; `audio/mpeg` once they run out.
      * @param failFirstWith thrown instead of answering the first request.
      * @param failSecondWith thrown instead of answering the second request.
      */
     private class RecordingInterceptor(
         private val statuses: List<Int> = emptyList(),
+        private val contentTypes: List<String> = emptyList(),
         private val failFirstWith: IOException? = null,
         private val failSecondWith: IOException? = null,
     ) : Interceptor {
@@ -280,7 +294,11 @@ class TrackingPrefixInterceptorTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(code)
                 .message("status $code")
-                .body("audio".toByteArray().toResponseBody(null))
+                .body(
+                    "audio".toByteArray().toResponseBody(
+                        contentTypes.getOrElse(attempted.size - 1) { "audio/mpeg" }.toMediaType(),
+                    ),
+                )
                 .build()
         }
     }

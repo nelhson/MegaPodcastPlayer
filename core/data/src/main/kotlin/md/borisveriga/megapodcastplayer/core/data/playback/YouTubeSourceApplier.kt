@@ -7,7 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.common.di.ApplicationScope
+import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
@@ -34,6 +36,7 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * @property userPreferences where the choice is read from.
  * @property connection the player, whose queue is read and trimmed.
  * @property playbackRepository resolves a queued id to its episode, and holds the durable queue.
+ * @property crashReporter where a pass that failed is recorded, since nobody is shown it.
  * @property scope application scope.
  */
 @Singleton
@@ -41,6 +44,7 @@ class YouTubeSourceApplier @Inject constructor(
     private val userPreferences: UserPreferencesDataSource,
     private val connection: PlaybackConnection,
     private val playbackRepository: PlaybackRepository,
+    private val crashReporter: CrashReporter,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
 
@@ -62,7 +66,13 @@ class YouTubeSourceApplier @Inject constructor(
             // already, so a change of episode does not re-run this.
             userPreferences.youTubeSource
                 .filter { it == YouTubeSource.OFFICIAL }
-                .collect { removeYouTubeFromQueue() }
+                .collect {
+                    // One failed pass — the service dying under a removal, say — must neither take
+                    // the process down nor end this collector, or every later switch to the
+                    // official source would leave YouTube in the queue. The next pass retries.
+                    suspendRunCatching { removeYouTubeFromQueue() }
+                        .onFailure { failure -> crashReporter.recordNonFatal(NON_FATAL_TRIM, failure) }
+                }
         }
     }
 
@@ -90,5 +100,10 @@ class YouTubeSourceApplier @Inject constructor(
     private suspend fun isYouTube(episodeId: String): Boolean {
         val playable = playbackRepository.playableEpisode(episodeId) ?: return false
         return youTubeVideoIdOrNull(playable.episode.audioUrl) != null
+    }
+
+    private companion object {
+        /** One fixed line for every queue trim that failed. */
+        const val NON_FATAL_TRIM = "YouTube queue trim failed"
     }
 }

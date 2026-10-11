@@ -3,11 +3,14 @@ package md.borisveriga.megapodcastplayer.core.data.playback
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
+import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.PlayableEpisode
@@ -33,12 +36,14 @@ class YouTubeSourceApplierTest {
     private lateinit var preferences: UserPreferencesDataSource
     private lateinit var connection: PlaybackConnection
     private lateinit var playbackRepository: PlaybackRepository
+    private lateinit var crashReporter: CrashReporter
 
     @Before
     fun setUp() {
         preferences = UserPreferencesDataSource(InMemoryPreferencesDataStore())
         connection = mockk(relaxed = true)
         playbackRepository = mockk(relaxed = true)
+        crashReporter = mockk(relaxed = true)
 
         coEvery { connection.awaitRestored() } returns true
         coEvery { connection.currentState() } returns PlaybackState(
@@ -128,6 +133,27 @@ class YouTubeSourceApplierTest {
         coVerify { connection.removeFromQueue("yt-2") }
     }
 
+    /** A pass that throws is recorded, and the next switch to the official source still trims. */
+    @Test
+    fun `a failed pass is recorded and does not stop the next one`() = runTest {
+        val failure = IOException("service went away")
+        coEvery { connection.removeFromQueue("yt-1") } throws failure
+        val applier = applier()
+        applier.start()
+
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+        runCurrent()
+        verify { crashReporter.recordNonFatal("YouTube queue trim failed", failure) }
+
+        coEvery { connection.removeFromQueue("yt-1") } returns Unit
+        preferences.setYouTubeSource(YouTubeSource.EXTRACTOR)
+        runCurrent()
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+        runCurrent()
+
+        coVerify { playbackRepository.dequeue("yt-1") }
+    }
+
     /**
      * Builds the applier on the test's background scope, for the reason [ShowSpeedApplierTest]
      * gives: the collector never finishes, and a child of the test body would hold `runTest` open.
@@ -136,6 +162,7 @@ class YouTubeSourceApplierTest {
         userPreferences = preferences,
         connection = connection,
         playbackRepository = playbackRepository,
+        crashReporter = crashReporter,
         scope = backgroundScope,
     )
 

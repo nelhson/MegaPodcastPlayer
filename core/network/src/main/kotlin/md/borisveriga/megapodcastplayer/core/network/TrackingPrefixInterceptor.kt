@@ -32,8 +32,10 @@ import okhttp3.Response
  * ## The fallback
  *
  * Stripping a prefix is a reading of someone else's URL scheme, and a publisher is free to make the
- * redirector part of how its file is reached. So a direct attempt that fails — a transport error, or
- * any status of 400 or above — is discarded and the original URL is requested as published. That
+ * redirector part of how its file is reached. So a direct attempt that fails — a transport error,
+ * any status of 400 or above, or an HTML page where a media file was expected (a host's "soft 404"
+ * or landing page, which would otherwise be cached under the episode as if it were the audio) — is
+ * discarded and the original URL is requested as published. That
  * costs one wasted round trip on a genuine 404, which is rare for an enclosure and cheaper than an
  * episode that will not play. A cancelled call is never retried.
  *
@@ -65,7 +67,7 @@ class TrackingPrefixInterceptor @Inject constructor() : Interceptor {
 
         val directFailure: IOException? = try {
             val response = chain.proceed(request.newBuilder().url(direct).build())
-            if (response.code < FIRST_FAILURE_STATUS) return response
+            if (isUsable(response)) return response
             response.close()
             null
         } catch (failure: IOException) {
@@ -83,6 +85,15 @@ class TrackingPrefixInterceptor @Inject constructor() : Interceptor {
     }
 
     internal companion object {
+
+        /**
+         * Whether a direct attempt's [response] can stand in for the published URL's.
+         *
+         * @param response the direct attempt's response, unread.
+         */
+        private fun isUsable(response: Response): Boolean =
+            response.code < FIRST_FAILURE_STATUS &&
+                response.body.contentType()?.let { it.type == "text" && it.subtype == "html" } != true
 
         /**
          * Methods that may be rewritten.

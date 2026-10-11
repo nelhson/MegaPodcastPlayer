@@ -1,7 +1,10 @@
 package md.borisveriga.megapodcastplayer.feature.player.embedded
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -253,9 +256,14 @@ private fun EmbeddedPlayer(
                 // sit on its poster waiting for a second tap on the picture itself.
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.domStorageEnabled = true
-                // Keeps a tap on the embed's title or watermark inside this view rather than
-                // handing it to the system; the page is the player and nothing else.
-                webViewClient = WebViewClient()
+                // The page is a string built here; nothing it does needs the device's files.
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                // The player is drawn from youtube-nocookie.com, a third party to the page, so this
+                // keeps it from setting the cookies that would tie what is watched to an identity.
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+                // The page never navigates: see embeddedNavigation.
+                webViewClient = EmbeddedPlayerWebViewClient()
                 addJavascriptInterface(EmbeddedPlayerBridge { event -> events(event) }, EMBEDDED_BRIDGE_NAME)
                 loadDataWithBaseURL(
                     EMBEDDED_PAGE_BASE_URL,
@@ -335,6 +343,38 @@ internal fun EmbeddedVideoNotAllowedPreview() {
             onLeaveFront = {},
         )
     }
+}
+
+/**
+ * Keeps the embedded player's page in place, handing every web link it tries to follow to the
+ * system instead; [embeddedNavigation] decides, and says why.
+ */
+private class EmbeddedPlayerWebViewClient : WebViewClient() {
+
+    /**
+     * Applies [embeddedNavigation] to one navigation.
+     *
+     * @param view the player's view.
+     * @param request the navigation.
+     * @return true when the `WebView` must not load it.
+     */
+    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+        when (embeddedNavigation(request.isForMainFrame, request.url.scheme)) {
+            EmbeddedNavigation.ALLOW -> false
+
+            EmbeddedNavigation.OPEN_OUTSIDE -> {
+                try {
+                    view.context.startActivity(
+                        Intent(Intent.ACTION_VIEW, request.url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                } catch (_: ActivityNotFoundException) {
+                    // No browser at all: the link is simply not followed, as with BLOCK.
+                }
+                true
+            }
+
+            EmbeddedNavigation.BLOCK -> true
+        }
 }
 
 /** The screen with the player up; a preview draws a dark frame where the `WebView` would be. */

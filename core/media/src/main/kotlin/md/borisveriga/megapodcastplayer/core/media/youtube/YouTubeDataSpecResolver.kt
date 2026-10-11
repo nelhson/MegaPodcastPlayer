@@ -32,8 +32,9 @@ import md.borisveriga.megapodcastplayer.core.youtube.YouTubeVideoResolver
  * video raises, so playback and downloads fail the way they already know how to. The screens do not
  * send YouTube here under that source, and the queue is cleared of it when the source is chosen;
  * this is the last line, for whatever reaches the player regardless. A download that was mid-transfer
- * when the source changed fails here and shows as failed; nothing is deleted, and it retries once the
- * source is switched back.
+ * when the source changed fails here and shows as failed; nothing is deleted. Media3 does not restart
+ * a failed download on its own, so after switching back it waits for the user's retry like any other
+ * failed download.
  *
  * @property resolver performs the actual extraction for the sound.
  * @property videoResolver performs it for the picture; the same object underneath, so the two share

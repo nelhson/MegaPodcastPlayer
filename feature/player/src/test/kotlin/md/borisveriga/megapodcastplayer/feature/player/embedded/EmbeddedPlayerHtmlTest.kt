@@ -145,4 +145,31 @@ class EmbeddedPlayerHtmlTest {
             events,
         )
     }
+
+    @Test
+    fun `the player is drawn from the privacy-enhanced host`() {
+        val page = embeddedPlayerHtml("dQw4w9WgXcQ", startSeconds = 0)
+
+        assertTrue(page.contains("host: 'https://www.youtube-nocookie.com'"))
+    }
+
+    /** The page is the player: it never navigates away inside the app. */
+    @Test
+    fun `a web link from the page opens outside the app`() {
+        assertEquals(EmbeddedNavigation.OPEN_OUTSIDE, embeddedNavigation(true, scheme = "https"))
+        assertEquals(EmbeddedNavigation.OPEN_OUTSIDE, embeddedNavigation(true, scheme = "HTTP"))
+    }
+
+    @Test
+    fun `anything but a web link from the page goes nowhere`() {
+        assertEquals(EmbeddedNavigation.BLOCK, embeddedNavigation(true, scheme = "intent"))
+        assertEquals(EmbeddedNavigation.BLOCK, embeddedNavigation(true, scheme = "file"))
+        assertEquals(EmbeddedNavigation.BLOCK, embeddedNavigation(true, scheme = null))
+    }
+
+    /** The embed is itself a frame, and loads whatever it needs inside the page. */
+    @Test
+    fun `a frame inside the page loads as it asks`() {
+        assertEquals(EmbeddedNavigation.ALLOW, embeddedNavigation(false, scheme = "https"))
+    }
 }

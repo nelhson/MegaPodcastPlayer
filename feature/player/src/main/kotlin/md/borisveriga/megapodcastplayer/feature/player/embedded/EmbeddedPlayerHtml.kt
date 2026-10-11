@@ -28,6 +28,49 @@ internal const val EMBEDDED_BRIDGE_NAME = "MegaPodcastPlayer"
 internal const val EMBEDDED_PAGE_BASE_URL = "https://www.youtube.com"
 
 /**
+ * The host the player itself is drawn from: YouTube's privacy-enhanced embed.
+ *
+ * A different origin from [EMBEDDED_PAGE_BASE_URL], so the player is a third party to the page, and
+ * the screen refuses third-party cookies: the embed is shown without the cookies that would tie
+ * what is watched here to a YouTube identity.
+ */
+internal const val EMBEDDED_PLAYER_HOST = "https://www.youtube-nocookie.com"
+
+/** What the embedded player's `WebView` does with a navigation; see [embeddedNavigation]. */
+internal enum class EmbeddedNavigation {
+    /** Let the `WebView` load it: a frame inside the page, which is how the player draws itself. */
+    ALLOW,
+
+    /** Hand it to the system — a browser or the YouTube app — and keep the page where it was. */
+    OPEN_OUTSIDE,
+
+    /** Refuse it outright: a scheme nothing here should follow. */
+    BLOCK,
+}
+
+/**
+ * Decides where a navigation from the embedded player's page goes.
+ *
+ * The page is the player and nothing else. A tap on the embed's title, logo or a link in it would
+ * otherwise load youtube.com — or any site a video description links to — inside this app, with
+ * the page's JavaScript bridge still attached and its cookies kept. So the main frame never moves:
+ * a web link opens outside the app, and anything that is not a web link goes nowhere. Frames
+ * inside the page are the player's own and load as they ask.
+ *
+ * @param isForMainFrame whether the navigation would replace the page itself.
+ * @param scheme the target URL's scheme, or null when it has none.
+ * @return what to do with it.
+ */
+internal fun embeddedNavigation(isForMainFrame: Boolean, scheme: String?): EmbeddedNavigation = when {
+    !isForMainFrame -> EmbeddedNavigation.ALLOW
+    scheme?.lowercase() in WEB_SCHEMES -> EmbeddedNavigation.OPEN_OUTSIDE
+    else -> EmbeddedNavigation.BLOCK
+}
+
+/** The schemes a navigation may be handed to the system for. */
+private val WEB_SCHEMES = setOf("http", "https")
+
+/**
  * The JavaScript that pauses the player; evaluated when the screen leaves the front.
  *
  * Guarded, because the API may not have finished loading when the user leaves: a pause on a player
@@ -76,6 +119,7 @@ internal fun embeddedPlayerHtml(videoId: String, startSeconds: Int): String {
         document.head.appendChild(tag);
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('player', {
+            host: '$EMBEDDED_PLAYER_HOST',
             videoId: '$videoId',
             playerVars: { autoplay: 1, playsinline: 1, rel: 0, fs: 0, start: $startSeconds },
             events: {
