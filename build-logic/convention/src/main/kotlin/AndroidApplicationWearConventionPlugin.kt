@@ -6,7 +6,6 @@ import md.borisveriga.megapodcastplayer.buildlogic.configureSharedSigning
 import md.borisveriga.megapodcastplayer.buildlogic.configureWearCompose
 import md.borisveriga.megapodcastplayer.buildlogic.int
 import md.borisveriga.megapodcastplayer.buildlogic.libs
-import md.borisveriga.megapodcastplayer.buildlogic.nameBuildTypesForCrashReports
 import md.borisveriga.megapodcastplayer.buildlogic.string
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -56,8 +55,6 @@ class AndroidApplicationWearConventionPlugin : Plugin<Project> {
             // After release is configured, because it copies release. This is the build the watch
             // runs; see `addWristBuildType` for the measurements that made it one.
             addWristBuildType()
-            // Last, so that it names every build type, `wrist` included.
-            nameBuildTypesForCrashReports(this)
         }
 
         dependencies {

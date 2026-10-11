@@ -13,6 +13,7 @@
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_notifications">Notifications</string>
     <string name="settings_section_playback">Playback</string>
+    <string name="settings_section_youtube">YouTube</string>
     <string name="settings_section_downloads">Downloads</string>
     <string name="settings_section_storage">Storage</string>
 
@@ -67,10 +68,31 @@
 
     <string name="settings_delete_after_playing_title">Delete after playing</string>
     <string name="settings_delete_after_playing_description">Free up storage when an episode finishes</string>
+    <!--
+        Where a download goes when nobody chooses: a swipe, an auto-download. Shown only once the
+        user has made a folder. "Downloads" is the built-in folder, named as on the Downloads tab.
+    -->
+    <string name="settings_default_folder_title">Save new downloads to</string>
+    <string name="settings_default_folder_description">For swipes and automatic downloads. A download sheet can choose another.</string>
+    <string name="settings_default_folder_downloads">Downloads</string>
     <string name="settings_swipe_download_title">Swipe to download</string>
     <string name="settings_swipe_download_description">On a YouTube show, video comes with its audio</string>
     <string name="settings_swipe_download_audio">Audio</string>
     <string name="settings_swipe_download_audio_and_video">Audio and video</string>
+
+    <!--
+        Where YouTube shows are read from and what plays them. One sentence per choice, trade-off
+        included, because the difference is not a matter of taste: one choice is against YouTube's
+        terms and does more, the other is within them and does less. "Official" is YouTube's own
+        feed and player, used as YouTube publishes them; the chip says "YouTube's player" rather
+        than "official", which on a chip would read as a judgement about the other one. The
+        description names the number so nobody has to count, and says "on screen" because the one
+        thing a podcast listener will miss is the background.
+    -->
+    <string name="settings_youtube_source_title">Play YouTube with</string>
+    <string name="settings_youtube_source_description">The extractor plays whole playlists in the background and keeps downloads, against YouTube\'s terms. YouTube\'s player shows the newest 10 videos, on screen only, with no downloads.</string>
+    <string name="settings_youtube_source_extractor">Extractor</string>
+    <string name="settings_youtube_source_official">YouTube\'s player</string>
 
     <string name="settings_downloaded_episodes">Downloaded episodes</string>
     <!-- COPY-2: these are files, and files are deleted. -->
@@ -178,16 +200,14 @@
     <string name="settings_subscriptions_empty">That subscription list has no shows in it</string>
 
     <!--
-        SET-4. What an app should be able to say about itself: which build this is, whether its
-        crash reporter is actually sending anything, and the licences of the fonts it ships.
+        SET-4. What an app should be able to say about itself: which build this is, that nothing it
+        records leaves the device, and the licences of the fonts it ships.
     -->
     <string name="settings_section_about">About</string>
     <string name="settings_version">Version</string>
     <string name="settings_crash_reporting">Crash reporting</string>
-    <!-- This build carries a Firebase configuration, so handled failures leave the device. -->
-    <string name="settings_crash_reporting_on">On. Crashes and handled failures are sent to Firebase Crashlytics.</string>
-    <!-- A build with no Firebase configuration, which is supported rather than broken. -->
-    <string name="settings_crash_reporting_off">Off. This build has no crash reporting configured, so nothing leaves the device.</string>
+    <!-- There is no crash-reporting service in the app; failures go to the device log only. -->
+    <string name="settings_crash_reporting_off">Off. Failures are kept in this device\'s own log, and nothing leaves the device.</string>
     <string name="settings_font_licences">Font licences</string>
     <string name="settings_font_licences_description">Bricolage Grotesque and Inter, both under the SIL Open Font License 1.1</string>
     <string name="settings_close">Close</string>

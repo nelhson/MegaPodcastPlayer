@@ -17,6 +17,103 @@
     <string name="downloads_empty_action">Go to your library</string>
 
     <!--
+        The chips over the list, drawn only once an episode has a video. Every row has sound, so
+        "Audio" means sound only: read as "has sound" it would be the same as "All".
+    -->
+    <string name="downloads_filter_all">All</string>
+    <string name="downloads_filter_audio">Audio</string>
+    <string name="downloads_filter_video">Video</string>
+    <!--
+        COPY_RULES §8: a filter that matches nothing is not an empty collection, so it says so,
+        says what would appear under it, and offers the way back rather than "Nothing downloaded".
+    -->
+    <string name="downloads_filtered_empty_title">No downloads match this filter</string>
+    <string name="downloads_filtered_empty_audio">Episodes you download without their video appear here.</string>
+    <string name="downloads_filtered_empty_video">Episodes you download with their video appear here.</string>
+    <string name="downloads_filter_clear">Clear filter</string>
+
+    <!--
+        Folders. A folder is a label on a download, not a place on the phone: nothing here may
+        claim a path or "phone storage". The built-in folder every download starts in is called
+        Downloads, like the screen, and cannot be renamed or deleted. Folder names are names, and
+        are not quoted (COPY_RULES §4, as a show's name is not).
+    -->
+    <string name="downloads_folder_all">All folders</string>
+    <string name="downloads_folder_downloads">Downloads</string>
+    <!-- Spoken for the folder chip, whose label is only a folder's name. -->
+    <string name="downloads_folder_chip_description">Choose a folder</string>
+    <!-- No ellipsis: it opens a dialog, and "…" is kept for something running (COPY_RULES §7). -->
+    <string name="downloads_folder_new">New folder</string>
+    <string name="downloads_folder_manage">Manage folders</string>
+    <string name="downloads_folder_manage_title">Folders</string>
+    <!-- Spoken for the tick beside the folder on screen, or the one a download is in. -->
+    <string name="downloads_folder_current">Current folder</string>
+    <plurals name="downloads_folder_count">
+        <item quantity="one">%1$d download</item>
+        <item quantity="other">%1$d downloads</item>
+    </plurals>
+    <!-- Joins a folder's count (%1$s) with the line saying it is the default (%2$s). -->
+    <string name="downloads_folder_counts_combined">%1$s · %2$s</string>
+    <string name="downloads_folder_is_default">New downloads go here</string>
+    <!-- %1$s is a folder's name; the overflow button beside it. -->
+    <string name="downloads_folder_more">More options for %1$s</string>
+    <string name="downloads_folder_make_default">Make default</string>
+    <string name="downloads_folder_rename">Rename</string>
+    <string name="downloads_folder_delete">Delete folder</string>
+
+    <!-- The name dialog, to make or rename a folder. -->
+    <string name="downloads_folder_create_title">New folder</string>
+    <string name="downloads_folder_rename_title">Rename folder</string>
+    <string name="downloads_folder_name_label">Name</string>
+    <string name="downloads_folder_create">Create</string>
+    <string name="downloads_folder_cancel">Cancel</string>
+    <string name="downloads_folder_name_blank">Type a name</string>
+    <!-- %1$d is the longest name accepted. -->
+    <plurals name="downloads_folder_name_too_long">
+        <item quantity="one">Use %1$d character or fewer</item>
+        <item quantity="other">Use %1$d characters or fewer</item>
+    </plurals>
+    <string name="downloads_folder_name_taken">There is already a folder with that name</string>
+
+    <!--
+        The delete question. Deleting the folder alone loses nothing, so the box that also deletes
+        its downloads starts unticked, and the button repeats the verb with what it takes
+        (COPY_RULES §3). %1$s is the folder's name.
+    -->
+    <string name="downloads_folder_delete_title">Delete folder %1$s?</string>
+    <string name="downloads_folder_delete_empty">There is nothing in it.</string>
+    <plurals name="downloads_folder_delete_moves">
+        <item quantity="one">Its %1$d download moves to Downloads.</item>
+        <item quantity="other">Its %1$d downloads move to Downloads.</item>
+    </plurals>
+    <plurals name="downloads_folder_delete_also">
+        <item quantity="one">Also delete its %1$d download from this device</item>
+        <item quantity="other">Also delete its %1$d downloads from this device</item>
+    </plurals>
+    <!-- %2$s is the space it gives back, e.g. "1.2 GB". -->
+    <plurals name="downloads_folder_delete_also_freeing">
+        <item quantity="one">Also delete its %1$d download, freeing %2$s</item>
+        <item quantity="other">Also delete its %1$d downloads, freeing %2$s</item>
+    </plurals>
+    <string name="downloads_folder_delete_with_downloads">Delete folder and downloads</string>
+
+    <!-- The move sheet. Its subtitle names the episode, quoted as an episode title is. -->
+    <string name="downloads_move_title">Move to folder</string>
+    <string name="downloads_move_subtitle">\"%1$s\"</string>
+    <!-- The swipe that opens it: one word, drawn under an icon (COPY_RULES §2). -->
+    <string name="downloads_action_move">Move</string>
+    <!-- The snackbar after a move carries this, since a move is offered back rather than asked. -->
+    <string name="downloads_action_undo">Undo</string>
+
+    <!--
+        A folder with nothing in it (COPY_RULES §8): says which, what would put something there,
+        and offers the way to everything else. %1$s is the folder's name.
+    -->
+    <string name="downloads_folder_empty_title">Nothing in %1$s</string>
+    <string name="downloads_folder_empty_description">Swipe a download and choose Move to put it here.</string>
+    <string name="downloads_folder_show_all">Show all folders</string>
+
+    <!--
         The headings the rows are grouped under, in the order they are drawn. Failures first: they
         are the only rows on this screen waiting on the user. Not shown when there is only one
         group, where a heading would name the only thing on screen.
@@ -125,4 +222,12 @@
     <string name="downloads_message_list_exported">Download list exported</string>
     <string name="downloads_message_list_export_failed">Could not write that file</string>
     <string name="downloads_message_nothing_to_export">Nothing has finished downloading yet</string>
+    <!-- %1$s is the episode title, %2$s the folder it went to. -->
+    <string name="downloads_message_moved">Moved \"%1$s\" to %2$s</string>
+    <string name="downloads_message_folder_deleted">Deleted folder %1$s</string>
+    <!-- %1$s is the folder's name, %2$d how many downloads went with it. -->
+    <plurals name="downloads_message_folder_deleted_with_downloads">
+        <item quantity="one">Deleted folder %1$s and its %2$d download</item>
+        <item quantity="other">Deleted folder %1$s and its %2$d downloads</item>
+    </plurals>
 </resources>

@@ -16,6 +16,7 @@ import javax.inject.Inject
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.data.download.DownloadStateSynchroniser
 import md.borisveriga.megapodcastplayer.core.data.playback.ShowSpeedApplier
+import md.borisveriga.megapodcastplayer.core.data.playback.YouTubeSourceApplier
 import md.borisveriga.megapodcastplayer.core.network.di.MegaPodcastPlayerOkHttp
 import md.borisveriga.megapodcastplayer.sync.RefreshScheduler
 import md.borisveriga.megapodcastplayer.wearsync.NowPlayingPublisher
@@ -34,10 +35,8 @@ import okhttp3.OkHttpClient
  * [DownloadStateSynchroniser] makes on start-up; the watch has to see playback state whether or not
  * anyone has opened the phone app; and the refresh exists precisely for the hours nobody does.
  *
- * Injecting [CrashReporter] here is what starts crash reporting for the process. Uncaught
- * exceptions are already covered without any code — Crashlytics installs its handler from a content
- * provider, before this class exists — but the custom keys that make a report legible are set when
- * the reporter is first constructed, and nothing else in `:app` is guaranteed to ask for one.
+ * [CrashReporter] is injected only to mark the start of the process in the device log, next to the
+ * failures that follow it. Nothing it records leaves the device.
  *
  * It implements [Configuration.Provider] so WorkManager builds its workers through Hilt. That is
  * also why the manifest removes WorkManager's default `androidx.startup` initializer: with a custom
@@ -65,11 +64,15 @@ class MegaPodcastPlayerApplication :
     @Inject
     lateinit var showSpeedApplier: ShowSpeedApplier
 
+    /** Takes YouTube out of the player's queue when the user chooses the official source. */
+    @Inject
+    lateinit var youTubeSourceApplier: YouTubeSourceApplier
+
     /** Mirrors playback state onto the paired watch. */
     @Inject
     internal lateinit var nowPlayingPublisher: NowPlayingPublisher
 
-    /** Constructed for its side effects; see the class KDoc. */
+    /** Marks the process start in the device log; see the class KDoc. */
     @Inject
     lateinit var crashReporter: CrashReporter
 
@@ -95,14 +98,16 @@ class MegaPodcastPlayerApplication :
         // because the queue advances with no screen open, and that is the transition a per-show
         // speed exists to survive.
         showSpeedApplier.start()
+        // Same shape, same reason: the choice can be made with no screen open, and the queue it
+        // trims is the player's, which outlives every screen.
+        youTubeSourceApplier.start()
         // Likewise returns immediately. Costs nothing when no watch is paired: the publisher only
         // writes when playback changes, and a write with no peer simply fails and is swallowed.
         nowPlayingPublisher.start()
         // Cheap and idempotent: WorkManager keeps the run already scheduled, so this is a no-op on
         // every start after the first.
         refreshScheduler.schedule()
-        // The last breadcrumb before a start-up crash is otherwise the previous session's, which
-        // reads as though the process never restarted.
+        // Without it, a start-up failure in the log reads as part of the previous session.
         crashReporter.log("Phone process started")
     }
 

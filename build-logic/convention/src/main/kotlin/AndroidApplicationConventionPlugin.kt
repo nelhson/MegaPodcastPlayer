@@ -5,7 +5,6 @@ import md.borisveriga.megapodcastplayer.buildlogic.configureAndroidCommon
 import md.borisveriga.megapodcastplayer.buildlogic.configureSharedSigning
 import md.borisveriga.megapodcastplayer.buildlogic.int
 import md.borisveriga.megapodcastplayer.buildlogic.libs
-import md.borisveriga.megapodcastplayer.buildlogic.nameBuildTypesForCrashReports
 import md.borisveriga.megapodcastplayer.buildlogic.string
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -51,8 +50,6 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             // After release is configured, because it copies release. The phone side of the same
             // build type the watch runs, so both devices can be installed alike when wanted.
             addWristBuildType()
-            // Last, so that it names every build type, `wrist` included.
-            nameBuildTypesForCrashReports(this)
         }
     }
 }

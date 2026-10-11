@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import md.borisveriga.megapodcastplayer.core.data.repository.DefaultDownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.MediaDownloadRepository
 import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
 import md.borisveriga.megapodcastplayer.core.database.model.EpisodeEntity
@@ -90,10 +91,12 @@ class DownloadStateSynchroniserTest {
         // No live events in these tests; only the start-up snapshot matters.
         every { downloader.statusUpdates } returns emptyFlow()
 
+        val preferences = UserPreferencesDataSource(InMemoryDataStore())
         repository = MediaDownloadRepository(
             episodeDao = database.episodeDao(),
-            userPreferences = UserPreferencesDataSource(InMemoryDataStore()),
+            userPreferences = preferences,
             downloader = downloader,
+            folders = DefaultDownloadFolderRepository(preferences),
             clock = Clock.systemUTC(),
             ioDispatcher = UnconfinedTestDispatcher(),
             // Nothing here calls `downloadNow`, so the scope this hands over is never used.

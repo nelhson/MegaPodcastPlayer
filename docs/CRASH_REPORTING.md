@@ -1,111 +1,58 @@
 # Crash reporting
 
-Firebase Crashlytics, on both APKs, reporting to one Firebase project (`megapodcastplayer`).
+There is none that leaves the device. Handled failures are written to the device log, and nothing the
+app records is sent anywhere. This was a decision, made on 2026-10-08, not an absence.
 
-The phone and the watch share an application ID, so they are **one** Firebase Android app and one
-`google-services.json` serves both. What tells their reports apart is the `buildType` custom key and
-the process breadcrumb each writes on start-up ("Phone process started" / "Watch process started").
+## Why
 
-## Why the watch reports separately
+Until then both APKs reported to Firebase Crashlytics. Read call site by call site, a report carried
+far more than "something broke": YouTube video and playlist ids in exception messages, a feed URL as
+a custom key that stuck to every later report in the process, stack frames naming the extractor
+(`org.schabi.newpipe…`), and device details tied to an installation id. For a personal player, that
+is a record of what someone listens to, held by a third party, in exchange for a dashboard. The
+dashboard lost.
 
-The watch is its own process on its own device. It reads the phone's state off the Data Layer,
-draws a tile and a complication from it and sends commands back, and a crash in any of that — a
-snapshot it could not render, a tile refresh that died — leaves no trace on the phone at all, which
-is exactly the window this is for.
+Firebase was removed whole rather than switched off. Crashlytics brings Firebase Sessions and
+Installations with it, and those talk to Google on start-up whether or not collection is enabled; a
+flag would have left the network traffic and only stopped the reports.
 
 ## What is wired
 
 | Piece | Where |
 | --- | --- |
 | `CrashReporter` — the interface every module injects | `:core:common`, `core/common/…/crash/` |
-| `FirebaseCrashReporter` — the only code that touches Firebase | `:core:common` |
-| `NoOpCrashReporter` — the binding when Firebase is absent | `:core:common` |
-| `CrashModule` — chooses between them at runtime | `:core:common`, `…/di/` |
-| `AndroidCrashlyticsConventionPlugin` — applies the two Gradle plugins | `build-logic/convention/` |
-| `google-services.json` | `app/` and `wear/` |
+| `LogcatCrashReporter` — the only implementation: logcat, tag `MegaPodcastPlayer` | `:core:common` |
+| `NoOpCrashReporter` — for tests that do not care | `:core:common` |
+| `CrashModule` — binds the logcat reporter | `:core:common`, `…/di/` |
 
-Firebase is on exactly one module's compile classpath. Everything else — features, `:core:data`,
-`:app`, `:wear` — injects `CrashReporter` and cannot see Crashlytics at all. That is what keeps the
-unit tests runnable without a Firebase project, and what makes replacing the backend a one-file job.
+The interface stays because the reason for it stays: this app survives most of its failures on
+purpose — one unreachable feed does not abort a refresh of the other nineteen, a Data Layer write with
+no watch in range is simply lost — and each of those would otherwise leave a `Result.failure` that
+nothing reads.
 
-## What gets reported
+## Reading it
 
-**Uncaught exceptions and ANRs** need no code. Crashlytics installs its handler from a content
-provider, before `Application.onCreate`, which is why a crash during start-up is still caught.
+```
+adb logcat -s MegaPodcastPlayer        # handled failures (W) and process starts (I)
+adb logcat -b crash                    # uncaught exceptions, which the platform logs itself
+```
 
-**Non-fatals** are the point of the abstraction. This app survives most of its failures on purpose —
-one unreachable feed does not abort a refresh of the other nineteen, a Data Layer write with no
-watch in range is simply lost — and each of those leaves a `Result.failure` that nothing reads.
-Wired so far:
+The phone and the watch each keep their own log; the watch's is read over its own adb connection.
+Logcat is a ring buffer, so a failure from yesterday is usually gone — that is the price of sending it
+nowhere, and it is paid on purpose. Reproduce with the device plugged in.
 
-- `OfflineFirstPodcastRepository.refreshAll` — a feed that failed to refresh, with the feed URL as a
-  custom key rather than in the message, so every such failure groups into one issue.
-- `ChapterResolver` — a publisher's chapters document that could not be fetched or read.
+## What belongs in it
 
-The rule for adding one: report a failure a person would want to know about **after** the fact and
-that the code has already decided not to show anyone. Not expected outcomes, not user mistakes, and
-nothing on a hot path — every call crosses into a native library and writes to disk.
+A failure a person would want to know about **after** the fact and that the code has already decided
+not to show anyone. Not expected outcomes, and not user mistakes.
 
-**Having no network is an expected outcome.** A request that fails because the device is offline —
-or because Android has cut a backgrounded app off from the network, which fails DNS with
-`EAI_NODATA` even with a connection up — is the device's state, not a bug. Network call sites check
-`isConnectivityFailure` (`:core:common`) and skip the report; the failure is still logged, and a
-feed that failed is still named in the library's refresh message. Until that check existed, one
-backgrounded refresh filed a non-fatal per show, and those were the only issues in the dashboard.
+**Having no network is an expected outcome.** A request that fails because the device is offline — or
+because Android has cut a backgrounded app off from the network, which fails DNS with `EAI_NODATA`
+even with a connection up — is the device's state, not a bug. Network call sites check
+`isConnectivityFailure` (`:core:common`) and skip the record.
 
-## Reporting is on in debug builds
+## If this is ever revisited
 
-The usual advice is to disable collection for debug, on the assumption that debug runs on a desk.
-Here it is the other way round: `install_on_devices` sideloads **debug** APKs onto the Fold and the
-Watch, and those are the builds this app actually lives in. Switching debug off would leave the only
-builds anyone uses unreported. The `buildType` key is what separates them in the dashboard, and it has three values: `debug`,
-`release` and `wrist` — the shrunk, debug-signed build the watch runs (`docs/RELEASE_SIGNING.md`).
-The reporter lives in a library and cannot see the application's build type, so each application
-build type writes its own name into the `crash_build_type` string resource
-(`nameBuildTypesForCrashReports` in build-logic) and `FirebaseCrashReporter` reads it; the
-manifest's debuggable flag is only the fallback, because by that flag a `wrist` crash would be
-filed as a release's.
-
-## google-services.json
-
-It lives in `app/` and `wear/` — the `com.google.gms.google-services` plugin reads it from the module
-directory and looks nowhere else, so the repository root does not work. Both copies come from the
-same Firebase app entry; re-download once and overwrite both.
-
-It is **committed**, and this repository is public. That is deliberate and it is Google's documented
-position: the Android config carries no secret. The API key in it identifies the project rather than
-authorising anything, and it ships inside every APK regardless, so keeping it out of git would only
-hide it from CI. The exposure that remains is that someone could send junk reports to this project's
-Crashlytics.
-
-Worth doing once, in the Google Cloud console: restrict that API key to Android apps, package
-`md.borisveriga.megapodcastplayer` plus the release signing certificate's SHA-1. If Firestore,
-Storage or Auth are ever switched on in this project, that changes the picture entirely — those need
-security rules, and the key stops being uninteresting.
-
-## Builds without it
-
-A clone or fork with no `google-services.json` still builds. `AndroidCrashlyticsConventionPlugin`
-applies the Firebase plugins only when the file is there, and `CrashModule` falls back to
-`NoOpCrashReporter` when no `FirebaseApp` initialised.
-
-The cost of that leniency would be a release that silently ships with no crash reporting, so a
-**release** build without the file fails at execution time with an actionable message. Debug builds,
-`detekt`, `lint` and IDE sync keep working. Same shape as the missing-keystore guard in
-`configureSharedSigning`, and for the same reason.
-
-## The R8 mapping file
-
-A release stack trace is unreadable without it, so `assembleRelease` uploads it — except when
-`-PallowDebugSigningForRelease=true` is passed. That flag already means "this artifact must never
-reach anyone": CI's release smoke build and a local sideload of a release variant. Their mapping
-files describe nothing anyone will ever look up, and making every CI run depend on a Firebase upload
-succeeding would trade a real signal for an unrelated flake.
-
-So: the APKs that go to a device through `distribute` upload their mappings, and nothing else does.
-
-## Related
-
-- `docs/RELEASE_SIGNING.md` — the other thing a real release build needs.
-- `docs/DEPENDENCY_VERIFICATION.md` — Crashlytics added ~50 pinned artifacts; a version bump here
-  means regenerating `gradle/verification-metadata.xml`.
+Anything that sends a record off the device is a privacy change and is decided by the user, not
+slipped in with a feature. The settings screen says, under About, that nothing leaves the device; a
+change here makes that row false.

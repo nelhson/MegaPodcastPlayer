@@ -13,11 +13,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.PlaybackRepository
 import md.borisveriga.megapodcastplayer.core.media.NetworkStatus
@@ -25,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.media.PlaybackConnection
 import md.borisveriga.megapodcastplayer.core.media.PlaybackState
 import md.borisveriga.megapodcastplayer.core.media.VideoOutput
 import md.borisveriga.megapodcastplayer.core.media.VideoQualitySource
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
@@ -91,6 +94,10 @@ class VideoViewModelTest {
             playbackRepository = playbackRepository,
             qualitySource = qualitySource,
             downloadRepository = downloadRepository,
+            // Folders only feed the download sheet's picker; none is what a fresh install has.
+            folderRepository = mockk<DownloadFolderRepository> {
+                every { observeFolders() } returns flowOf(DownloadFolders.NONE)
+            },
             networkStatus = networkStatus,
             crashReporter = crashReporter,
             applicationScope = applicationScope,

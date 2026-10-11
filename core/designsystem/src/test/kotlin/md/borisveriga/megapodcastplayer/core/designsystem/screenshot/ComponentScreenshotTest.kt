@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import md.borisveriga.megapodcastplayer.core.designsystem.component.ArtworkBackdropPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadButtonPreview
+import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadFolderPickerPreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedKindBadgePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EmptyStatePreview
 import md.borisveriga.megapodcastplayer.core.designsystem.component.EpisodeRowPreview
@@ -82,6 +83,9 @@ class ComponentScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun episodeRow() = capture("episode-row") { EpisodeRowPreview() }
+
+    @Test
+    fun downloadFolderPicker() = capture("download-folder-picker") { DownloadFolderPickerPreview() }
 
     @Test
     fun showRow() = capture("show-row") { ShowRowPreview() }

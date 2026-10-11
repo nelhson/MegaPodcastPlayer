@@ -17,13 +17,25 @@ import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
+import md.borisveriga.megapodcastplayer.core.data.repository.DownloadFolderRepository
 import md.borisveriga.megapodcastplayer.core.data.repository.DownloadRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.FolderEdit
 import md.borisveriga.megapodcastplayer.core.media.QueueAddResult
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
-import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
+import md.borisveriga.megapodcastplayer.core.model.DownloadSection
+import md.borisveriga.megapodcastplayer.core.model.DownloadTotals
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.FolderNameProblem
+import md.borisveriga.megapodcastplayer.core.model.FolderView
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
+import md.borisveriga.megapodcastplayer.core.model.countByFolder
+import md.borisveriga.megapodcastplayer.core.model.filteredBy
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
+import md.borisveriga.megapodcastplayer.core.model.inFolder
+import md.borisveriga.megapodcastplayer.core.model.mergeVisibleOrder
+import md.borisveriga.megapodcastplayer.core.model.totals
 
 /**
  * State rendered by the downloads screen.
@@ -31,10 +43,12 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  * @property downloads every episode the download stack is tracking: completed, transferring,
  *   waiting and failed. In the order the user dragged them into, and failures first before they
  *   have dragged anything; see [DownloadsViewModel.move]. Kept flat alongside [sections] because
- *   it is what "is this episode still listed" is answered from.
- * @property sections the same downloads grouped by what is happening to them, problems first. The
- *   screen draws this rather than [downloads]: four states in one list, told apart only by a grey
- *   line under the title, is the thing this screen was worst at.
+ *   it is what "is this episode still listed" is answered from. Never narrowed by [kindFilter]:
+ *   an empty [downloads] means nothing is downloaded, not that nothing matches.
+ * @property sections the downloads in [folderView] that pass [kindFilter], grouped by what is happening to them,
+ *   problems first. The screen draws this rather than [downloads]: four states in one list, told
+ *   apart only by a grey line under the title, is the thing this screen was worst at. Empty while
+ *   [downloads] is not means the filter matches nothing.
  * @property completedCount how many of [downloads] are actually on the device. Counted separately
  *   because the storage summary answers "what is this costing me", and a transfer that is half done
  *   or has failed is not yet costing anything worth reporting.
@@ -58,6 +72,18 @@ import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
  *   [DownloadsViewModel.onMessageShown].
  * @property videoDownloads every YouTube episode's downloaded video, keyed by episode id, so a row
  *   can say whether its picture is on the phone as well as its sound.
+ * @property kindFilter which kind of download [sections] is narrowed to. Always
+ *   [DownloadKindFilter.ALL] while [showKindFilter] is false, whatever was chosen before.
+ * @property showKindFilter whether the Audio/Video chips are drawn: only while at least one episode
+ *   has a video. Without one, the chips could only ever answer "everything" or "nothing".
+ * @property folders the user's folders and which download is filed in which.
+ * @property folderView which folder the list is showing; never a folder that has been deleted.
+ * @property folderCounts how many downloads each folder holds, *Downloads* under null; a folder
+ *   holding nothing is absent. What the folder menu counts beside each name.
+ * @property folderTotals what the folder on screen costs, for the storage card; null while every
+ *   folder is shown, when the card reads [completedCount] and [totalBytes].
+ * @property isFolderEmpty whether the folder on screen holds nothing at all, before [kindFilter] —
+ *   an empty folder and a filter matching nothing are told apart (COPY_RULES §8).
  */
 data class DownloadsUiState(
     val downloads: List<EpisodeWithShow> = emptyList(),
@@ -71,6 +97,13 @@ data class DownloadsUiState(
     val isRefreshing: Boolean = false,
     val message: DownloadsMessage? = null,
     val videoDownloads: Map<String, VideoDownload> = emptyMap(),
+    val kindFilter: DownloadKindFilter = DownloadKindFilter.ALL,
+    val showKindFilter: Boolean = false,
+    val folders: DownloadFolders = DownloadFolders.NONE,
+    val folderView: FolderView = FolderView.AllFolders,
+    val folderCounts: Map<String?, Int> = emptyMap(),
+    val folderTotals: DownloadTotals? = null,
+    val isFolderEmpty: Boolean = false,
 )
 
 /**
@@ -144,6 +177,36 @@ sealed interface DownloadsMessage {
      */
     data object EpisodeUnavailable : DownloadsMessage
 
+    /**
+     * A download was filed under another folder.
+     *
+     * Said because the row usually leaves the screen as it moves: the folder on screen is not the
+     * one it went to.
+     *
+     * Carries what it takes to put the download back, because a move is offered back rather than
+     * asked about first (COPY_RULES §3): the snackbar's *Undo* files it where it was.
+     *
+     * @property episodeId the download moved.
+     * @property title the episode's title.
+     * @property folderName the folder it went to; null for *Downloads*, whose name is the screen's.
+     * @property previousFolderId the folder it came from; null for *Downloads*.
+     */
+    data class MovedToFolder(
+        val episodeId: String,
+        val title: String,
+        val folderName: String?,
+        val previousFolderId: String?,
+    ) : DownloadsMessage
+
+    /**
+     * A folder was deleted.
+     *
+     * @property name the folder's name.
+     * @property deletedDownloads how many downloads were deleted with it; zero when they moved to
+     *   *Downloads* instead.
+     */
+    data class FolderDeleted(val name: String, val deletedDownloads: Int) : DownloadsMessage
+
     /** The download list was written to the file the user picked. */
     data object ListExported : DownloadsMessage
 
@@ -162,6 +225,7 @@ sealed interface DownloadsMessage {
  * advancing writes its percentage back to Room and the row redraws, with nothing to poll here.
  *
  * @property downloadRepository the tracked episodes and the operations that retry and remove them.
+ * @property folderRepository the folders the downloads are filed under.
  * @property episodePlayer starts playback and edits the queue from an episode id.
  * @property fileStore writes the exported download list to the document the user picked.
  * @property clock dates the suggested file name of that export.
@@ -169,6 +233,7 @@ sealed interface DownloadsMessage {
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
+    private val folderRepository: DownloadFolderRepository,
     private val episodePlayer: EpisodePlayer,
     private val fileStore: BackupFileStore,
     private val clock: Clock,
@@ -188,6 +253,24 @@ class DownloadsViewModel @Inject constructor(
     /** True while a pull-to-refresh is in flight; see [refresh]. */
     private val refreshing = MutableStateFlow(false)
 
+    /**
+     * The kind filter the user chose; see [setKindFilter].
+     *
+     * Kept as chosen even while it is not applied — with no video left, the screen shows everything
+     * and hides the chips — so a video arriving later brings the chips back as they were left,
+     * which is what they then say.
+     */
+    private val kindFilter = MutableStateFlow(DownloadKindFilter.ALL)
+
+    /**
+     * The folder the user chose to look at; see [showFolder].
+     *
+     * Not stored, like [kindFilter]: a screen that opened on one folder because of a choice made
+     * last week would look like the other downloads had gone. The view model outlives a rotation
+     * and the Fold opening, so the choice survives those.
+     */
+    private val folderView = MutableStateFlow<FolderView>(FolderView.AllFolders)
+
     init {
         refreshFreeBytes()
     }
@@ -195,21 +278,31 @@ class DownloadsViewModel @Inject constructor(
     val uiState: StateFlow<DownloadsUiState> = combine(
         downloadRepository.observeDownloads(),
         downloadRepository.observeDownloadSettings(),
-        freeBytes,
-        refreshing,
-        // Paired to stay within `combine`'s typed arity.
-        combine(transientState, downloadRepository.observeVideoDownloads(), ::Pair),
-    ) { downloads, settings, free, isRefreshing, (message, videoDownloads) ->
-        val completed = downloads.filter { it.episode.downloadState == DownloadState.COMPLETED }
+        combine(freeBytes, refreshing, ::Pair),
+        // Grouped to stay within `combine`'s typed arity.
+        combine(transientState, downloadRepository.observeVideoDownloads(), kindFilter, ::Triple),
+        combine(folderRepository.observeFolders(), folderView, ::Pair),
+    ) {
+            downloads,
+            settings,
+            (free, isRefreshing),
+            (message, videoDownloads, chosenFilter),
+            (folders, chosenView),
+        ->
+        val showKindFilter = videoDownloads.isNotEmpty()
+        val appliedFilter = if (showKindFilter) chosenFilter else DownloadKindFilter.ALL
+        val view = chosenView.orAllFoldersIfGone(folders)
+        val inView = downloads.inFolder(view, folders)
+        // Every download, whatever the folder or the filter: the overall figures are about the
+        // phone, not the view. Only the finished episodes: a partial transfer's bytes are on disk
+        // but are not storage the user can act on, and counting them would make the figure jump
+        // about while a download runs.
+        val all = downloads.totals(videoDownloads)
         DownloadsUiState(
             downloads = downloads,
-            sections = downloads.groupIntoSections(),
-            completedCount = completed.size,
-            // Only the finished episodes: a partial transfer's bytes are on disk but are not
-            // storage the user can act on, and counting them would make the figure jump about
-            // while a download runs.
-            totalBytes = completed.sumOf { it.episode.downloadedBytes } +
-                videoDownloads.values.filter { it.isComplete }.sumOf { it.bytes },
+            sections = inView.filteredBy(appliedFilter, videoDownloads).groupIntoSections(),
+            completedCount = all.completedCount,
+            totalBytes = all.totalBytes,
             freeBytes = free,
             unmeteredOnly = settings.unmeteredOnly,
             deleteAfterPlaying = settings.deleteAfterPlaying,
@@ -217,6 +310,13 @@ class DownloadsViewModel @Inject constructor(
             isRefreshing = isRefreshing,
             message = message,
             videoDownloads = videoDownloads,
+            kindFilter = appliedFilter,
+            showKindFilter = showKindFilter,
+            folders = folders,
+            folderView = view,
+            folderCounts = downloads.countByFolder(folders),
+            folderTotals = inView.totals(videoDownloads).takeIf { view != FolderView.AllFolders },
+            isFolderEmpty = inView.isEmpty(),
         )
     }.stateIn(
         scope = viewModelScope,
@@ -377,6 +477,146 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
+     * Narrows the list to one kind of download, or back to all of them.
+     *
+     * @param filter what to show.
+     */
+    fun setKindFilter(filter: DownloadKindFilter) {
+        kindFilter.value = filter
+    }
+
+    /**
+     * Shows one folder, or every folder.
+     *
+     * @param view the folder to show.
+     */
+    fun showFolder(view: FolderView) {
+        folderView.value = view
+    }
+
+    /**
+     * Puts a moved download back where it was, from the snackbar's *Undo*.
+     *
+     * Silent: the snackbar that offered it is the confirmation, and a second one saying "moved"
+     * would read as a second move.
+     *
+     * @param episodeId the download.
+     * @param folderId the folder it came from; null for *Downloads*.
+     */
+    fun undoMove(episodeId: String, folderId: String?) {
+        viewModelScope.launch { folderRepository.moveToFolder(listOf(episodeId), folderId) }
+    }
+
+    /**
+     * Files one download under another folder.
+     *
+     * @param episodeId the download.
+     * @param folderId where to; null for *Downloads*.
+     */
+    fun moveToFolder(episodeId: String, folderId: String?) {
+        val title = titleOf(episodeId) ?: return
+        val previous = uiState.value.folders.folderOf(episodeId)
+        viewModelScope.launch {
+            folderRepository.moveToFolder(listOf(episodeId), folderId)
+            transientState.value = DownloadsMessage.MovedToFolder(
+                episodeId = episodeId,
+                title = title,
+                folderName = folderNameOf(folderId),
+                previousFolderId = previous,
+            )
+        }
+    }
+
+    /**
+     * Makes a folder, and moves a download into it when it was made from that download's move sheet.
+     *
+     * The dialog judges the name as it is typed, from [DownloadsUiState.folders]; the repository
+     * judges it again at the moment of writing, which is what [onDone] reports. The two differ only
+     * when another write landed in between.
+     *
+     * @param name what to call it.
+     * @param moveEpisodeId the download to move into it, or null to make it empty.
+     * @param onDone called with the refusal, or null once the folder exists.
+     */
+    fun createFolder(name: String, moveEpisodeId: String?, onDone: (FolderNameProblem?) -> Unit) {
+        viewModelScope.launch {
+            when (val edit = folderRepository.createFolder(name)) {
+                is FolderEdit.Done -> {
+                    // Moved here rather than through [moveToFolder], which names the folder from
+                    // the state — and the state may not have heard of this folder yet.
+                    val title = moveEpisodeId?.let(::titleOf)
+                    if (moveEpisodeId != null && title != null) {
+                        val previous = uiState.value.folders.folderOf(moveEpisodeId)
+                        folderRepository.moveToFolder(listOf(moveEpisodeId), edit.folder.id)
+                        transientState.value = DownloadsMessage.MovedToFolder(
+                            episodeId = moveEpisodeId,
+                            title = title,
+                            folderName = edit.folder.name,
+                            previousFolderId = previous,
+                        )
+                    }
+                    onDone(null)
+                }
+
+                is FolderEdit.Refused -> onDone(edit.problem)
+
+                // Not reachable for a folder being made; closes the dialog rather than holding it.
+                FolderEdit.Gone -> onDone(null)
+            }
+        }
+    }
+
+    /**
+     * Renames a folder.
+     *
+     * @param folderId the folder.
+     * @param name the new name.
+     * @param onDone called with the refusal, or null once renamed — or once the folder turned out
+     *   to have been deleted, when there is nothing left to rename and the dialog should close.
+     */
+    fun renameFolder(folderId: String, name: String, onDone: (FolderNameProblem?) -> Unit) {
+        viewModelScope.launch {
+            val edit = folderRepository.renameFolder(folderId, name)
+            onDone((edit as? FolderEdit.Refused)?.problem)
+        }
+    }
+
+    /**
+     * Sets where downloads go when nobody says.
+     *
+     * @param folderId the folder; null for *Downloads*.
+     */
+    fun setDefaultFolder(folderId: String?) {
+        viewModelScope.launch { folderRepository.setDefaultFolder(folderId) }
+    }
+
+    /**
+     * Deletes a folder, and its downloads with it when asked.
+     *
+     * Without [withDownloads] nothing leaves the device: the downloads move to *Downloads*. With
+     * it, each is removed exactly as its own delete would remove it — sound, picture, and the row.
+     *
+     * @param folderId the folder.
+     * @param withDownloads whether to delete the downloads in it as well.
+     */
+    fun deleteFolder(folderId: String, withDownloads: Boolean) {
+        val state = uiState.value
+        val name = folderNameOf(folderId) ?: return
+        val members = state.downloads
+            .map { it.episode.id }
+            .filter { state.folders.folderOf(it) == folderId }
+        viewModelScope.launch {
+            if (withDownloads) members.forEach { downloadRepository.removeDownload(it) }
+            folderRepository.deleteFolder(folderId)
+            transientState.value = DownloadsMessage.FolderDeleted(
+                name = name,
+                deletedDownloads = if (withDownloads) members.size else 0,
+            )
+            if (withDownloads) refreshFreeBytes()
+        }
+    }
+
+    /**
      * Applies a completed drag-to-reorder.
      *
      * The whole arrangement is written rather than the two positions, because that is what the
@@ -389,6 +629,11 @@ class DownloadsViewModel @Inject constructor(
      * does not name keep the state ordering the query gives them, so naming fewer of them is not a
      * loss.
      *
+     * Under a kind filter the section on screen is only part of *Ready*, so the reordered rows are
+     * merged back into the whole section's arrangement ([mergeVisibleOrder]) before it is stored.
+     * Storing the visible rows alone would turn every hidden one into a row never placed, and the
+     * order the user gave them would be gone the moment they cleared the filter.
+     *
      * @param visibleIds the downloads on screen, in the order they were in before the drag.
      * @param from the row's position among those, before the drag.
      * @param to where it was dropped.
@@ -396,7 +641,12 @@ class DownloadsViewModel @Inject constructor(
     fun move(visibleIds: List<String>, from: Int, to: Int) {
         if (from !in visibleIds.indices || to !in visibleIds.indices || from == to) return
         val reordered = visibleIds.toMutableList().apply { add(to, removeAt(from)) }
-        viewModelScope.launch { downloadRepository.reorderDownloads(reordered) }
+        val allReady = uiState.value.downloads
+            .filter { DownloadSection.of(it.episode.downloadState) == DownloadSection.READY }
+            .map { it.episode.id }
+        viewModelScope.launch {
+            downloadRepository.reorderDownloads(mergeVisibleOrder(allReady, reordered))
+        }
     }
 
     /**
@@ -439,6 +689,10 @@ class DownloadsViewModel @Inject constructor(
     private fun refreshFreeBytes() {
         viewModelScope.launch { freeBytes.value = downloadRepository.freeBytes() }
     }
+
+    /** The name of a folder, or null for *Downloads* and for a folder that has gone. */
+    private fun folderNameOf(folderId: String?): String? =
+        uiState.value.folders.folders.firstOrNull { it.id == folderId }?.name
 
     /** The title of a listed episode, or null if it is no longer in the list. */
     private fun titleOf(episodeId: String): String? =

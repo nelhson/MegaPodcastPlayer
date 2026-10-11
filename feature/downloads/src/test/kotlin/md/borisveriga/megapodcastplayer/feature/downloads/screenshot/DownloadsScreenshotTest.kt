@@ -8,7 +8,9 @@ import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlaye
 import md.borisveriga.megapodcastplayer.core.testing.SCREENSHOT_QUALIFIERS
 import md.borisveriga.megapodcastplayer.core.testing.ScreenshotVariant
 import md.borisveriga.megapodcastplayer.core.testing.captureScreenshot
+import md.borisveriga.megapodcastplayer.feature.downloads.DownloadsFolderPreview
 import md.borisveriga.megapodcastplayer.feature.downloads.DownloadsScreenPreview
+import md.borisveriga.megapodcastplayer.feature.downloads.DownloadsVideoFilterPreview
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +47,12 @@ class DownloadsScreenshotTest(private val variant: ScreenshotVariant) {
 
     @Test
     fun downloads() = capture("downloads") { DownloadsScreenPreview() }
+
+    @Test
+    fun videoFilter() = capture("downloads-video-filter") { DownloadsVideoFilterPreview() }
+
+    @Test
+    fun folder() = capture("downloads-folder") { DownloadsFolderPreview() }
 
     companion object {
         @JvmStatic

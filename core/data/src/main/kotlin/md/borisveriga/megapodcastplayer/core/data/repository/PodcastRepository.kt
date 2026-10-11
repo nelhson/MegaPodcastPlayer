@@ -8,6 +8,7 @@ import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastPreview
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
 import md.borisveriga.megapodcastplayer.core.model.PodcastWithCounts
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 
 /**
  * Outcome of trying to add a show to the library.
@@ -164,8 +165,31 @@ interface PodcastRepository {
      * Newest first for an RSS show. A YouTube show is ordered by hand instead — see
      * [reorderEpisodes] — and the choice is made here rather than by the caller, because which
      * ordering a show has is a property of the show.
+     *
+     * A YouTube show under the official [YouTubeSource] is cut to its newest
+     * [YouTubeSource.OFFICIAL_EPISODE_LIMIT], and its episodes read as not downloaded whatever is on
+     * the device: the official source plays nothing from a file and must not offer to. The rows
+     * and the files are untouched; switching the source back shows them all again.
      */
     fun observeEpisodes(podcastId: String): Flow<List<Episode>>
+
+    /**
+     * Observes where YouTube shows are read from and what plays them.
+     *
+     * Here rather than on a preferences repository because it decides how a show is *read* — which
+     * fetcher, how many rows, whether a download is shown — and that is this repository's business.
+     * Every screen that shows a YouTube episode reads it to know which player to open.
+     */
+    fun observeYouTubeSource(): Flow<YouTubeSource>
+
+    /**
+     * Stores where YouTube shows are read from and what plays them.
+     *
+     * Deletes nothing in either direction; see [YouTubeSource].
+     *
+     * @param source the choice.
+     */
+    suspend fun setYouTubeSource(source: YouTubeSource)
 
     /**
      * Stores a hand-made ordering for the library.

@@ -12,9 +12,11 @@ import md.borisveriga.megapodcastplayer.core.data.repository.RestoreProgress
 import md.borisveriga.megapodcastplayer.core.data.repository.RestoreSummary
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.ThemeChoice
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -50,6 +52,8 @@ class SettingsScreenTest {
         onPureBlackChange: (Boolean) -> Unit = {},
         onOpenNotificationSettings: () -> Unit = {},
         onSwipeDownloadChange: (SwipeDownload) -> Unit = {},
+        onDefaultDownloadFolderChange: (String?) -> Unit = {},
+        onYouTubeSourceChange: (YouTubeSource) -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -65,6 +69,8 @@ class SettingsScreenTest {
                     onKeepLimitChange = {},
                     onDeleteAfterPlayingChange = {},
                     onSwipeDownloadChange = onSwipeDownloadChange,
+                    onDefaultDownloadFolderChange = onDefaultDownloadFolderChange,
+                    onYouTubeSourceChange = onYouTubeSourceChange,
                     onThemeChange = onThemeChange,
                     onDynamicColorChange = {},
                     onPureBlackChange = onPureBlackChange,
@@ -114,6 +120,31 @@ class SettingsScreenTest {
             .assertExists()
     }
 
+    /** Where new downloads go is not asked while there is only the built-in folder. */
+    @Test
+    fun `no default folder is offered before a folder exists`() {
+        setContent(SettingsUiState())
+
+        composeRule.onNodeWithText("Save new downloads to").assertDoesNotExist()
+    }
+
+    /** Once a folder exists, the downloads card offers it as the default, and a chip picks it. */
+    @Test
+    fun `choosing a default download folder is passed on`() {
+        var chosen: String? = null
+        setContent(
+            SettingsUiState(downloadFolders = DownloadFolders.NONE.created(id = "f1", name = "Commute")),
+            onDefaultDownloadFolderChange = { chosen = it },
+        )
+
+        // The row after the chips, so the chips themselves are in view; see the swipe test below.
+        scrollToText("About")
+        composeRule.onNodeWithText("Save new downloads to").assertExists()
+        composeRule.onNodeWithText("Commute").performClick()
+
+        assertEquals("f1", chosen)
+    }
+
     /** The download swipe's choice is offered in the downloads card, and a chip picks it. */
     @Test
     fun `choosing audio and video for the swipe is passed on`() {
@@ -131,6 +162,22 @@ class SettingsScreenTest {
         assertEquals(SwipeDownload.AUDIO_AND_VIDEO, chosen)
     }
 
+    /** The YouTube source has a section of its own, and a chip picks it. */
+    @Test
+    fun `choosing youtube's own player is passed on`() {
+        var chosen: YouTubeSource? = null
+        setContent(
+            SettingsUiState(youTubeSource = YouTubeSource.EXTRACTOR),
+            onYouTubeSourceChange = { chosen = it },
+        )
+
+        // The header after the card, for the reason the swipe test gives.
+        scrollToText("Downloads")
+        composeRule.onNodeWithText("YouTube's player").performClick()
+
+        assertEquals(YouTubeSource.OFFICIAL, chosen)
+    }
+
     /** A row saying "no shows override this" would explain a feature rather than report a fact. */
     @Test
     fun `nothing is said about overrides when there are none`() {
@@ -140,27 +187,15 @@ class SettingsScreenTest {
             .assertDoesNotExist()
     }
 
-    /** SET-4. An app with a crash reporter on its classpath should say so where it can be read. */
+    /** SET-4. An app should say, where it can be read, that nothing it records is sent anywhere. */
     @Test
-    fun `about says whether anything is reported`() {
-        setContent(SettingsUiState(isCrashReporting = true))
+    fun `about says that nothing is reported`() {
+        setContent(SettingsUiState())
 
         scrollToText("Crash reporting")
         composeRule
             .onNodeWithText(
-                "On. Crashes and handled failures are sent to Firebase Crashlytics.",
-            )
-            .assertExists()
-    }
-
-    @Test
-    fun `about says when nothing is reported`() {
-        setContent(SettingsUiState(isCrashReporting = false))
-
-        scrollToText("Crash reporting")
-        composeRule
-            .onNodeWithText(
-                "Off. This build has no crash reporting configured, so nothing leaves the device.",
+                "Off. Failures are kept in this device's own log, and nothing leaves the device.",
             )
             .assertExists()
     }

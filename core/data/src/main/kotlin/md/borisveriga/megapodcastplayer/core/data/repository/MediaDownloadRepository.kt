@@ -22,6 +22,7 @@ import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.DownloadStatusRecorder
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloadStatus
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
@@ -30,6 +31,7 @@ import md.borisveriga.megapodcastplayer.core.model.ShowSettings
 import md.borisveriga.megapodcastplayer.core.model.SwipeDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.downloadListMarkdown
 import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
@@ -45,9 +47,16 @@ import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
  * index, and this class owns the *episode rows* the UI observes. Every state change flows one way —
  * Media3 event, then Room write — so the two can never disagree for longer than one event.
  *
+ * A YouTube episode under the official [YouTubeSource] is not downloadable and reads as not
+ * downloaded: that source plays nothing from a file, by YouTube's terms. Every list here leaves such
+ * episodes out and every request for one is declined, while the rows and the files on the device
+ * are left exactly as they are, for the day the source is switched back.
+ *
  * @property episodeDao episode rows, including the download columns.
- * @property userPreferences the download rules.
+ * @property userPreferences the download rules, and the YouTube source.
  * @property downloader the handle on Media3's download machinery.
+ * @property folders which folder each download is filed under: set as a download is asked for,
+ *   forgotten as it goes, so a folder never lists a download that is no longer on the device.
  * @property clock stamps the date on an exported download list.
  * @property ioDispatcher dispatcher for the database work.
  * @property scope application scope, for the one piece of work here that outlives its caller: the
@@ -58,6 +67,7 @@ class MediaDownloadRepository @Inject constructor(
     private val episodeDao: EpisodeDao,
     private val userPreferences: UserPreferencesDataSource,
     private val downloader: EpisodeDownloader,
+    private val folders: DownloadFolderRepository,
     private val clock: Clock,
     @Dispatcher(MegaPodcastPlayerDispatcher.IO) private val ioDispatcher: CoroutineDispatcher,
     @ApplicationScope private val scope: CoroutineScope,
@@ -73,13 +83,19 @@ class MediaDownloadRepository @Inject constructor(
 
     override fun observeDownloadSettings(): Flow<DownloadSettings> = userPreferences.downloadSettings
 
-    override fun observeDownloadedEpisodes(): Flow<List<Episode>> =
-        episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } }
+    override fun observeDownloadedEpisodes(): Flow<List<Episode>> = combine(
+        episodeDao.observeDownloaded().map { rows -> rows.map { it.asExternalModel() } },
+        userPreferences.youTubeSource,
+    ) { downloaded, youTubeSource ->
+        downloaded.filterNot { youTubeSource.hidesDownloadOf(it) }
+    }
 
     override fun observeDownloads(): Flow<List<EpisodeWithShow>> = combine(
         episodeDao.observeDownloadsWithShow().map { rows -> rows.map { it.asEpisodeWithShow() } },
         userPreferences.downloadOrder,
-    ) { downloads, order ->
+        userPreferences.youTubeSource,
+    ) { tracked, order, youTubeSource ->
+        val downloads = tracked.filterNot { youTubeSource.hidesDownloadOf(it.episode) }
         if (order.isEmpty()) return@combine downloads
 
         // A map rather than `indexOf` per row: the stored order keeps ids that are no longer
@@ -98,8 +114,13 @@ class MediaDownloadRepository @Inject constructor(
 
     override suspend fun freeBytes(): Long = downloader.freeBytes()
 
-    override suspend fun download(episodeId: String): Boolean {
+    override suspend fun download(episodeId: String, destination: DownloadDestination): Boolean {
         val episode = withContext(ioDispatcher) { episodeDao.getById(episodeId) } ?: return false
+        // Declined as an episode that is not there is declined: the screen hides the control, and
+        // this is for whatever reaches here regardless — a swipe, a widget, a stale screen.
+        if (isUndownloadable(episode.audioUrl)) return false
+        // Filed before it is requested, so the row is in its folder from its first frame.
+        folders.file(episodeId, destination)
         // Written optimistically so the button flips to "queued" on the tap rather than a beat
         // later when Media3's first event arrives. The event overwrites this with the truth.
         withContext(ioDispatcher) {
@@ -137,6 +158,9 @@ class MediaDownloadRepository @Inject constructor(
 
     override suspend fun removeDownload(episodeId: String) {
         downloader.remove(episodeId)
+        // Also forgotten when Media3 reports the removal (see recordDownloadStatus); done here too
+        // so the folder lets go of the row in the same frame the row says it is gone.
+        folders.forget(listOf(episodeId))
         // Media3 confirms the removal with an event, but only once the file is actually gone. The
         // row is cleared now so the UI does not show "downloaded" for an episode already on its way
         // out.
@@ -150,16 +174,30 @@ class MediaDownloadRepository @Inject constructor(
         }
     }
 
-    override fun observeVideoDownloads(): Flow<Map<String, VideoDownload>> =
-        downloader.videoDownloads
+    override fun observeVideoDownloads(): Flow<Map<String, VideoDownload>> = combine(
+        downloader.videoDownloads,
+        userPreferences.youTubeSource,
+    ) { downloads, youTubeSource ->
+        // Only a YouTube episode has a video, so under the official source there is nothing to show.
+        if (youTubeSource == YouTubeSource.OFFICIAL) emptyMap() else downloads
+    }
 
-    override suspend fun downloadVideo(episodeId: String, quality: VideoQuality): Boolean {
+    override suspend fun downloadVideo(
+        episodeId: String,
+        quality: VideoQuality,
+        destination: DownloadDestination,
+    ): Boolean {
         val episode = withContext(ioDispatcher) { episodeDao.getById(episodeId) } ?: return false
         val videoId = youTubeVideoIdOrNull(episode.audioUrl) ?: return false
+        if (isUndownloadable(episode.audioUrl)) return false
         // Only when the audio is missing or failed: asking again for audio that is on the device
         // would briefly mark a finished download queued, and Media3 would walk the whole file to
-        // confirm what it already knows.
-        if (episode.downloadState in AUDIO_TO_FETCH) download(episodeId)
+        // confirm what it already knows. Filed either way — the picture and the sound are one row.
+        if (episode.downloadState in AUDIO_TO_FETCH) {
+            download(episodeId, destination)
+        } else {
+            folders.file(episodeId, destination)
+        }
         downloader.downloadVideo(episodeId = episodeId, videoId = videoId, quality = quality)
         return true
     }
@@ -215,10 +253,14 @@ class MediaDownloadRepository @Inject constructor(
             episodeIds
         }
 
+        val youTubeSource = userPreferences.youTubeSource.first()
         // Resolved and marked in one hop onto the IO dispatcher rather than one per episode: a
         // refresh can discover dozens at once, and each hop is a context switch for a single row.
         val episodes = withContext(ioDispatcher) {
             toDownload.mapNotNull { id -> episodeDao.getById(id) }
+                // A YouTube show refreshed under the official source discovers videos it may not
+                // download; they are skipped, not counted against the limit, and not marked.
+                .filterNot { youTubeSource.hidesDownloadOf(it.audioUrl) }
                 .onEach { episode ->
                     episodeDao.updateDownloadState(
                         id = episode.id,
@@ -230,6 +272,8 @@ class MediaDownloadRepository @Inject constructor(
         }
 
         episodes.forEach { episode ->
+            // Nobody chose a folder for these, so they go where new downloads go.
+            folders.file(episode.id, DownloadDestination.Unspecified)
             // A refresh can run from a background worker, where starting a foreground service is
             // forbidden; Media3's scheduler picks the work up instead.
             downloader.download(
@@ -249,10 +293,14 @@ class MediaDownloadRepository @Inject constructor(
                 percent = status.percent,
             )
         }
+        // Every way a download leaves — a delete here, delete-after-playing, a removal from
+        // anywhere else — ends in this event, so it is where a folder lets go of it.
+        if (status.state == DownloadState.NOT_DOWNLOADED) folders.forget(listOf(status.episodeId))
     }
 
     override suspend fun recordAllDownloadsRemoved() {
         withContext(ioDispatcher) { episodeDao.clearAllDownloadStates() }
+        folders.forgetAll()
     }
 
     override suspend fun setAutoDownloadNewEpisodes(enabled: Boolean) =
@@ -274,6 +322,14 @@ class MediaDownloadRepository @Inject constructor(
     override suspend fun setSwipeDownload(choice: SwipeDownload) =
         userPreferences.setSwipeDownload(choice)
 
+    /**
+     * Whether a download of the episode behind [audioUrl] must be declined right now.
+     *
+     * @param audioUrl the episode's stored URL; a YouTube sentinel is what makes the answer yes.
+     */
+    private suspend fun isUndownloadable(audioUrl: String): Boolean =
+        userPreferences.youTubeSource.first().hidesDownloadOf(audioUrl)
+
     private companion object {
         /** Where a download the user has never dragged sorts: after everything they have placed. */
         const val UNPLACED = Int.MAX_VALUE
@@ -282,3 +338,17 @@ class MediaDownloadRepository @Inject constructor(
         val AUDIO_TO_FETCH = setOf(DownloadState.NOT_DOWNLOADED, DownloadState.FAILED)
     }
 }
+
+/**
+ * Whether this source keeps the download of the episode behind [audioUrl] out of sight.
+ *
+ * True only for a YouTube episode under [YouTubeSource.OFFICIAL]: an RSS episode is downloadable
+ * under either, and the extractor downloads anything.
+ *
+ * @param audioUrl the episode's stored URL.
+ */
+private fun YouTubeSource.hidesDownloadOf(audioUrl: String): Boolean =
+    this == YouTubeSource.OFFICIAL && youTubeVideoIdOrNull(audioUrl) != null
+
+/** [hidesDownloadOf] for an episode in hand. */
+private fun YouTubeSource.hidesDownloadOf(episode: Episode): Boolean = hidesDownloadOf(episode.audioUrl)

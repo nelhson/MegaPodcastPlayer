@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +22,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Delete
@@ -32,12 +35,14 @@ import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -62,6 +67,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,6 +77,7 @@ import md.borisveriga.megapodcastplayer.core.common.format.formatBytes
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.common.format.formatPublishedDate
 import md.borisveriga.megapodcastplayer.core.common.format.formatRemaining
+import md.borisveriga.megapodcastplayer.core.designsystem.R as DesignSystemR
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DeleteDownloadDialog
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedKind
 import md.borisveriga.megapodcastplayer.core.designsystem.component.DownloadedKindBadge
@@ -93,14 +100,21 @@ import md.borisveriga.megapodcastplayer.core.designsystem.reorder.reorderableLon
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.FontScalePreviews
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.ThemePreviews
+import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.FolderView
 import md.borisveriga.megapodcastplayer.core.model.OpenPlayerAs
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.countByFolder
+import md.borisveriga.megapodcastplayer.core.model.filteredBy
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
+import md.borisveriga.megapodcastplayer.core.model.inFolder
+import md.borisveriga.megapodcastplayer.core.model.totals
 
 /**
  * Downloads screen: everything the download stack is tracking, across all shows — finished
@@ -153,6 +167,16 @@ fun DownloadsRoute(
         onEpisodeRemove = viewModel::remove,
         onEpisodeQueue = viewModel::addToQueue,
         onMove = viewModel::move,
+        onKindFilterChange = viewModel::setKindFilter,
+        folderActions = DownloadFolderActions(
+            onShowFolder = viewModel::showFolder,
+            onMove = viewModel::moveToFolder,
+            onCreate = viewModel::createFolder,
+            onRename = viewModel::renameFolder,
+            onSetDefault = viewModel::setDefaultFolder,
+            onDelete = viewModel::deleteFolder,
+        ),
+        onUndoMove = viewModel::undoMove,
         onRefresh = viewModel::refresh,
         onBrowseLibrary = onBrowseLibrary,
         onOpenSettings = onOpenSettings,
@@ -186,6 +210,10 @@ fun DownloadsRoute(
  * @param modifier layout modifier.
  * @param onEpisodePlayVideo plays an episode as video, from the *Video* badge of a row whose
  *   picture is on the phone.
+ * @param onKindFilterChange narrows the list to sound-only or video downloads, or back to all;
+ *   from the chips drawn while any episode has a video.
+ * @param folderActions what the folder chip, the *Move* swipe and the folder sheets do.
+ * @param onUndoMove puts a moved download back in the folder it came from; null for *Downloads*.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -205,6 +233,9 @@ fun DownloadsScreen(
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
     onEpisodePlayVideo: (String) -> Unit = {},
+    onKindFilterChange: (DownloadKindFilter) -> Unit = {},
+    folderActions: DownloadFolderActions = DownloadFolderActions(),
+    onUndoMove: (episodeId: String, folderId: String?) -> Unit = { _, _ -> },
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Resolved in composition: `LaunchedEffect` runs outside it, where `stringResource` is not
@@ -221,12 +252,25 @@ fun DownloadsScreen(
     // id rather than the episode: the row it names is re-read from the list below, which is what
     // makes a confirmation for an episode that has since gone resolve to no dialog at all.
     var pendingRemovalId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Which folder sheet or dialog is open, kept the same way and for the same reason.
+    val folderUi = rememberFolderUiState()
 
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message.toText(resources))
+        // A move is offered back rather than asked about first (COPY_RULES §3), so its snackbar is
+        // the only one here that carries an action.
+        val undo = (message as? DownloadsMessage.MovedToFolder)
+        val result = snackbarHostState.showSnackbar(
+            message = message.toText(resources),
+            actionLabel = undo?.let { resources.getString(R.string.downloads_action_undo) },
+        )
+        if (undo != null && result == SnackbarResult.ActionPerformed) {
+            onUndoMove(undo.episodeId, undo.previousFolderId)
+        }
         onMessageShown()
     }
+
+    DownloadFolderSurfaces(uiState = uiState, folderActions = folderActions, state = folderUi)
 
     val pendingRemoval = uiState.downloads.firstOrNull { it.episode.id == pendingRemovalId }
     if (pendingRemoval != null) {
@@ -300,6 +344,9 @@ fun DownloadsScreen(
                         onEpisodeDownloadNow = onEpisodeDownloadNow,
                         onEpisodeQueue = onEpisodeQueue,
                         onMove = onMove,
+                        onKindFilterChange = onKindFilterChange,
+                        onShowFolder = folderActions.onShowFolder,
+                        folderUi = folderUi,
                         // A finished episode is a file the user would have to fetch again, so it
                         // asks first, and so does any removal that takes a video with it. A
                         // transfer of sound alone does not: calling it off loses nothing that was
@@ -348,6 +395,9 @@ fun DownloadsScreen(
  *   decide whether it is destructive enough to confirm.
  * @param onOpenSettings opens settings, from the storage card's housekeeping line.
  * @param onMove applies a completed drag; see [DownloadsScreen].
+ * @param onKindFilterChange applies a tapped Audio/Video chip.
+ * @param onShowFolder shows one folder, or all of them.
+ * @param folderUi which folder sheet or dialog is open; the list opens them.
  */
 @Composable
 private fun DownloadList(
@@ -362,6 +412,9 @@ private fun DownloadList(
     onEpisodeRemove: (EpisodeWithShow) -> Unit,
     onOpenSettings: () -> Unit,
     onMove: (List<String>, Int, Int) -> Unit,
+    onKindFilterChange: (DownloadKindFilter) -> Unit,
+    onShowFolder: (FolderView) -> Unit,
+    folderUi: FolderUiState,
 ) {
     val resources = LocalResources.current
     val listState = rememberLazyListState()
@@ -391,14 +444,54 @@ private fun DownloadList(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = MegaPodcastPlayerTheme.spacing.sm),
     ) {
+        // Above the storage card rather than under it: the chips say what the list is showing.
+        item(key = LIST_CONTROLS_KEY) {
+            ListControls(
+                uiState = uiState,
+                onKindFilterChange = onKindFilterChange,
+                onShowFolder = onShowFolder,
+                onNewFolder = { folderUi.nameDialog = FolderNameRequest.Create(moveEpisodeId = null) },
+                onManageFolders = { folderUi.isManaging = true },
+            )
+        }
+
         item(key = STORAGE_CARD_KEY) {
+            // The folder's own figures when one is on screen — "what is this folder costing me" is
+            // the question a folder is opened with — and still drawn against the phone's free space.
+            val totals = uiState.folderTotals
             StorageCard(
-                episodeCount = uiState.completedCount,
-                totalBytes = uiState.totalBytes,
+                episodeCount = totals?.completedCount ?: uiState.completedCount,
+                totalBytes = totals?.totalBytes ?: uiState.totalBytes,
                 freeBytes = uiState.freeBytes,
                 deleteAfterPlaying = uiState.deleteAfterPlaying,
                 onOpenSettings = onOpenSettings,
             )
+        }
+
+        // Something is downloaded, but not in this folder. Its own words, neither the empty
+        // collection's nor the filter's: the way out is another folder, not the library.
+        if (uiState.isFolderEmpty) {
+            item(key = FOLDER_EMPTY_KEY) {
+                EmptyState(
+                    icon = Icons.Rounded.DownloadDone,
+                    title = stringResource(R.string.downloads_folder_empty_title, folderNameOf(uiState)),
+                    description = stringResource(R.string.downloads_folder_empty_description),
+                    actionLabel = stringResource(R.string.downloads_folder_show_all),
+                    onAction = { onShowFolder(FolderView.AllFolders) },
+                )
+            }
+        } else if (uiState.sections.isEmpty()) {
+            // Something is in the folder, but the filter leaves none of it. Not the
+            // empty-collection copy (COPY_RULES §8): the downloads are there, a chip is hiding them.
+            item(key = FILTERED_EMPTY_KEY) {
+                EmptyState(
+                    icon = Icons.Rounded.DownloadDone,
+                    title = stringResource(R.string.downloads_filtered_empty_title),
+                    description = stringResource(uiState.kindFilter.emptyDescriptionResId),
+                    actionLabel = stringResource(R.string.downloads_filter_clear),
+                    onAction = { onKindFilterChange(DownloadKindFilter.ALL) },
+                )
+            }
         }
 
         uiState.sections.forEach { group ->
@@ -421,6 +514,10 @@ private fun DownloadList(
                         resources = resources,
                         unmeteredOnly = uiState.unmeteredOnly,
                         video = uiState.videoDownloads[download.episode.id],
+                        // Only while every folder is on screen; inside a folder it is the chip's word.
+                        folderName = uiState.folders.folderOf(download.episode.id)
+                            ?.takeIf { uiState.folderView == FolderView.AllFolders }
+                            ?.let { id -> uiState.folders.folders.firstOrNull { it.id == id }?.name },
                     ),
                     kinds = downloadedKinds(
                         audio = download.episode.downloadState,
@@ -436,11 +533,103 @@ private fun DownloadList(
                     onRetry = onEpisodeRetry,
                     onQueue = { onEpisodeQueue(download.episode.id) },
                     onRemove = { onEpisodeRemove(download) },
+                    onMoveToFolder = { folderUi.movingEpisodeId = download.episode.id },
                 )
             }
         }
     }
 }
+
+/**
+ * The row that says what the list is showing: which folder, and — while any episode has a video —
+ * which kind of download, one choice at a time as on a show's episode list.
+ *
+ * Scrolls sideways rather than wrapping, so at a large font size on the folded screen the row
+ * stays one row and the list under it does not jump.
+ *
+ * @param uiState the folder and filter in force, and what the folder menu lists.
+ * @param onKindFilterChange invoked with the kind chip tapped.
+ * @param onShowFolder invoked with the folder chosen.
+ * @param onNewFolder *New folder* was chosen from the folder menu.
+ * @param onManageFolders *Manage folders* was chosen from the folder menu.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun ListControls(
+    uiState: DownloadsUiState,
+    onKindFilterChange: (DownloadKindFilter) -> Unit,
+    onShowFolder: (FolderView) -> Unit,
+    onNewFolder: () -> Unit,
+    onManageFolders: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selected = uiState.kindFilter
+    val onSelect = onKindFilterChange
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(
+                horizontal = MegaPodcastPlayerTheme.spacing.screenHorizontal,
+                vertical = MegaPodcastPlayerTheme.spacing.sm,
+            ),
+        horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FolderChip(
+            view = uiState.folderView,
+            folders = uiState.folders,
+            counts = uiState.folderCounts,
+            onShowFolder = onShowFolder,
+            onNewFolder = onNewFolder,
+            onManageFolders = onManageFolders,
+        )
+
+        // The kind chips only while any episode has a video; see [DownloadsUiState.showKindFilter].
+        val kinds = if (uiState.showKindFilter) DownloadKindFilter.entries else emptyList()
+        kinds.forEach { option ->
+            val isSelected = option == selected
+            // Built here rather than inside `semantics`, which is not a composable scope; the
+            // design system's two words, as every other chip in the app announces.
+            val state = stringResource(
+                if (isSelected) {
+                    DesignSystemR.string.designsystem_chip_selected
+                } else {
+                    DesignSystemR.string.designsystem_chip_not_selected
+                },
+            )
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelect(option) },
+                label = { Text(text = stringResource(option.labelResId)) },
+                modifier = Modifier.semantics { stateDescription = state },
+            )
+        }
+    }
+}
+
+/** The label of each kind chip. */
+@get:StringRes
+private val DownloadKindFilter.labelResId: Int
+    get() = when (this) {
+        DownloadKindFilter.ALL -> R.string.downloads_filter_all
+        DownloadKindFilter.AUDIO -> R.string.downloads_filter_audio
+        DownloadKindFilter.VIDEO -> R.string.downloads_filter_video
+    }
+
+/**
+ * What would put something under a filter that matches nothing (COPY_RULES §8).
+ *
+ * [DownloadKindFilter.ALL] never matches nothing while anything is downloaded, but it gets the
+ * general sentence rather than a branch that cannot be reached.
+ */
+@get:StringRes
+private val DownloadKindFilter.emptyDescriptionResId: Int
+    get() = when (this) {
+        DownloadKindFilter.ALL -> R.string.downloads_empty_description
+        DownloadKindFilter.AUDIO -> R.string.downloads_filtered_empty_audio
+        DownloadKindFilter.VIDEO -> R.string.downloads_filtered_empty_video
+    }
 
 /**
  * The heading each section is drawn under.
@@ -490,6 +679,7 @@ private val DownloadSection.labelResId: Int
  * @param onRetry swipe handler for a failed download, asking for it again.
  * @param onQueue adds this episode to the end of the play queue.
  * @param onRemove delete-or-cancel handler.
+ * @param onMoveToFolder opens the sheet that files this download under another folder.
  * @param modifier layout modifier.
  */
 @Composable
@@ -506,6 +696,7 @@ private fun DownloadRow(
     onRetry: (String) -> Unit,
     onQueue: () -> Unit,
     onRemove: () -> Unit,
+    onMoveToFolder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val episode = download.episode
@@ -565,7 +756,16 @@ private fun DownloadRow(
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         onClick = { onRetry(episode.id) },
     ).takeIf { isFailed }
-    val revealed = listOfNotNull(downloadNow, retry, remove)
+    // Beside the row's other errands rather than on a long press, which is the reorder's. In the
+    // secondary palette: nothing leaves and nothing is fetched, the row only changes folder.
+    val move = SwipeAction(
+        icon = Icons.AutoMirrored.Rounded.DriveFileMove,
+        label = stringResource(R.string.downloads_action_move),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        onClick = onMoveToFolder,
+    )
+    val revealed = listOfNotNull(downloadNow, retry, move, remove)
 
     SwipeActionsRow(
         actions = revealed,
@@ -827,6 +1027,8 @@ private fun HousekeepingLine(
  *   this still waiting".
  * @param video the episode's video download, if any: its size joins the episode's once finished,
  *   and its progress or failure is said on the line until then.
+ * @param folderName the folder the download is filed under, said last; null to say none — for
+ *   *Downloads*, and inside a folder, where the chip already names it.
  * @return the line to show.
  */
 private fun EpisodeWithShow.metadataLine(
@@ -834,9 +1036,11 @@ private fun EpisodeWithShow.metadataLine(
     resources: Resources,
     unmeteredOnly: Boolean,
     video: VideoDownload?,
+    folderName: String? = null,
 ): String = listOfNotNull(
     audioLine(now, resources, unmeteredOnly, video),
     video?.let { videoLine(it, resources, unmeteredOnly) },
+    folderName,
 ).joinToString(resources.getString(R.string.downloads_metadata_separator))
 
 /**
@@ -954,9 +1158,42 @@ private fun DownloadsMessage.toText(resources: Resources): String = when (this) 
 
     DownloadsMessage.NothingToExport ->
         resources.getString(R.string.downloads_message_nothing_to_export)
+
+    is DownloadsMessage.MovedToFolder -> resources.getString(
+        R.string.downloads_message_moved,
+        title,
+        folderName ?: resources.getString(R.string.downloads_folder_downloads),
+    )
+
+    is DownloadsMessage.FolderDeleted -> if (deletedDownloads == 0) {
+        resources.getString(R.string.downloads_message_folder_deleted, name)
+    } else {
+        resources.getQuantityString(
+            R.plurals.downloads_message_folder_deleted_with_downloads,
+            deletedDownloads,
+            name,
+            deletedDownloads,
+        )
+    }
+}
+
+/** The name of the folder on screen, for the empty-folder title. */
+@Composable
+private fun folderNameOf(uiState: DownloadsUiState): String = when (val view = uiState.folderView) {
+    is FolderView.Folder -> uiState.folders.folders.firstOrNull { it.id == view.folderId }?.name.orEmpty()
+    else -> stringResource(R.string.downloads_folder_downloads)
 }
 
 private const val STORAGE_CARD_KEY = "storage-card"
+
+private const val LIST_CONTROLS_KEY = "list-controls"
+
+/** The id of the one folder the previews file rows under. */
+private const val PREVIEW_FOLDER_ID = "commute"
+
+private const val FOLDER_EMPTY_KEY = "folder-empty"
+
+private const val FILTERED_EMPTY_KEY = "filtered-empty"
 
 /** What the picker is asked to create for the download list. */
 private const val EXPORT_MIME_TYPE = "text/markdown"
@@ -972,7 +1209,37 @@ private val MIN_SEGMENT_WIDTH = 12.dp
 @ThemePreviews
 @FontScalePreviews
 @Composable
-internal fun DownloadsScreenPreview() {
+internal fun DownloadsScreenPreview() = DownloadsPreview(kindFilter = DownloadKindFilter.ALL)
+
+/**
+ * The same downloads narrowed to the one with a video: the chip row with *Video* chosen, and the
+ * storage card still counting everything.
+ */
+@ThemePreviews
+@Composable
+internal fun DownloadsVideoFilterPreview() = DownloadsPreview(kindFilter = DownloadKindFilter.VIDEO)
+
+/**
+ * The same downloads with one folder on screen: the folder chip names it, the list holds only what
+ * is filed there, and the storage card reads that folder's figures.
+ */
+@ThemePreviews
+@Composable
+internal fun DownloadsFolderPreview() =
+    DownloadsPreview(kindFilter = DownloadKindFilter.ALL, folderView = FolderView.Folder(PREVIEW_FOLDER_ID))
+
+/**
+ * The downloads screen over one row per download state, one of which has a video.
+ *
+ * Two of the rows are filed in a folder, *Commute*, which the row line names while every folder is
+ * shown.
+ *
+ * @param kindFilter the chip chosen; the rows are narrowed by the same functions the view model
+ *   uses.
+ * @param folderView the folder on screen.
+ */
+@Composable
+private fun DownloadsPreview(kindFilter: DownloadKindFilter, folderView: FolderView = FolderView.AllFolders) {
     // One row per state, in the order the query returns them, because the states are the whole
     // point of this screen and only a preview shows all four at once.
     //
@@ -1002,6 +1269,14 @@ internal fun DownloadsScreenPreview() {
         ),
     )
 
+    val videoDownloads = mapOf(
+        "e4" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f),
+    )
+    val folders = DownloadFolders.NONE
+        .created(id = PREVIEW_FOLDER_ID, name = "Commute")
+        .moved(listOf("e3", "e4"), PREVIEW_FOLDER_ID)
+    val inView = downloads.inFolder(folderView, folders)
+
     MegaPodcastPlayerTheme {
         DownloadsScreen(
             uiState = DownloadsUiState(
@@ -1012,10 +1287,14 @@ internal fun DownloadsScreenPreview() {
                 unmeteredOnly = true,
                 deleteAfterPlaying = true,
                 downloads = downloads,
-                sections = downloads.groupIntoSections(),
-                videoDownloads = mapOf(
-                    "e4" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f),
-                ),
+                sections = inView.filteredBy(kindFilter, videoDownloads).groupIntoSections(),
+                videoDownloads = videoDownloads,
+                kindFilter = kindFilter,
+                showKindFilter = true,
+                folders = folders,
+                folderView = folderView,
+                folderCounts = downloads.countByFolder(folders),
+                folderTotals = inView.totals(videoDownloads).takeIf { folderView != FolderView.AllFolders },
             ),
             onEpisodeClick = {},
             onEpisodeRetry = {},

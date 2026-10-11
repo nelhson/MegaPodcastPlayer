@@ -7,7 +7,8 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
@@ -20,11 +21,13 @@ import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import md.borisveriga.megapodcastplayer.core.designsystem.theme.MegaPodcastPlayerTheme
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.filteredBy
 import md.borisveriga.megapodcastplayer.core.model.groupIntoSections
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -99,6 +102,8 @@ class DownloadsScreenTest {
         deleteAfterPlaying: Boolean = false,
         videoDownloads: Map<String, VideoDownload> = emptyMap(),
         onEpisodePlayVideo: (String) -> Unit = {},
+        kindFilter: DownloadKindFilter = DownloadKindFilter.ALL,
+        onKindFilterChange: (DownloadKindFilter) -> Unit = {},
     ) {
         composeRule.setContent {
             MegaPodcastPlayerTheme {
@@ -107,7 +112,7 @@ class DownloadsScreenTest {
                         downloads = downloads,
                         // Grouped by the same function the view model uses, so the test cannot
                         // agree with a screen that disagrees with the app.
-                        sections = downloads.groupIntoSections(),
+                        sections = downloads.filteredBy(kindFilter, videoDownloads).groupIntoSections(),
                         completedCount = downloads.count {
                             it.episode.downloadState == DownloadState.COMPLETED
                         },
@@ -116,6 +121,9 @@ class DownloadsScreenTest {
                         unmeteredOnly = unmeteredOnly,
                         deleteAfterPlaying = deleteAfterPlaying,
                         videoDownloads = videoDownloads,
+                        kindFilter = kindFilter,
+                        // As the view model decides it: the chips exist while any video does.
+                        showKindFilter = videoDownloads.isNotEmpty(),
                         isLoading = false,
                     ),
                     onEpisodeClick = onEpisodeClick,
@@ -131,6 +139,7 @@ class DownloadsScreenTest {
                     onExportList = onExportList,
                     scrollToTopSignal = scrollToTopSignal,
                     onEpisodePlayVideo = onEpisodePlayVideo,
+                    onKindFilterChange = onKindFilterChange,
                 )
             }
         }
@@ -274,7 +283,8 @@ class DownloadsScreenTest {
     fun `the tab name stays in the bar once the list is scrolled`() {
         setScreen(List(size = 30) { index -> download("e$index") })
 
-        composeRule.onNode(hasScrollAction()).performTouchInput { swipeUp() }
+        // The list, not the chip row above it, which scrolls sideways.
+        composeRule.onNode(hasScrollToIndexAction()).performTouchInput { swipeUp() }
 
         composeRule.onNodeWithText("Downloads").assertIsDisplayed()
     }
@@ -689,6 +699,46 @@ class DownloadsScreenTest {
         composeRule.onNodeWithContentDescription("Export download list").performClick()
 
         assertTrue(exported)
+    }
+
+    @Test
+    fun `no kind chips are drawn while no episode has a video`() {
+        setScreen(downloads = listOf(download("a")))
+
+        // "All" rather than "Audio": a finished row's own badge already says "Audio".
+        composeRule.onNodeWithText("All").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the kind chips say which is chosen and report a tap`() {
+        var chosen: DownloadKindFilter? = null
+        setScreen(
+            downloads = listOf(download("a"), download("b")),
+            videoDownloads = mapOf("b" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+            onKindFilterChange = { chosen = it },
+        )
+
+        composeRule.onNodeWithText("All").assertIsSelected()
+        composeRule.onNodeWithText("Video").performClick()
+
+        assertEquals(DownloadKindFilter.VIDEO, chosen)
+    }
+
+    @Test
+    fun `a filter that matches nothing says so and offers the way back`() {
+        var chosen: DownloadKindFilter? = null
+        setScreen(
+            downloads = listOf(download("a")),
+            videoDownloads = mapOf("a" to VideoDownload(VideoQuality(720), DownloadState.COMPLETED, 100f)),
+            kindFilter = DownloadKindFilter.AUDIO,
+            onKindFilterChange = { chosen = it },
+        )
+
+        composeRule.onNodeWithText("No downloads match this filter").assertIsDisplayed()
+        composeRule.onNodeWithText("Nothing downloaded").assertDoesNotExist()
+        composeRule.onNodeWithText("Clear filter").performClick()
+
+        assertEquals(DownloadKindFilter.ALL, chosen)
     }
 
     @Test

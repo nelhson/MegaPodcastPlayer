@@ -98,6 +98,8 @@ import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
  *
  * @param onOpenPlayer invoked once a moment's episode has been handed to the player, so the shell
  *   can open the player on it — as it was last used, since a moment asks for neither face.
+ * @param onOpenEmbedded opens YouTube's own player on an episode at a position, for a moment on a
+ *   YouTube episode under the official source; the app's player is not asked for those.
  * @param onOpenSettings opens settings; the gear is on every top-level bar (NAV-5).
  * @param scrollToTopSignal how many times this tab has been re-tapped; a change puts the list back
  *   at the top (NAV-4).
@@ -107,6 +109,7 @@ import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
 @Composable
 fun MomentsRoute(
     onOpenPlayer: (episodeId: String, openAs: OpenPlayerAs) -> Unit,
+    onOpenEmbedded: (episodeId: String, startMs: Long) -> Unit,
     onOpenSettings: () -> Unit,
     scrollToTopSignal: Int,
     modifier: Modifier = Modifier,
@@ -121,7 +124,9 @@ fun MomentsRoute(
     MomentsScreen(
         uiState = uiState,
         onPlay = { moment ->
-            viewModel.play(moment) { onOpenPlayer(moment.moment.episodeId, OpenPlayerAs.REMEMBERED) }
+            viewModel.play(moment, onOpenEmbedded = onOpenEmbedded) {
+                onOpenPlayer(moment.moment.episodeId, OpenPlayerAs.REMEMBERED)
+            }
         },
         onEdit = viewModel::edit,
         onDelete = viewModel::delete,

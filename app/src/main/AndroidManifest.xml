@@ -25,9 +25,10 @@
       Playback reaches hosts we do not choose, some of which are still cleartext-only; see
       network_security_config.xml for why that is allowed and what limits it.
 
-      Backup is on deliberately: a re-installed or replaced phone should come back with the user's
-      subscriptions and listening positions. What travels and what does not is decided in
-      data_extraction_rules.xml, which is the file to read before changing allowBackup.
+      No cloud backup, deliberately: nothing the user listens to or writes goes to Google Drive. A
+      direct transfer to a new phone still carries the library, because allowBackup does not govern
+      that on Android 12+. Both are explained in data_extraction_rules.xml, which is the file to
+      read before changing allowBackup.
 
       supportsRtl is false, and that is scope rather than oversight (DS-8, D-5). It used to be true,
       which was the worst of the three states available: a claim SwipeActionsRow does not honour.
@@ -41,7 +42,7 @@
     -->
     <application
         android:name=".MegaPodcastPlayerApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

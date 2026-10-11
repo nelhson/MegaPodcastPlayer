@@ -7,6 +7,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
+import io.mockk.every
 import io.mockk.mockk
 import java.time.Clock
 import java.time.Instant
@@ -17,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -27,12 +29,16 @@ import md.borisveriga.megapodcastplayer.core.database.model.PodcastEntity
 import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloadStatus
 import md.borisveriga.megapodcastplayer.core.media.download.EpisodeDownloader
+import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
+import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -56,6 +62,7 @@ class MediaDownloadRepositoryTest {
     private lateinit var database: MegaPodcastPlayerDatabase
     private lateinit var preferences: UserPreferencesDataSource
     private lateinit var downloader: EpisodeDownloader
+    private lateinit var folders: DefaultDownloadFolderRepository
     private lateinit var repository: MediaDownloadRepository
 
     /** Stands in for the application scope the repository restores download requirements on. */
@@ -99,10 +106,14 @@ class MediaDownloadRepositoryTest {
 
         preferences = UserPreferencesDataSource(InMemoryDataStore())
         downloader = mockk(relaxed = true)
+        // The real folders over the same preferences: where a download is filed is part of what is
+        // under test, and a mock would only say that a call was made.
+        folders = DefaultDownloadFolderRepository(preferences)
         repository = MediaDownloadRepository(
             episodeDao = database.episodeDao(),
             userPreferences = preferences,
             downloader = downloader,
+            folders = folders,
             clock = Clock.fixed(Instant.parse("2026-09-16T12:00:00Z"), ZoneOffset.UTC),
             ioDispatcher = UnconfinedTestDispatcher(),
             // The scope the "download now" rule-restore waits on. A test scope of its own rather
@@ -447,6 +458,74 @@ class MediaDownloadRepositoryTest {
         coVerify(exactly = 0) { downloader.downloadVideo(any(), any(), any(), any()) }
     }
 
+    // --- The official YouTube source ----------------------------------------
+
+    @Test
+    fun `under the official source a youtube episode is not downloaded`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y")))
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        assertFalse(repository.download("y"))
+        assertFalse(repository.downloadNow("y"))
+        assertFalse(repository.downloadVideo("y", VideoQuality(720)))
+
+        coVerify(exactly = 0) { downloader.download(any(), any(), any()) }
+        coVerify(exactly = 0) { downloader.downloadVideo(any(), any(), any(), any()) }
+        assertEquals(DownloadState.NOT_DOWNLOADED, database.episodeDao().getById("y")?.downloadState)
+    }
+
+    @Test
+    fun `under the official source an rss episode downloads as ever`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        assertTrue(repository.download("a"))
+
+        coVerify { downloader.download("a", "https://cdn.example.com/a.mp3", true) }
+    }
+
+    @Test
+    fun `under the official source auto-download skips youtube and keeps going`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y"), episode("a", 1_000L)))
+        preferences.setAutoDownloadNewEpisodes(true)
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        repository.onEpisodesDiscovered(podcast.id, listOf("y", "a"))
+
+        coVerify(exactly = 0) { downloader.download("y", any(), any()) }
+        coVerify { downloader.download("a", any(), false) }
+        // Skipped means untouched: not marked queued for a download that will never be asked for.
+        assertEquals(DownloadState.NOT_DOWNLOADED, database.episodeDao().getById("y")?.downloadState)
+    }
+
+    @Test
+    fun `under the official source youtube downloads leave every list and come back`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y"), episode("a", 1_000L)))
+        markDownloaded("y", "a")
+
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        assertEquals(listOf("a"), repository.observeDownloadedEpisodes().first().map { it.id })
+        assertEquals(listOf("a"), repository.observeDownloads().first().map { it.episode.id })
+        // The row is as it was: hidden, not deleted.
+        assertEquals(DownloadState.COMPLETED, database.episodeDao().getById("y")?.downloadState)
+
+        preferences.setYouTubeSource(YouTubeSource.EXTRACTOR)
+
+        assertEquals(setOf("a", "y"), repository.observeDownloadedEpisodes().first().mapTo(mutableSetOf()) { it.id })
+    }
+
+    @Test
+    fun `under the official source there are no video downloads to show`() = runTest {
+        val video = VideoDownload(quality = VideoQuality(720), state = DownloadState.COMPLETED, percent = 100f)
+        every { downloader.videoDownloads } returns flowOf(mapOf("y" to video))
+        assertEquals(1, repository.observeVideoDownloads().first().size)
+
+        preferences.setYouTubeSource(YouTubeSource.OFFICIAL)
+
+        assertTrue(repository.observeVideoDownloads().first().isEmpty())
+    }
+
     @Test
     fun `deleting a video keeps the audio`() = runTest {
         repository.removeVideoDownload("y")
@@ -454,6 +533,133 @@ class MediaDownloadRepositoryTest {
         coVerify { downloader.removeVideo("y", true) }
         coVerify(exactly = 0) { downloader.remove(any(), any()) }
     }
+
+    @Test
+    fun `a download nobody filed goes to the default folder`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        val commute = createFolder("Commute")
+        folders.setDefaultFolder(commute)
+
+        repository.download("a")
+
+        assertEquals(commute, folderOf("a"))
+    }
+
+    @Test
+    fun `a download filed on purpose goes where it was told`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        folders.setDefaultFolder(createFolder("Commute"))
+        val lectures = createFolder("Lectures")
+
+        repository.download("a", DownloadDestination.Folder(lectures))
+
+        assertEquals(lectures, folderOf("a"))
+    }
+
+    @Test
+    fun `an episode that is not stored is filed nowhere`() = runTest {
+        folders.setDefaultFolder(createFolder("Commute"))
+
+        assertFalse(repository.download("missing"))
+
+        assertNull(folderOf("missing"))
+    }
+
+    @Test
+    fun `a video joining audio on the device stays in the audio's folder`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y")))
+        markDownloaded("y")
+        val lectures = createFolder("Lectures")
+        folders.moveToFolder(listOf("y"), lectures)
+        folders.setDefaultFolder(createFolder("Commute"))
+
+        repository.downloadVideo("y", VideoQuality(720))
+
+        assertEquals(lectures, folderOf("y"))
+    }
+
+    @Test
+    fun `a video filed on purpose moves its audio with it`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(youTubeEpisode("y")))
+        markDownloaded("y")
+        val lectures = createFolder("Lectures")
+
+        repository.downloadVideo("y", VideoQuality(720), DownloadDestination.Folder(lectures))
+
+        assertEquals(lectures, folderOf("y"))
+    }
+
+    @Test
+    fun `auto-downloaded episodes go to the default folder`() = runTest {
+        preferences.setAutoDownloadNewEpisodes(true)
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        val commute = createFolder("Commute")
+        folders.setDefaultFolder(commute)
+
+        repository.onEpisodesDiscovered(podcast.id, listOf("a"))
+
+        assertEquals(commute, folderOf("a"))
+    }
+
+    @Test
+    fun `deleting a download takes it out of its folder`() = runTest {
+        val commute = createFolder("Commute")
+        folders.moveToFolder(listOf("a", "b"), commute)
+
+        repository.removeDownload("a")
+
+        assertNull(folderOf("a"))
+        assertEquals(commute, folderOf("b"))
+    }
+
+    @Test
+    fun `a removal reported by media3 takes the download out of its folder`() = runTest {
+        // How delete-after-playing ends: the player asks Media3, and only the event comes back here.
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        folders.moveToFolder(listOf("a"), createFolder("Commute"))
+
+        repository.recordDownloadStatus(EpisodeDownloadStatus.notDownloaded("a"))
+
+        assertNull(folderOf("a"))
+    }
+
+    @Test
+    fun `progress on a download leaves it in its folder`() = runTest {
+        database.episodeDao().upsertFromFeed(listOf(episode("a", 1_000L)))
+        val commute = createFolder("Commute")
+        folders.moveToFolder(listOf("a"), commute)
+
+        repository.recordDownloadStatus(
+            EpisodeDownloadStatus(
+                episodeId = "a",
+                state = DownloadState.DOWNLOADING,
+                downloadedBytes = 1L,
+                percent = 1f,
+            ),
+        )
+
+        assertEquals(commute, folderOf("a"))
+    }
+
+    @Test
+    fun `removing all downloads empties every folder and keeps the folders`() = runTest {
+        val commute = createFolder("Commute")
+        folders.moveToFolder(listOf("a", "b"), commute)
+
+        repository.removeAllDownloads()
+
+        val stored = folders.observeFolders().first()
+        assertTrue(stored.membership.isEmpty())
+        assertEquals(listOf(commute), stored.folders.map { it.id })
+    }
+
+    /** Makes a folder and returns its id. */
+    private suspend fun createFolder(name: String): String =
+        (folders.createFolder(name) as FolderEdit.Done).folder.id
+
+    /** The folder an episode is filed under now; null for Downloads. */
+    private suspend fun folderOf(episodeId: String): String? =
+        folders.observeFolders().first().folderOf(episodeId)
 
     private companion object {
         /** The YouTube video behind [youTubeEpisode]. */

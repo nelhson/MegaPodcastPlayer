@@ -12,18 +12,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.model.MomentGroup
 import md.borisveriga.megapodcastplayer.core.model.MomentShow
 import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
 import md.borisveriga.megapodcastplayer.core.model.MomentsFilter
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
 import md.borisveriga.megapodcastplayer.core.model.groupedByShow
 import md.borisveriga.megapodcastplayer.core.model.narrowedBy
 import md.borisveriga.megapodcastplayer.core.model.showsWithMoments
+import md.borisveriga.megapodcastplayer.core.model.youTubeVideoIdOrNull
 
 /**
  * Everything the moments screen renders.
@@ -114,6 +118,7 @@ sealed interface MomentsMessage {
  *
  * @property momentsRepository the moments themselves, and the document they export to.
  * @property episodePlayer plays an episode from the second a moment names.
+ * @property podcastRepository read only for where YouTube shows are played; see [play].
  * @property fileStore writes the export to the document the user picked. Shared with the backup
  *   because a Storage Access Framework write is the same job whatever is being written.
  * @property clock names the exported file after the day it was written.
@@ -122,6 +127,7 @@ sealed interface MomentsMessage {
 class MomentsViewModel @Inject constructor(
     private val momentsRepository: MomentsRepository,
     private val episodePlayer: EpisodePlayer,
+    private val podcastRepository: PodcastRepository,
     private val fileStore: BackupFileStore,
     private val clock: Clock,
 ) : ViewModel() {
@@ -205,17 +211,36 @@ class MomentsViewModel @Inject constructor(
      * remembering was said, so starting exactly on it starts after it. See
      * [md.borisveriga.megapodcastplayer.core.model.Moment.resumePositionMs].
      *
+     * A moment on a YouTube episode under the official source is the one case the app's player is
+     * not asked: that source plays YouTube in YouTube's own player, so the caller is handed the
+     * episode and the second instead, to open that player on.
+     *
      * @param moment the moment to play.
+     * @param onOpenEmbedded invoked instead of playing when the moment's episode must open in
+     *   YouTube's own player, with the episode and the second to start from.
      * @param onPlaying invoked once playback has been handed to the player, so the caller can open
      *   the player. Not called when the episode has gone.
      */
-    fun play(moment: MomentWithEpisode, onPlaying: () -> Unit = {}) {
+    fun play(
+        moment: MomentWithEpisode,
+        onOpenEmbedded: (episodeId: String, startMs: Long) -> Unit = { _, _ -> },
+        onPlaying: () -> Unit = {},
+    ) {
         viewModelScope.launch {
-            if (episodePlayer.playFrom(moment.moment.episodeId, moment.moment.resumePositionMs)) {
+            val episodeId = moment.moment.episodeId
+            val startMs = moment.moment.resumePositionMs
+            if (moment.opensEmbedded()) {
+                onOpenEmbedded(episodeId, startMs)
+            } else if (episodePlayer.playFrom(episodeId, startMs)) {
                 onPlaying()
             }
         }
     }
+
+    /** Whether this moment's episode plays in YouTube's own player rather than the app's. */
+    private suspend fun MomentWithEpisode.opensEmbedded(): Boolean =
+        youTubeVideoIdOrNull(audioUrl) != null &&
+            podcastRepository.observeYouTubeSource().first() == YouTubeSource.OFFICIAL
 
     /**
      * Opens a moment's note for editing.

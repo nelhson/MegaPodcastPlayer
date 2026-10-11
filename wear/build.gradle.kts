@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.megapodcastplayer.android.application.wear)
-    alias(libs.plugins.megapodcastplayer.android.crashlytics)
     alias(libs.plugins.megapodcastplayer.android.hilt)
 }
 
@@ -34,11 +33,6 @@ dependencies {
     // item the app reads, so it does not need the phone to be awake to draw itself. There was a
     // tile here too; the watch is one screen now, and the tile was a second, smaller copy of it.
     implementation(libs.androidx.wear.watchface.complications.data.source)
-    // Unused by the watch: it draws no remote imagery at all — the now-playing header is a generated
-    // waveform in the show's own colour. Kept because dropping it shifts the resolved Kotlin stdlib
-    // version and would require regenerating gradle/verification-metadata.xml; that cleanup belongs
-    // in its own commit, where the diff to that file can be reviewed on its own terms.
-    implementation(libs.coil.compose)
 
     // The screen is rendered in JVM tests through Robolectric rather than on a device: the layout
     // bugs worth catching here are about what a round screen clips, and Robolectric renders that

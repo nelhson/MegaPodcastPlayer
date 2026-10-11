@@ -46,6 +46,28 @@ interface EpisodeDao {
     )
     fun observeByPodcastOrdered(podcastId: String): Flow<List<EpisodeEntity>>
 
+    /**
+     * Observes the first [limit] of one show's episodes in the user's own order.
+     *
+     * [observeByPodcastOrdered] cut short, for a YouTube show read under the official source, which
+     * may show only the newest few videos. The cut is made here rather than in the repository so
+     * that a show with hundreds of stored rows does not read them all to show ten. The rows beyond
+     * the limit are untouched — hidden, not deleted — and come back the moment the uncut query is
+     * used again.
+     *
+     * @param podcastId the show.
+     * @param limit how many rows to return, counted from the top of the order.
+     */
+    @Query(
+        """
+        SELECT * FROM episodes
+        WHERE podcast_id = :podcastId
+        ORDER BY sort_order ASC
+        LIMIT :limit
+        """,
+    )
+    fun observeByPodcastOrderedLimited(podcastId: String, limit: Int): Flow<List<EpisodeEntity>>
+
     /** Observes everything available offline — the "Downloaded" tab and the watch's payload. */
     @Query(
         """

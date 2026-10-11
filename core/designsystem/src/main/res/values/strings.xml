@@ -72,6 +72,16 @@
         The status line under the title says what the phone holds of the video now. A pick is not a
         download until Download is pressed, so the lines say "pick", not "tap".
     -->
+    <!--
+        The "Save to" picker beside a download button. A folder is a label on a download, not a
+        place on the phone, so nothing here names a path. "Downloads" is the built-in folder every
+        download is in until it is filed elsewhere; it shares its name with the Downloads tab.
+    -->
+    <string name="designsystem_folder_picker_label">Save to</string>
+    <string name="designsystem_folder_downloads">Downloads</string>
+    <!-- Spoken for the chip, whose label is only a folder's name. %1$s is the folder chosen. -->
+    <string name="designsystem_folder_picker_description">Save to %1$s. Choose a folder</string>
+    <string name="designsystem_folder_current">Current folder</string>
     <string name="designsystem_video_download_title">Download video</string>
     <string name="designsystem_video_download_description">Keeps the video on this phone to watch without a connection. The audio downloads with it.</string>
     <string name="designsystem_video_download_queued">Waiting to download %1$s.</string>

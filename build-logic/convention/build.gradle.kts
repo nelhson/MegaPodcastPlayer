@@ -17,8 +17,6 @@ dependencies {
     compileOnly(libs.compose.gradlePlugin)
     compileOnly(libs.ksp.gradlePlugin)
     compileOnly(libs.detekt.gradlePlugin)
-    compileOnly(libs.google.services.gradlePlugin)
-    compileOnly(libs.firebase.crashlytics.gradlePlugin)
 }
 
 gradlePlugin {
@@ -46,10 +44,6 @@ gradlePlugin {
         register("androidFeature") {
             id = "megapodcastplayer.android.feature"
             implementationClass = "AndroidFeatureConventionPlugin"
-        }
-        register("androidCrashlytics") {
-            id = "megapodcastplayer.android.crashlytics"
-            implementationClass = "AndroidCrashlyticsConventionPlugin"
         }
         register("androidHilt") {
             id = "megapodcastplayer.android.hilt"

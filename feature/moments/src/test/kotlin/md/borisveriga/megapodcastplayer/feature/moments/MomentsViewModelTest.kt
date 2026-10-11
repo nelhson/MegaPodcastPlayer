@@ -15,9 +15,12 @@ import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.data.backup.BackupFileStore
 import md.borisveriga.megapodcastplayer.core.data.playback.EpisodePlayer
 import md.borisveriga.megapodcastplayer.core.data.repository.MomentsRepository
+import md.borisveriga.megapodcastplayer.core.data.repository.PodcastRepository
 import md.borisveriga.megapodcastplayer.core.model.MOMENT_PRE_ROLL_MS
 import md.borisveriga.megapodcastplayer.core.model.Moment
 import md.borisveriga.megapodcastplayer.core.model.MomentWithEpisode
+import md.borisveriga.megapodcastplayer.core.model.YouTubeSource
+import md.borisveriga.megapodcastplayer.core.model.youTubeAudioSentinel
 import md.borisveriga.megapodcastplayer.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -42,6 +45,8 @@ class MomentsViewModelTest {
 
     private val repository = mockk<MomentsRepository>(relaxed = true)
     private val episodePlayer = mockk<EpisodePlayer>(relaxed = true)
+    private val podcastRepository = mockk<PodcastRepository>(relaxed = true)
+    private val youTubeSource = MutableStateFlow(YouTubeSource.DEFAULT)
     private val fileStore = mockk<BackupFileStore>(relaxed = true)
     private val uri = mockk<Uri>(relaxed = true)
 
@@ -78,9 +83,11 @@ class MomentsViewModelTest {
     @Before
     fun setUp() {
         every { repository.observeMoments() } returns moments
+        every { podcastRepository.observeYouTubeSource() } returns youTubeSource
         viewModel = MomentsViewModel(
             momentsRepository = repository,
             episodePlayer = episodePlayer,
+            podcastRepository = podcastRepository,
             fileStore = fileStore,
             clock = Clock.fixed(Instant.parse("2026-09-07T10:00:00Z"), ZoneOffset.UTC),
         )
@@ -127,6 +134,33 @@ class MomentsViewModelTest {
         viewModel.play(entry(id = 1L, positionMs = 743_000L)) { opened = true }
 
         assertEquals(true, opened)
+    }
+
+    @Test
+    fun `a moment on a youtube episode under the official source opens youtube's own player`() = runTest {
+        youTubeSource.value = YouTubeSource.OFFICIAL
+        val moment = entry(id = 1L, positionMs = 743_000L).copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8"))
+        var embedded: Pair<String, Long>? = null
+        var opened = false
+
+        viewModel.play(moment, onOpenEmbedded = { id, startMs -> embedded = id to startMs }) { opened = true }
+
+        // The embed is handed the pre-rolled second, as the app's player would be; the app's
+        // player itself is never asked.
+        assertEquals("episode-1" to (743_000L - MOMENT_PRE_ROLL_MS), embedded)
+        assertEquals(false, opened)
+        coVerify(exactly = 0) { episodePlayer.playFrom(any(), any()) }
+    }
+
+    @Test
+    fun `a moment on a youtube episode under the extractor plays as any other`() = runTest {
+        val moment = entry(id = 1L, positionMs = 743_000L).copy(audioUrl = youTubeAudioSentinel("niTJ2221aS8"))
+        var embedded = false
+
+        viewModel.play(moment, onOpenEmbedded = { _, _ -> embedded = true })
+
+        assertEquals(false, embedded)
+        coVerify(exactly = 1) { episodePlayer.playFrom("episode-1", 743_000L - MOMENT_PRE_ROLL_MS) }
     }
 
     @Test

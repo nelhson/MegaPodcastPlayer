@@ -72,10 +72,6 @@ That is why it is a build type with its own name rather than the flag below — 
 rule for debug APKs: install it on your own devices, hand it to nobody. The keystore guard below
 leaves it alone on purpose; that guard is for the artifact that *claims* to be a release.
 
-Crashlytics uploads the `wrist` mapping file when the build is made, because it is the build whose
-crashes actually arrive and an unmapped R8 stack trace is unreadable. The build type key on each
-report tells `wrist` from `release`.
-
 ## Sideloading without a key
 
 For a local install where the signature does not matter:

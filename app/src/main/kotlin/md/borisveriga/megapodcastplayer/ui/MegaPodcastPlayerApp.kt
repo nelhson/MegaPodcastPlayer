@@ -36,6 +36,7 @@ import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetScaffold
 import md.borisveriga.megapodcastplayer.feature.player.PlayerSheetState
 import md.borisveriga.megapodcastplayer.feature.player.PlayerViewModel
 import md.borisveriga.megapodcastplayer.feature.player.QueueRoute
+import md.borisveriga.megapodcastplayer.feature.player.embedded.EmbeddedVideoRoute
 import md.borisveriga.megapodcastplayer.feature.player.rememberPlayerSheetState
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoRoute
 import md.borisveriga.megapodcastplayer.feature.player.video.VideoViewModel
@@ -120,7 +121,11 @@ fun MegaPodcastPlayerApp(
     // video, and drew the bar, with a picture of its own, under the screen.
     var wasOnVideo by rememberSaveable { mutableStateOf(false) }
     val onVideo = resolveOnVideo(
-        known = currentDestination?.hasRoute(Route.Video::class),
+        // The embedded player counts too: it is not the app's player, but it is a picture that
+        // wants the whole window, and the bar under it would be a second player on the screen.
+        known = currentDestination?.let {
+            it.hasRoute(Route.Video::class) || it.hasRoute(Route.EmbeddedVideo::class)
+        },
         remembered = wasOnVideo,
     )
     SideEffect { if (currentDestination != null) wasOnVideo = onVideo }
@@ -173,17 +178,24 @@ fun MegaPodcastPlayerApp(
     }
     val openPlayerNow: suspend (String?, OpenPlayerAs) -> Unit = { episodeId, openAs ->
         if (openAs == OpenPlayerAs.AUDIO) becomeAudio()
-        when (playerViewModel.faceFor(episodeId, openAs)) {
-            PlayerMode.VIDEO -> {
-                playerViewModel.setPlayerMode(PlayerMode.VIDEO)
-                scope.launch { playerSheetState.collapse() }
-                navController.navigate(Route.Video) { launchSingleTop = true }
+        // The one ask that is not for the app's player: YouTube's own, on a screen of its own,
+        // which the show page asks for under the official source. The player's face and mode are
+        // left exactly as they are; see Route.EmbeddedVideo.
+        if (openAs == OpenPlayerAs.EMBEDDED) {
+            navController.navigate(Route.EmbeddedVideo(requireNotNull(episodeId))) { launchSingleTop = true }
+        } else {
+            when (playerViewModel.faceFor(episodeId, openAs)) {
+                PlayerMode.VIDEO -> {
+                    playerViewModel.setPlayerMode(PlayerMode.VIDEO)
+                    scope.launch { playerSheetState.collapse() }
+                    navController.navigate(Route.Video) { launchSingleTop = true }
+                }
+
+                PlayerMode.AUDIO -> scope.launch { playerSheetState.expand() }
+
+                // A picture was asked for and the player never loaded the episode: nothing to open.
+                null -> Unit
             }
-
-            PlayerMode.AUDIO -> scope.launch { playerSheetState.expand() }
-
-            // A picture was asked for and the player never loaded the episode: nothing to open.
-            null -> Unit
         }
     }
     // Undispatched, so that an ask for sound has told the picture and the mode before this
@@ -364,6 +376,13 @@ fun MegaPodcastPlayerApp(
                 composable<Route.Moments> {
                     MomentsRoute(
                         onOpenPlayer = openPlayer,
+                        // The one caller with a second to name: the embed starts where the moment
+                        // was marked, which `openPlayer` has no room to say.
+                        onOpenEmbedded = { episodeId, startMs ->
+                            navController.navigate(Route.EmbeddedVideo(episodeId, startMs)) {
+                                launchSingleTop = true
+                            }
+                        },
                         onOpenSettings = { navController.navigate(Route.Settings) },
                         scrollToTopSignal = reTapCount,
                     )
@@ -390,6 +409,14 @@ fun MegaPodcastPlayerApp(
                             }
                         },
                         viewModel = videoViewModel,
+                    )
+                }
+
+                composable<Route.EmbeddedVideo> {
+                    // Popped the same way the video screen is, and for the same reason: a second
+                    // tap while the screen animates out must find nothing left to pop.
+                    EmbeddedVideoRoute(
+                        onBack = { navController.popBackStack<Route.EmbeddedVideo>(inclusive = true) },
                     )
                 }
             }

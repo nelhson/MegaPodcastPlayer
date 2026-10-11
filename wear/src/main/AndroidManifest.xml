@@ -3,7 +3,12 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      No INTERNET permission, deliberately. The watch makes no network request of its own: every
+      byte it shows arrives from the phone over the Data Layer, which Play services carries, and it
+      draws no remote imagery. Without the permission a request could not be added by accident —
+      the socket would fail — and anything a library would like to send home stays on the wrist.
+    -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Keeps playback controls reachable from the watch face via an OngoingActivity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

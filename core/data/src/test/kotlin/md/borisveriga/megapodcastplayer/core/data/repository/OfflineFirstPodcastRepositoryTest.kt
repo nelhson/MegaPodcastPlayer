@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.common.crash.CrashReporter
 import md.borisveriga.megapodcastplayer.core.database.MegaPodcastPlayerDatabase
+import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Podcast
 import md.borisveriga.megapodcastplayer.core.model.PodcastSearchResult
@@ -31,6 +32,7 @@ import md.borisveriga.megapodcastplayer.core.network.rss.FeedChannel
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedFetchResult
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedItem
 import md.borisveriga.megapodcastplayer.core.network.rss.FeedRemoteDataSource
+import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
 import md.borisveriga.megapodcastplayer.core.youtube.YouTubePlaylistFetcher
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -60,6 +62,8 @@ class OfflineFirstPodcastRepositoryTest {
     private lateinit var itunes: ItunesRemoteDataSource
     private lateinit var feeds: FeedRemoteDataSource
     private lateinit var youTubePlaylists: YouTubePlaylistFetcher
+    private lateinit var officialPlaylists: YouTubePlaylistFetcher
+    private lateinit var preferences: UserPreferencesDataSource
     private lateinit var crashReporter: CrashReporter
     private lateinit var repository: OfflineFirstPodcastRepository
 
@@ -138,21 +142,11 @@ class OfflineFirstPodcastRepositoryTest {
         itunes = mockk()
         feeds = mockk()
         youTubePlaylists = mockk()
+        officialPlaylists = mockk()
+        preferences = UserPreferencesDataSource(InMemoryPreferencesDataStore())
         // Relaxed: most tests here do not care that a failure was reported, only the one that does.
         crashReporter = mockk(relaxed = true)
-        repository = OfflineFirstPodcastRepository(
-            podcastDao = database.podcastDao(),
-            episodeDao = database.episodeDao(),
-            itunes = itunes,
-            feeds = feeds,
-            youTubePlaylists = youTubePlaylists,
-            // Relaxed: what a refresh does with the ids it discovers is MediaDownloadRepository's
-            // business, and is tested there.
-            autoDownloadScheduler = mockk(relaxed = true),
-            clock = clock,
-            crashReporter = crashReporter,
-            ioDispatcher = UnconfinedTestDispatcher(),
-        )
+        repository = newRepository(clock)
     }
 
     @After
@@ -342,7 +336,6 @@ class OfflineFirstPodcastRepositoryTest {
         // The run itself survives — that is covered above. What is asserted here is that the
         // failure left a trace: `refreshAll` returns a summary the caller may well ignore, so
         // without this a show that has stopped updating is invisible.
-        verify { crashReporter.setKey("feedUrl", podlodkaFeedUrl) }
         verify { crashReporter.recordNonFatal("Podcast refresh failed", failure) }
     }
 
@@ -736,14 +729,26 @@ class OfflineFirstPodcastRepositoryTest {
      * instance rather than by mutating one. The database is shared, so the show added through
      * [repository] is already there with its recorded fetch time.
      */
-    private fun repositoryMinutesLater(minutes: Long) = OfflineFirstPodcastRepository(
+    private fun repositoryMinutesLater(minutes: Long) =
+        newRepository(Clock.fixed(clock.instant().plus(Duration.ofMinutes(minutes)), ZoneOffset.UTC))
+
+    /**
+     * A repository over the test's database and stubs, telling the time by [clock].
+     *
+     * @param clock what the repository stamps refreshes with.
+     */
+    private fun newRepository(clock: Clock) = OfflineFirstPodcastRepository(
         podcastDao = database.podcastDao(),
         episodeDao = database.episodeDao(),
         itunes = itunes,
         feeds = feeds,
-        youTubePlaylists = youTubePlaylists,
+        extractorPlaylists = youTubePlaylists,
+        officialPlaylists = officialPlaylists,
+        userPreferences = preferences,
+        // Relaxed: what a refresh does with the ids it discovers is MediaDownloadRepository's
+        // business, and is tested there.
         autoDownloadScheduler = mockk(relaxed = true),
-        clock = Clock.fixed(clock.instant().plus(Duration.ofMinutes(minutes)), ZoneOffset.UTC),
+        clock = clock,
         crashReporter = crashReporter,
         ioDispatcher = UnconfinedTestDispatcher(),
     )
