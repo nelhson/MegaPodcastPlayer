@@ -25,6 +25,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadState
 import md.borisveriga.megapodcastplayer.core.model.Episode
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
+import md.borisveriga.megapodcastplayer.core.model.FolderView
 import md.borisveriga.megapodcastplayer.core.model.VideoDownload
 import md.borisveriga.megapodcastplayer.core.model.VideoQuality
 import md.borisveriga.megapodcastplayer.core.testing.InMemoryPreferencesDataStore
@@ -734,6 +735,48 @@ class DownloadsViewModelTest {
         }
 
         coVerify { downloadRepository.reorderDownloads(listOf("c", "b", "a")) }
+    }
+
+    @Test
+    fun `the kind filter is remembered by the next view model over the same store`() = runTest {
+        videoDownloads.value = mapOf("a" to video())
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.VIDEO)
+            assertEquals(DownloadKindFilter.VIDEO, expectMostRecentItem().kindFilter)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // What leaving the screen and coming back does: a fresh view model, the same preferences.
+        val returned = DownloadsViewModel(
+            downloadRepository = downloadRepository,
+            folderRepository = folders,
+            episodePlayer = episodePlayer,
+            fileStore = fileStore,
+            clock = Clock.fixed(Instant.parse("2026-09-16T10:00:00Z"), ZoneOffset.UTC),
+        )
+        returned.uiState.test {
+            assertEquals(DownloadKindFilter.VIDEO, expectMostRecentItem().kindFilter)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `choosing a folder keeps the kind that was chosen`() = runTest {
+        videoDownloads.value = mapOf("a" to video())
+
+        viewModel.uiState.test {
+            awaitItem()
+            viewModel.setKindFilter(DownloadKindFilter.VIDEO)
+            expectMostRecentItem()
+            viewModel.showFolder(FolderView.Downloads)
+
+            val state = expectMostRecentItem()
+            assertEquals(FolderView.Downloads, state.folderView)
+            assertEquals(DownloadKindFilter.VIDEO, state.kindFilter)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     /** A finished video download; only its presence and size matter to the filter. */

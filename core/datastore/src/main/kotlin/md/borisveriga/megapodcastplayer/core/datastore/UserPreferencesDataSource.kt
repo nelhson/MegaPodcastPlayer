@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.map
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadFoldersCodec
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
+import md.borisveriga.megapodcastplayer.core.model.DownloadsView
+import md.borisveriga.megapodcastplayer.core.model.FolderViewCodec
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.LibrarySort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
@@ -469,6 +472,34 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Observes how the downloads screen is narrowed: the folder and the kind of download it shows.
+     *
+     * Two keys, read together: the folder is a string of [FolderViewCodec]'s and the kind is an
+     * enum name, each falling back to the widest view when absent or unknown. Emits only on a
+     * change, for the reason [downloadFolders] does.
+     */
+    val downloadsView: Flow<DownloadsView> = dataStore.data.map { preferences ->
+        DownloadsView(
+            kind = preferences[Keys.DOWNLOADS_KIND_FILTER]
+                ?.let { stored -> DownloadKindFilter.entries.firstOrNull { it.name == stored } }
+                ?: DownloadKindFilter.ALL,
+            folder = FolderViewCodec.decode(preferences[Keys.DOWNLOADS_FOLDER_VIEW]),
+        )
+    }.distinctUntilChanged()
+
+    /**
+     * Stores how the downloads screen is narrowed, so it comes back the same way.
+     *
+     * @param view the folder and the kind to show.
+     */
+    suspend fun setDownloadsView(view: DownloadsView) {
+        dataStore.edit {
+            it[Keys.DOWNLOADS_KIND_FILTER] = view.kind.name
+            it[Keys.DOWNLOADS_FOLDER_VIEW] = FolderViewCodec.encode(view.folder)
+        }
+    }
+
+    /**
      * Observes what the user has decided about individual shows, keyed by podcast id.
      *
      * A show that has never been touched is absent rather than present with defaults, so the map
@@ -533,6 +564,8 @@ class UserPreferencesDataSource @Inject constructor(
         val VIDEO_QUALITY_HEIGHT = intPreferencesKey("video_quality_height")
         val PLAYER_VIDEO_MODE = booleanPreferencesKey("player_video_mode")
         val DOWNLOAD_FOLDERS = stringPreferencesKey("download_folders")
+        val DOWNLOADS_KIND_FILTER = stringPreferencesKey("downloads_kind_filter")
+        val DOWNLOADS_FOLDER_VIEW = stringPreferencesKey("downloads_folder_view")
     }
 
     private companion object {

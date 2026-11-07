@@ -9,9 +9,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
+import md.borisveriga.megapodcastplayer.core.model.DownloadsView
 import md.borisveriga.megapodcastplayer.core.model.EpisodeFilter
 import md.borisveriga.megapodcastplayer.core.model.EpisodeSort
+import md.borisveriga.megapodcastplayer.core.model.FolderView
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
@@ -351,5 +354,26 @@ class UserPreferencesDataSourceTest {
         dataSource.updateDownloadFolders { it.created(id = "f2", name = "Lectures") }
 
         assertEquals(listOf("f1", "f2"), dataSource.downloadFolders.first().folders.map { it.id })
+    }
+
+    @Test
+    fun `the downloads screen opens on everything until a view is chosen`() = runTest {
+        assertEquals(DownloadsView.DEFAULT, dataSource.downloadsView.first())
+    }
+
+    @Test
+    fun `the downloads view round-trips`() = runTest {
+        val chosen = DownloadsView(kind = DownloadKindFilter.VIDEO, folder = FolderView.Folder("f1"))
+
+        dataSource.setDownloadsView(chosen)
+
+        assertEquals(chosen, dataSource.downloadsView.first())
+    }
+
+    @Test
+    fun `a downloads kind this build does not know reads as every kind`() = runTest {
+        store.edit { it[stringPreferencesKey("downloads_kind_filter")] = "PICTURES" }
+
+        assertEquals(DownloadKindFilter.ALL, dataSource.downloadsView.first().kind)
     }
 }

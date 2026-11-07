@@ -12,16 +12,18 @@
 <resources>
 
     <!--
-        Opening is a tap on the bar, and there is no matching label for closing: the expanded sheet
-        is closed by dragging its grabber down or by the back gesture, not by a button.
+        Opening is a tap on the bar; putting the sheet back down to the bar is the chevron in its
+        top-left corner, worded as the video screen's is ("Minimise the video"), since the two are
+        the same move on the player's two faces. Playback carries on under both.
     -->
     <string name="player_expand">Open the player</string>
+    <string name="player_collapse">Minimise the player</string>
 
     <!--
         Dismissing the bar. The gesture is a pull downwards on the collapsed player; this is its
         spoken twin, offered as a custom action so a screen reader can do the same thing, and the
-        label of the close button in the expanded player's top-left corner. It says what happens
-        rather than "close", because playback stops as well as the bar disappearing.
+        entry in the minimised video's long-press menu. It says what happens rather than "close",
+        because playback stops as well as the bar disappearing.
     -->
     <string name="player_dismiss">Stop playing and hide the player</string>
     <!--
@@ -163,15 +165,18 @@
     <string name="sleep_title">Sleep timer</string>
     <string name="sleep_description">Playback fades out and pauses. Shake the phone to add fifteen minutes.</string>
     <!--
-      The lengths of time are a menu under one chip, fifteen minutes to four hours, captioned by the
-      shared duration formatter ("1 h 30 min"). They were four chips in a row, and the fourth did
-      not fit. The chip says what it offers until a countdown is running and how long is left once
-      one is; its description supplies the verb either label lacks.
+      The length of time is a stepper: a figure from the shared duration formatter ("1 h 30 min")
+      between a minus and a plus, five minutes a tap, and Start beside it. It replaced a menu of
+      sixteen lengths that still could not offer the one wanted. The caption above the row says
+      what it does until a countdown is running, and how long is left once one is; the two icon
+      buttons are named by what a tap does to the figure.
     -->
     <string name="sleep_after">Stop after a set time</string>
     <!-- %1$s is an already-formatted remaining time, e.g. "18 min". -->
     <string name="sleep_after_running">%1$s left</string>
-    <string name="sleep_after_menu">Choose how long to keep playing</string>
+    <string name="sleep_less">Take off five minutes</string>
+    <string name="sleep_more">Add five minutes</string>
+    <string name="sleep_start">Start</string>
     <string name="sleep_end_of_episode">End of episode</string>
     <!--
       "End of chapter" alone means the chapter playing, which is the common case and stays one tap.

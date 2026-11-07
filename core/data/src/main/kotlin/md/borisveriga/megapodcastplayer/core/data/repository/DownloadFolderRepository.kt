@@ -8,6 +8,7 @@ import md.borisveriga.megapodcastplayer.core.datastore.UserPreferencesDataSource
 import md.borisveriga.megapodcastplayer.core.model.DownloadDestination
 import md.borisveriga.megapodcastplayer.core.model.DownloadFolder
 import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
+import md.borisveriga.megapodcastplayer.core.model.DownloadsView
 import md.borisveriga.megapodcastplayer.core.model.FolderNameProblem
 
 /**
@@ -83,6 +84,22 @@ interface DownloadFolderRepository {
 
     /** Forgets every download's folder, because every download has been removed. Keeps the folders. */
     suspend fun forgetAll()
+
+    /**
+     * Observes how the downloads screen is narrowed: which folder and which kind it shows.
+     *
+     * Here beside the folders rather than with the download rules because the folder half of it is
+     * a choice among what this repository keeps, and the stored folder may name one that has since
+     * been deleted; see [DownloadsView].
+     */
+    fun observeView(): Flow<DownloadsView>
+
+    /**
+     * Stores how the downloads screen is narrowed, so it comes back the same way.
+     *
+     * @param view the folder and the kind to show.
+     */
+    suspend fun setView(view: DownloadsView)
 }
 
 /** The outcome of making or renaming a folder. */
@@ -121,6 +138,10 @@ class DefaultDownloadFolderRepository @Inject constructor(
 ) : DownloadFolderRepository {
 
     override fun observeFolders(): Flow<DownloadFolders> = userPreferences.downloadFolders
+
+    override fun observeView(): Flow<DownloadsView> = userPreferences.downloadsView
+
+    override suspend fun setView(view: DownloadsView) = userPreferences.setDownloadsView(view)
 
     override suspend fun createFolder(name: String): FolderEdit {
         val id = UUID.randomUUID().toString()

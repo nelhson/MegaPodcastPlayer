@@ -200,6 +200,18 @@ class PlaybackService : MediaSessionService() {
             ),
         )
 
+        // The stored position is read back here, when the player moves onto an episode by itself;
+        // the persistence listener above is what wrote it. Apart because the two sides of that
+        // exchange are separate rules, each pinned by its own tests.
+        player.addListener(
+            StoredPositionResumeListener(
+                player = player,
+                scope = serviceScope,
+                queueSource = queueSource,
+                crashReporter = crashReporter,
+            ),
+        )
+
         // A second listener rather than more branches in the first: what the database remembers and
         // what wakes the user are unrelated concerns that happen to read the same two callbacks.
         player.addListener(
