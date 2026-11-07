@@ -365,9 +365,20 @@ class UserPreferencesDataSourceTest {
     fun `the downloads view round-trips`() = runTest {
         val chosen = DownloadsView(kind = DownloadKindFilter.VIDEO, folder = FolderView.Folder("f1"))
 
-        dataSource.setDownloadsView(chosen)
+        dataSource.updateDownloadsView { chosen }
 
         assertEquals(chosen, dataSource.downloadsView.first())
+    }
+
+    @Test
+    fun `a downloads view update starts from what is stored`() = runTest {
+        dataSource.updateDownloadsView { it.copy(kind = DownloadKindFilter.VIDEO) }
+        dataSource.updateDownloadsView { it.copy(folder = FolderView.Downloads) }
+
+        assertEquals(
+            DownloadsView(kind = DownloadKindFilter.VIDEO, folder = FolderView.Downloads),
+            dataSource.downloadsView.first(),
+        )
     }
 
     @Test

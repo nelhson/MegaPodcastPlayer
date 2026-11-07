@@ -479,25 +479,38 @@ class UserPreferencesDataSource @Inject constructor(
      * change, for the reason [downloadFolders] does.
      */
     val downloadsView: Flow<DownloadsView> = dataStore.data.map { preferences ->
-        DownloadsView(
-            kind = preferences[Keys.DOWNLOADS_KIND_FILTER]
-                ?.let { stored -> DownloadKindFilter.entries.firstOrNull { it.name == stored } }
-                ?: DownloadKindFilter.ALL,
-            folder = FolderViewCodec.decode(preferences[Keys.DOWNLOADS_FOLDER_VIEW]),
-        )
+        preferences.downloadsView()
     }.distinctUntilChanged()
 
     /**
-     * Stores how the downloads screen is narrowed, so it comes back the same way.
+     * Changes how the downloads screen is narrowed, so it comes back the same way.
      *
-     * @param view the folder and the kind to show.
+     * Read-modify-write inside `edit`, which DataStore serialises, so a kind chip and a folder chip
+     * tapped within one write's latency cannot lose each other's change — each half is read as it
+     * stands at the moment of writing, not as a screen last saw it.
+     *
+     * @param transform receives the view as stored and returns the new one.
      */
-    suspend fun setDownloadsView(view: DownloadsView) {
-        dataStore.edit {
-            it[Keys.DOWNLOADS_KIND_FILTER] = view.kind.name
-            it[Keys.DOWNLOADS_FOLDER_VIEW] = FolderViewCodec.encode(view.folder)
+    suspend fun updateDownloadsView(transform: (DownloadsView) -> DownloadsView) {
+        dataStore.edit { preferences ->
+            val updated = transform(preferences.downloadsView())
+            preferences[Keys.DOWNLOADS_KIND_FILTER] = updated.kind.name
+            preferences[Keys.DOWNLOADS_FOLDER_VIEW] = FolderViewCodec.encode(updated.folder)
         }
     }
+
+    /**
+     * Reads the downloads view out of one snapshot of the preferences.
+     *
+     * Shared by the flow and the write so that both fall back the same way: the kind is an enum
+     * name, unknown reading as every kind; the folder is [FolderViewCodec]'s.
+     */
+    private fun Preferences.downloadsView(): DownloadsView = DownloadsView(
+        kind = this[Keys.DOWNLOADS_KIND_FILTER]
+            ?.let { stored -> DownloadKindFilter.entries.firstOrNull { it.name == stored } }
+            ?: DownloadKindFilter.ALL,
+        folder = FolderViewCodec.decode(this[Keys.DOWNLOADS_FOLDER_VIEW]),
+    )
 
     /**
      * Observes what the user has decided about individual shows, keyed by podcast id.

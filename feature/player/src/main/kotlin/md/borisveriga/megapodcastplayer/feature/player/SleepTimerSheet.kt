@@ -28,6 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
@@ -228,9 +231,13 @@ private fun DurationPicker(remainingMs: Long?, onStart: (Long) -> Unit) {
                 text = formatDuration(resources, minutes * MILLIS_PER_MINUTE).orEmpty(),
                 style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center,
-                // The figure takes the width the buttons leave, so it stays put as it grows from
-                // "5 min" to "1 h 30 min" and the buttons do not jump about under a thumb.
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    // The figure takes the width the buttons leave, so it stays put as it grows
+                    // from "5 min" to "1 h 30 min" and the buttons do not jump about under a thumb.
+                    .weight(1f)
+                    // Spoken as it changes, so a screen reader hears "35 min" after each tap on
+                    // the plus without moving focus to find out where it got to.
+                    .semantics { liveRegion = LiveRegionMode.Polite },
             )
             IconButton(
                 onClick = { minutes += SLEEP_STEP_MINUTES },

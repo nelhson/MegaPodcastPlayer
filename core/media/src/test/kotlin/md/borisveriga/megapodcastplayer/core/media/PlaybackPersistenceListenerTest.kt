@@ -191,6 +191,17 @@ class PlaybackPersistenceListenerTest {
     }
 
     @Test
+    fun `pausing at the very start writes nothing`() {
+        // A seek onto another episode buffers, which reads as a pause at zero of the new episode;
+        // writing it would race the resume listener's lookup of that episode's stored position.
+        loaded(episodeId = "ep-2", positionMs = 0L, durationMs = 90_000L)
+
+        listener.onIsPlayingChanged(false)
+
+        assertTrue(recorder.positions.isEmpty())
+    }
+
+    @Test
     fun `pausing with nothing loaded writes nothing`() {
         every { player.currentMediaItem } returns null
 

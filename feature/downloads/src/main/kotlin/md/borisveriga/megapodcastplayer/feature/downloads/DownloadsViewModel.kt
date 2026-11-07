@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import md.borisveriga.megapodcastplayer.core.common.result.suspendRunCatching
@@ -481,28 +480,21 @@ class DownloadsViewModel @Inject constructor(
      * @param filter what to show.
      */
     fun setKindFilter(filter: DownloadKindFilter) {
-        viewModelScope.launch { updateView { it.copy(kind = filter) } }
+        viewModelScope.launch { folderRepository.updateView { it.copy(kind = filter) } }
     }
 
     /**
      * Shows one folder, or every folder. Remembered; see [chosenView].
      *
+     * Each half is changed through the repository's transform, from the view as *stored*, rather
+     * than written whole from [uiState]: the state's kind is the applied one — forced to every kind
+     * while no video is downloaded — and writing it back would wipe the chosen kind on a folder
+     * change.
+     *
      * @param view the folder to show.
      */
     fun showFolder(view: FolderView) {
-        viewModelScope.launch { updateView { it.copy(folder = view) } }
-    }
-
-    /**
-     * Changes one half of the stored view, keeping the other as it is.
-     *
-     * Read from what is stored rather than from [uiState], whose kind is the *applied* one — forced
-     * to every kind while no video is downloaded — and would wipe the chosen kind on a folder change.
-     *
-     * @param transform receives the view as stored and returns the new one.
-     */
-    private suspend fun updateView(transform: (DownloadsView) -> DownloadsView) {
-        folderRepository.setView(transform(chosenView.first()))
+        viewModelScope.launch { folderRepository.updateView { it.copy(folder = view) } }
     }
 
     /**

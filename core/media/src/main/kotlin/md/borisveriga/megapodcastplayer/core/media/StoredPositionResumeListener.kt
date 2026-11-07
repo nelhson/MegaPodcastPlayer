@@ -15,7 +15,8 @@ private const val NON_FATAL_RESUME = "Stored position lookup on transition faile
  *
  * A tapped episode resumes because `EpisodePlayer.play` reads its stored position and seeks there.
  * Nothing did the same for the other ways an episode comes up: the one before it finishing, the
- * next and previous buttons in the app, the notification, a headset or the watch. Media3 starts a
+ * next and previous buttons in the app, the notification, a headset or the watch, or the one
+ * before it being marked played or swiped out of the queue. Media3 starts a
  * media item at its default position, which for a podcast file is the first second, and so a
  * half-heard episode added to the queue began again from the top. This listener is the missing half.
  *
@@ -83,10 +84,13 @@ internal class StoredPositionResumeListener(
 /**
  * Whether a discontinuity is the player arriving at another episode's default start.
  *
- * True for an automatic transition, which always lands at the start, and for a seek that changed
- * episode and landed at zero: `seekToNextMediaItem` and its kin pass no position, and the player
- * fills in the default. A seek that changed episode and landed elsewhere was given that position on
- * purpose. A seek within the same episode is not an arrival at all.
+ * True for an automatic transition, which always lands at the start, and for a seek or a removal
+ * that changed episode and landed at zero: `seekToNextMediaItem` and its kin pass no position, and
+ * so does removing the episode playing — marking it played from the sheet, or swiping it out of the
+ * queue — after which the player moves on to the next one; in both the player fills in the default.
+ * A change of episode that landed elsewhere was given that position on purpose, which covers
+ * `seekTo(index, positionMs)` and a queue set with a start position. A discontinuity within the
+ * same episode is not an arrival at all.
  *
  * @param oldPosition where playback was.
  * @param newPosition where it landed.
@@ -100,7 +104,9 @@ private fun isArrivalAtDefaultStart(
 ): Boolean = when (reason) {
     Player.DISCONTINUITY_REASON_AUTO_TRANSITION -> true
 
-    Player.DISCONTINUITY_REASON_SEEK ->
+    Player.DISCONTINUITY_REASON_SEEK,
+    Player.DISCONTINUITY_REASON_REMOVE,
+    ->
         oldPosition.mediaItem?.episodeId != newPosition.mediaItem?.episodeId &&
             newPosition.positionMs == 0L
 

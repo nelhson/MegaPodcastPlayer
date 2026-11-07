@@ -69,6 +69,38 @@ class StoredPositionResumeListenerTest {
     }
 
     @Test
+    fun `removing the episode playing resumes the one that follows`() {
+        // Marking the playing episode played, or swiping it out of the queue: the player moves on
+        // to the next item at its default start, with REMOVE as the reason.
+        queueSource.positions["ep-2"] = 600_000L
+        loaded("ep-2", positionMs = 0L)
+
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1", positionMs = 47_000L),
+            positionInfo("ep-2"),
+            Player.DISCONTINUITY_REASON_REMOVE,
+        )
+
+        verify(exactly = 1) { player.seekTo(600_000L) }
+    }
+
+    @Test
+    fun `a queue set with a start position is left there`() {
+        // What a cold-start restore and the undo of a dismiss do: setMediaItems with a position,
+        // which the player reports as a removal that landed where it was told.
+        queueSource.positions["ep-2"] = 600_000L
+        loaded("ep-2", positionMs = 600_000L)
+
+        listener.onPositionDiscontinuity(
+            positionInfo("ep-1"),
+            positionInfo("ep-2", positionMs = 600_000L),
+            Player.DISCONTINUITY_REASON_REMOVE,
+        )
+
+        verify(exactly = 0) { player.seekTo(any<Long>()) }
+    }
+
+    @Test
     fun `an episode sent to a position is left there`() {
         // What playNow does: seekTo(index, positionMs). The position was chosen; it is not the
         // default start, and the database is not even consulted.

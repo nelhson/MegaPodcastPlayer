@@ -95,11 +95,14 @@ interface DownloadFolderRepository {
     fun observeView(): Flow<DownloadsView>
 
     /**
-     * Stores how the downloads screen is narrowed, so it comes back the same way.
+     * Changes how the downloads screen is narrowed, so it comes back the same way.
      *
-     * @param view the folder and the kind to show.
+     * A transform rather than a value so that changing one half cannot lose a change to the other
+     * made moments before; the merge happens inside the store's own serialised write.
+     *
+     * @param transform receives the view as stored and returns the new one.
      */
-    suspend fun setView(view: DownloadsView)
+    suspend fun updateView(transform: (DownloadsView) -> DownloadsView)
 }
 
 /** The outcome of making or renaming a folder. */
@@ -141,7 +144,8 @@ class DefaultDownloadFolderRepository @Inject constructor(
 
     override fun observeView(): Flow<DownloadsView> = userPreferences.downloadsView
 
-    override suspend fun setView(view: DownloadsView) = userPreferences.setDownloadsView(view)
+    override suspend fun updateView(transform: (DownloadsView) -> DownloadsView) =
+        userPreferences.updateDownloadsView(transform)
 
     override suspend fun createFolder(name: String): FolderEdit {
         val id = UUID.randomUUID().toString()
