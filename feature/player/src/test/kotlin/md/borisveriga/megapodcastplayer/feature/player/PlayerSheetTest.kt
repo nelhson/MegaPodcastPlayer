@@ -26,6 +26,7 @@ import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
 import md.borisveriga.megapodcastplayer.core.model.PlayerMode
 import md.borisveriga.megapodcastplayer.core.model.chapters.Chapter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -172,25 +173,28 @@ class PlayerSheetTest {
     }
 
     /**
-     * The top-left button closes the player outright rather than collapsing it: collapsing already
-     * has the grabber, a drag and the back gesture, and stopping from the full player used to take
-     * two steps.
+     * The top-left button puts the sheet down to the bar, as the video screen's does, with playback
+     * carrying on. It used to stop playback outright, which was the one irreversible action on the
+     * sheet sitting where the reversible one is expected.
      */
     @Test
-    fun `expanded, the top-left button stops and hides the player`() {
+    fun `expanded, the top-left button puts the sheet down to the bar`() {
         var dismissed = false
-        setContent(PlayerSheetValue.Expanded, onDismiss = { dismissed = true })
+        val sheetState = setContent(PlayerSheetValue.Expanded, onDismiss = { dismissed = true })
 
-        val close = composeRule.onNodeWithContentDescription("Stop playing and hide the player")
-        val bounds = close.getBoundsInRoot()
+        val collapse = composeRule.onNodeWithContentDescription("Minimise the player")
+        val bounds = collapse.getBoundsInRoot()
         val root = composeRule.onRoot().getBoundsInRoot()
         // Top-left: in the leading half, and in the header strip above the artwork.
         assertTrue(bounds.right < root.right / 2)
         assertTrue(bounds.bottom < root.bottom / 4)
 
-        close.performClick()
+        collapse.performClick()
+        composeRule.waitForIdle()
 
-        assertTrue(dismissed)
+        assertEquals(PlayerSheetValue.Collapsed, sheetState.targetValue)
+        // Collapsing is not stopping: the episode plays on under the bar.
+        assertFalse(dismissed)
     }
 
     @Test
@@ -208,7 +212,7 @@ class PlayerSheetTest {
     }
 
     @Test
-    fun `expanded, the switch sits in the corner opposite the close button`() {
+    fun `expanded, the switch sits in the corner opposite the collapse button`() {
         val youTube = playing.copy(playback = playing.playback.copy(youTubeVideoId = "niTJ2221aS8"))
         setContent(PlayerSheetValue.Expanded, uiState = youTube)
 
@@ -230,11 +234,13 @@ class PlayerSheetTest {
     }
 
     @Test
-    fun `collapsed, the bar draws no close button of its own`() {
+    fun `collapsed, the bar draws no header buttons of its own`() {
         setContent(PlayerSheetValue.Collapsed)
 
-        // The bar is dismissed by pulling it down; a button there would crowd its transport.
+        // The bar is dismissed by pulling it down and opened by a tap; buttons there would crowd
+        // its transport.
         composeRule.onNodeWithContentDescription("Stop playing and hide the player").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Minimise the player").assertDoesNotExist()
     }
 
     /**

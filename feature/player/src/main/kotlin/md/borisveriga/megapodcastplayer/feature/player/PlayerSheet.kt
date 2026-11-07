@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -385,8 +385,7 @@ private fun rememberAskingDownloadToggle(uiState: PlayerUiState, onToggle: () ->
  * @param onSwitchToAudio turns the minimised video into sound without opening anything; offered by
  *   a long press on that bar, and as a spoken action on it.
  * @param onDismiss stops playback and puts the player away; what a downward pull on the collapsed
- *   bar commits to, what the bar's spoken action does, and what the expanded sheet's close button
- *   presses.
+ *   bar commits to, and what the bar's spoken action does.
  * @param modifier layout modifier; must be given the space the sheet may grow into.
  * @param picture draws the player's picture into the modifier it is given. Composed only while the
  *   bar is the video screen put away, where it takes the artwork's place; a slot so that a test or
@@ -641,16 +640,16 @@ fun PlayerSheet(
                         )
 
                         SheetHeader(
-                            onClose = onDismiss,
+                            onCollapse = { scope.launch { sheetState.collapse() } },
                             // Only for an episode with a picture, which today means a YouTube one.
                             // A feed episode has one face, and a switch with nothing on its other
                             // side would be a question with no answer.
                             canWatch = uiState.playback.canWatch,
                             onWatch = onWatch,
                             // Only once fully open. The header is composed from the first pixel of
-                            // travel but stays transparent until the bar has faded, and a close
-                            // button that took taps while invisible would stop playback for a tap
-                            // meant for the bar's artwork corner mid-transition.
+                            // travel but stays transparent until the bar has faded, and buttons
+                            // that took taps while invisible would answer a tap meant for the
+                            // bar's artwork corner mid-transition.
                             enabled = progress == 1f,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
@@ -763,25 +762,24 @@ private fun TravellingArtwork(
 }
 
 /**
- * The expanded player's grab strip: the grabber, the drag target it advertises, a close button, and
- * — for an episode with a picture — the switch to the player's other face.
+ * The expanded player's grab strip: the grabber, the drag target it advertises, a collapse button,
+ * and — for an episode with a picture — the switch to the player's other face.
  *
  * Carries no title. The show's name is already under the artwork a few dp below, and repeating it
  * here would be the second of two labels a screen reader has to walk past to reach the controls.
  *
- * The button in the top-left corner is not a collapse chevron — the grabber, a downward drag on
- * this strip and the back gesture already take the sheet down to the bar. It closes the player
- * outright: playback stops, the queue empties and the bar goes too, which from the full player
- * used to take collapsing first and then pulling the bar away. The next episode played brings the
- * bar back. A cross rather than an arrow,
- * so it does not read as "go back" on a surface that has nowhere to go back to.
+ * The button in the top-left corner is the same chevron the video screen has in the same place,
+ * and does the same thing: puts the sheet down to the bar with playback carrying on. It used to be
+ * a cross that stopped playback outright, which made the player's two faces disagree about what
+ * their one button meant, and put the one irreversible action on the sheet where the reversible
+ * one was expected. Stopping is still a pull down on the bar, or its spoken action.
  *
  * The [ModeSwitch] sits in the opposite corner, which is the corner the video screen keeps it in.
  * Its width is its two labels, so at a large font it reaches the middle of the strip, and the
  * grabber then steps aside rather than be half covered: a handle cut in two reads as a rendering
  * fault, and the strip is as draggable without it.
  *
- * @param onClose stops playback and puts the player away.
+ * @param onCollapse puts the sheet down to the bar.
  * @param canWatch whether the episode has a picture, and so a second face to switch to.
  * @param onWatch opens the video screen.
  * @param enabled whether the buttons take taps; false while the sheet is part-open.
@@ -789,7 +787,7 @@ private fun TravellingArtwork(
  */
 @Composable
 private fun SheetHeader(
-    onClose: () -> Unit,
+    onCollapse: () -> Unit,
     canWatch: Boolean,
     onWatch: () -> Unit,
     enabled: Boolean,
@@ -798,14 +796,13 @@ private fun SheetHeader(
     Layout(
         content = {
             IconButton(
-                onClick = onClose,
+                onClick = onCollapse,
                 enabled = enabled,
                 modifier = Modifier.padding(start = MegaPodcastPlayerTheme.spacing.xs),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Close,
-                    // Says what happens rather than "close": playback stops as well.
-                    contentDescription = stringResource(R.string.player_dismiss),
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.player_collapse),
                 )
             }
 
@@ -833,14 +830,14 @@ private fun SheetHeader(
             .height(expandedHeaderHeight),
     ) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val close = measurables[0].measure(loose)
+        val collapse = measurables[0].measure(loose)
         val grabber = measurables[1].measure(loose)
         val switch = measurables.getOrNull(2)?.measure(loose)
         val width = constraints.maxWidth
         val height = constraints.maxHeight
 
         layout(width, height) {
-            close.placeRelative(x = 0, y = (height - close.height) / 2)
+            collapse.placeRelative(x = 0, y = (height - collapse.height) / 2)
             // Rounded as `Alignment.TopCenter` rounds, so the handle sits on the pixel it always has.
             val grabberLeft = ((width - grabber.width) / 2f).roundToInt()
             val switchLeft = switch?.let { width - it.width }

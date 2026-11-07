@@ -128,6 +128,13 @@ internal class PlaybackPersistenceListener(
         // waiting up to five seconds for the service's ticker.
         if (isPlaying) return
         val reading = player.positionReading() ?: return
+        // Not from the very start. Playback also stops being "playing" for the buffering that a
+        // seek onto another episode causes, and that reading is the new episode at zero — written,
+        // it would race the lookup StoredPositionResumeListener makes of that episode's stored
+        // position and could replace the place the user had reached with the one they have not
+        // listened from yet. Nothing is lost by skipping it: a seek to zero within an episode is
+        // already written by recordSeek, and once playing the ticker takes over.
+        if (reading.positionMs == 0L) return
         record(NON_FATAL_POSITION) { reading.recordInto(progressRecorder) }
     }
 

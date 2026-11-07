@@ -921,8 +921,8 @@ class PlayerViewModel @Inject constructor(
     /**
      * Stops playback and puts the player away.
      *
-     * What a downward pull on the collapsed bar commits to, what its spoken action does, and what
-     * the expanded player's close button presses. It empties the queue to do it, and says nothing
+     * What a downward pull on the collapsed bar commits to, and what its spoken action does. It
+     * empties the queue to do it, and says nothing
      * afterwards: the bar going is the whole of the answer, and a *Playback stopped* snackbar with
      * an undo on it was a message about something the user had just done on purpose. Each
      * episode's position is stored as it plays, so what goes is the queue's arrangement and no

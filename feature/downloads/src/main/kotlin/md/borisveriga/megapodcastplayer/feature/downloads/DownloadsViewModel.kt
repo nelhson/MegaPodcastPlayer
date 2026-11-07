@@ -8,6 +8,7 @@ import java.time.Clock
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,7 @@ import md.borisveriga.megapodcastplayer.core.model.DownloadGroup
 import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadSection
 import md.borisveriga.megapodcastplayer.core.model.DownloadTotals
+import md.borisveriga.megapodcastplayer.core.model.DownloadsView
 import md.borisveriga.megapodcastplayer.core.model.EpisodeWithShow
 import md.borisveriga.megapodcastplayer.core.model.FolderNameProblem
 import md.borisveriga.megapodcastplayer.core.model.FolderView
@@ -254,22 +256,18 @@ class DownloadsViewModel @Inject constructor(
     private val refreshing = MutableStateFlow(false)
 
     /**
-     * The kind filter the user chose; see [setKindFilter].
+     * The folder and the kind the user chose to look at; see [setKindFilter] and [showFolder].
      *
-     * Kept as chosen even while it is not applied — with no video left, the screen shows everything
-     * and hides the chips — so a video arriving later brings the chips back as they were left,
-     * which is what they then say.
-     */
-    private val kindFilter = MutableStateFlow(DownloadKindFilter.ALL)
-
-    /**
-     * The folder the user chose to look at; see [showFolder].
+     * Stored, so the screen comes back as it was left: leaving the downloads for an episode and
+     * returning to find the folder gone back to *All* was the view undoing a choice the user had
+     * just made. The folder is checked against the folders as they are now before it is applied,
+     * so a stored folder that has since been deleted shows everything rather than an empty list.
      *
-     * Not stored, like [kindFilter]: a screen that opened on one folder because of a choice made
-     * last week would look like the other downloads had gone. The view model outlives a rotation
-     * and the Fold opening, so the choice survives those.
+     * The kind is kept as chosen even while it is not applied — with no video left, the screen
+     * shows everything and hides the chips — so a video arriving later brings the chips back as
+     * they were left, which is what they then say.
      */
-    private val folderView = MutableStateFlow<FolderView>(FolderView.AllFolders)
+    private val chosenView: Flow<DownloadsView> = folderRepository.observeView()
 
     init {
         refreshFreeBytes()
@@ -280,18 +278,18 @@ class DownloadsViewModel @Inject constructor(
         downloadRepository.observeDownloadSettings(),
         combine(freeBytes, refreshing, ::Pair),
         // Grouped to stay within `combine`'s typed arity.
-        combine(transientState, downloadRepository.observeVideoDownloads(), kindFilter, ::Triple),
-        combine(folderRepository.observeFolders(), folderView, ::Pair),
+        combine(transientState, downloadRepository.observeVideoDownloads(), ::Pair),
+        combine(folderRepository.observeFolders(), chosenView, ::Pair),
     ) {
             downloads,
             settings,
             (free, isRefreshing),
-            (message, videoDownloads, chosenFilter),
-            (folders, chosenView),
+            (message, videoDownloads),
+            (folders, chosen),
         ->
         val showKindFilter = videoDownloads.isNotEmpty()
-        val appliedFilter = if (showKindFilter) chosenFilter else DownloadKindFilter.ALL
-        val view = chosenView.orAllFoldersIfGone(folders)
+        val appliedFilter = if (showKindFilter) chosen.kind else DownloadKindFilter.ALL
+        val view = chosen.folder.orAllFoldersIfGone(folders)
         val inView = downloads.inFolder(view, folders)
         // Every download, whatever the folder or the filter: the overall figures are about the
         // phone, not the view. Only the finished episodes: a partial transfer's bytes are on disk
@@ -477,21 +475,26 @@ class DownloadsViewModel @Inject constructor(
     }
 
     /**
-     * Narrows the list to one kind of download, or back to all of them.
+     * Narrows the list to one kind of download, or back to all of them. Remembered; see [chosenView].
      *
      * @param filter what to show.
      */
     fun setKindFilter(filter: DownloadKindFilter) {
-        kindFilter.value = filter
+        viewModelScope.launch { folderRepository.updateView { it.copy(kind = filter) } }
     }
 
     /**
-     * Shows one folder, or every folder.
+     * Shows one folder, or every folder. Remembered; see [chosenView].
+     *
+     * Each half is changed through the repository's transform, from the view as *stored*, rather
+     * than written whole from [uiState]: the state's kind is the applied one — forced to every kind
+     * while no video is downloaded — and writing it back would wipe the chosen kind on a folder
+     * change.
      *
      * @param view the folder to show.
      */
     fun showFolder(view: FolderView) {
-        folderView.value = view
+        viewModelScope.launch { folderRepository.updateView { it.copy(folder = view) } }
     }
 
     /**

@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.map
 import md.borisveriga.megapodcastplayer.core.model.AppearanceSettings
 import md.borisveriga.megapodcastplayer.core.model.DownloadFolders
 import md.borisveriga.megapodcastplayer.core.model.DownloadFoldersCodec
+import md.borisveriga.megapodcastplayer.core.model.DownloadKindFilter
 import md.borisveriga.megapodcastplayer.core.model.DownloadSettings
+import md.borisveriga.megapodcastplayer.core.model.DownloadsView
+import md.borisveriga.megapodcastplayer.core.model.FolderViewCodec
 import md.borisveriga.megapodcastplayer.core.model.LibraryLayout
 import md.borisveriga.megapodcastplayer.core.model.LibrarySort
 import md.borisveriga.megapodcastplayer.core.model.PlaybackSettings
@@ -469,6 +472,47 @@ class UserPreferencesDataSource @Inject constructor(
     }
 
     /**
+     * Observes how the downloads screen is narrowed: the folder and the kind of download it shows.
+     *
+     * Two keys, read together: the folder is a string of [FolderViewCodec]'s and the kind is an
+     * enum name, each falling back to the widest view when absent or unknown. Emits only on a
+     * change, for the reason [downloadFolders] does.
+     */
+    val downloadsView: Flow<DownloadsView> = dataStore.data.map { preferences ->
+        preferences.downloadsView()
+    }.distinctUntilChanged()
+
+    /**
+     * Changes how the downloads screen is narrowed, so it comes back the same way.
+     *
+     * Read-modify-write inside `edit`, which DataStore serialises, so a kind chip and a folder chip
+     * tapped within one write's latency cannot lose each other's change — each half is read as it
+     * stands at the moment of writing, not as a screen last saw it.
+     *
+     * @param transform receives the view as stored and returns the new one.
+     */
+    suspend fun updateDownloadsView(transform: (DownloadsView) -> DownloadsView) {
+        dataStore.edit { preferences ->
+            val updated = transform(preferences.downloadsView())
+            preferences[Keys.DOWNLOADS_KIND_FILTER] = updated.kind.name
+            preferences[Keys.DOWNLOADS_FOLDER_VIEW] = FolderViewCodec.encode(updated.folder)
+        }
+    }
+
+    /**
+     * Reads the downloads view out of one snapshot of the preferences.
+     *
+     * Shared by the flow and the write so that both fall back the same way: the kind is an enum
+     * name, unknown reading as every kind; the folder is [FolderViewCodec]'s.
+     */
+    private fun Preferences.downloadsView(): DownloadsView = DownloadsView(
+        kind = this[Keys.DOWNLOADS_KIND_FILTER]
+            ?.let { stored -> DownloadKindFilter.entries.firstOrNull { it.name == stored } }
+            ?: DownloadKindFilter.ALL,
+        folder = FolderViewCodec.decode(this[Keys.DOWNLOADS_FOLDER_VIEW]),
+    )
+
+    /**
      * Observes what the user has decided about individual shows, keyed by podcast id.
      *
      * A show that has never been touched is absent rather than present with defaults, so the map
@@ -533,6 +577,8 @@ class UserPreferencesDataSource @Inject constructor(
         val VIDEO_QUALITY_HEIGHT = intPreferencesKey("video_quality_height")
         val PLAYER_VIDEO_MODE = booleanPreferencesKey("player_video_mode")
         val DOWNLOAD_FOLDERS = stringPreferencesKey("download_folders")
+        val DOWNLOADS_KIND_FILTER = stringPreferencesKey("downloads_kind_filter")
+        val DOWNLOADS_FOLDER_VIEW = stringPreferencesKey("downloads_folder_view")
     }
 
     private companion object {

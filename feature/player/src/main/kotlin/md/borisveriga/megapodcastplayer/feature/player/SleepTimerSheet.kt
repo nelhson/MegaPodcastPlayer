@@ -6,21 +6,32 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import md.borisveriga.megapodcastplayer.core.common.format.formatDuration
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MegaPodcastPlayerBottomSheet
 import md.borisveriga.megapodcastplayer.core.designsystem.component.MenuChip
@@ -36,9 +47,9 @@ import md.borisveriga.megapodcastplayer.core.media.SleepTimerState
  * twenty minutes", which is the version people ask for. Both are options here, and the bell's
  * behaviour is untouched: it is simply the one called *End of episode*.
  *
- * The lengths of time are a menu under one chip rather than a chip each. There are sixteen of them,
- * a quarter of an hour apart up to four hours, and the four there used to be already did not fit
- * across a phone: the last was squeezed until it wrapped and stood twice as tall as its neighbours.
+ * The length of time is set on a stepper rather than picked from a list. The list had sixteen
+ * entries, a quarter of an hour apart, and still could not offer the twenty minutes someone wanted;
+ * a stepper offers every length, five minutes at a time, in one row that needs no scrolling.
  *
  * *End of chapter* is offered only when the episode has chapters, because on an episode without
  * them it would be a row that either did nothing or silently meant something else. It is two
@@ -118,9 +129,9 @@ internal fun SleepTimerOptions(
             .padding(bottom = MegaPodcastPlayerTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.md),
     ) {
-        DurationMenu(
+        DurationPicker(
             remainingMs = state.remainingMs,
-            onPick = { durationMs ->
+            onStart = { durationMs ->
                 onDismiss()
                 onArmAfter(durationMs)
             },
@@ -176,33 +187,72 @@ internal fun SleepTimerOptions(
 }
 
 /**
- * The lengths of time, as a menu under one chip.
+ * The length of time, as a stepper: the figure between a minus and a plus, and *Start* beside it.
  *
- * @param remainingMs what is left of a running countdown, or null. It is both the chip's label and
- *   what decides which row is ticked.
- * @param onPick invoked with the length chosen, in milliseconds.
+ * Five minutes a step, from five minutes up to half a day. The figure opens on half an hour, or —
+ * while a countdown is running — on what is left of it, rounded up to the step, so that *Start*
+ * then restarts the timer at about the same place and one tap on the plus is "five more minutes".
+ * The caption above it says what the row does, and how long is left once a countdown is running.
+ *
+ * @param remainingMs what is left of a running countdown, or null.
+ * @param onStart invoked with the length chosen, in milliseconds.
  */
 @Composable
-private fun DurationMenu(remainingMs: Long?, onPick: (Long) -> Unit) {
+private fun DurationPicker(remainingMs: Long?, onStart: (Long) -> Unit) {
     val resources = LocalResources.current
     val remaining = formatDuration(resources, remainingMs)
+    var minutes by rememberSaveable { mutableIntStateOf(startingMinutes(remainingMs)) }
 
-    MenuChip(
-        label = if (remaining != null) {
-            stringResource(R.string.sleep_after_running, remaining)
-        } else {
-            stringResource(R.string.sleep_after)
-        },
-        icon = Icons.Rounded.Timer,
-        options = SLEEP_MINUTES,
-        // Ticked on what is *left* rather than on what was chosen, so the sheet shows what the
-        // timer is doing rather than what it was asked to do. The window is a minute wide because
-        // the countdown has already been running for however long the sheet took to open.
-        selected = SLEEP_MINUTES.firstOrNull { remainingMs.isWithinAMinuteOf(it * MILLIS_PER_MINUTE) },
-        onSelect = { minutes -> onPick(minutes * MILLIS_PER_MINUTE) },
-        menuDescription = stringResource(R.string.sleep_after_menu),
-        optionLabel = { minutes -> formatDuration(resources, minutes * MILLIS_PER_MINUTE).orEmpty() },
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.xs)) {
+        Text(
+            text = if (remaining != null) {
+                stringResource(R.string.sleep_after_running, remaining)
+            } else {
+                stringResource(R.string.sleep_after)
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MegaPodcastPlayerTheme.spacing.sm),
+        ) {
+            IconButton(
+                onClick = { minutes -= SLEEP_STEP_MINUTES },
+                enabled = minutes > SLEEP_STEP_MINUTES,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Remove,
+                    contentDescription = stringResource(R.string.sleep_less),
+                )
+            }
+            Text(
+                text = formatDuration(resources, minutes * MILLIS_PER_MINUTE).orEmpty(),
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    // The figure takes the width the buttons leave, so it stays put as it grows
+                    // from "5 min" to "1 h 30 min" and the buttons do not jump about under a thumb.
+                    .weight(1f)
+                    // Spoken as it changes, so a screen reader hears "35 min" after each tap on
+                    // the plus without moving focus to find out where it got to.
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            IconButton(
+                onClick = { minutes += SLEEP_STEP_MINUTES },
+                enabled = minutes < SLEEP_MAX_MINUTES,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.sleep_more),
+                )
+            }
+            FilledTonalButton(onClick = { onStart(minutes * MILLIS_PER_MINUTE) }) {
+                Text(text = stringResource(R.string.sleep_start))
+            }
+        }
+    }
 }
 
 /**
@@ -280,20 +330,31 @@ private fun TimerChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Whether a countdown is close enough to [durationMs] to be the option that started it.
+ * Where the stepper opens.
  *
- * @param durationMs the option's own length.
- * @return true when this many milliseconds are left of that option.
+ * What is left of a running countdown, rounded up to a whole step and held within the stepper's
+ * range; half an hour when nothing is running.
+ *
+ * @param remainingMs what is left of a running countdown, or null.
+ * @return the minutes the stepper shows first.
  */
-private fun Long?.isWithinAMinuteOf(durationMs: Long): Boolean {
-    val remaining = this ?: return false
-    return remaining > durationMs - MILLIS_PER_MINUTE && remaining <= durationMs
+internal fun startingMinutes(remainingMs: Long?): Int {
+    if (remainingMs == null || remainingMs <= 0L) return SLEEP_DEFAULT_MINUTES
+    val steps = (remainingMs + SLEEP_STEP_MS - 1) / SLEEP_STEP_MS
+    return (steps * SLEEP_STEP_MINUTES).toInt().coerceIn(SLEEP_STEP_MINUTES, SLEEP_MAX_MINUTES)
 }
 
-/** The lengths on offer, in minutes: every quarter of an hour up to four hours. */
-private val SLEEP_MINUTES = (15..240 step 15).toList()
-
 private const val MILLIS_PER_MINUTE = 60_000L
+
+/** How far one tap on the stepper moves, and the least it will arm. */
+private const val SLEEP_STEP_MINUTES = 5
+private const val SLEEP_STEP_MS = SLEEP_STEP_MINUTES * MILLIS_PER_MINUTE
+
+/** Where the stepper opens when nothing is running: the length most people reach for. */
+private const val SLEEP_DEFAULT_MINUTES = 30
+
+/** Half a day: past any episode, and the point at which a sleep timer is not what is wanted. */
+private const val SLEEP_MAX_MINUTES = 12 * 60
 
 @ThemePreviews
 @Composable
